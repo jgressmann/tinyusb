@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2019 Ha Thach (tinyusb.org)
+ * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,7 +21,6 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  *
- * This file is part of the TinyUSB stack.
  */
 
 #include "sam.h"
@@ -29,12 +28,18 @@
 
 #include "hal/include/hal_gpio.h"
 #include "hal/include/hal_init.h"
+#include "hal/include/hal_usb_device.h"
 #include "hpl/gclk/hpl_gclk_base.h"
 #include "hpl_mclk_config.h"
 
-#if CONF_CPU_FREQUENCY == 120000000
-#else
-#error "clock wrong"
+#include <string.h>
+
+#if CONF_CPU_FREQUENCY != 120000000
+# error "CONF_CPU_FREQUENCY" must 120000000
+#endif
+
+#if CONF_GCLK_USB_FREQUENCY != 48000000
+# error "CONF_GCLK_USB_FREQUENCY" must 48000000
 #endif
 
 //--------------------------------------------------------------------+
@@ -67,86 +72,134 @@ void USB_3_Handler (void)
 
 
 
-/* Referenced GCLKs, should be initialized firstly */
-#define _GCLK_INIT_1ST 0xFFFFFFFF
-
-/* Not referenced GCLKs, initialized last */
-#define _GCLK_INIT_LAST (~_GCLK_INIT_1ST)
-
-
-
-static void init_clock(void)
+static inline void init_clock(void)
 {
-	/* AUTOWS is enabled by default in REG_NVMCTRL_CTRLA - no need to change the number of wait states when changing the core clock */
+  /* AUTOWS is enabled by default in REG_NVMCTRL_CTRLA - no need to change the number of wait states when changing the core clock */
 
-	/* configure XOSC1 for a 16MHz crystal connected to XIN1/XOUT1 */
-	OSCCTRL->XOSCCTRL[1].reg =
-		OSCCTRL_XOSCCTRL_STARTUP(6) |		// 1,953 ms
-		OSCCTRL_XOSCCTRL_RUNSTDBY |
-		OSCCTRL_XOSCCTRL_ENALC |
-		OSCCTRL_XOSCCTRL_IMULT(4) |
-		OSCCTRL_XOSCCTRL_IPTAT(3) |
-		OSCCTRL_XOSCCTRL_XTALEN |
-		OSCCTRL_XOSCCTRL_ENABLE;
-	while(0 == OSCCTRL->STATUS.bit.XOSCRDY1);
+  /* configure XOSC1 for a 16MHz crystal connected to XIN1/XOUT1 */
+  OSCCTRL->XOSCCTRL[1].reg =
+    OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
+    OSCCTRL_XOSCCTRL_RUNSTDBY |
+    OSCCTRL_XOSCCTRL_ENALC |
+    OSCCTRL_XOSCCTRL_IMULT(4) |
+    OSCCTRL_XOSCCTRL_IPTAT(3) |
+    OSCCTRL_XOSCCTRL_XTALEN |
+    OSCCTRL_XOSCCTRL_ENABLE;
+  while(0 == OSCCTRL->STATUS.bit.XOSCRDY1);
 
-	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC1_Val); /* pre-scaler = 8, input = XOSC1 */
-	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(59); /* multiply by 60 -> 120 MHz */
-	OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
-	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
+  OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC1_Val); /* pre-scaler = 8, input = XOSC1 */
+  OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(59); /* multiply by 60 -> 120 MHz */
+  OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
+  while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
 
-	OSCCTRL->Dpll[1].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(7) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC1_Val); /* pre-scaler = 16, input = XOSC1 */
-	OSCCTRL->Dpll[1].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(47); /* multiply by 48 -> 48 MHz */
-	OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
-	while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL1 to be ready */
+  OSCCTRL->Dpll[1].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(7) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC1_Val); /* pre-scaler = 16, input = XOSC1 */
+  OSCCTRL->Dpll[1].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(47); /* multiply by 48 -> 48 MHz */
+  OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
+  while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL1 to be ready */
 
-	/* configure clock-generator 0 to use DPLL0 as source -> GCLK0 is used for the core */
-	GCLK->GENCTRL[0].reg =
-		GCLK_GENCTRL_DIV(0) |
+  /* configure clock-generator 0 to use DPLL0 as source -> GCLK0 is used for the core */
+  GCLK->GENCTRL[0].reg =
+    GCLK_GENCTRL_DIV(0) |
+    GCLK_GENCTRL_RUNSTDBY |
+    GCLK_GENCTRL_GENEN |
+    GCLK_GENCTRL_SRC_DPLL0 |  /* DPLL0 */
+    GCLK_GENCTRL_IDC ;
+  while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
+
+  /* configure clock-generator 1 to use DPLL1 as source -> for use with some peripheral */
+  GCLK->GENCTRL[1].reg =
+    GCLK_GENCTRL_DIV(0) |
+    GCLK_GENCTRL_RUNSTDBY |
+    GCLK_GENCTRL_GENEN |
+    GCLK_GENCTRL_SRC_DPLL1 |
+    GCLK_GENCTRL_IDC ;
+  while(1 == GCLK->SYNCBUSY.bit.GENCTRL1); /* wait for the synchronization between clock domains to be complete */
+
+  /* configure clock-generator 2 to use DPLL0 as source -> for use with SERCOM */
+	GCLK->GENCTRL[2].reg =
+		GCLK_GENCTRL_DIV(2) |	/* 60MHz */
 		GCLK_GENCTRL_RUNSTDBY |
 		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DPLL0 |	/* DPLL0 */
+		GCLK_GENCTRL_SRC_DPLL0 |
 		GCLK_GENCTRL_IDC ;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
-
-	/* configure clock-generator 1 to use DPLL1 as source -> for use with some peripheral */
-	GCLK->GENCTRL[1].reg =
-		GCLK_GENCTRL_DIV(0) |
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DPLL1 |
-		GCLK_GENCTRL_IDC ;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL1); /* wait for the synchronization between clock domains to be complete */
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
 }
+
+static inline void uart_init(void)
+{
+  /* configure SERCOM5 on PB02 */
+  PORT->Group[1].WRCONFIG.reg =
+    PORT_WRCONFIG_WRPINCFG |
+    PORT_WRCONFIG_WRPMUX |
+    PORT_WRCONFIG_PMUX(3) |    /* SERCOM5 */
+    PORT_WRCONFIG_DRVSTR |
+    PORT_WRCONFIG_PINMASK(0x0004) | /* PB02 */
+    PORT_WRCONFIG_PMUXEN;
+
+  MCLK->APBDMASK.bit.SERCOM5_ = 1;
+  GCLK->PCHCTRL[35].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK2 -> 60MHz */
+
+  SERCOM5->USART.CTRLA.reg = 0x00; /* disable SERCOM -> enable config */
+  while(SERCOM5->USART.SYNCBUSY.bit.ENABLE);
+
+  SERCOM5->USART.CTRLA.reg  =  /* CMODE = 0 -> async, SAMPA = 0, FORM = 0 -> USART frame, SMPR = 0 -> arithmetic baud rate */
+    SERCOM_USART_CTRLA_SAMPR(1) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
+//    SERCOM_USART_CTRLA_FORM(0) | /* 0 = USART Frame, 2 = LIN Master */
+    SERCOM_USART_CTRLA_DORD | /* LSB first */
+    SERCOM_USART_CTRLA_MODE(1) | /* 0 = Asynchronous, 1 = USART with internal clock */
+    SERCOM_USART_CTRLA_RXPO(1) | /* SERCOM PAD[1] is used for data reception */
+    SERCOM_USART_CTRLA_TXPO(0); /* SERCOM PAD[0] is used for data transmission */
+
+  SERCOM5->USART.CTRLB.reg = /* RXEM = 0 -> receiver disabled, LINCMD = 0 -> normal USART transmission, SFDE = 0 -> start-of-frame detection disabled, SBMODE = 0 -> one stop bit, CHSIZE = 0 -> 8 bits */
+    SERCOM_USART_CTRLB_TXEN; /* transmitter enabled */
+  SERCOM5->USART.CTRLC.reg = 0x00;
+//  SERCOM5->USART.BAUD.reg = 14; /* 60 / (2 * (14 + 1)) -> @60Mhz: 14 = 2MHz */
+  SERCOM5->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(1) | SERCOM_USART_BAUD_FRAC_BAUD(16); /* 232558 @ 60MHz -> 230400 */
+
+//  SERCOM5->USART.INTENSET.reg = SERCOM_USART_INTENSET_TXC;
+  SERCOM5->SPI.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
+  while(SERCOM5->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
+}
+
+static inline void uart_send_buffer(uint8_t const *text, size_t len)
+{
+  for (size_t i = 0; i < len; ++i)
+  {
+    SERCOM5->USART.DATA.reg = text[i];
+    while((SERCOM5->USART.INTFLAG.reg & SERCOM_SPI_INTFLAG_TXC) == 0);
+  }
+}
+
+static inline void uart_send_str(const char* text)
+{
+  uart_send_buffer((uint8_t const *)text, strlen(text));
+}
+
 
 void board_init(void)
 {
-#if 0
-  // Clock init ( follow hpl_init.c )
-  hri_nvmctrl_set_CTRLA_RWS_bf(NVMCTRL, 0);
-
-  _osc32kctrl_init_sources();
-  _oscctrl_init_sources();
-  _mclk_init();
-#if _GCLK_INIT_1ST
-  _gclk_init_generators_by_fref(_GCLK_INIT_1ST);
-#endif
-  _oscctrl_init_referenced_generators();
-  _gclk_init_generators_by_fref(_GCLK_INIT_LAST);
-
-  // Update SystemCoreClock since it is hard coded with asf4 and not correct
-  // Init 1ms tick timer (samd SystemCoreClock may not correct)
-#endif
   init_clock();
+
   SystemCoreClock = CONF_CPU_FREQUENCY;
+
+#if CFG_TUSB_OS  == OPT_OS_NONE
   SysTick_Config(CONF_CPU_FREQUENCY / 1000);
+#endif
+
+  uart_init();
+#if CFG_TUSB_DEBUG >= 2
+  uart_send_str("RR1 UART initialized\n");
+#endif
 
   // Led init
   gpio_set_pin_direction(LED_PIN, GPIO_DIRECTION_OUT);
   gpio_set_pin_level(LED_PIN, 0);
 
+#if CFG_TUSB_DEBUG >= 2
+  uart_send_str("RR1 LED ping configured\n");
+#endif
 
-#if CFG_TUSB_OS  == OPT_OS_FREERTOS
+#if CFG_TUSB_OS == OPT_OS_FREERTOS
   // If freeRTOS is used, IRQ priority is limit by max syscall ( smaller is higher )
   NVIC_SetPriority(USB_0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
   NVIC_SetPriority(USB_1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
@@ -154,7 +207,12 @@ void board_init(void)
   NVIC_SetPriority(USB_3_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 #endif
 
+
 #if TUSB_OPT_DEVICE_ENABLED
+#if CFG_TUSB_DEBUG >= 2
+  uart_send_str("RR1 USB device enabled\n");
+#endif
+
   /* USB Clock init
    * The USB module requires a GCLK_USB of 48 MHz ~ 0.25% clock
    * for low speed and full speed operation. */
@@ -172,7 +230,15 @@ void board_init(void)
 
   gpio_set_pin_function(PIN_PA24, PINMUX_PA24H_USB_DM);
   gpio_set_pin_function(PIN_PA25, PINMUX_PA25H_USB_DP);
+
+// USB_0_CLOCK_init();
+  // USB_0_PORT_init();
+
+#if CFG_TUSB_DEBUG >= 2
+  uart_send_str("RR1 USB device configured\n");
 #endif
+#endif
+
 }
 
 //--------------------------------------------------------------------+
@@ -198,8 +264,11 @@ int board_uart_read(uint8_t* buf, int len)
 
 int board_uart_write(void const * buf, int len)
 {
-  (void) buf; (void) len;
-  return 0;
+  if (len < 0) {
+    len = strlen((char*)buf);
+  }
+  uart_send_buffer(buf, len);
+  return len;
 }
 
 #if CFG_TUSB_OS  == OPT_OS_NONE
@@ -215,3 +284,10 @@ uint32_t board_millis(void)
   return system_ticks;
 }
 #endif
+
+// Required by __libc_init_array in startup code if we are compiling using
+// -nostdlib/-nostartfiles.
+void _init(void)
+{
+
+}

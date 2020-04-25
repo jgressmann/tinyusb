@@ -1,11 +1,14 @@
 CFLAGS += \
   -mthumb \
+  -mabi=aapcs \
   -mlong-calls \
   -mcpu=cortex-m4 \
   -mfloat-abi=hard \
   -mfpu=fpv4-sp-d16 \
+  -nostdlib -nostartfiles \
   -D__SAME51J19A__ \
   -DCONF_CPU_FREQUENCY=120000000 \
+  -DCONF_GCLK_USB_FREQUENCY=48000000 \
   -DCFG_TUSB_MCU=OPT_MCU_SAME51
 
 # compiler options for Atmel Studio's 'Debug' configuration
@@ -26,7 +29,8 @@ SRC_C += \
 	hw/mcu/microchip/same/asf4/same51/hpl/mclk/hpl_mclk.c \
 	hw/mcu/microchip/same/asf4/same51/hpl/osc32kctrl/hpl_osc32kctrl.c \
 	hw/mcu/microchip/same/asf4/same51/hpl/oscctrl/hpl_oscctrl.c \
-	hw/mcu/microchip/same/asf4/same51/hal/src/hal_atomic.c
+	hw/mcu/microchip/same/asf4/same51/hal/src/hal_atomic.c \
+	hw/mcu/microchip/same/asf4/same51/hal/utils/src/utils_syscalls.c
 
 INC += \
 	$(TOP)/hw/mcu/microchip/same/asf4/same51/ \
