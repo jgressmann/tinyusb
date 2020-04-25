@@ -61,6 +61,10 @@
 #elif CFG_TUSB_MCU == OPT_MCU_SAMD21 || CFG_TUSB_MCU == OPT_MCU_SAMD51
   #include "sam.h"
 
+#elif CFG_TUSB_MCU == OPT_MCU_SAME51
+  #include "sam.h"
+  #define SVC_Handler SVCall_Handler
+
 #elif CFG_TUSB_MCU == OPT_MCU_SAMG
   #undef LITTLE_ENDIAN // hack to suppress "LITTLE_ENDIAN" redefined
   #include "sam.h"
