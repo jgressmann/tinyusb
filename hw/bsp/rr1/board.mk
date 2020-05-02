@@ -40,7 +40,7 @@ INC += \
 	$(TOP)/hw/mcu/microchip/same/asf4/same51/hal/utils/include \
 	$(TOP)/hw/mcu/microchip/same/asf4/same51/hpl/port \
 	$(TOP)/hw/mcu/microchip/same/asf4/same51/hri \
-	$(TOP)/lib/CMSIS_5/CMSIS/Core/Include
+	$(TOP)/hw/mcu/microchip/same/asf4/same51/CMSIS/Core/Include
 
 # For TinyUSB port source
 VENDOR = microchip
