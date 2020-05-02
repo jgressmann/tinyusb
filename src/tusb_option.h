@@ -60,7 +60,6 @@
 #define OPT_MCU_SAMG              202 ///< MicroChip SAMDG series
 #define OPT_MCU_SAME51            203 ///< MicroChip SAME51
 
-
 // STM32
 #define OPT_MCU_STM32F0           300 ///< ST STM32F0
 #define OPT_MCU_STM32F1           301 ///< ST STM32F1
