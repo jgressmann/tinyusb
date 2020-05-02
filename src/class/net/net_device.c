@@ -89,6 +89,7 @@ static const struct ecm_notify_struct ecm_notify_csc =
   .uplink = 9728000,
 };
 
+// TODO remove CFG_TUSB_MEM_SECTION, control internal buffer is already in this special section
 CFG_TUSB_MEM_SECTION CFG_TUSB_MEM_ALIGN static union
 {
   uint8_t rndis_buf[120];
@@ -98,6 +99,7 @@ CFG_TUSB_MEM_SECTION CFG_TUSB_MEM_ALIGN static union
 //--------------------------------------------------------------------+
 // INTERNAL OBJECT & FUNCTION DECLARATION
 //--------------------------------------------------------------------+
+// TODO remove CFG_TUSB_MEM_SECTION
 CFG_TUSB_MEM_SECTION static netd_interface_t _netd_itf;
 
 static bool can_xmit;
@@ -167,7 +169,7 @@ bool netd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t 
   // notification endpoint (if any)
   if ( TUSB_DESC_ENDPOINT == tu_desc_type(p_desc) )
   {
-    TU_ASSERT( dcd_edpt_open(rhport, (tusb_desc_endpoint_t const *) p_desc) );
+    TU_ASSERT( usbd_edpt_open(rhport, (tusb_desc_endpoint_t const *) p_desc) );
 
     _netd_itf.ep_notif = ((tusb_desc_endpoint_t const *) p_desc)->bEndpointAddress;
 

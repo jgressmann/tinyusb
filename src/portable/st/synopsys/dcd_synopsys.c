@@ -27,6 +27,11 @@
 
 #include "tusb_option.h"
 
+#if defined (STM32F105x8) || defined (STM32F105xB) || defined (STM32F105xC) || \
+    defined (STM32F107xB) || defined (STM32F107xC)
+#define STM32F1_SYNOPSYS
+#endif
+
 #if defined (STM32L475xx) || defined (STM32L476xx) ||                          \
     defined (STM32L485xx) || defined (STM32L486xx) || defined (STM32L496xx) || \
     defined (STM32L4R5xx) || defined (STM32L4R7xx) || defined (STM32L4R9xx) || \
@@ -35,7 +40,8 @@
 #endif
 
 #if TUSB_OPT_DEVICE_ENABLED && \
-    ( CFG_TUSB_MCU == OPT_MCU_STM32F2 || \
+    ( (CFG_TUSB_MCU == OPT_MCU_STM32F1 && defined(STM32F1_SYNOPSYS)) || \
+      CFG_TUSB_MCU == OPT_MCU_STM32F2 || \
       CFG_TUSB_MCU == OPT_MCU_STM32F4 || \
       CFG_TUSB_MCU == OPT_MCU_STM32F7 || \
       CFG_TUSB_MCU == OPT_MCU_STM32H7 || \
@@ -45,7 +51,11 @@
 // TODO Support OTG_HS
 // EP_MAX       : Max number of bi-directional endpoints including EP0
 // EP_FIFO_SIZE : Size of dedicated USB SRAM
-#if CFG_TUSB_MCU == OPT_MCU_STM32F2
+#if CFG_TUSB_MCU == OPT_MCU_STM32F1
+  #include "stm32f1xx.h"
+  #define EP_MAX          4
+  #define EP_FIFO_SIZE    1280
+#elif CFG_TUSB_MCU == OPT_MCU_STM32F2
   #include "stm32f2xx.h"
   #define EP_MAX          USB_OTG_FS_MAX_IN_ENDPOINTS
   #define EP_FIFO_SIZE    USB_OTG_FS_TOTAL_FIFO_SIZE
@@ -281,9 +291,10 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * desc_edpt)
 
   if(dir == TUSB_DIR_OUT)
   {
-    out_ep[epnum].DOEPCTL |= (1 << USB_OTG_DOEPCTL_USBAEP_Pos) | \
-      desc_edpt->bmAttributes.xfer << USB_OTG_DOEPCTL_EPTYP_Pos | \
-      desc_edpt->wMaxPacketSize.size << USB_OTG_DOEPCTL_MPSIZ_Pos;
+    out_ep[epnum].DOEPCTL |= (1 << USB_OTG_DOEPCTL_USBAEP_Pos) |
+                             (desc_edpt->bmAttributes.xfer << USB_OTG_DOEPCTL_EPTYP_Pos) |
+                             (desc_edpt->wMaxPacketSize.size << USB_OTG_DOEPCTL_MPSIZ_Pos);
+
     dev->DAINTMSK |= (1 << (USB_OTG_DAINTMSK_OEPM_Pos + epnum));
   }
   else
@@ -311,11 +322,12 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * desc_edpt)
     // - Offset: GRXFSIZ + 16 + Size*(epnum-1)
     // - IN EP 1 gets FIFO 1, IN EP "n" gets FIFO "n".
 
-    in_ep[epnum].DIEPCTL |= (1 << USB_OTG_DIEPCTL_USBAEP_Pos) | \
-      epnum << USB_OTG_DIEPCTL_TXFNUM_Pos | \
-      desc_edpt->bmAttributes.xfer << USB_OTG_DIEPCTL_EPTYP_Pos | \
-      (desc_edpt->bmAttributes.xfer != TUSB_XFER_ISOCHRONOUS ? USB_OTG_DOEPCTL_SD0PID_SEVNFRM : 0) | \
-      desc_edpt->wMaxPacketSize.size << USB_OTG_DIEPCTL_MPSIZ_Pos;
+    in_ep[epnum].DIEPCTL |= (1 << USB_OTG_DIEPCTL_USBAEP_Pos) |
+                            (epnum << USB_OTG_DIEPCTL_TXFNUM_Pos) |
+                            (desc_edpt->bmAttributes.xfer << USB_OTG_DIEPCTL_EPTYP_Pos) |
+                            (desc_edpt->bmAttributes.xfer != TUSB_XFER_ISOCHRONOUS ? USB_OTG_DOEPCTL_SD0PID_SEVNFRM : 0) |
+                            (desc_edpt->wMaxPacketSize.size << USB_OTG_DIEPCTL_MPSIZ_Pos);
+
     dev->DAINTMSK |= (1 << (USB_OTG_DAINTMSK_IEPM_Pos + epnum));
 
     // Both TXFD and TXSA are in unit of 32-bit words.
@@ -342,9 +354,9 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
   uint8_t const dir   = tu_edpt_dir(ep_addr);
 
   xfer_ctl_t * xfer = XFER_CTL_BASE(epnum, dir);
-  xfer->buffer = buffer;
-  xfer->total_len = total_bytes;
-  xfer->queued_len = 0;
+  xfer->buffer       = buffer;
+  xfer->total_len    = total_bytes;
+  xfer->queued_len   = 0;
   xfer->short_packet = false;
 
   uint16_t num_packets = (total_bytes / xfer->max_size);
@@ -355,18 +367,23 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
     num_packets++;
   }
 
-  // IN and OUT endpoint xfers are interrupt-driven, we just schedule them
-  // here.
+  // IN and OUT endpoint xfers are interrupt-driven, we just schedule them here.
   if(dir == TUSB_DIR_IN) {
     // A full IN transfer (multiple packets, possibly) triggers XFRC.
-    in_ep[epnum].DIEPTSIZ = (num_packets << USB_OTG_DIEPTSIZ_PKTCNT_Pos) | \
-        ((total_bytes & USB_OTG_DIEPTSIZ_XFRSIZ_Msk) << USB_OTG_DIEPTSIZ_XFRSIZ_Pos);
+    in_ep[epnum].DIEPTSIZ = (num_packets << USB_OTG_DIEPTSIZ_PKTCNT_Pos) |
+                            ((total_bytes & USB_OTG_DIEPTSIZ_XFRSIZ_Msk) << USB_OTG_DIEPTSIZ_XFRSIZ_Pos);
+
     in_ep[epnum].DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;
-    dev->DIEPEMPMSK |= (1 << epnum);
+
+    // Enable fifo empty interrupt only if there are something to put in the fifo.
+    if(total_bytes != 0) {
+      dev->DIEPEMPMSK |= (1 << epnum);
+    }
   } else {
     // Each complete packet for OUT xfers triggers XFRC.
-    out_ep[epnum].DOEPTSIZ |= (1 << USB_OTG_DOEPTSIZ_PKTCNT_Pos) | \
-        ((xfer->max_size & USB_OTG_DOEPTSIZ_XFRSIZ_Msk) << USB_OTG_DOEPTSIZ_XFRSIZ_Pos);
+    out_ep[epnum].DOEPTSIZ |= (1 << USB_OTG_DOEPTSIZ_PKTCNT_Pos) |
+                              ((xfer->max_size & USB_OTG_DOEPTSIZ_XFRSIZ_Msk) << USB_OTG_DOEPTSIZ_XFRSIZ_Pos);
+
     out_ep[epnum].DOEPCTL |= USB_OTG_DOEPCTL_EPENA | USB_OTG_DOEPCTL_CNAK;
   }
 
@@ -522,6 +539,7 @@ static void receive_packet(xfer_ctl_t * xfer, /* USB_OTG_OUTEndpointTypeDef * ou
   xfer->short_packet = (xfer_size < xfer->max_size);
 }
 
+// Write a data packet to EPIN FIFO
 static void transmit_packet(xfer_ctl_t * xfer, USB_OTG_INEndpointTypeDef * in_ep, uint8_t fifo_num) {
   usb_fifo_t tx_fifo = FIFO_BASE(fifo_num);
 
@@ -645,21 +663,34 @@ static void handle_epout_ints(USB_OTG_DeviceTypeDef * dev, USB_OTG_OUTEndpointTy
 static void handle_epin_ints(USB_OTG_DeviceTypeDef * dev, USB_OTG_INEndpointTypeDef * in_ep) {
   // DAINT for a given EP clears when DIEPINTx is cleared.
   // IEPINT will be cleared when DAINT's out bits are cleared.
-  for(uint8_t n = 0; n < EP_MAX; n++) {
-    xfer_ctl_t * xfer = XFER_CTL_BASE(n, TUSB_DIR_IN);
+  for ( uint8_t n = 0; n < EP_MAX; n++ )
+  {
+    xfer_ctl_t *xfer = XFER_CTL_BASE(n, TUSB_DIR_IN);
 
-    if(dev->DAINT & (1 << (USB_OTG_DAINT_IEPINT_Pos + n))) {
+    if ( dev->DAINT & (1 << (USB_OTG_DAINT_IEPINT_Pos + n)) )
+    {
       // IN XFER complete (entire xfer).
-      if(in_ep[n].DIEPINT & USB_OTG_DIEPINT_XFRC) {
+      if ( in_ep[n].DIEPINT & USB_OTG_DIEPINT_XFRC )
+      {
         in_ep[n].DIEPINT = USB_OTG_DIEPINT_XFRC;
-        dev->DIEPEMPMSK &= ~(1 << n); // Turn off TXFE b/c xfer inactive.
         dcd_event_xfer_complete(0, n | TUSB_DIR_IN_MASK, xfer->total_len, XFER_RESULT_SUCCESS, true);
       }
 
       // XFER FIFO empty
-      if(in_ep[n].DIEPINT & USB_OTG_DIEPINT_TXFE) {
-        in_ep[n].DIEPINT = USB_OTG_DIEPINT_TXFE;
+      if ( in_ep[n].DIEPINT & USB_OTG_DIEPINT_TXFE )
+      {
+        // DIEPINT's TXFE bit is read-only, software cannot clear it.
+        // It will only be cleared by hardware when written bytes is more than
+        // - 64 bytes or
+        // - Half of TX FIFO size (configured by DIEPTXF)
+
         transmit_packet(xfer, &in_ep[n], n);
+
+        // Turn off TXFE if all bytes are written.
+        if (xfer->queued_len == xfer->total_len)
+        {
+          dev->DIEPEMPMSK &= ~(1 << n);
+        }
       }
     }
   }

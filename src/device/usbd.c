@@ -91,7 +91,7 @@ typedef struct
   bool (* control_request  ) (uint8_t rhport, tusb_control_request_t const * request);
   bool (* control_complete ) (uint8_t rhport, tusb_control_request_t const * request);
   bool (* xfer_cb          ) (uint8_t rhport, uint8_t ep_addr, xfer_result_t event, uint32_t xferred_bytes);
-  void (* sof              ) (uint8_t rhport);
+  void (* sof              ) (uint8_t rhport); /* optional */
 } usbd_class_driver_t;
 
 static usbd_class_driver_t const _usbd_driver[] =
@@ -232,15 +232,15 @@ bool usbd_control_xfer_cb (uint8_t rhport, uint8_t ep_addr, xfer_result_t event,
 #if CFG_TUSB_DEBUG >= 2
 static char const* const _usbd_event_str[DCD_EVENT_COUNT] =
 {
-  "INVALID"        ,
-  "BUS_RESET"      ,
-  "UNPLUGGED"      ,
+  "Invalid"        ,
+  "Bus Reset"      ,
+  "Unplugged"      ,
   "SOF"            ,
-  "SUSPEND"        ,
-  "RESUME"         ,
-  "SETUP_RECEIVED" ,
-  "XFER_COMPLETE"  ,
-  "FUNC_CALL"
+  "Suspend"        ,
+  "Resume"         ,
+  "Setup Received" ,
+  "Xfer Complete"  ,
+  "Func Call"
 };
 
 static char const* const _tusb_std_request_str[] =
@@ -259,6 +259,19 @@ static char const* const _tusb_std_request_str[] =
   "Set Interface"     ,
   "Synch Frame"
 };
+
+// for usbd_control to print the name of control complete driver
+void usbd_driver_print_control_complete_name(bool (*control_complete) (uint8_t, tusb_control_request_t const * ))
+{
+  for (uint8_t i = 0; i < USBD_CLASS_DRIVER_COUNT; i++)
+  {
+    if (_usbd_driver[i].control_complete == control_complete )
+    {
+      TU_LOG2("  %s control complete\r\n", _usbd_driver[i].name);
+      return;
+    }
+  }
+}
 
 #endif
 
@@ -356,7 +369,8 @@ void tud_task (void)
 
     if ( !osal_queue_receive(_usbd_q, &event) ) return;
 
-    TU_LOG2("USBD: event %s\r\n", event.event_id < DCD_EVENT_COUNT ? _usbd_event_str[event.event_id] : "CORRUPTED");
+    TU_LOG2("USBD %s", event.event_id < DCD_EVENT_COUNT ? _usbd_event_str[event.event_id] : "CORRUPTED");
+    TU_LOG2("%s", (event.event_id != DCD_EVENT_XFER_COMPLETE && event.event_id != DCD_EVENT_SETUP_RECEIVED) ? "\r\n" : " ");
 
     switch ( event.event_id )
     {
@@ -372,7 +386,8 @@ void tud_task (void)
       break;
 
       case DCD_EVENT_SETUP_RECEIVED:
-        TU_LOG2_MEM(&event.setup_received, 8, 2);
+        TU_LOG2_VAR(&event.setup_received);
+        TU_LOG2("\r\n");
 
         // Mark as connected after receiving 1st setup packet.
         // But it is easier to set it every time instead of wasting time to check then set
@@ -395,7 +410,7 @@ void tud_task (void)
         uint8_t const epnum   = tu_edpt_number(ep_addr);
         uint8_t const ep_dir  = tu_edpt_dir(ep_addr);
 
-        TU_LOG2("  Endpoint: 0x%02X, Bytes: %u\r\n", ep_addr, (unsigned int) event.xfer_complete.len);
+        TU_LOG2("on EP %02X with %u bytes\r\n", ep_addr, (unsigned int) event.xfer_complete.len);
 
         _usbd_dev.ep_status[epnum][ep_dir].busy = false;
 
@@ -450,8 +465,6 @@ void tud_task (void)
 // Helper to invoke class driver control request handler
 static bool invoke_class_control(uint8_t rhport, uint8_t drvid, tusb_control_request_t const * request)
 {
-  TU_ASSERT(_usbd_driver[drvid].control_request);
-
   usbd_control_set_complete_callback(_usbd_driver[drvid].control_complete);
   TU_LOG2("  %s control request\r\n", _usbd_driver[drvid].name);
   return _usbd_driver[drvid].control_request(rhport, request);
@@ -474,10 +487,11 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
     return tud_vendor_control_request_cb(rhport, p_request);
   }
 
-#if CFG_TUSB_DEBUG > 1
+#if CFG_TUSB_DEBUG >= 2
   if (TUSB_REQ_TYPE_STANDARD == p_request->bmRequestType_bit.type && p_request->bRequest <= TUSB_REQ_SYNCH_FRAME)
   {
-    TU_LOG2("  %s\r\n", _tusb_std_request_str[p_request->bRequest]);
+    TU_LOG2("  %s", _tusb_std_request_str[p_request->bRequest]);
+    if (TUSB_REQ_GET_DESCRIPTOR != p_request->bRequest) TU_LOG2("\r\n");
   }
 #endif
 
@@ -704,7 +718,7 @@ static bool process_set_config(uint8_t rhport, uint8_t cfg_num)
         // Interface number must not be used already
         TU_ASSERT( DRVID_INVALID == _usbd_dev.itf2drv[desc_itf->bInterfaceNumber] );
 
-        TU_LOG2("  %s open\r\n", _usbd_driver[drv_id].name);
+        TU_LOG2("  %s opened\r\n", _usbd_driver[drv_id].name);
         _usbd_dev.itf2drv[desc_itf->bInterfaceNumber] = drv_id;
 
         // If IAD exist, assign all interfaces to the same driver
@@ -769,6 +783,8 @@ static bool process_get_descriptor(uint8_t rhport, tusb_control_request_t const 
   {
     case TUSB_DESC_DEVICE:
     {
+      TU_LOG2(" Device\r\n");
+
       uint16_t len = sizeof(tusb_desc_device_t);
 
       // Only send up to EP0 Packet Size if not addressed
@@ -787,6 +803,8 @@ static bool process_get_descriptor(uint8_t rhport, tusb_control_request_t const 
 
     case TUSB_DESC_BOS:
     {
+      TU_LOG2(" BOS\r\n");
+
       // requested by host if USB > 2.0 ( i.e 2.1 or 3.x )
       if (!tud_descriptor_bos_cb) return false;
 
@@ -800,6 +818,8 @@ static bool process_get_descriptor(uint8_t rhport, tusb_control_request_t const 
 
     case TUSB_DESC_CONFIGURATION:
     {
+      TU_LOG2(" Configuration[%u]\r\n", desc_index);
+
       tusb_desc_configuration_t const* desc_config = (tusb_desc_configuration_t const*) tud_descriptor_configuration_cb(desc_index);
       TU_ASSERT(desc_config);
 
@@ -811,13 +831,16 @@ static bool process_get_descriptor(uint8_t rhport, tusb_control_request_t const 
     break;
 
     case TUSB_DESC_STRING:
+      TU_LOG2(" String[%u]\r\n", desc_index);
+
       // String Descriptor always uses the desc set from user
       if ( desc_index == 0xEE )
       {
         // The 0xEE index string is a Microsoft OS Descriptors.
         // https://docs.microsoft.com/en-us/windows-hardware/drivers/usbcon/microsoft-defined-usb-descriptors
         return false;
-      }else
+      }
+      else
       {
         uint8_t const* desc_str = (uint8_t const*) tud_descriptor_string_cb(desc_index, p_request->wIndex);
         TU_ASSERT(desc_str);
@@ -828,6 +851,8 @@ static bool process_get_descriptor(uint8_t rhport, tusb_control_request_t const 
     break;
 
     case TUSB_DESC_DEVICE_QUALIFIER:
+      TU_LOG2(" Device Qualifier\r\n");
+
       // TODO If not highspeed capable stall this request otherwise
       // return the descriptor that could work in highspeed
       return false;
@@ -921,7 +946,7 @@ bool usbd_open_edpt_pair(uint8_t rhport, uint8_t const* p_desc, uint8_t ep_count
     tusb_desc_endpoint_t const * desc_ep = (tusb_desc_endpoint_t const *) p_desc;
 
     TU_ASSERT(TUSB_DESC_ENDPOINT == desc_ep->bDescriptorType && xfer_type == desc_ep->bmAttributes.xfer);
-    TU_ASSERT(dcd_edpt_open(rhport, desc_ep));
+    TU_ASSERT(usbd_edpt_open(rhport, desc_ep));
 
     if ( tu_edpt_dir(desc_ep->bEndpointAddress) == TUSB_DIR_IN )
     {
@@ -956,17 +981,35 @@ void usbd_defer_func(osal_task_func_t func, void* param, bool in_isr)
 // USBD Endpoint API
 //--------------------------------------------------------------------+
 
+bool usbd_edpt_open(uint8_t rhport, tusb_desc_endpoint_t const * desc_ep)
+{
+  TU_LOG2("  Open EP %02X with Size = %u\r\n", desc_ep->bEndpointAddress, desc_ep->wMaxPacketSize.size);
+
+  return dcd_edpt_open(rhport, desc_ep);
+}
+
 bool usbd_edpt_xfer(uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t total_bytes)
 {
   uint8_t const epnum = tu_edpt_number(ep_addr);
   uint8_t const dir   = tu_edpt_dir(ep_addr);
 
-  TU_VERIFY( dcd_edpt_xfer(rhport, ep_addr, buffer, total_bytes) );
+  TU_LOG2("  Queue EP %02X with %u bytes ... ", ep_addr, total_bytes);
+
+  // Set busy first since the actual transfer can be complete before dcd_edpt_xfer() could return
+  // and usbd task can preempt and clear the busy
   _usbd_dev.ep_status[epnum][dir].busy = true;
 
-  TU_LOG2("  XFER Endpoint: 0x%02X, Bytes: %d\r\n", ep_addr, total_bytes);
-
-  return true;
+  if ( dcd_edpt_xfer(rhport, ep_addr, buffer, total_bytes) )
+  {
+    TU_LOG2("OK\r\n");
+    return true;
+  }else
+  {
+    _usbd_dev.ep_status[epnum][dir].busy = false;
+    TU_LOG2("failed\r\n");
+    TU_BREAKPOINT();
+    return false;
+  }
 }
 
 bool usbd_edpt_busy(uint8_t rhport, uint8_t ep_addr)
