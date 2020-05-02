@@ -156,15 +156,15 @@ static inline void init_can0(uint32_t nbtp)
 static StackType_t usb_device_stack[USBD_STACK_SIZE];
 static StaticTask_t usb_device_taskdef;
 
-#define MASTER_TASK_STACK_SIZE (2*configMINIMAL_STACK_SIZE)
-static StackType_t master_task_stack[MASTER_TASK_STACK_SIZE];
-static StaticTask_t master_task_mem;
+#define mcba_task_STACK_SIZE (2*configMINIMAL_STACK_SIZE)
+static StackType_t mcba_task_stack[mcba_task_STACK_SIZE];
+static StaticTask_t mcba_task_mem;
 
 static StackType_t led_task_stack[configMINIMAL_STACK_SIZE];
 static StaticTask_t led_task_mem;
 
 static void usb_device_task(void* param);
-static void master_task(void* param);
+static void mcba_task(void* param);
 static void led_task(void* param);
 
 static inline uint16_t byte_swap(uint16_t x)
@@ -273,7 +273,7 @@ int main(void)
 	tusb_init();
 
 	(void) xTaskCreateStatic(&usb_device_task, "usbd", USBD_STACK_SIZE, NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_taskdef);
-	(void) xTaskCreateStatic(&master_task, "mcba", MASTER_TASK_STACK_SIZE, NULL, configMAX_PRIORITIES-1, master_task_stack, &master_task_mem);
+	(void) xTaskCreateStatic(&mcba_task, "mcba", mcba_task_STACK_SIZE, NULL, configMAX_PRIORITIES-1, mcba_task_stack, &mcba_task_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
 	gpio_set_pin_level(DEBUG_LED1_PIN, 1);
 
@@ -569,7 +569,7 @@ static inline bool mcba_process_usb(void)
 //--------------------------------------------------------------------+
 // MCBA TASK
 //--------------------------------------------------------------------+
-static void master_task(void *param)
+static void mcba_task(void *param)
 {
 	(void) param;
 
