@@ -65,7 +65,7 @@ extern uint32_t SystemCoreClock;
 #define configUSE_PREEMPTION                    1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 0
 #define configCPU_CLOCK_HZ                      SystemCoreClock
-#define configTICK_RATE_HZ                      ( 1000 )
+#define configTICK_RATE_HZ                      ( 10000 )
 #define configMAX_PRIORITIES                    ( 5 )
 #define configMINIMAL_STACK_SIZE                ( 128 )
 #define configTOTAL_HEAP_SIZE                   ( 0*1024 ) // dynamic is not used

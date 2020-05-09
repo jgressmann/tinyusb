@@ -164,7 +164,7 @@ static StackType_t usb_device_stack[USBD_STACK_SIZE];
 static StaticTask_t usb_device_stack_mem;
 
 
-static StackType_t can_task_stack[2*configMINIMAL_STACK_SIZE];
+static StackType_t can_task_stack[configMINIMAL_STACK_SIZE];
 static StaticTask_t can_task_mem;
 
 static StackType_t led_task_stack[configMINIMAL_STACK_SIZE];
@@ -271,27 +271,77 @@ static bool peak_reply_pack_append_can_frame(
 	uint16_t timestamp);
 
 
-#define DEBUG_LED1_PIN      PIN_PB14
-#define DEBUG_LED2_PIN      PIN_PB15
-#define DEBUG_LED3_PIN      PIN_PA12
-#define DEBUG_LED4_PIN      PIN_PA13
-#define DEBUG_LED5_PIN      PIN_PA14
-#define DEBUG_LED6_PIN      PIN_PA15
+#define LED_MODE_OFF	0
+#define LED_MODE_ON		1
+#define LED_MODE_BLINK	2
+struct led {
+#if CFG_TUSB_DEBUG > 0
+	const char* name;
+#endif
+	volatile uint16_t blink_delay_ms;
+	volatile uint8_t mode;
+	uint8_t pin;
+};
+
+#if CFG_TUSB_DEBUG > 0
+#define LED_STATIC_INITIALIZER(name, ms, pin, mode) \
+	{ name, ms, mode, pin }
+#else
+#define LED_STATIC_INITIALIZER(name, ms, pin, mode) \
+	{ ms, mode, pin }
+#endif
+
+static struct led leds[] = {
+	LED_STATIC_INITIALIZER("debug", 0, PIN_PA02, LED_MODE_OFF),
+	LED_STATIC_INITIALIZER("red1", 0, PIN_PB14, LED_MODE_OFF),
+	LED_STATIC_INITIALIZER("orange1", 0, PIN_PB15, LED_MODE_OFF),
+	LED_STATIC_INITIALIZER("green1", 0, PIN_PA12, LED_MODE_OFF),
+	LED_STATIC_INITIALIZER("red2", 0, PIN_PA13, LED_MODE_OFF),
+	LED_STATIC_INITIALIZER("orange2", 0, PIN_PA14, LED_MODE_OFF),
+	LED_STATIC_INITIALIZER("green2", 0, PIN_PA15, LED_MODE_OFF),
+};
+
+
+
+enum {
+	LED_DEBUG = 0,
+	LED_RED1 = 1,
+	LED_ORANGE1,
+	LED_GREEN1,
+	LED_RED2,
+	LED_ORANGE2,
+	LED_GREEN2
+};
+
+
+static void led_init(void);
+static inline void led_set(uint8_t index, bool on)
+{
+	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
+	leds[index].mode = on;
+	gpio_set_pin_level(leds[index].pin, on);
+}
+
+static inline void led_toggle(uint8_t index)
+{
+	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
+	leds[index].mode = LED_MODE_OFF;
+	gpio_toggle_pin_level(leds[index].pin);
+}
+
+static inline void led_blink(uint8_t index, uint16_t delay_ms)
+{
+	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
+	leds[index].blink_delay_ms = delay_ms;
+	leds[index].mode = LED_MODE_BLINK;
+}
 
 int main(void)
 {
-	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
-	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA12; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA13; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA14; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
-
-
-
 	usb_lock = xSemaphoreCreateRecursiveMutexStatic(&usb_lock_mem);
 
 	board_init();
+	led_init();
 
 	init_can0_pins();
 	init_can0_clock();
@@ -303,7 +353,9 @@ int main(void)
 	(void) xTaskCreateStatic(&usb_device_task, "usbd", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);
 	(void) xTaskCreateStatic(&can_task, "can", TU_ARRAY_SIZE(can_task_stack), NULL, configMAX_PRIORITIES-1, can_task_stack, &can_task_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
-	gpio_set_pin_level(DEBUG_LED1_PIN, 1);
+
+	led_blink(0, 2000);
+	led_set(LED_RED1, 1);
 
 	vTaskStartScheduler();
 	NVIC_SystemReset();
@@ -331,13 +383,16 @@ static void usb_device_task(void* param)
 void tud_mount_cb(void)
 {
 	TU_LOG2("mounted\n");
+	led_blink(0, 250);
 	mounted = true;
+
 }
 
 // Invoked when device is unmounted
 void tud_umount_cb(void)
 {
 	TU_LOG2("unmounted\n");
+	led_blink(0, 1000);
 	mounted = false;
 }
 
@@ -349,14 +404,15 @@ void tud_suspend_cb(bool remote_wakeup_en)
 	(void) remote_wakeup_en;
 	TU_LOG2("suspend\n");
 	mounted = false;
-
+	led_blink(0, 500);
 }
 
 // Invoked when usb bus is resumed
 void tud_resume_cb(void)
 {
 	TU_LOG2("resume\n");
-	mounted = false;
+	mounted = true;
+	led_blink(0, 250);
 }
 
 
@@ -421,6 +477,14 @@ static inline void can_clear1(void)
 	REG_CAN0_RXF0A = CAN_RXF0A_F0AI(index);
 }
 
+static inline void can_clear(void)
+{
+	while (can_msg_fifo_avail()) {
+		// TU_LOG2("msg at %u\n", (unsigned)CAN0->RXF0S.bit.F0GI);
+		can_clear1();
+	}
+}
+
 // static inline bool mcba_process_usb(void)
 // {
 // 	bool result = false;
@@ -440,34 +504,54 @@ static void can_task(void *param)
 {
 	(void) param;
 
-	bool work;
+	// bool work;
 
-	TickType_t start = xTaskGetTickCount();
-	// can clk = system clk
-	const TickType_t at_once_delay = (33 * configTICK_RATE_HZ) / 1000000;
-	const TickType_t fill_one_frame_usb_frame_delay = at_once_delay *
-		((CFG_TUD_VENDOR_TX_BUFSIZE - PEAK_USB_REPLY_PACK_INIT_SIZE) /
-		(PEAK_USB_REPLY_PACK_MIN_CAN_MSG_SIZE + (PEAK_USB_REPLY_PACK_MAX_CAN_MSG_SIZE - PEAK_USB_REPLY_PACK_MIN_CAN_MSG_SIZE) / 2));
+
+
+
+	const TickType_t TASK_DELAY_US = 352;
+	const TickType_t TASK_DELAY_TICKS = (TASK_DELAY_US * configTICK_RATE_HZ) / 1000000UL;
+	const TickType_t LED_DELAY_TICKS = pdMS_TO_TICKS(20);
+
+	TU_LOG2("can: F %lu [Hz]\n", (unsigned long)configCPU_CLOCK_HZ);
+	TU_LOG2("can: loop delay %lu [us] %lu [ticks] \n", (unsigned long)TASK_DELAY_US, (unsigned long)TASK_DELAY_TICKS);
+	TU_LOG2("can: led delay %lu [ticks] \n", (unsigned long)LED_DELAY_TICKS);
+	TickType_t can_loop_ts = xTaskGetTickCount();
+	TickType_t data_avail_ts = 0;
+	TickType_t rx_error_ts = 0;
+	TickType_t tx_error_ts = 0;
+	TickType_t mounted_ts = 0;
+
 
 	while (42) {
 
-		work = false;
+		// TU_LOG2("can\n");
+		// work = false;
+
+		TickType_t loop_start_ts = xTaskGetTickCount();
 
 		// update error counters
 		CAN_ECR_Type ecr = (CAN_ECR_Type)REG_CAN0_ECR;
 		tx_can_errors += ecr.bit.TEC;
 		rx_can_errors += ecr.bit.REC;
-		gpio_set_pin_level(DEBUG_LED4_PIN, ecr.bit.REC > 0);
-		gpio_set_pin_level(DEBUG_LED3_PIN, ecr.bit.TEC > 0);
+
+		if (ecr.bit.REC) {
+			rx_error_ts = loop_start_ts;
+		}
+
+		if (ecr.bit.TEC) {
+			tx_error_ts = loop_start_ts;
+		}
 
 		if (can_msg_fifo_avail()) {
-			gpio_set_pin_level(DEBUG_LED5_PIN, 1);
-			work = true;
+			data_avail_ts = loop_start_ts;
+
 			if (mounted) {
-				gpio_set_pin_level(DEBUG_LED6_PIN, 1);
+				mounted_ts = loop_start_ts;
+
 
 				bool removed = false;
-				if (pdTRUE == xSemaphoreTakeRecursive(usb_lock, at_once_delay)) {
+				if (pdTRUE == xSemaphoreTakeRecursive(usb_lock, 0)) {
 					if (tud_vendor_write_available() == CFG_TUD_VENDOR_TX_BUFSIZE) {
 						peak_reply_pack_init();
 
@@ -503,24 +587,27 @@ static void can_task(void *param)
 					}
 				}
 			} else {
-				can_clear1();
+				can_clear();
 			}
-		} else {
-			gpio_set_pin_level(DEBUG_LED5_PIN, 0);
-			gpio_set_pin_level(DEBUG_LED6_PIN, 0);
 		}
 
-		if (work) {
-			vTaskDelay(1); // required to allow other tasks to run
-		} else {
-			vTaskDelay(fill_one_frame_usb_frame_delay);
-		}
+		vTaskDelay(TASK_DELAY_TICKS);
+		// led_toggle(LED_ORANGE1);
+		// led_toggle(LED_RED1);
+		// led_toggle(LED_GREEN1);
+		// led_toggle(LED_GREEN2);
+		// led_toggle(LED_RED2);
 
-		TickType_t now = xTaskGetTickCount();
+		TickType_t loop_end_ts = xTaskGetTickCount();
 
-		if (now - start > configTICK_RATE_HZ / 4) {
-			gpio_set_pin_level(DEBUG_LED2_PIN, !gpio_get_pin_level(DEBUG_LED2_PIN));
-			start = now;
+		led_set(LED_ORANGE2, loop_end_ts - data_avail_ts <= LED_DELAY_TICKS);
+		led_set(LED_GREEN1, loop_end_ts - tx_error_ts <= LED_DELAY_TICKS);
+		led_set(LED_RED2, loop_end_ts - rx_error_ts <= LED_DELAY_TICKS);
+		led_set(LED_GREEN2, loop_end_ts - mounted_ts <= LED_DELAY_TICKS);
+
+		if (loop_end_ts - can_loop_ts >= pdMS_TO_TICKS(250)) {
+			can_loop_ts = loop_end_ts;
+			led_toggle(LED_ORANGE1);
 		}
 	}
 }
@@ -528,22 +615,62 @@ static void can_task(void *param)
 //--------------------------------------------------------------------+
 // LED TASK
 //--------------------------------------------------------------------+
+static void led_init(void)
+{
+	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
+	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA12; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA13; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA14; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
+}
+
+
+
 static void led_task(void *param)
 {
 	(void) param;
 
-	bool state = false;
-	board_led_write(state);
+	uint16_t left[TU_ARRAY_SIZE(leds)];
+	memset(&left, 0, sizeof(left));
+	const uint8_t TICK_MS = 16;
 
 	while (42) {
-		if (mounted) {
-			vTaskDelay(pdMS_TO_TICKS(250));
-		} else {
-			vTaskDelay(pdMS_TO_TICKS(1000));
+		for (uint8_t i = 0; i < TU_ARRAY_SIZE(leds); ++i) {
+			switch (leds[i].mode) {
+			case LED_MODE_BLINK: {
+				uint16_t delay = leds[i].blink_delay_ms;
+				// TU_LOG2("led %s (%u) blink delay %u left %u\n", leds[i].name, i, delay, left[i]);
+				if (delay) {
+					if (0 == left[i]) {
+						// TU_LOG2("led %s (%u) toggle\n", leds[i].name, i);
+						gpio_toggle_pin_level(leds[i].pin);
+						left[i] = delay / TICK_MS;
+					} else {
+						--left[i];
+					}
+				}
+				// } else {
+				// 	goto off;
+				// }
+			} break;
+// 			case LED_MODE_ON:
+// 				// TU_LOG2("led %s (%u) on\n", leds[i].name, i);
+// 				gpio_set_pin_level(leds[i].pin, 1);
+// 				left[i] = 0;
+// 				break;
+
+// 			default:
+// 			case LED_MODE_OFF:
+// off:
+// 				// TU_LOG2("led %s (%u) off\n", leds[i].name, i);
+// 				gpio_set_pin_level(leds[i].pin, 0);
+// 				left[i] = 0;
+// 				break;
+			}
 		}
 
-		state = !state;
-		board_led_write(state);
+		vTaskDelay(pdMS_TO_TICKS(TICK_MS));
 	}
 }
 
@@ -809,3 +936,4 @@ static void peak_process_msg(void)
 
 	tud_vendor_write(usb_out_buffer, usb_out_offset);
 }
+
