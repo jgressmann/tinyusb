@@ -271,34 +271,30 @@ static bool peak_reply_pack_append_can_frame(
 	uint16_t timestamp);
 
 
-#define LED_MODE_OFF	0
-#define LED_MODE_ON		1
-#define LED_MODE_BLINK	2
 struct led {
 #if CFG_TUSB_DEBUG > 0
 	const char* name;
 #endif
 	volatile uint16_t blink_delay_ms;
-	volatile uint8_t mode;
 	uint8_t pin;
 };
 
 #if CFG_TUSB_DEBUG > 0
-#define LED_STATIC_INITIALIZER(name, ms, pin, mode) \
-	{ name, ms, mode, pin }
+#define LED_STATIC_INITIALIZER(name, pin) \
+	{ name, 0, pin }
 #else
-#define LED_STATIC_INITIALIZER(name, ms, pin, mode) \
-	{ ms, mode, pin }
+#define LED_STATIC_INITIALIZER(name, pin) \
+	{ ms, 0, pin }
 #endif
 
 static struct led leds[] = {
-	LED_STATIC_INITIALIZER("debug", 0, PIN_PA02, LED_MODE_OFF),
-	LED_STATIC_INITIALIZER("red1", 0, PIN_PB14, LED_MODE_OFF),
-	LED_STATIC_INITIALIZER("orange1", 0, PIN_PB15, LED_MODE_OFF),
-	LED_STATIC_INITIALIZER("green1", 0, PIN_PA12, LED_MODE_OFF),
-	LED_STATIC_INITIALIZER("red2", 0, PIN_PA13, LED_MODE_OFF),
-	LED_STATIC_INITIALIZER("orange2", 0, PIN_PA14, LED_MODE_OFF),
-	LED_STATIC_INITIALIZER("green2", 0, PIN_PA15, LED_MODE_OFF),
+	LED_STATIC_INITIALIZER("debug", PIN_PA02),
+	LED_STATIC_INITIALIZER("red1", PIN_PB14),
+	LED_STATIC_INITIALIZER("orange1", PIN_PB15),
+	LED_STATIC_INITIALIZER("green1", PIN_PA12),
+	LED_STATIC_INITIALIZER("red2", PIN_PA13),
+	LED_STATIC_INITIALIZER("orange2", PIN_PA14),
+	LED_STATIC_INITIALIZER("green2", PIN_PA15),
 };
 
 
@@ -318,14 +314,14 @@ static void led_init(void);
 static inline void led_set(uint8_t index, bool on)
 {
 	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
-	leds[index].mode = on;
+	leds[index].blink_delay_ms = 0;
 	gpio_set_pin_level(leds[index].pin, on);
 }
 
 static inline void led_toggle(uint8_t index)
 {
 	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
-	leds[index].mode = LED_MODE_OFF;
+	leds[index].blink_delay_ms = 0;
 	gpio_toggle_pin_level(leds[index].pin);
 }
 
@@ -333,7 +329,6 @@ static inline void led_blink(uint8_t index, uint16_t delay_ms)
 {
 	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
 	leds[index].blink_delay_ms = delay_ms;
-	leds[index].mode = LED_MODE_BLINK;
 }
 
 int main(void)
@@ -508,7 +503,7 @@ static void can_task(void *param)
 
 
 
-
+	// ~8 CAN messages per USB transfer @1Mbps CAN bitrate
 	const TickType_t TASK_DELAY_US = 352;
 	const TickType_t TASK_DELAY_TICKS = (TASK_DELAY_US * configTICK_RATE_HZ) / 1000000UL;
 	const TickType_t LED_DELAY_TICKS = pdMS_TO_TICKS(20);
@@ -637,36 +632,15 @@ static void led_task(void *param)
 
 	while (42) {
 		for (uint8_t i = 0; i < TU_ARRAY_SIZE(leds); ++i) {
-			switch (leds[i].mode) {
-			case LED_MODE_BLINK: {
-				uint16_t delay = leds[i].blink_delay_ms;
-				// TU_LOG2("led %s (%u) blink delay %u left %u\n", leds[i].name, i, delay, left[i]);
-				if (delay) {
-					if (0 == left[i]) {
-						// TU_LOG2("led %s (%u) toggle\n", leds[i].name, i);
-						gpio_toggle_pin_level(leds[i].pin);
-						left[i] = delay / TICK_MS;
-					} else {
-						--left[i];
-					}
+			uint16_t delay = leds[i].blink_delay_ms;
+			if (delay) {
+				if (0 == left[i]) {
+					// TU_LOG2("led %s (%u) toggle\n", leds[i].name, i);
+					gpio_toggle_pin_level(leds[i].pin);
+					left[i] = delay / TICK_MS;
+				} else {
+					--left[i];
 				}
-				// } else {
-				// 	goto off;
-				// }
-			} break;
-// 			case LED_MODE_ON:
-// 				// TU_LOG2("led %s (%u) on\n", leds[i].name, i);
-// 				gpio_set_pin_level(leds[i].pin, 1);
-// 				left[i] = 0;
-// 				break;
-
-// 			default:
-// 			case LED_MODE_OFF:
-// off:
-// 				// TU_LOG2("led %s (%u) off\n", leds[i].name, i);
-// 				gpio_set_pin_level(leds[i].pin, 0);
-// 				left[i] = 0;
-// 				break;
 			}
 		}
 
