@@ -2,11 +2,13 @@ include ../../../tools/top.mk
 include ../../make.mk
 
 FREERTOS_SRC = lib/FreeRTOS/FreeRTOS/Source
+CFLAGS += -Wno-error
 
 INC += \
 	inc \
 	src \
 	$(TOP)/hw \
+	$(TOP)/src/device \
 	$(TOP)/$(FREERTOS_SRC)/include \
 	$(TOP)/$(FREERTOS_SRC)/portable/GCC/$(FREERTOS_PORT)
 

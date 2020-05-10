@@ -25,6 +25,7 @@
 
 #include <tusb.h>
 
+#include <peak.h>
 
 static tusb_desc_device_t const desc_device =
 {
@@ -38,9 +39,9 @@ static tusb_desc_device_t const desc_device =
 
 	  .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
-	  .idVendor           = 0x0c72,
-	  .idProduct          = 0x000c,
-	  .bcdDevice          = 0x0200,
+	  .idVendor           = PEAK_USB_ID_VENDOR,
+	  .idProduct          = PEAK_USB_ID_PRODUCT,
+	  .bcdDevice          = 0x0300,
 
 	  .iManufacturer      = 0x01,
 	  .iProduct           = 0x02,
@@ -110,8 +111,65 @@ uint8_t const * tud_descriptor_device_cb(void)
 // 	// // Interface index, string index, EP Out & IN address, EP size
 // 	// TUD_VENDOR_DESCRIPTOR(0, 3, 0x02, 0x82, CFG_TUD_VENDOR_EPSIZE),
 // };
-// v1 no error linux
+// v2 no error linux
 // #define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 2*9 + 6*7)
+// static uint8_t const desc_configuration[] =
+// {
+// 	// Config number, interface count, string index, total length, attribute, power in mA
+// 	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+
+// 	9, TUSB_DESC_INTERFACE, 0, 0, 2, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 3,
+// 	/* BULK OUT */
+//   	7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_OUT_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+// 	/* BULK IN */
+//   	7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_IN_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+
+// 	9, TUSB_DESC_INTERFACE, 0, 1, 4, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 4,
+// 	/* BULK OUT CMD */
+//   	7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_OUT_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+// 	/* BULK IN CMD */
+//   	7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_IN_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+
+// 	/* BULK OUT MSG */
+//   	7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_OUT_MSG, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+// 	/* INT IN MSG */
+//   	7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_IN_MSG, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+// };
+
+// v3 no error linux
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 1*9 + 4*7)
+static uint8_t const desc_configuration[] =
+{
+	// Config number, interface count, string index, total length, attribute, power in mA
+	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+
+	// 9, TUSB_DESC_INTERFACE, 0, 0, 2, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 3,
+	// /* BULK OUT */
+  	// 7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_OUT_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+	// /* BULK IN */
+  	// 7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_IN_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+
+	// 9, TUSB_DESC_INTERFACE, 0, 0, 2, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 3,
+	// /* BULK OUT */
+  	// 7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_OUT_CMD+2, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+	// /* BULK IN */
+  	// 7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_IN_CMD+2, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+
+	9, TUSB_DESC_INTERFACE, 0, 0, 4, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 4,
+
+	/* BULK OUT CMD */
+  	7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_OUT_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+	/* BULK IN CMD */
+  	7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_IN_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+	/* BULK OUT MSG */
+  	7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_OUT_MSG, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+	/* INT IN MSG */
+  	7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_IN_MSG, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
+
+
+};
+
+// #define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 9 + 2*7)
 // static uint8_t const desc_configuration[] =
 // {
 // 	// Config number, interface count, string index, total length, attribute, power in mA
@@ -122,38 +180,7 @@ uint8_t const * tud_descriptor_device_cb(void)
 //   	7, TUSB_DESC_ENDPOINT, 0x01, TUSB_XFER_BULK, U16_TO_U8S_LE(CFG_TUD_VENDOR_EPSIZE), 0,
 // 	/* BULK IN */
 //   	7, TUSB_DESC_ENDPOINT, 0x81, TUSB_XFER_BULK, U16_TO_U8S_LE(CFG_TUD_VENDOR_EPSIZE), 0,
-
-// 	9, TUSB_DESC_INTERFACE, 0, 1, 4, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 4,
-// 	/* BULK OUT */
-//   	7, TUSB_DESC_ENDPOINT, 0x01, TUSB_XFER_BULK, U16_TO_U8S_LE(CFG_TUD_VENDOR_EPSIZE), 0,
-// 	/* BULK IN */
-//   	7, TUSB_DESC_ENDPOINT, 0x81, TUSB_XFER_BULK, U16_TO_U8S_LE(CFG_TUD_VENDOR_EPSIZE), 0,
-
-// 	/* INT OUT */
-//   	7, TUSB_DESC_ENDPOINT, 0x02, TUSB_XFER_INTERRUPT, U16_TO_U8S_LE(CFG_TUD_VENDOR_EPSIZE), 1,
-// 	/* INT IN */
-//   	7, TUSB_DESC_ENDPOINT, 0x82, TUSB_XFER_INTERRUPT, U16_TO_U8S_LE(CFG_TUD_VENDOR_EPSIZE), 1,
-
-// 	// // Interface index, string index, EP Out & IN address, EP size
-// 	// TUD_VENDOR_DESCRIPTOR(0, 3, 0x02, 0x82, CFG_TUD_VENDOR_EPSIZE),
-// 	// // Interface index, string index, EP Out & IN address, EP size
-// 	// TUD_VENDOR_DESCRIPTOR(0, 3, 0x01, 0x81, CFG_TUD_VENDOR_EPSIZE),
-// 	// // Interface index, string index, EP Out & IN address, EP size
-// 	// TUD_VENDOR_DESCRIPTOR(0, 3, 0x02, 0x82, CFG_TUD_VENDOR_EPSIZE),
 // };
-
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 9 + 2*7)
-static uint8_t const desc_configuration[] =
-{
-	// Config number, interface count, string index, total length, attribute, power in mA
-	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
-
-	9, TUSB_DESC_INTERFACE, 0, 0, 2, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 3,
-	/* BULK OUT */
-  	7, TUSB_DESC_ENDPOINT, 0x01, TUSB_XFER_BULK, U16_TO_U8S_LE(CFG_TUD_VENDOR_EPSIZE), 0,
-	/* BULK IN */
-  	7, TUSB_DESC_ENDPOINT, 0x81, TUSB_XFER_BULK, U16_TO_U8S_LE(CFG_TUD_VENDOR_EPSIZE), 0,
-};
 
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR

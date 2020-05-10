@@ -34,7 +34,8 @@
 
 #include <bsp/board.h>
 #include <tusb.h>
-
+#include <dcd.h>
+#include <usbd_pvt.h>
 
 #include <sam.h>
 
@@ -42,14 +43,28 @@
 
 #include <peak.h>
 
+#define TOE_RB_SIZE_TYPE uint8_t
+#define TOE_RB_ASSERT(x) TU_ASSERT(x,)
+#define TOE_RB_PREFIX pc
+#define TOE_RB_VALUE_TYPE struct peak_cmd
+#include "ring_buffer.h"
+#undef TOE_RB_PREFIX
+#undef TOE_RB_VALUE_TYPE
+
+TU_VERIFY_STATIC(sizeof(struct peak_cmd) == 16, "");
+
 
 #ifndef likely
 #define likely(x) __builtin_expect((x),1)
 #endif
 
+#ifndef unlikely
+#define unlikely(x) __builtin_expect((x),0)
+#endif
+
 #define CAN0_TX_BUFFER_NUM 32
 #define CAN0_RX_FIFO_NUM 64
-#define CAN0_ELEMENT_DATA_SIZE 64
+#define CAN0_ELEMENT_DATA_SIZE 8
 
 struct can_tx_element
 {
@@ -70,6 +85,8 @@ static struct can_tx_element can0_tx_buffer[CAN0_TX_BUFFER_NUM];
 
 CFG_TUSB_MEM_ALIGN
 static struct can_rx_fifo_element can0_rx_fifo[CAN0_RX_FIFO_NUM];
+
+static uint16_t can0_rx_ts[CAN0_RX_FIFO_NUM];
 
 
 static inline void init_can0_pins(void) // controller and hardware specific setup of i/o pins for CAN
@@ -137,8 +154,16 @@ static inline void configure_can0(uint32_t nbtp)
 	// REG_CAN0_RXF1C |= CAN_RXF1C_F1WM(0); // Watermark interrupt disabled - Reset-default
 	//REG_CAN0_TXEFC = CAN_TXEFC_EFWM(0); // Reset-default
 
+	// enable interrupt for rx0 msg received
+	// REG_CAN0_IE |= CAN_IE_RF0NE;
+	// CAN0->INTFLAG.reg |= 1; // clear pending
+  	// CAN0->DEVICE.INTENSET.reg = USB_DEVICE_INTENSET_EORST;
+
+
 	REG_CAN0_CCCR &= ~CAN_CCCR_CCE; // clear CCE bit to start Tx and Rx Handler
+
 }
+
 
 static inline void init_can0(uint32_t nbtp)
 {
@@ -252,24 +277,78 @@ static inline uint32_t bitrate_to_dbtp(uint16_t bitrate)
 
 static StaticSemaphore_t usb_lock_mem;
 static SemaphoreHandle_t usb_lock;
-static uint8_t usb_out_buffer[CFG_TUD_VENDOR_TX_BUFSIZE];
-static uint8_t usb_out_offset;
-static uint16_t rx_can_frames_dropped;
-static uint16_t tx_can_errors;
-static uint16_t rx_can_errors;
-static volatile bool mounted;
 
 
-static void peak_process_msg(void);
-static void peak_reply_pack_init(void);
+
+struct peak_reply_ctx {
+	uint8_t *ptr;
+	uint8_t offset;
+};
+
+
+static void peak_process_cmd(struct peak_reply_ctx* ctx, struct peak_cmd *cmd);
+static bool peak_process_msg(uint8_t* *_ptr, uint8_t* end, struct can_tx_element *tx);
 static bool peak_reply_pack_append_can_frame(
+	struct peak_reply_ctx *ctx,
 	uint32_t can_id,
 	bool eff,
 	bool rtr,
 	void const *ptr,
 	uint8_t dlc,
-	uint16_t timestamp);
+	uint16_t timestamp,
+	bool first);
 
+static inline void peak_reply_cmd_init(struct peak_reply_ctx *ctx, uint8_t *ptr)
+{
+	ctx->ptr = ptr;
+	ctx->offset = 0;
+}
+
+static inline void peak_reply_cmd_append_default(struct peak_reply_ctx *ctx)
+{
+	memset(ctx->ptr + ctx->offset, 0, sizeof(struct peak_cmd));
+	ctx->offset += sizeof(struct peak_cmd);
+}
+
+static inline void peak_reply_pack_init(struct peak_reply_ctx *ctx, uint8_t *ptr)
+{
+	ctx->ptr = ptr;
+	ctx->ptr[0] = 0;
+	ctx->ptr[PEAK_REPLY_PACK_RECORD_COUNTER_OFFSET] = 0;
+	ctx->offset = PEAK_USB_REPLY_PACK_INIT_SIZE;
+}
+
+static inline bool peak_reply_pack_fits(struct peak_reply_ctx *ctx, uint8_t bytes)
+{
+	return ctx->offset + bytes <= PEAK_USB_EP_SIZE;
+}
+
+static inline void peak_reply_pack_append_unchecked_byte(
+	struct peak_reply_ctx *ctx,
+	uint8_t value)
+{
+	ctx->ptr[ctx->offset++] = value;
+}
+
+static inline void peak_reply_pack_append_unchecked(
+	struct peak_reply_ctx *ctx,
+	void const * ptr, uint8_t len)
+{
+	memcpy(ctx->ptr + ctx->offset, ptr, len);
+	ctx->offset += len;
+}
+
+
+static inline bool peak_reply_pack_append_msg(
+	struct peak_reply_ctx *ctx,
+	struct peak_cmd const *msg)
+{
+	if (likely(peak_reply_pack_fits(ctx, sizeof(*msg)))) {
+		peak_reply_pack_append_unchecked(ctx, msg, sizeof(*msg));
+		return true;
+	}
+	return false;
+}
 
 struct led {
 #if CFG_TUSB_DEBUG > 0
@@ -284,7 +363,7 @@ struct led {
 	{ name, 0, pin }
 #else
 #define LED_STATIC_INITIALIZER(name, pin) \
-	{ ms, 0, pin }
+	{ 0, pin }
 #endif
 
 static struct led leds[] = {
@@ -296,8 +375,6 @@ static struct led leds[] = {
 	LED_STATIC_INITIALIZER("orange2", PIN_PA14),
 	LED_STATIC_INITIALIZER("green2", PIN_PA15),
 };
-
-
 
 enum {
 	LED_DEBUG = 0,
@@ -331,9 +408,52 @@ static inline void led_blink(uint8_t index, uint16_t delay_ms)
 	leds[index].blink_delay_ms = delay_ms;
 }
 
+void CAN0_Handler(void)
+{
+	TU_LOG2(".");
+	led_set(LED_RED1, 0);
+
+	if (REG_CAN0_IR & CAN_IE_RF0NE) {
+		uint8_t index = (CAN0->RXF0S.bit.F0PI - 1) % TU_ARRAY_SIZE(can0_rx_fifo);
+		can0_rx_ts[index] = CAN0->TSCV.bit.TSC;
+		// clear flag
+		REG_CAN0_IR |= CAN_IE_RF0NE;
+	}
+}
+
+
+static struct can {
+	bool swap;
+	volatile bool enabled;
+} can;
+
+
+static struct usb {
+	CFG_TUSB_MEM_ALIGN uint8_t cmd_rx_buffer[PEAK_USB_EP_SIZE];
+	CFG_TUSB_MEM_ALIGN uint8_t cmd_tx_buffer[PEAK_USB_EP_SIZE];
+	CFG_TUSB_MEM_ALIGN uint8_t msg_rx_buffer[PEAK_USB_EP_SIZE];
+	CFG_TUSB_MEM_ALIGN uint8_t msg_tx_buffer[PEAK_USB_EP_SIZE];
+	struct peak_cmd rx_cmd_queue_mem[4];
+	struct peak_cmd tx_cmd_queue_mem[4];
+	pc_buf rx_cmd_queue;
+	pc_buf tx_cmd_queue;
+	uint16_t rx_can_frames_dropped;
+	uint16_t tx_can_errors;
+	uint16_t rx_can_errors;
+	uint8_t cmd_tx_offset;
+	volatile uint8_t msg_tx_offset;
+	uint8_t port;
+	volatile bool mounted;
+} usb;
+
+#define PEAK_CMD_REPLIES_PER_USB_TRANSFER (PEAK_USB_EP_SIZE / sizeof(struct peak_cmd))
+// #define PEAK_CMD_REPLIES_PER_USB_TRANSFER 1
+
 int main(void)
 {
 	usb_lock = xSemaphoreCreateRecursiveMutexStatic(&usb_lock_mem);
+	can.enabled = true;
+	can.swap = 0x87654321 != REG_CAN0_ENDN;
 
 	board_init();
 	led_init();
@@ -351,6 +471,10 @@ int main(void)
 
 	led_blink(0, 2000);
 	led_set(LED_RED1, 1);
+
+
+	// NVIC_EnableIRQ(CAN0_IRQn);
+	// NVIC_EnableIRQ(CAN1_IRQn);
 
 	vTaskStartScheduler();
 	NVIC_SystemReset();
@@ -379,7 +503,7 @@ void tud_mount_cb(void)
 {
 	TU_LOG2("mounted\n");
 	led_blink(0, 250);
-	mounted = true;
+	usb.mounted = true;
 
 }
 
@@ -388,7 +512,7 @@ void tud_umount_cb(void)
 {
 	TU_LOG2("unmounted\n");
 	led_blink(0, 1000);
-	mounted = false;
+	usb.mounted = false;
 }
 
 // Invoked when usb bus is suspended
@@ -398,7 +522,7 @@ void tud_suspend_cb(bool remote_wakeup_en)
 {
 	(void) remote_wakeup_en;
 	TU_LOG2("suspend\n");
-	mounted = false;
+	usb.mounted = false;
 	led_blink(0, 500);
 }
 
@@ -406,7 +530,7 @@ void tud_suspend_cb(bool remote_wakeup_en)
 void tud_resume_cb(void)
 {
 	TU_LOG2("resume\n");
-	mounted = true;
+	usb.mounted = true;
 	led_blink(0, 250);
 }
 
@@ -415,16 +539,348 @@ void tud_resume_cb(void)
 // Device callbacks
 //--------------------------------------------------------------------+
 
-// Invoked when vendor interface received data from host
-void tud_vendor_rx_cb(uint8_t itf)
-{
-	(void) itf;
 
-	if (xSemaphoreTakeRecursive(usb_lock, pdMS_TO_TICKS(PEAK_USB_CMD_TIMEOUT_MS / 2))) {
-		peak_process_msg();
-		xSemaphoreGiveRecursive(usb_lock);
-	}
+void tud_custom_init_cb(void)
+{
+	TU_LOG2("init\n");
+	memset(&usb, 0, sizeof(usb));
 }
+
+void tud_custom_reset_cb(uint8_t rhport)
+{
+	(void) rhport;
+	TU_LOG2("port %u reset\n", rhport);
+	memset(&usb, 0, sizeof(usb));
+	usb.port = rhport;
+	toe_rb_init(&usb.rx_cmd_queue, usb.rx_cmd_queue_mem, TU_ARRAY_SIZE(usb.rx_cmd_queue_mem));
+	toe_rb_init(&usb.tx_cmd_queue, usb.tx_cmd_queue_mem, TU_ARRAY_SIZE(usb.tx_cmd_queue_mem));
+	TU_LOG2("rx q cap %u\n", toe_rb_capacity(&usb.rx_cmd_queue));
+	TU_LOG2("tx q cap %u\n", toe_rb_capacity(&usb.tx_cmd_queue));
+}
+
+bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t* p_length)
+{
+	(void)desc_intf;
+	TU_LOG2("port %u open\n", rhport);
+
+	if (rhport != usb.port) {
+		return false;
+	}
+
+	uint8_t const *ptr = (void const *)desc_intf;
+	//ptr += 2*9+2*7;
+	ptr += 9;
+
+	for (uint8_t i = 0; i < 4; ++i) {
+		TU_ASSERT(dcd_edpt_open(rhport, (tusb_desc_endpoint_t const *)(ptr + i * 7)));
+	}
+	// TU_ASSERT(dcd_edpt_open(rhport, (tusb_desc_endpoint_t const *)(ptr + )));
+	// TU_ASSERT(dcd_edpt_open(rhport, (tusb_desc_endpoint_t const *)(ptr + 2*7)));
+
+	TU_ASSERT(usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_OUT_CMD, usb.cmd_rx_buffer, TU_ARRAY_SIZE(usb.cmd_rx_buffer)));
+	TU_ASSERT(usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_OUT_MSG, usb.msg_rx_buffer, TU_ARRAY_SIZE(usb.msg_rx_buffer)));
+
+	//*p_length = 2*9+6*7;
+	*p_length = 9+4*7;
+
+	return true;
+}
+
+bool tud_custom_control_request_cb(uint8_t rhport, tusb_control_request_t const * request)
+{
+	(void)request;
+	TU_LOG2("port %u req\n", rhport);
+
+	if (rhport != usb.port) {
+		return false;
+	}
+
+	return true;
+}
+bool tud_custom_control_complete_cb(uint8_t rhport, tusb_control_request_t const * request)
+{
+	(void)request;
+	TU_LOG2("port %u req com\n", rhport);
+
+	if (rhport != usb.port) {
+		return false;
+	}
+
+	return true;
+}
+
+
+
+bool tud_custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, uint32_t xferred_bytes)
+{
+	(void)event; // always success
+	TU_LOG2("port %u ep %02x event %d bytes %u\n", rhport, ep_addr, event, (unsigned)xferred_bytes);
+
+	if (rhport != usb.port) {
+		return false;
+	}
+
+	switch (ep_addr) {
+	case PEAK_USB_EP_BULK_OUT_CMD: {
+		uint8_t cmd_count = xferred_bytes / sizeof(struct peak_cmd);
+		struct peak_cmd const *cmd_ptr = usb.cmd_rx_buffer;
+		struct peak_reply_ctx rep;
+		for (bool done = false; !done; ) {
+			bool added = false;
+			done = true;
+
+			TU_LOG2("rx q size %u tx q size %u\n", toe_rb_size(&usb.rx_cmd_queue), toe_rb_size(&usb.tx_cmd_queue));
+
+			if (cmd_count) {
+				// try to avoid copy to rx queue
+				if (!toe_rb_size(&usb.rx_cmd_queue) && toe_rb_left(&usb.tx_cmd_queue)) {
+					TU_LOG2("process & tx q cmd\n");
+
+					uint8_t *mem = pc_at_ptr(&usb.tx_cmd_queue, toe_rb_size(&usb.tx_cmd_queue));
+					peak_reply_cmd_init(&rep, mem);
+					peak_process_cmd(&rep, cmd_ptr);
+					if (rep.offset) {
+						added = true;
+						++usb.tx_cmd_queue.size;
+					}
+					++cmd_ptr;
+					--cmd_count;
+					done = false;
+				} else {
+					if (toe_rb_left(&usb.rx_cmd_queue)) {
+						TU_LOG2("rx q cmd\n");
+						pc_push_back_ptr(&usb.rx_cmd_queue, cmd_ptr);
+						--cmd_count;
+						++cmd_ptr;
+						done = false;
+					} else {
+						// error
+					}
+				}
+			}
+
+			// process one cmd
+			if (toe_rb_left(&usb.tx_cmd_queue) && toe_rb_size(&usb.rx_cmd_queue)) {
+
+				uint8_t *mem = pc_at_ptr(&usb.tx_cmd_queue, toe_rb_size(&usb.tx_cmd_queue));
+				peak_reply_cmd_init(&rep, mem);
+				peak_process_cmd(&rep, pc_at_cptr(&usb.rx_cmd_queue, 0));
+				pc_drop_front(&usb.rx_cmd_queue);
+				if (rep.offset) {
+					added = true;
+					++usb.tx_cmd_queue.size;
+				}
+				done = false;
+			}
+
+			// if (!added && toe_rb_size(&usb.tx_cmd_queue)
+			// 	&& !usbd_edpt_busy(rhport, PEAK_USB_EP_BULK_IN_CMD)) {
+
+			// 	// uint8_t before = toe_rb_size(&usb.tx_cmd_queue);
+			// 	usb.cmd_tx_offset = 0;
+
+			// 	struct peak_cmd *out_ptr = usb.cmd_tx_buffer;
+			// 	// for (uint8_t i = 0;
+			// 	// 	i < PEAK_CMD_REPLIES_PER_USB_TRANSFER && pc_try_pop_front(&usb.tx_cmd_queue, out_ptr);
+			// 	// 	++i, ++out_ptr, usb.cmd_tx_offset += sizeof(*out_ptr));
+
+			// 	for (uint8_t i = 0; i < PEAK_CMD_REPLIES_PER_USB_TRANSFER; ++i) {
+			// 		// TU_LOG2("pre pop tx q zero %u size %u\n", usb.tx_cmd_queue.zero, usb.tx_cmd_queue.size);
+			// 		if (pc_try_pop_front(&usb.tx_cmd_queue, out_ptr)) {
+			// 			// TU_LOG2("post pop tx q zero %u size %u\n", usb.tx_cmd_queue.zero, usb.tx_cmd_queue.size);
+			// 			++out_ptr;
+			// 			usb.cmd_tx_offset += sizeof(*out_ptr);
+			// 		} else {
+			// 			break;
+			// 		}
+			// 	}
+
+			// 	// uint8_t after = toe_rb_size(&usb.tx_cmd_queue);
+			// 	// TU_LOG2("size before %u after %u\n", before, after);
+			// 	// TU_ASSERT(before > after, );
+			// 	TU_ASSERT(usb.cmd_tx_offset, );
+			// 	TU_LOG2("usb tx %u cmd replies\n", (unsigned)(usb.cmd_tx_offset / sizeof(struct peak_cmd)));
+			// 	TU_LOG2("tx q size %u\n", usb.tx_cmd_queue.size);
+			// 	TU_ASSERT( usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_CMD, usb.cmd_tx_buffer, usb.cmd_tx_offset) );
+			// 	done = false;
+			// }
+
+			// if (!toe_rb_left(&usb.tx_cmd_queue)
+			// 	&& !usbd_edpt_busy(rhport, PEAK_USB_EP_BULK_IN_CMD)) {
+
+			// 	// uint8_t before = toe_rb_size(&usb.tx_cmd_queue);
+			// 	usb.cmd_tx_offset = 0;
+
+			// 	struct peak_cmd *out_ptr = usb.cmd_tx_buffer;
+			// 	// for (uint8_t i = 0;
+			// 	// 	i < PEAK_CMD_REPLIES_PER_USB_TRANSFER && pc_try_pop_front(&usb.tx_cmd_queue, out_ptr);
+			// 	// 	++i, ++out_ptr, usb.cmd_tx_offset += sizeof(*out_ptr));
+
+			// 	for (uint8_t i = 0; i < PEAK_CMD_REPLIES_PER_USB_TRANSFER; ++i) {
+			// 		// TU_LOG2("pre pop tx q zero %u size %u\n", usb.tx_cmd_queue.zero, usb.tx_cmd_queue.size);
+			// 		if (pc_try_pop_front(&usb.tx_cmd_queue, out_ptr)) {
+			// 			// TU_LOG2("post pop tx q zero %u size %u\n", usb.tx_cmd_queue.zero, usb.tx_cmd_queue.size);
+			// 			++out_ptr;
+			// 			usb.cmd_tx_offset += sizeof(*out_ptr);
+			// 		} else {
+			// 			break;
+			// 		}
+			// 	}
+
+			// 	// uint8_t after = toe_rb_size(&usb.tx_cmd_queue);
+			// 	// TU_LOG2("size before %u after %u\n", before, after);
+			// 	// TU_ASSERT(before > after, );
+			// 	TU_ASSERT(usb.cmd_tx_offset, );
+			// 	TU_LOG2("usb tx %u cmd replies\n", (unsigned)(usb.cmd_tx_offset / sizeof(struct peak_cmd)));
+			// 	TU_LOG2("tx q size %u\n", usb.tx_cmd_queue.size);
+			// 	TU_ASSERT( usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_CMD, usb.cmd_tx_buffer, usb.cmd_tx_offset) );
+			// 	done = false;
+			// }
+
+		}
+
+		TU_LOG2("!loop done\n");
+
+		if (toe_rb_size(&usb.tx_cmd_queue)
+			// && !usbd_edpt_busy(rhport, PEAK_USB_EP_BULK_IN_CMD)) {
+				&& !usb.cmd_tx_offset) {
+				// ) {
+
+			// uint8_t before = toe_rb_size(&usb.tx_cmd_queue);
+			usb.cmd_tx_offset = 0;
+
+			struct peak_cmd *out_ptr = usb.cmd_tx_buffer;
+			// for (uint8_t i = 0;
+			// 	i < PEAK_CMD_REPLIES_PER_USB_TRANSFER && pc_try_pop_front(&usb.tx_cmd_queue, out_ptr);
+			// 	++i, ++out_ptr, usb.cmd_tx_offset += sizeof(*out_ptr));
+
+			for (uint8_t i = 0; i < PEAK_CMD_REPLIES_PER_USB_TRANSFER; ++i) {
+				// TU_LOG2("pre pop tx q zero %u size %u\n", usb.tx_cmd_queue.zero, usb.tx_cmd_queue.size);
+				if (pc_try_pop_front(&usb.tx_cmd_queue, out_ptr)) {
+					// TU_LOG2("post pop tx q zero %u size %u\n", usb.tx_cmd_queue.zero, usb.tx_cmd_queue.size);
+					++out_ptr;
+					usb.cmd_tx_offset += sizeof(*out_ptr);
+				} else {
+					break;
+				}
+			}
+
+			// uint8_t after = toe_rb_size(&usb.tx_cmd_queue);
+			// TU_LOG2("size before %u after %u\n", before, after);
+			// TU_ASSERT(before > after, );
+			TU_ASSERT(usb.cmd_tx_offset, );
+			TU_LOG2("> cmd tx %u cmd replies\n", (unsigned)(usb.cmd_tx_offset / sizeof(struct peak_cmd)));
+			TU_LOG2("cmd tx q size %u\n", usb.tx_cmd_queue.size);
+			TU_ASSERT( usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_CMD, usb.cmd_tx_buffer, usb.cmd_tx_offset) );
+		}
+
+
+		// struct peak_reply_ctx c;
+		// if (usb.cmd_tx_offset) {
+		// 	TU_LOG2("usb: new cmd while busy\n");
+		// 	static uint8_t dummn[PEAK_USB_EP_SIZE];
+		// 	peak_reply_cmd_init(&c, dummn);
+		// 	TU_ASSERT( usbd_edpt_busy(rhport, PEAK_USB_EP_BULK_IN_CMD) );
+		// } else {
+		// 	peak_reply_cmd_init(&c, usb.cmd_tx_buffer);
+
+		// }
+
+		// struct peak_cmd *cmd = (struct peak_cmd *)usb.cmd_rx_buffer;
+		// while (xferred_bytes >= sizeof(*cmd_ptr)) {
+		// 	peak_process_cmd(&c, cmd_ptr);
+		// 	++cmd_ptr;
+		// 	xferred_bytes -= sizeof(*cmd_ptr);
+		// }
+
+
+		// if (!usb.cmd_tx_offset && c.offset) {
+		// 	usb.cmd_tx_offset = c.offset;
+		// 	TU_ASSERT( usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_CMD, usb.cmd_tx_buffer, usb.cmd_tx_offset) );
+		// }
+
+		// start new transaction
+		TU_ASSERT(usbd_edpt_xfer(rhport, ep_addr, usb.cmd_rx_buffer, TU_ARRAY_SIZE(usb.cmd_rx_buffer)));
+
+
+	} break;
+	case PEAK_USB_EP_BULK_IN_CMD:
+		TU_ASSERT(!usbd_edpt_busy(rhport, PEAK_USB_EP_BULK_IN_CMD));
+		TU_LOG2("< cmd IN token\n");
+		usb.cmd_tx_offset = 0;
+			if (toe_rb_size(&usb.tx_cmd_queue)) {
+				struct peak_cmd *out_ptr = usb.cmd_tx_buffer;
+				TU_LOG2("tx q size %u\n", usb.tx_cmd_queue.size);
+				for (uint8_t i = 0;
+					i < PEAK_CMD_REPLIES_PER_USB_TRANSFER && pc_try_pop_front(&usb.tx_cmd_queue, out_ptr);
+					++i, ++out_ptr, usb.cmd_tx_offset += sizeof(*out_ptr));
+
+				TU_ASSERT(usb.cmd_tx_offset, );
+				TU_LOG2("cmd tx %u cmd replies\n", (unsigned)(usb.cmd_tx_offset / sizeof(struct peak_cmd)));
+				TU_LOG2("cmd tx q size %u\n", usb.tx_cmd_queue.size);
+				TU_ASSERT( usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_CMD, usb.cmd_tx_buffer, usb.cmd_tx_offset) );
+			} else {
+				TU_LOG2("! cmd tx q empty\n");
+				// TU_ASSERT( usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_CMD, usb.cmd_tx_buffer, 0) );
+				//TU_ASSERT( usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_CMD, usb.cmd_tx_buffer, 0) );
+				// usbd_edpt_stall(rhport, PEAK_USB_EP_BULK_IN_CMD);
+			}
+		break;
+	case PEAK_USB_EP_BULK_OUT_MSG: {
+
+		// TU_LOG2("msg len %u: ", xferred_bytes);
+		// for (uint8_t i = 0; i < xferred_bytes; ++i) {
+		// 	TU_LOG2("%02x ", usb.msg_rx_buffer[i]);
+		// }
+		// TU_LOG2("\n");
+
+		uint8_t *ptr = usb.msg_rx_buffer;
+		uint8_t *end = usb.msg_rx_buffer + xferred_bytes;
+		// looks like it is only a single message
+		uint8_t msgs = 0;
+		while (ptr < end) {
+			CAN_TXFQS_Type txfqs = CAN0->TXFQS;
+			if (txfqs.bit.TFQF) {
+				TU_LOG2("can tx q full\n");
+				break;
+			} else {
+				uint8_t index = txfqs.bit.TFQPI;
+				if (peak_process_msg(&ptr, end, &can0_tx_buffer[index])) {
+					TU_LOG2("can tx %u\n", index);
+					REG_CAN0_TXBAR |= UINT32_C(1) << index;
+				} else {
+					if (0 == msgs) {
+						TU_LOG1("!offset %u msg decode error\n", ptr - usb.msg_rx_buffer);
+					}
+					break;
+				}
+			}
+			++msgs;
+		}
+		TU_ASSERT(usbd_edpt_xfer(rhport, ep_addr, usb.msg_rx_buffer, TU_ARRAY_SIZE(usb.msg_rx_buffer)));
+	} break;
+	case PEAK_USB_EP_BULK_IN_MSG:
+		usb.msg_tx_offset = 0;
+		TU_ASSERT(false, );
+		break;
+	default:
+		return false;
+	}
+
+	return true;
+}
+
+
+// // Invoked when vendor interface received data from host
+// void tud_vendor_rx_cb(uint8_t itf)
+// {
+// 	(void) itf;
+
+// 	if (xSemaphoreTakeRecursive(usb_lock, pdMS_TO_TICKS(PEAK_USB_CMD_TIMEOUT_MS / 2))) {
+// 		peak_process_msg();
+// 		xSemaphoreGiveRecursive(usb_lock);
+// 	}
+// }
 
 // // Invoked when vendor interface received data from host
 // bool vendord_open(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t* p_length)
@@ -441,29 +897,6 @@ static inline bool can_msg_fifo_avail(void)
 static inline bool can_msg_fifo_full(void)
 {
 	return (REG_CAN0_RXF0S & CAN_RXF0S_F0F) != 0;
-}
-
-static inline void can_process1(void)
-{
-	// struct mcba_usb_msg_can msg;
-	//TU_ASSERT(sizeof(msg) == 19, );
-
-	uint8_t index = CAN0->RXF0S.bit.F0GI;
-	struct can_rx_fifo_element const *e = &can0_rx_fifo[index];
-	CAN_RXF0E_0_Type r0 = e->R0;
-	CAN_RXF0E_1_Type r1 = e->R1;
-
-	(void)r0;
-	(void)r1;
-
-	// format the can message
-	uint32_t id = r0.bit.ID;
-	id >>= r0.bit.XTD ? 0 : 18;
-	// // mcba_format_can_msg(id, e->data, r1.bit.DLC, r0.bit.XTD, r0.bit.RTR, xTaskGetTickCount(), &msg);
-
-	REG_CAN0_RXF0A = CAN_RXF0A_F0AI(index);
-
-	// tud_vendor_write(&msg, sizeof(msg));
 }
 
 static inline void can_clear1(void)
@@ -495,19 +928,76 @@ static inline void can_clear(void)
 //--------------------------------------------------------------------+
 // CAN TASK
 //--------------------------------------------------------------------+
+
+#if 0
+typedef union {
+  struct {
+    uint32_t LEC:3;            /*!< bit:  0.. 2  Last Error Code                    */
+    uint32_t ACT:2;            /*!< bit:  3.. 4  Activity                           */
+    uint32_t EP:1;             /*!< bit:      5  Error Passive                      */
+    uint32_t EW:1;             /*!< bit:      6  Warning Status                     */
+    uint32_t BO:1;             /*!< bit:      7  Bus_Off Status                     */
+    uint32_t DLEC:3;           /*!< bit:  8..10  Data Phase Last Error Code         */
+    uint32_t RESI:1;           /*!< bit:     11  ESI flag of last received CAN FD Message */
+    uint32_t RBRS:1;           /*!< bit:     12  BRS flag of last received CAN FD Message */
+    uint32_t RFDF:1;           /*!< bit:     13  Received a CAN FD Message          */
+    uint32_t PXE:1;            /*!< bit:     14  Protocol Exception Event           */
+    uint32_t :1;               /*!< bit:     15  Reserved                           */
+    uint32_t TDCV:7;           /*!< bit: 16..22  Transmitter Delay Compensation Value */
+    uint32_t :9;               /*!< bit: 23..31  Reserved                           */
+  } bit;                       /*!< Structure used for bit  access                  */
+  uint32_t reg;                /*!< Type      used for register access              */
+} CAN_PSR_Type;
+#endif
+static inline void can_add_error_msg_to_reply_pack(
+	struct peak_reply_ctx *ctx,
+	CAN_PSR_Type psr,
+	uint16_t ts)
+{
+#if TU_BIG_ENDIAN == TU_BYTE_ORDER
+		ts = tu_bswap16(ts);
+#endif
+	uint8_t errors = 0;
+	if (psr.bit.BO) {
+		errors |= PCAN_USB_ERROR_BUS_OFF;
+	}
+
+	if (psr.bit.EP) {
+		errors |= PCAN_USB_ERROR_BUS_HEAVY;
+	}
+
+	if (psr.bit.EW) {
+		errors |= PCAN_USB_ERROR_BUS_LIGHT;
+	}
+	peak_reply_pack_append_unchecked_byte(ctx, 2 | PCAN_USB_STATUSLEN_INTERNAL | PCAN_USB_STATUSLEN_TIMESTAMP);
+	peak_reply_pack_append_unchecked_byte(ctx, PCAN_USB_REC_ERROR);
+	peak_reply_pack_append_unchecked_byte(ctx, errors);
+	peak_reply_pack_append_unchecked(ctx, &ts, sizeof(ts));
+
+}
+
+static inline void can_add_ts_msg_to_reply_pack(
+	struct peak_reply_ctx *ctx,
+	uint16_t ts)
+{
+#if TU_BIG_ENDIAN == TU_BYTE_ORDER
+		ts = tu_bswap16(ts);
+#endif
+
+	peak_reply_pack_append_unchecked_byte(ctx, 2 | PCAN_USB_STATUSLEN_INTERNAL | PCAN_USB_STATUSLEN_TIMESTAMP);
+	peak_reply_pack_append_unchecked(ctx, &ts, sizeof(ts));
+}
+
 static void can_task(void *param)
 {
 	(void) param;
-
-	// bool work;
-
-
 
 	// ~8 CAN messages per USB transfer @1Mbps CAN bitrate
 	const TickType_t TASK_DELAY_US = 352;
 	const TickType_t TASK_DELAY_TICKS = (TASK_DELAY_US * configTICK_RATE_HZ) / 1000000UL;
 	const TickType_t LED_DELAY_TICKS = pdMS_TO_TICKS(20);
 
+	TU_LOG2("can: swap %u\n", can.swap);
 	TU_LOG2("can: F %lu [Hz]\n", (unsigned long)configCPU_CLOCK_HZ);
 	TU_LOG2("can: loop delay %lu [us] %lu [ticks] \n", (unsigned long)TASK_DELAY_US, (unsigned long)TASK_DELAY_TICKS);
 	TU_LOG2("can: led delay %lu [ticks] \n", (unsigned long)LED_DELAY_TICKS);
@@ -516,19 +1006,24 @@ static void can_task(void *param)
 	TickType_t rx_error_ts = 0;
 	TickType_t tx_error_ts = 0;
 	TickType_t mounted_ts = 0;
+	TickType_t tx_ts = 0;
+	struct peak_reply_ctx ctx;
+
+	TickType_t loop_start_ts = xTaskGetTickCount();
 
 
 	while (42) {
 
 		// TU_LOG2("can\n");
-		// work = false;
 
-		TickType_t loop_start_ts = xTaskGetTickCount();
+
 
 		// update error counters
-		CAN_ECR_Type ecr = (CAN_ECR_Type)REG_CAN0_ECR;
-		tx_can_errors += ecr.bit.TEC;
-		rx_can_errors += ecr.bit.REC;
+		CAN_ECR_Type ecr = CAN0->ECR;
+		usb.tx_can_errors += ecr.bit.TEC;
+		usb.rx_can_errors += ecr.bit.REC;
+
+		CAN_PSR_Type psr = CAN0->PSR;
 
 		if (ecr.bit.REC) {
 			rx_error_ts = loop_start_ts;
@@ -541,48 +1036,104 @@ static void can_task(void *param)
 		if (can_msg_fifo_avail()) {
 			data_avail_ts = loop_start_ts;
 
-			if (mounted) {
-				mounted_ts = loop_start_ts;
+			if (usb.mounted) {
+				if (can.enabled) {
+
+					bool removed = false;
+
+					// if (usb.msg_tx_offset || usbd_edpt_busy(usb.port, PEAK_USB_EP_BULK_IN_MSG)) {
+					// 		// busy
+					// } else {
+					// 	// TU_LOG2("can->usb\n");
+					// 	tx_ts = loop_start_ts;
+					// 	removed = true;
+					// 	peak_reply_pack_init(&ctx, usb.msg_tx_buffer);
+					// 	can_add_error_msg_to_reply_pack(&ctx, psr, CAN0->TSCV.bit.TSC);
+					// 	// can_add_ts_msg_to_reply_pack(&ctx, CAN0->TSCV.bit.TSC);
+
+					// 	bool first = true;
+					// 	for (bool done = false; !done; first = false) {
+					// 		uint8_t index = CAN0->RXF0S.bit.F0GI;
+					// 		struct can_rx_fifo_element const *e = &can0_rx_fifo[index];
+					// 		CAN_RXF0E_0_Type r0 = e->R0;
+					// 		CAN_RXF0E_1_Type r1 = e->R1;
+
+					// 		(void)r0;
+					// 		(void)r1;
+
+					// 		// format the can message
+					// 		uint32_t id = r0.bit.ID;
+					// 		id >>= r0.bit.XTD ? 0 : 18;
+
+					// 		if (peak_reply_pack_append_can_frame(
+					// 				&ctx,
+					// 				id,
+					// 				r0.bit.XTD,
+					// 				r0.bit.RTR,
+					// 				e->data,
+					// 				r1.bit.DLC,
+					// 				can0_rx_ts[index],
+					// 				first)) {
+					// 			REG_CAN0_RXF0A = CAN_RXF0A_F0AI(index);
+					// 		} else {
+					// 			done = true;
+					// 		}
+					// 	}
+
+					// 	// send of
+					// 	TU_LOG2("> can %u frames\n", ctx.ptr[PEAK_REPLY_PACK_RECORD_COUNTER_OFFSET]);
+					// 	usb.msg_tx_offset = ctx.offset;
+					// 	TU_ASSERT( usbd_edpt_xfer(usb.port, PEAK_USB_EP_BULK_IN_MSG, usb.msg_tx_buffer, usb.msg_tx_offset) );
+
+					// }
 
 
-				bool removed = false;
-				if (pdTRUE == xSemaphoreTakeRecursive(usb_lock, 0)) {
-					if (tud_vendor_write_available() == CFG_TUD_VENDOR_TX_BUFSIZE) {
-						peak_reply_pack_init();
-
-						for (bool done = false; !done; ) {
-							uint8_t index = CAN0->RXF0S.bit.F0GI;
-							struct can_rx_fifo_element const *e = &can0_rx_fifo[index];
-							CAN_RXF0E_0_Type r0 = e->R0;
-							CAN_RXF0E_1_Type r1 = e->R1;
-
-							(void)r0;
-							(void)r1;
-
-							// format the can message
-							uint32_t id = r0.bit.ID;
-							id >>= r0.bit.XTD ? 0 : 18;
-
-							if (peak_reply_pack_append_can_frame(id, r0.bit.XTD, r0.bit.RTR, e->data, r1.bit.DLC, xTaskGetTickCount())) {
-								REG_CAN0_RXF0A = CAN_RXF0A_F0AI(index);
-							} else {
-								done = true;
-							}
+					if (!removed) {
+						if (can_msg_fifo_full()) {
+							++usb.rx_can_frames_dropped;
+							can_clear1();
 						}
-
-						tud_vendor_write(usb_out_buffer, usb_out_offset);
 					}
-					xSemaphoreGiveRecursive(usb_lock);
+
+				} else {
+					if (usb.msg_tx_offset || usbd_edpt_busy(usb.port, PEAK_USB_EP_BULK_IN_MSG)) {
+							// busy
+					} else {
+						tx_ts = loop_start_ts;
+
+						// peak_reply_pack_init(&ctx, usb.msg_tx_buffer);
+						// can_add_error_msg_to_reply_pack(&ctx, psr, CAN0->TSCV.bit.TSC);
+
+
+						// // send of
+						// TU_LOG2("> can status\n", ctx.ptr[PEAK_REPLY_PACK_RECORD_COUNTER_OFFSET]);
+						// usb.msg_tx_offset = ctx.offset;
+						// TU_ASSERT( usbd_edpt_xfer(usb.port, PEAK_USB_EP_BULK_IN_MSG, usb.msg_tx_buffer, usb.msg_tx_offset) );
+
+					}
 				}
 
-				if (!removed) {
-					if (can_msg_fifo_full()) {
-						++rx_can_frames_dropped;
-						can_clear1();
-					}
-				}
 			} else {
 				can_clear();
+			}
+		} else { // rx fifo empty
+			if (usb.mounted) {
+				if (usb.msg_tx_offset || usbd_edpt_busy(usb.port, PEAK_USB_EP_BULK_IN_MSG)) {
+						// busy
+				} else {
+					tx_ts = loop_start_ts;
+
+					// peak_reply_pack_init(&ctx, usb.msg_tx_buffer);
+					// can_add_error_msg_to_reply_pack(&ctx, psr, CAN0->TSCV.bit.TSC);
+
+
+
+					// // send of
+					// TU_LOG2("> can status\n", ctx.ptr[PEAK_REPLY_PACK_RECORD_COUNTER_OFFSET]);
+					// usb.msg_tx_offset = ctx.offset;
+					// TU_ASSERT( usbd_edpt_xfer(usb.port, PEAK_USB_EP_BULK_IN_MSG, usb.msg_tx_buffer, usb.msg_tx_offset) );
+
+				}
 			}
 		}
 
@@ -594,11 +1145,14 @@ static void can_task(void *param)
 		// led_toggle(LED_RED2);
 
 		TickType_t loop_end_ts = xTaskGetTickCount();
+		// TU_LOG2("s=%lu e=%lu\n", loop_start_ts, loop_end_ts);
+		loop_start_ts = loop_end_ts;
 
 		led_set(LED_ORANGE2, loop_end_ts - data_avail_ts <= LED_DELAY_TICKS);
 		led_set(LED_GREEN1, loop_end_ts - tx_error_ts <= LED_DELAY_TICKS);
 		led_set(LED_RED2, loop_end_ts - rx_error_ts <= LED_DELAY_TICKS);
-		led_set(LED_GREEN2, loop_end_ts - mounted_ts <= LED_DELAY_TICKS);
+		//led_set(LED_GREEN2, loop_end_ts - mounted_ts <= LED_DELAY_TICKS);
+		led_set(LED_GREEN2, loop_end_ts - tx_ts <= LED_DELAY_TICKS);
 
 		if (loop_end_ts - can_loop_ts >= pdMS_TO_TICKS(250)) {
 			can_loop_ts = loop_end_ts;
@@ -653,68 +1207,19 @@ static void led_task(void *param)
 //--------------------------------------------------------------------+
 
 
-#define PCAN_USB_STATUSLEN_TIMESTAMP	(1 << 7)
-#define PCAN_USB_STATUSLEN_INTERNAL	(1 << 6)
-#define PCAN_USB_STATUSLEN_EXT_ID	(1 << 5)
-#define PCAN_USB_STATUSLEN_RTR		(1 << 4)
-#define PCAN_USB_STATUSLEN_DLC		(0xf)
 
-#define PCAN_USB_REC_ERROR		1
-#define PCAN_USB_REC_ANALOG		2
-#define PCAN_USB_REC_BUSLOAD		3
-#define PCAN_USB_REC_TS			4
-#define PCAN_USB_REC_BUSEVT		5
-
-#define PEAK_REPLY_PACK_RECORD_COUNTER_OFFSET 1
-
-/* PCAN-USB error flags */
-#define PCAN_USB_ERROR_TXFULL		0x01
-#define PCAN_USB_ERROR_RXQOVR		0x02
-#define PCAN_USB_ERROR_BUS_LIGHT	0x04
-#define PCAN_USB_ERROR_BUS_HEAVY	0x08
-#define PCAN_USB_ERROR_BUS_OFF		0x10
-#define PCAN_USB_ERROR_RXQEMPTY		0x20
-#define PCAN_USB_ERROR_QOVR		0x40
-#define PCAN_USB_ERROR_TXQFULL		0x80
-
-
-
-static uint8_t reply_first_timestamp;
-
-
-static inline void peak_reply_pack_init(void)
+static inline void peak_reply_cmd_append_f_n(
+	struct peak_reply_ctx *ctx,
+	uint8_t f, uint8_t n, void const *ptr, uint8_t len)
 {
-	usb_out_buffer[0] = 0;
-	usb_out_buffer[PEAK_REPLY_PACK_RECORD_COUNTER_OFFSET] = 0;
-	usb_out_offset = 2;
-	reply_first_timestamp = true;
+	ctx->ptr[ctx->offset+0] = f;
+	ctx->ptr[ctx->offset+1] = n;
+	if (len) {
+		memcpy(ctx->ptr + ctx->offset + 2, ptr, len);
+	}
+	ctx->offset += sizeof(struct peak_cmd);
+
 }
-
-static inline bool peak_reply_pack_fits(uint8_t bytes)
-{
-	return usb_out_offset + bytes < TU_ARRAY_SIZE(usb_out_buffer);
-}
-
-static inline void peak_reply_pack_append_unchecked(void const * ptr, uint8_t len)
-{
-	memcpy(usb_out_buffer + usb_out_offset, ptr, len);
-	usb_out_offset += len;
-}
-
-// static inline bool peak_reply_pack_append(uint8_t f, uint8_t n, void const *ptr, uint8_t len)
-// {
-// 	if (tu_likely((size_t)(2 + len + reply_offset) <= TU_ARRAY_SIZE(reply_buffer))) {
-// 		++reply_buffer[PEAK_REPLY_PACK_RECORD_COUNTER_OFFSET];
-// 		reply_buffer[reply_offset++] = f;
-// 		reply_buffer[reply_offset++] = n;
-// 		if (len) {
-// 			peak_reply_pack_append_unchecked(ptr, len);
-// 		}
-// 		return true;
-// 	}
-
-// 	return false;
-// }
 // static inline bool peak_reply_pack_append_status_internal(uint8_t f, uint8_t n, void const *ptr, uint8_t len)
 // {
 // 	if (tu_likely((size_t)(1 + len + reply_offset) <= TU_ARRAY_SIZE(reply_buffer))) {
@@ -729,13 +1234,16 @@ static inline void peak_reply_pack_append_unchecked(void const * ptr, uint8_t le
 // 	return false;
 // }
 
-static inline bool peak_reply_pack_append_can_frame(
+
+static bool peak_reply_pack_append_can_frame(
+	struct peak_reply_ctx *ctx,
 	uint32_t can_id,
 	bool eff,
 	bool rtr,
 	void const *ptr,
 	uint8_t dlc,
-	uint16_t timestamp)
+	uint16_t timestamp,
+	bool first)
 {
 	uint8_t len = 3;
 	uint8_t status = dlc + 2;
@@ -751,45 +1259,45 @@ static inline bool peak_reply_pack_append_can_frame(
 		len += dlc;
 	}
 
-	len += !reply_first_timestamp;
+	len += first;
 
-	if (!peak_reply_pack_fits(len)) {
+	if (!peak_reply_pack_fits(ctx, len)) {
 		return false;
 	}
 
 	// inc records
-	++usb_out_buffer[PEAK_REPLY_PACK_RECORD_COUNTER_OFFSET];
+	++ctx->ptr[PEAK_REPLY_PACK_RECORD_COUNTER_OFFSET];
 
-	usb_out_buffer[usb_out_offset++] = status;
+	ctx->ptr[ctx->offset++] = status;
 
 	if (eff) {
 #if TU_BIG_ENDIAN == TU_BYTE_ORDER
 		can_id = tu_bswap32(can_id);
 #endif
-		memcpy(&usb_out_buffer[usb_out_offset], &can_id, sizeof(can_id));
-		usb_out_offset += sizeof(can_id);
+		memcpy(&ctx->ptr[ctx->offset], &can_id, sizeof(can_id));
+		ctx->offset += sizeof(can_id);
 	} else {
 		uint16_t sff = can_id;
 #if TU_BIG_ENDIAN == TU_BYTE_ORDER
 		sff = tu_bswap16(sff);
 #endif
-		memcpy(&usb_out_buffer[usb_out_offset], &sff, sizeof(sff));
-		usb_out_offset += sizeof(sff);
+		memcpy(&ctx->ptr[ctx->offset], &sff, sizeof(sff));
+		ctx->offset += sizeof(sff);
 	}
 
-	if (reply_first_timestamp) {
+	if (first) {
 #if TU_BIG_ENDIAN == TU_BYTE_ORDER
 		timestamp = tu_bswap16(timestamp);
 #endif
-		memcpy(&usb_out_buffer[usb_out_offset], &timestamp, sizeof(timestamp));
-		usb_out_offset += sizeof(timestamp);
+		memcpy(&ctx->ptr[ctx->offset], &timestamp, sizeof(timestamp));
+		ctx->offset += sizeof(timestamp);
 	} else {
-		usb_out_buffer[usb_out_offset++] = timestamp;
+		ctx->ptr[ctx->offset++] = timestamp;
 	}
 
 	if (!rtr) {
-		memcpy(&usb_out_buffer[usb_out_offset], ptr, len);
-		usb_out_offset += len;
+		memcpy(&ctx->ptr[ctx->offset], ptr, len);
+		ctx->offset += len;
 	}
 
 	return true;
@@ -797,14 +1305,17 @@ static inline bool peak_reply_pack_append_can_frame(
 }
 
 
-static inline void peak_process_msg1(struct peak_cmd *cmd)
+static void peak_process_cmd(struct peak_reply_ctx *ctx, struct peak_cmd *cmd)
 {
 	TU_LOG2("cmd %02d %02d\n", cmd->func, cmd->num);
+
+	bool send_default_reply = false;
+	bool send_error_reply = false;
 
 	switch (cmd->func) {
 	case 1:
 		switch (cmd->num) {
-		case 2: { // pcan_usb_set_bittiming argv[0] == btr0, argv[1] == btr1
+		case 2: {
 			uint8_t brt0, brt1;
 			brt0 = cmd->argv[1];
 			brt1 = cmd->argv[0];
@@ -830,24 +1341,22 @@ static inline void peak_process_msg1(struct peak_cmd *cmd)
 		} break;
 		}
 		break;
-	case 2:
-		switch (cmd->num) {
-		case 1: // can frame
-
-			break;
-		}
-		break;
 	case 3:
 		switch (cmd->num) {
 		case 2: // pcan_usb_set_bus argv[0] == on/off
 			TU_LOG2("set bus %d\n", cmd->argv[0]);
 			if (cmd->argv[0]) {
-				REG_CAN0_CCCR |= CAN_CCCR_INIT;
+				can.enabled = true;
+				REG_CAN0_CCCR &= ~CAN_CCCR_INIT; // start CAN-Module
+				while(REG_CAN0_CCCR & CAN_CCCR_INIT);
 			} else {
-				REG_CAN0_CCCR &= ~CAN_CCCR_INIT;
+				can.enabled = false;
+				REG_CAN0_CCCR |= CAN_CCCR_INIT; // set CAN-Module to init, Reset-default
+				while((REG_CAN0_CCCR & CAN_CCCR_INIT) == 0);
 			}
 			break;
 		case 3: // pcan_usb_set_silent argv[0] == on/off
+			TU_LOG2("set silent %u\n", cmd->argv[0]);
 			break;
 		}
 		break;
@@ -855,10 +1364,9 @@ static inline void peak_process_msg1(struct peak_cmd *cmd)
 		switch (cmd->num) {
 		case 1: { // pcan_usb_get_device_id
 			TU_LOG2("get device id\n");
-			usb_out_buffer[0] = 0;
-			usb_out_buffer[1] = 0;
-			usb_out_buffer[2] = 0;
-			usb_out_offset = 3;
+			uint8_t id = 0;
+			peak_reply_cmd_append_f_n(ctx, cmd->func, cmd->num, &id, 1);
+			send_default_reply = false;
 		} break;
 
 		}
@@ -871,10 +1379,8 @@ static inline void peak_process_msg1(struct peak_cmd *cmd)
 #if TU_BIG_ENDIAN == TU_BYTE_ORDER
 			serial = tu_bswap32(serial);
 #endif
-			usb_out_buffer[0] = 0;
-			usb_out_buffer[1] = 0;
-			memcpy(&usb_out_buffer[2], &serial, sizeof(serial));
-			usb_out_offset = 6;
+			peak_reply_cmd_append_f_n(ctx, cmd->func, cmd->num, &serial, sizeof(serial));
+			send_default_reply = false;
 		} break;
 
 		}
@@ -887,27 +1393,113 @@ static inline void peak_process_msg1(struct peak_cmd *cmd)
 		}
 	} break;
 	case 10:
-		// num 2 pcan_usb_set_ext_vcc argv[0] == on/off
+		switch (cmd->num) {
+		case 2: // num 2 pcan_usb_set_ext_vcc argv[0] == on/off
+			TU_LOG2("set ext vcc %u\n", cmd->argv[0]);
+			break;
+		}
 		break;
+	}
+
+	if (send_error_reply) {
+		peak_reply_cmd_append_default(ctx);
+	} else if (send_default_reply) {
+		peak_reply_cmd_append_f_n(ctx, cmd->func, cmd->num, NULL, 0);
 	}
 }
 
-static void peak_process_msg(void)
+static bool peak_process_msg(uint8_t* *_ptr, uint8_t* end, struct can_tx_element *tx)
 {
-	TU_LOG2("peak_process_msg\n");
-	struct peak_cmd cmd;
-	bool process;
-	peak_reply_pack_init();
+	bool result = false;
+	uint8_t *ptr = *_ptr;
 
-	do {
+	if (unlikely(end - ptr < PEAK_USB_REPLY_PACK_MIN_CAN_MSG_SIZE)) {
+		TU_LOG1("msg too short: %u bytes\n", end - ptr);
+		goto out;
+	}
 
-		uint32_t r = tud_vendor_read(&cmd, sizeof(cmd));
-		process = r == sizeof(cmd);
-		if (process) {
-			peak_process_msg1(&cmd);
+	// first byte == 2
+	if (unlikely(*ptr != 2)) {
+		TU_LOG1("msg[0] != 2: %02x\n", *ptr);
+		goto out;
+	}
+
+	++ptr;
+
+	// 2nd byte == 1
+	if (unlikely(*ptr != 1)) {
+		TU_LOG1("msg[1] != 1: %02x\n", *ptr);
+		goto out;
+	}
+
+	++ptr;
+
+	uint8_t status_len = *ptr++;
+	uint8_t dlc = status_len & 0xf;
+	if (unlikely(dlc > 8)) {
+		TU_LOG1("dlc > 8: %u\n", dlc);
+		goto out;
+	}
+
+	CAN_TXBE_0_Type t0;
+	CAN_TXBE_1_Type t1;
+	t0.reg = 0;
+	t1.reg = 0;
+
+	t1.bit.DLC = dlc;
+
+	t0.bit.RTR = (status_len & PCAN_USB_STATUSLEN_RTR) == PCAN_USB_STATUSLEN_RTR;
+	t0.bit.XTD = (status_len & PCAN_USB_STATUSLEN_EXT_ID) == PCAN_USB_STATUSLEN_EXT_ID;
+
+	uint32_t can_id;
+	if (t0.bit.XTD) {
+		if (unlikely(ptr + 4 > end)) {
+			TU_LOG1("msg no 4 eff can id\n");
+			goto out;
 		}
-	} while (process);
 
-	tud_vendor_write(usb_out_buffer, usb_out_offset);
+		memcpy(&can_id, ptr, 4);
+		ptr += 4;
+#if TU_BIG_ENDIAN == TU_BYTE_ORDER
+		can_id = tu_bswap32(can_id);
+#endif
+		can_id >>= 3;
+	} else {
+		if (unlikely(ptr + 2 > end)) {
+			TU_LOG1("msg no 2 sff can id\n");
+			goto out;
+		}
+		uint16_t x;
+		memcpy(&x, ptr, 2);
+		ptr += 2;
+#if TU_BIG_ENDIAN == TU_BYTE_ORDER
+		x = tu_bswap16(x);
+#endif
+		can_id = x;
+		can_id <<= 13;
+	}
+
+	t0.bit.ID = can_id;
+
+	if (!t0.bit.RTR) {
+		if (unlikely(ptr + dlc > end)) {
+			TU_LOG1("msg no %u byte data\n", dlc);
+			goto out;
+		}
+
+		memcpy(tx->data, ptr, dlc);
+		ptr += dlc;
+	}
+
+	// TU_LOG2("canid %x eff %u rtr %u dlc %u\n", t0.bit.ID, t0.bit.XTD, t0.bit.RTR, t1.bit.DLC);
+
+	tx->T0 = t0;
+	tx->T1 = t1;
+
+	result = true;
+
+out:
+	*_ptr = ptr;
+	return result;
 }
 
