@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License (MIT)
  *
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
@@ -123,6 +123,14 @@ TU_ATTR_WEAK void tud_resume_cb(void);
 // Invoked when received control request with VENDOR TYPE
 TU_ATTR_WEAK bool tud_vendor_control_request_cb(uint8_t rhport, tusb_control_request_t const * request);
 TU_ATTR_WEAK bool tud_vendor_control_complete_cb(uint8_t rhport, tusb_control_request_t const * request);
+
+
+TU_ATTR_WEAK void tud_custom_init_cb(void);
+TU_ATTR_WEAK void tud_custom_reset_cb(uint8_t rhport);
+TU_ATTR_WEAK bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t* p_length);
+TU_ATTR_WEAK bool tud_custom_control_request_cb(uint8_t rhport, tusb_control_request_t const * request);
+TU_ATTR_WEAK bool tud_custom_control_complete_cb(uint8_t rhport, tusb_control_request_t const * request);
+TU_ATTR_WEAK bool tud_custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, uint32_t xferred_bytes);
 
 
 //--------------------------------------------------------------------+
