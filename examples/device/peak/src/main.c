@@ -216,15 +216,10 @@ static inline void can0_rx0_clear(void)
 static StackType_t usb_device_stack[USBD_STACK_SIZE];
 static StaticTask_t usb_device_stack_mem;
 
-
-static StackType_t can_task_stack[configMINIMAL_STACK_SIZE];
-static StaticTask_t can_task_mem;
-
 static StackType_t led_task_stack[configMINIMAL_STACK_SIZE];
 static StaticTask_t led_task_mem;
 
 static void usb_device_task(void* param);
-static void can_task(void* param);
 static void led_task(void* param);
 
 
@@ -302,12 +297,6 @@ static inline uint32_t bitrate_to_dbtp(uint16_t bitrate)
 }
 
 
-
-static StaticSemaphore_t usb_lock_mem;
-static SemaphoreHandle_t usb_lock;
-
-
-
 struct peak_reply_ctx {
 	uint8_t *ptr;
 	uint8_t offset;
@@ -372,18 +361,6 @@ static inline void peak_reply_pack_append_unchecked(
 	memcpy(ctx->ptr + ctx->offset, ptr, len);
 	ctx->offset += len;
 }
-
-
-// static inline bool peak_reply_pack_append_msg(
-// 	struct peak_reply_ctx *ctx,
-// 	struct peak_cmd const *msg)
-// {
-// 	if (likely(peak_reply_pack_fits(ctx, sizeof(*msg)))) {
-// 		peak_reply_pack_append_unchecked(ctx, msg, sizeof(*msg));
-// 		return true;
-// 	}
-// 	return false;
-// }
 
 
 #if 0
@@ -566,7 +543,6 @@ static struct usb {
 
 int main(void)
 {
-	usb_lock = xSemaphoreCreateRecursiveMutexStatic(&usb_lock_mem);
 	can.enabled = false;
 	can.swap = 0x87654321 != REG_CAN0_ENDN;
 
@@ -581,7 +557,6 @@ int main(void)
 	tusb_init();
 
 	(void) xTaskCreateStatic(&usb_device_task, "usbd", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);
-	(void) xTaskCreateStatic(&can_task, "can", TU_ARRAY_SIZE(can_task_stack), NULL, configMAX_PRIORITIES-1, can_task_stack, &can_task_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
 
 	led_blink(0, 2000);
@@ -1001,214 +976,6 @@ bool tud_custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, ui
 	}
 
 	return true;
-}
-
-
-// // Invoked when vendor interface received data from host
-// void tud_vendor_rx_cb(uint8_t itf)
-// {
-// 	(void) itf;
-
-// 	if (xSemaphoreTakeRecursive(usb_lock, pdMS_TO_TICKS(PEAK_USB_CMD_TIMEOUT_MS / 2))) {
-// 		peak_process_msg();
-// 		xSemaphoreGiveRecursive(usb_lock);
-// 	}
-// }
-
-// // Invoked when vendor interface received data from host
-// bool vendord_open(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t* p_length)
-// {
-
-// }
-
-
-// static inline bool mcba_process_usb(void)
-// {
-// 	bool result = false;
-// 	// while (tud_vendor_available() >= sizeof(struct mcba_usb_msg) &&
-// 	// 		tud_vendor_write_available() == CFG_TUD_VENDOR_TX_BUFSIZE) {
-// 	// 		mcba_process_usb_msg1();
-// 	// 		result = true;
-// 	// }
-
-// 	return result;
-// }
-
-//--------------------------------------------------------------------+
-// CAN TASK
-//--------------------------------------------------------------------+
-
-static void can_task(void *param)
-{
-	(void) param;
-
-	// ~8 CAN messages per USB transfer @1Mbps CAN bitrate
-	const TickType_t TASK_DELAY_US = 352;
-	const TickType_t TASK_DELAY_TICKS = (TASK_DELAY_US * configTICK_RATE_HZ) / 1000000UL;
-	const TickType_t LED_DELAY_TICKS = pdMS_TO_TICKS(20);
-
-	TU_LOG2("can: swap %u\n", can.swap);
-	TU_LOG2("can: F %lu [Hz]\n", (unsigned long)configCPU_CLOCK_HZ);
-	TU_LOG2("can: loop delay %lu [us] %lu [ticks] \n", (unsigned long)TASK_DELAY_US, (unsigned long)TASK_DELAY_TICKS);
-	TU_LOG2("can: led delay %lu [ticks] \n", (unsigned long)LED_DELAY_TICKS);
-	TickType_t can_loop_ts = xTaskGetTickCount();
-	TickType_t data_avail_ts = 0;
-	TickType_t rx_error_ts = 0;
-	TickType_t tx_error_ts = 0;
-	TickType_t mounted_ts = 0;
-	TickType_t tx_ts = 0;
-	struct peak_reply_ctx ctx;
-
-	TickType_t loop_start_ts = xTaskGetTickCount();
-
-
-	while (42) {
-
-		// TU_LOG2("can\n");
-
-
-
-		// // update error counters
-		// CAN_ECR_Type ecr = CAN0->ECR;
-		// usb.tx_can_errors += ecr.bit.TEC;
-		// usb.rx_can_errors += ecr.bit.REC;
-
-		// CAN_PSR_Type psr = CAN0->PSR;
-
-		// if (ecr.bit.REC) {
-		// 	rx_error_ts = loop_start_ts;
-		// }
-
-		// if (ecr.bit.TEC) {
-		// 	tx_error_ts = loop_start_ts;
-		// }
-
-		// if (can_msg_fifo_avail()) {
-		// 	data_avail_ts = loop_start_ts;
-
-		// 	if (usb.mounted) {
-		// 		if (can.enabled) {
-
-		// 			bool removed = false;
-
-		// 			// if (usb.msg_tx_offset || usbd_edpt_busy(usb.port, PEAK_USB_EP_BULK_IN_MSG)) {
-		// 			// 		// busy
-		// 			// } else {
-		// 			// 	// TU_LOG2("can->usb\n");
-		// 			// 	tx_ts = loop_start_ts;
-		// 			// 	removed = true;
-		// 			// 	peak_reply_pack_init(&ctx, usb.msg_tx_buffer);
-		// 			// 	can_add_error_msg_to_reply_pack(&ctx, psr, CAN0->TSCV.bit.TSC);
-		// 			// 	// can_add_ts_msg_to_reply_pack(&ctx, CAN0->TSCV.bit.TSC);
-
-		// 			// 	bool first = true;
-		// 			// 	for (bool done = false; !done; first = false) {
-		// 			// 		uint8_t index = CAN0->RXF0S.bit.F0GI;
-		// 			// 		struct can_rx_fifo_element const *e = &can0_rx_fifo[index];
-		// 			// 		CAN_RXF0E_0_Type r0 = e->R0;
-		// 			// 		CAN_RXF0E_1_Type r1 = e->R1;
-
-		// 			// 		(void)r0;
-		// 			// 		(void)r1;
-
-		// 			// 		// format the can message
-		// 			// 		uint32_t id = r0.bit.ID;
-		// 			// 		id >>= r0.bit.XTD ? 0 : 18;
-
-		// 			// 		if (peak_reply_pack_append_can_frame(
-		// 			// 				&ctx,
-		// 			// 				id,
-		// 			// 				r0.bit.XTD,
-		// 			// 				r0.bit.RTR,
-		// 			// 				e->data,
-		// 			// 				r1.bit.DLC,
-		// 			// 				can0_rx_ts[index],
-		// 			// 				first)) {
-		// 			// 			REG_CAN0_RXF0A = CAN_RXF0A_F0AI(index);
-		// 			// 		} else {
-		// 			// 			done = true;
-		// 			// 		}
-		// 			// 	}
-
-		// 			// 	// send of
-		// 			// 	TU_LOG2("> can %u frames\n", ctx.ptr[PEAK_REPLY_PACK_RECORD_COUNTER_OFFSET]);
-		// 			// 	usb.msg_tx_offset = ctx.offset;
-		// 			// 	TU_ASSERT( usbd_edpt_xfer(usb.port, PEAK_USB_EP_BULK_IN_MSG, usb.msg_tx_buffer, usb.msg_tx_offset) );
-
-		// 			// }
-
-
-		// 			if (!removed) {
-		// 				if (can_msg_fifo_full()) {
-		// 					++usb.rx_can_frames_dropped;
-		// 					can_clear1();
-		// 				}
-		// 			}
-
-		// 		} else {
-		// 			if (usb.msg_tx_offset || usbd_edpt_busy(usb.port, PEAK_USB_EP_BULK_IN_MSG)) {
-		// 					// busy
-		// 			} else {
-		// 				tx_ts = loop_start_ts;
-
-		// 				// peak_reply_pack_init(&ctx, usb.msg_tx_buffer);
-		// 				// can_add_error_msg_to_reply_pack(&ctx, psr, CAN0->TSCV.bit.TSC);
-
-
-		// 				// // send of
-		// 				// TU_LOG2("> can status\n", ctx.ptr[PEAK_REPLY_PACK_RECORD_COUNTER_OFFSET]);
-		// 				// usb.msg_tx_offset = ctx.offset;
-		// 				// TU_ASSERT( usbd_edpt_xfer(usb.port, PEAK_USB_EP_BULK_IN_MSG, usb.msg_tx_buffer, usb.msg_tx_offset) );
-
-		// 			}
-		// 		}
-
-		// 	} else {
-		// 		can_clear();
-		// 	}
-		// } else { // rx fifo empty
-		// 	if (usb.mounted) {
-		// 		if (usb.msg_tx_offset || usbd_edpt_busy(usb.port, PEAK_USB_EP_BULK_IN_MSG)) {
-		// 				// busy
-		// 		} else {
-		// 			tx_ts = loop_start_ts;
-
-		// 			// peak_reply_pack_init(&ctx, usb.msg_tx_buffer);
-		// 			// can_add_error_msg_to_reply_pack(&ctx, psr, CAN0->TSCV.bit.TSC);
-
-
-
-		// 			// // send of
-		// 			// TU_LOG2("> can status\n", ctx.ptr[PEAK_REPLY_PACK_RECORD_COUNTER_OFFSET]);
-		// 			// usb.msg_tx_offset = ctx.offset;
-		// 			// TU_ASSERT( usbd_edpt_xfer(usb.port, PEAK_USB_EP_BULK_IN_MSG, usb.msg_tx_buffer, usb.msg_tx_offset) );
-
-		// 		}
-		// 	}
-		// }
-
-		vTaskDelay(TASK_DELAY_TICKS);
-		// led_toggle(LED_ORANGE1);
-		// led_toggle(LED_RED1);
-		// led_toggle(LED_GREEN1);
-		// led_toggle(LED_GREEN2);
-		// led_toggle(LED_RED2);
-
-		TickType_t loop_end_ts = xTaskGetTickCount();
-		// TU_LOG2("s=%lu e=%lu\n", loop_start_ts, loop_end_ts);
-		loop_start_ts = loop_end_ts;
-
-		led_set(LED_ORANGE2, loop_end_ts - data_avail_ts <= LED_DELAY_TICKS);
-		led_set(LED_GREEN1, loop_end_ts - tx_error_ts <= LED_DELAY_TICKS);
-		led_set(LED_RED2, loop_end_ts - rx_error_ts <= LED_DELAY_TICKS);
-		//led_set(LED_GREEN2, loop_end_ts - mounted_ts <= LED_DELAY_TICKS);
-		led_set(LED_GREEN2, loop_end_ts - tx_ts <= LED_DELAY_TICKS);
-
-		if (loop_end_ts - can_loop_ts >= pdMS_TO_TICKS(250)) {
-			can_loop_ts = loop_end_ts;
-			led_toggle(LED_ORANGE1);
-		}
-	}
 }
 
 //--------------------------------------------------------------------+
