@@ -43,8 +43,18 @@
 
 #include <peak.h>
 
+
+
+
 #define TOE_RB_SIZE_TYPE uint8_t
-#define TOE_RB_ASSERT(x) TU_ASSERT(x,)
+#define TOE_RB_ASSERT(x) \
+	do { \
+		if (!(x)) { \
+			TU_LOG1("%s(%d): assertion failed '%s'\n", __FILE__, __LINE__, # x); \
+			while (1); \
+		} \
+	} while (0)
+
 #define TOE_RB_PREFIX pc
 #define TOE_RB_VALUE_TYPE struct peak_cmd
 #include "ring_buffer.h"
@@ -303,7 +313,7 @@ struct peak_reply_ctx {
 	uint8_t offset;
 };
 
-static void peak_process_cmd(struct peak_reply_ctx* ctx, struct peak_cmd *cmd);
+static void peak_process_cmd(struct peak_reply_ctx* ctx, struct peak_cmd const *cmd);
 static bool peak_process_msg(uint8_t* *_ptr, uint8_t* end, struct can_tx_element *tx);
 static bool peak_reply_pack_append_can_frame(
 	struct peak_reply_ctx *ctx,
@@ -724,7 +734,7 @@ bool tud_custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, ui
 	switch (ep_addr) {
 	case PEAK_USB_EP_BULK_OUT_CMD: {
 		uint8_t cmd_count = xferred_bytes / sizeof(struct peak_cmd);
-		struct peak_cmd const *cmd_ptr = usb.cmd_rx_buffer;
+		struct peak_cmd const *cmd_ptr = (struct peak_cmd const *)usb.cmd_rx_buffer;
 		struct peak_reply_ctx rep;
 		for (bool done = false; !done; ) {
 			bool added = false;
@@ -737,7 +747,7 @@ bool tud_custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, ui
 				if (!toe_rb_size(&usb.rx_cmd_queue) && toe_rb_left(&usb.tx_cmd_queue)) {
 					TU_LOG2("process & tx q cmd\n");
 
-					uint8_t *mem = pc_at_ptr(&usb.tx_cmd_queue, toe_rb_size(&usb.tx_cmd_queue));
+					uint8_t *mem = (uint8_t *)pc_at_ptr(&usb.tx_cmd_queue, toe_rb_size(&usb.tx_cmd_queue));
 					peak_reply_cmd_init(&rep, mem);
 					peak_process_cmd(&rep, cmd_ptr);
 					if (rep.offset) {
@@ -763,7 +773,7 @@ bool tud_custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, ui
 			// process one cmd
 			if (toe_rb_left(&usb.tx_cmd_queue) && toe_rb_size(&usb.rx_cmd_queue)) {
 
-				uint8_t *mem = pc_at_ptr(&usb.tx_cmd_queue, toe_rb_size(&usb.tx_cmd_queue));
+				uint8_t *mem = (uint8_t *)pc_at_ptr(&usb.tx_cmd_queue, toe_rb_size(&usb.tx_cmd_queue));
 				peak_reply_cmd_init(&rep, mem);
 				peak_process_cmd(&rep, pc_at_cptr(&usb.rx_cmd_queue, 0));
 				pc_drop_front(&usb.rx_cmd_queue);
@@ -838,6 +848,7 @@ bool tud_custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, ui
 			// 	done = false;
 			// }
 
+			(void)added;
 		}
 
 		TU_LOG2("!loop done\n");
@@ -850,7 +861,7 @@ bool tud_custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, ui
 			// uint8_t before = toe_rb_size(&usb.tx_cmd_queue);
 			usb.cmd_tx_offset = 0;
 
-			struct peak_cmd *out_ptr = usb.cmd_tx_buffer;
+			struct peak_cmd *out_ptr = (struct peak_cmd *)usb.cmd_tx_buffer;
 			// for (uint8_t i = 0;
 			// 	i < PEAK_CMD_REPLIES_PER_USB_TRANSFER && pc_try_pop_front(&usb.tx_cmd_queue, out_ptr);
 			// 	++i, ++out_ptr, usb.cmd_tx_offset += sizeof(*out_ptr));
@@ -869,10 +880,10 @@ bool tud_custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, ui
 			// uint8_t after = toe_rb_size(&usb.tx_cmd_queue);
 			// TU_LOG2("size before %u after %u\n", before, after);
 			// TU_ASSERT(before > after, );
-			TU_ASSERT(usb.cmd_tx_offset, );
+			TU_ASSERT(usb.cmd_tx_offset, false);
 			TU_LOG2("> cmd tx %u cmd replies\n", (unsigned)(usb.cmd_tx_offset / sizeof(struct peak_cmd)));
 			TU_LOG2("cmd tx q size %u\n", usb.tx_cmd_queue.size);
-			TU_ASSERT( usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_CMD, usb.cmd_tx_buffer, usb.cmd_tx_offset) );
+			usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_CMD, usb.cmd_tx_buffer, usb.cmd_tx_offset);
 		}
 
 
@@ -901,25 +912,25 @@ bool tud_custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, ui
 		// }
 
 		// start new transaction
-		TU_ASSERT(usbd_edpt_xfer(rhport, ep_addr, usb.cmd_rx_buffer, TU_ARRAY_SIZE(usb.cmd_rx_buffer)));
+		usbd_edpt_xfer(rhport, ep_addr, usb.cmd_rx_buffer, TU_ARRAY_SIZE(usb.cmd_rx_buffer));
 
 
 	} break;
 	case PEAK_USB_EP_BULK_IN_CMD:
-		TU_ASSERT(!usbd_edpt_busy(rhport, ep_addr));
+		TU_ASSERT(!usbd_edpt_busy(rhport, ep_addr), false);
 		TU_LOG2("< cmd IN token\n");
 		usb.cmd_tx_offset = 0;
 		if (toe_rb_size(&usb.tx_cmd_queue)) {
-			struct peak_cmd *out_ptr = usb.cmd_tx_buffer;
+			struct peak_cmd *out_ptr = (struct peak_cmd *)usb.cmd_tx_buffer;
 			TU_LOG2("tx q size %u\n", usb.tx_cmd_queue.size);
 			for (uint8_t i = 0;
 				i < PEAK_CMD_REPLIES_PER_USB_TRANSFER && pc_try_pop_front(&usb.tx_cmd_queue, out_ptr);
 				++i, ++out_ptr, usb.cmd_tx_offset += sizeof(*out_ptr));
 
-			TU_ASSERT(usb.cmd_tx_offset, );
+			TU_ASSERT(usb.cmd_tx_offset, false);
 			TU_LOG2("cmd tx %u cmd replies\n", (unsigned)(usb.cmd_tx_offset / sizeof(struct peak_cmd)));
 			TU_LOG2("cmd tx q size %u\n", usb.tx_cmd_queue.size);
-			TU_ASSERT( usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_CMD, usb.cmd_tx_buffer, usb.cmd_tx_offset) );
+			usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_CMD, usb.cmd_tx_buffer, usb.cmd_tx_offset);
 		} else {
 			TU_LOG2("! cmd tx q empty\n");
 			// TU_ASSERT( usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_CMD, usb.cmd_tx_buffer, 0) );
@@ -968,12 +979,12 @@ bool tud_custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, ui
 			peak_reply_pack_append_error_msg(&ctx, can0_consume_errors() | (tx_full ? (PCAN_USB_ERROR_TXFULL | PCAN_USB_ERROR_TXFULL) : 0));
 			peak_reply_pack_append_can_frames(&ctx);
 			usb.msg_tx_offset = ctx.offset;
-			TU_ASSERT(usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_MSG, usb.msg_tx_buffer, usb.msg_tx_offset));
+			usbd_edpt_xfer(rhport, PEAK_USB_EP_BULK_IN_MSG, usb.msg_tx_buffer, usb.msg_tx_offset);
 		}
-		TU_ASSERT(usbd_edpt_xfer(rhport, ep_addr, usb.msg_rx_buffer, TU_ARRAY_SIZE(usb.msg_rx_buffer)));
+		usbd_edpt_xfer(rhport, ep_addr, usb.msg_rx_buffer, TU_ARRAY_SIZE(usb.msg_rx_buffer));
 	} break;
 	case PEAK_USB_EP_BULK_IN_MSG: {
-		TU_ASSERT(!usbd_edpt_busy(rhport, ep_addr));
+		TU_ASSERT(!usbd_edpt_busy(rhport, ep_addr), false);
 		// TU_LOG2("< msg IN token\n");
 		usb.msg_tx_offset = 0;
 		struct peak_reply_ctx ctx;
@@ -982,7 +993,7 @@ bool tud_custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, ui
 		peak_reply_pack_append_error_msg(&ctx, can0_consume_errors());
 		peak_reply_pack_append_can_frames(&ctx);
 		usb.msg_tx_offset = ctx.offset;
-		TU_ASSERT(usbd_edpt_xfer(usb.port, PEAK_USB_EP_BULK_IN_MSG, usb.msg_tx_buffer, usb.msg_tx_offset));
+		usbd_edpt_xfer(usb.port, PEAK_USB_EP_BULK_IN_MSG, usb.msg_tx_buffer, usb.msg_tx_offset);
 	} break;
 	default:
 		TU_LOG2("port %u ep %02x event %d bytes %u\n", rhport, ep_addr, event, (unsigned)xferred_bytes);
@@ -1339,7 +1350,7 @@ static bool peak_reply_pack_append_can_frame(
 }
 
 
-static void peak_process_cmd(struct peak_reply_ctx *ctx, struct peak_cmd *cmd)
+static void peak_process_cmd(struct peak_reply_ctx *ctx, struct peak_cmd const *cmd)
 {
 	TU_LOG2("cmd %02d %02d ", cmd->func, cmd->num);
 
@@ -1371,6 +1382,10 @@ static void peak_process_cmd(struct peak_reply_ctx *ctx, struct peak_cmd *cmd)
 					"bitrate=%lu bps\n",
 				brt0, brt1, sjw, brp, sam, ts1, ts2, sample_point_percent, bps);
 
+			(void)sjw;
+			(void)sam;
+			(void)sample_point_percent;
+
 			configure_can0(bitrate_to_nbtp(bps/1000));
 		} break;
 		}
@@ -1400,7 +1415,7 @@ static void peak_process_cmd(struct peak_reply_ctx *ctx, struct peak_cmd *cmd)
 				peak_reply_pack_init(&ctx);
 				peak_reply_pack_append_error_msg(&ctx, can0_consume_errors());
 				usb.msg_tx_offset = ctx.offset;
-				TU_ASSERT(usbd_edpt_xfer(usb.port, PEAK_USB_EP_BULK_IN_MSG, usb.msg_tx_buffer, usb.msg_tx_offset));
+				TU_ASSERT(usbd_edpt_xfer(usb.port, PEAK_USB_EP_BULK_IN_MSG, usb.msg_tx_buffer, usb.msg_tx_offset), );
 			} else {
 				can.enabled = false;
 				REG_CAN0_CCCR |= CAN_CCCR_INIT; // set CAN-Module to init, Reset-default
