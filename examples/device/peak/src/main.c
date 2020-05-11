@@ -1177,11 +1177,11 @@ static void peak_process_cmd(struct peak_reply_ctx *ctx, struct peak_cmd const *
 				//    4 | num
 
 
-				struct peak_reply_ctx ctx;
-				peak_reply_init(&ctx, usb.msg_tx_buffer);
-				peak_reply_pack_init(&ctx);
-				peak_reply_pack_append_error_msg(&ctx, can0_consume_errors());
-				usb.msg_tx_offset = ctx.offset;
+				struct peak_reply_ctx ctx2;
+				peak_reply_init(&ctx2, usb.msg_tx_buffer);
+				peak_reply_pack_init(&ctx2);
+				peak_reply_pack_append_error_msg(&ctx2, can0_consume_errors());
+				usb.msg_tx_offset = ctx2.offset;
 				TU_ASSERT(usbd_edpt_xfer(usb.port, PEAK_USB_EP_BULK_IN_MSG, usb.msg_tx_buffer, usb.msg_tx_offset), );
 			} else {
 				can.enabled = false;
