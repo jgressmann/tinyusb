@@ -1,0 +1,51 @@
+/*
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ *
+ */
+
+
+#pragma once
+
+#include <stdint.h>
+
+
+
+
+#define PEAK_USB_FD_EP_SIZE    64
+#define PEAK_USB_FD_ID_VENDOR  0x0c72
+#define PEAK_USB_FD_ID_PRODUCT 0x0012
+#define PEAK_USB_FD_EP_BULK_OUT_CMD    0x01
+#define PEAK_USB_FD_EP_BULK_IN_CMD  0x81
+#define PEAK_USB_FD_EP_BULK_OUT_MSG    0x02
+#define PEAK_USB_FD_EP_BULK_IN_MSG  0x82
+
+
+/*
+ * USB Vendor request data types
+ */
+#define PCAN_USBPRO_REQ_INFO		0
+#define PCAN_USBPRO_REQ_FCT		2
+
+/* Vendor Request value for XXX_INFO */
+#define PCAN_USBPRO_INFO_BL		0
+#define PCAN_USBPRO_INFO_FW		1
