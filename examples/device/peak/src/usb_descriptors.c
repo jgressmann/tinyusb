@@ -41,7 +41,24 @@ static tusb_desc_device_t const desc_device =
 
 	  .idVendor           = PEAK_USB_ID_VENDOR,
 	  .idProduct          = PEAK_USB_ID_PRODUCT,
-	  .bcdDevice          = 0x0410,
+	  // 00 okish -> fw n/a
+	  // 01-02 ok
+	  // 0a ok -> 1.0
+	  // 0b ok
+	  // 0c
+	  // 0d
+	  // 0e
+	  // 0f
+	  // 10
+	  // 11
+	  // 12 ok -> 1.8
+	  // 13 ok -> 1.9
+	  // 14 ok -> 2.0
+	  // 15-22 nok
+
+	  // dec 30, 40, 50, 60, 70, 80 nok
+	  // hex 30 40, ..., f0 nok
+	  .bcdDevice          = 0x1000,	// hi => fw version, lo = device id
 
 	  .iManufacturer      = 0x01,
 	  .iProduct           = 0x02,
@@ -67,9 +84,9 @@ uint8_t const * tud_descriptor_device_cb(void)
 static uint8_t const desc_configuration[] =
 {
 	// Config number, interface count, string index, total length, attribute, power in mA
-	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0, 100),
 
-	9, TUSB_DESC_INTERFACE, 0, 0, 4, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 3,
+	9, TUSB_DESC_INTERFACE, 0, 0, 4, TUSB_CLASS_UNSPECIFIED, 0x00, 0x00, 3,
 
 	/* BULK OUT CMD */
   	7, TUSB_DESC_ENDPOINT, PEAK_USB_EP_BULK_OUT_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_EP_SIZE), 0,
@@ -103,7 +120,7 @@ char const* string_desc_arr [] =
 	(const char[]) { 0x09, 0x04 }, 		// 0: is supported language is English (0x0409)
 	"J. Gressmann, R. Riedel",       	// 1: Manufacturer
 	"PCAN-USB (clone)",				 	// 2: Product
-	"PEAK",                       		// 3: Interface
+	"PEAK-USB-CAN Device",				// 3: Interface
 };
 
 static uint16_t _desc_str[32];
