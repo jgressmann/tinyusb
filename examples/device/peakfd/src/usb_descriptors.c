@@ -25,37 +25,58 @@
 
 #include <tusb.h>
 
-#include <peak.h>
+#include <peak_usb_fd.h>
 
-static tusb_desc_device_t const desc_device =
-{
-	  .bLength            = sizeof(tusb_desc_device_t),
-	  .bDescriptorType    = TUSB_DESC_DEVICE,
-	  .bcdUSB             = 0x0200,
+#define HIGH_SPEED_BULK_EP_SIZE 512
+#define FULL_SPEED_BULK_EP_SIZE 64
 
-	  .bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
-	  .bDeviceSubClass    = 0,
-	  .bDeviceProtocol    = 0,
 
-	  .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
+static const tusb_desc_device_t device = {
+	.bLength            = sizeof(tusb_desc_device_t),
+	.bDescriptorType    = TUSB_DESC_DEVICE,
+	.bcdUSB             = 0x0200,
 
-	  .idVendor           = PEAK_USB_FD_ID_VENDOR,
-	  .idProduct          = PEAK_USB_FD_ID_PRODUCT,
-	  .bcdDevice          = 0x0000,
+	.bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
+	.bDeviceSubClass    = 0,
+	.bDeviceProtocol    = 0,
 
-	  .iManufacturer      = 0x01,
-	  .iProduct           = 0x02,
-	  .iSerialNumber      = 0x00,
+	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
-	  .bNumConfigurations = 0x01
+	.idVendor           = 0x0c72,
+	.idProduct          = 0x0012,
+	.bcdDevice          = 0x0000,
+
+	.iManufacturer      = 0x01,
+	.iProduct           = 0x02,
+	.iSerialNumber      = 0x00,
+
+	.bNumConfigurations = 0x01
+};
+
+static const tusb_desc_device_qualifier_t qualifier = {
+  .bLength            = sizeof(tusb_desc_device_qualifier_t),
+  .bDescriptorType    = TUSB_DESC_DEVICE_QUALIFIER,
+  .bcdUSB             = 0x0200,
+  .bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
+  .bDeviceSubClass    = 0,
+  .bDeviceProtocol    = 0,
+  .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
+  .bNumConfigurations = 1,
+  .bReserved          = 0
 };
 
 // Invoked when received GET DEVICE DESCRIPTOR
 // Application return pointer to descriptor
 uint8_t const * tud_descriptor_device_cb(void)
 {
-	return (uint8_t const *) &desc_device;
+	return (uint8_t const *) &device;
 }
+
+// uint8_t const * tud_descriptor_device_qualifier_cb(void)
+// {
+// 	return (uint8_t const *) &qualifier;
+// }
+
 
 //--------------------------------------------------------------------+
 // Configuration Descriptor
@@ -63,23 +84,26 @@ uint8_t const * tud_descriptor_device_cb(void)
 
 
 // v3 no error linux
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 1*9 + 4*7)
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 1*9 + 6*7)
 static uint8_t const desc_configuration[] =
 {
 	// Config number, interface count, string index, total length, attribute, power in mA
-	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0, 100),
+	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0, 170),
 
-	9, TUSB_DESC_INTERFACE, 0, 0, 4, TUSB_CLASS_UNSPECIFIED, 0x00, 0x00, 3,
+	9, TUSB_DESC_INTERFACE, 0, 0, 6, TUSB_CLASS_UNSPECIFIED, 0x00, 0x00, 0,
 
 	/* BULK OUT CMD */
-  	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_OUT_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_FD_EP_SIZE), 0,
+  	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_OUT_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(FULL_SPEED_BULK_EP_SIZE), 0,
 	/* BULK IN CMD */
-  	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_IN_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_FD_EP_SIZE), 0,
-	/* BULK OUT MSG */
-  	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_OUT_MSG, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_FD_EP_SIZE), 0,
-	/* INT IN MSG */
-  	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_IN_MSG, TUSB_XFER_BULK, U16_TO_U8S_LE(PEAK_USB_FD_EP_SIZE), 0,
-
+  	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_IN_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(FULL_SPEED_BULK_EP_SIZE), 0,
+	/* BULK OUT MSG CH0 */
+  	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_OUT_MSG_CH0, TUSB_XFER_BULK, U16_TO_U8S_LE(FULL_SPEED_BULK_EP_SIZE), 0,
+	/* INT IN MSG CH0 */
+  	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_IN_MSG_CH0, TUSB_XFER_BULK, U16_TO_U8S_LE(FULL_SPEED_BULK_EP_SIZE), 0,
+	/* BULK OUT MSG CH1 */
+  	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_OUT_MSG_CH1, TUSB_XFER_BULK, U16_TO_U8S_LE(FULL_SPEED_BULK_EP_SIZE), 0,
+	/* INT IN MSG CH1 */
+  	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_IN_MSG_CH1, TUSB_XFER_BULK, U16_TO_U8S_LE(FULL_SPEED_BULK_EP_SIZE), 0,
 
 };
 
@@ -93,6 +117,33 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 	return desc_configuration;
 }
 
+// #define OTHER_SPEED_CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 1*9 + 4*7)
+// static uint8_t const other_speed_configuration[] =
+// {
+// 	// Config number, interface count, string index, total length, attribute, power in mA
+// 	TUD_OTHER_SPEED_CONFIG_DESCRIPTOR(1, 1, 0, OTHER_SPEED_CONFIG_TOTAL_LEN, 0, 170),
+
+// 	9, TUSB_DESC_INTERFACE, 0, 0, 4, TUSB_CLASS_UNSPECIFIED, 0x00, 0x00, 0,
+
+// 	/* BULK OUT CMD */
+//   	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_OUT_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(HIGH_SPEED_BULK_EP_SIZE), 0,
+// 	/* BULK IN CMD */
+//   	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_IN_CMD, TUSB_XFER_BULK, U16_TO_U8S_LE(HIGH_SPEED_BULK_EP_SIZE), 0,
+// 	/* BULK OUT MSG */
+//   	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_OUT_MSG, TUSB_XFER_BULK, U16_TO_U8S_LE(HIGH_SPEED_BULK_EP_SIZE), 0,
+// 	/* INT IN MSG */
+//   	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_IN_MSG, TUSB_XFER_BULK, U16_TO_U8S_LE(HIGH_SPEED_BULK_EP_SIZE), 0,
+
+
+// };
+
+// uint8_t const * tud_descriptor_other_speed_configuration_cb(uint8_t index)
+// {
+// 	(void) index; // for multiple configurations
+// 	return other_speed_configuration;
+// }
+
+
 //--------------------------------------------------------------------+
 // String Descriptors
 //--------------------------------------------------------------------+
@@ -101,9 +152,12 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 char const* string_desc_arr [] =
 {
 	(const char[]) { 0x09, 0x04 }, 		// 0: is supported language is English (0x0409)
+	//  iManufacturer           1 PEAK-System Technik GmbH
+//  iProduct                2 PCAN-USB FD
+
 	"J. Gressmann, R. Riedel",       	// 1: Manufacturer
-	"PCAN-USB-FD (clone)",				 	// 2: Product
-	"PEAK-USB-FD-CAN Device",				// 3: Interface
+	"PCAN-USB FD PRO",				 		// 2: Product
+	// "PEAK-USB-FD-CAN Device",			// 3: Interface
 };
 
 static uint16_t _desc_str[32];

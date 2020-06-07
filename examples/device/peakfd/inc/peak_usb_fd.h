@@ -26,12 +26,10 @@
 
 #pragma once
 
-#include <stdint.h>
-
-
-
-
-#define PEAK_USB_FD_EP_SIZE    512
-#define PEAK_USB_FD_ID_VENDOR  0x0c72
-#define PEAK_USB_FD_ID_PRODUCT 0x0012
+#define PEAK_USB_FD_EP_BULK_OUT_CMD     0x01
+#define PEAK_USB_FD_EP_BULK_IN_CMD      0x81
+#define PEAK_USB_FD_EP_BULK_OUT_MSG_CH0 0x02
+#define PEAK_USB_FD_EP_BULK_IN_MSG_CH0  0x82
+#define PEAK_USB_FD_EP_BULK_OUT_MSG_CH1 0x03
+#define PEAK_USB_FD_EP_BULK_IN_MSG_CH1  0x83
 

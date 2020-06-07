@@ -23,15 +23,31 @@
  *
  */
 
-
 #pragma once
 
 #include <stdint.h>
 
 
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+
+typedef u16 __le16;
+typedef u32 __le32;
+typedef u16 __be16;
+typedef u32 __be32;
+
+#if TU_BIG_ENDIAN == TU_BYTE_ORDER
+static inline u16 le16_to_cpu(__le16 value) { return __builtin_bswap16(value); }
+static inline u32 le32_to_cpu(__le32 value) { return __builtin_bswap32(value); }
+static inline u16 cpu_to_le16(__le16 value) { return __builtin_bswap16(value); }
+static inline u32 cpu_to_le32(__le32 value) { return __builtin_bswap32(value); }
+#else
+static inline u16 le16_to_cpu(__le16 value) { return value; }
+static inline u32 le32_to_cpu(__le32 value) { return value; }
+static inline u16 cpu_to_le16(__le16 value) { return value; }
+static inline u32 cpu_to_le32(__le32 value) { return value; }
+#endif
 
 
-#define PEAK_USB_FD_EP_SIZE    512
-#define PEAK_USB_FD_ID_VENDOR  0x0c72
-#define PEAK_USB_FD_ID_PRODUCT 0x0012
 
