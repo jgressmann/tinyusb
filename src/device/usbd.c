@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License (MIT)
  *
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
@@ -649,7 +649,7 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
 
       if (drvid < 0xFF) {
         TU_ASSERT(drvid < USBD_CLASS_DRIVER_COUNT);
-        
+
         // Some classes such as USBTMC needs to clear/re-init its buffer when receiving CLEAR_FEATURE request
         // We will forward all request targeted endpoint to class drivers after
         // - For class-type requests: driver is fully responsible to reply to host
@@ -855,7 +855,25 @@ static bool process_get_descriptor(uint8_t rhport, tusb_control_request_t const 
 
       // TODO If not highspeed capable stall this request otherwise
       // return the descriptor that could work in highspeed
-      return false;
+      if (!tud_descriptor_device_qualifier_cb) return false;
+
+      tusb_desc_device_qualifier_t const* desc_qual = (tusb_desc_device_qualifier_t const*) tud_descriptor_device_qualifier_cb();
+      TU_ASSERT(desc_qual);
+      return tud_control_xfer(rhport, p_request, (void*) desc_qual, desc_qual->bLength);
+    }
+    break;
+
+    case TUSB_DESC_OTHER_SPEED_CONFIG:
+    {
+      if (!tud_descriptor_other_speed_configuration_cb) return false;
+
+      tusb_desc_other_speed_t const* desc_config = (tusb_desc_other_speed_t const*) tud_descriptor_other_speed_configuration_cb(desc_index);
+      TU_ASSERT(desc_config);
+
+      uint16_t total_len;
+      memcpy(&total_len, &desc_config->wTotalLength, 2); // possibly mis-aligned memory
+      return tud_control_xfer(rhport, p_request, (void*) desc_config, total_len);
+    }
     break;
 
     default: return false;
@@ -1054,9 +1072,9 @@ bool usbd_edpt_stalled(uint8_t rhport, uint8_t ep_addr)
 
 /**
  * usbd_edpt_close will disable an endpoint.
- * 
+ *
  * In progress transfers on this EP may be delivered after this call.
- * 
+ *
  */
 void usbd_edpt_close(uint8_t rhport, uint8_t ep_addr)
 {

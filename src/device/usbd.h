@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License (MIT)
  *
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
@@ -95,6 +95,10 @@ bool tud_control_status(uint8_t rhport, tusb_control_request_t const * request);
 // Application return pointer to descriptor
 uint8_t const * tud_descriptor_device_cb(void);
 
+// Invoked when received GET DESCRIPTOR DEVICE QUALIFIER request
+// Application return pointer to descriptor
+TU_ATTR_WEAK uint8_t const * tud_descriptor_device_qualifier_cb(void);
+
 // Invoked when received GET BOS DESCRIPTOR request
 // Application return pointer to descriptor
 TU_ATTR_WEAK uint8_t const * tud_descriptor_bos_cb(void);
@@ -102,6 +106,11 @@ TU_ATTR_WEAK uint8_t const * tud_descriptor_bos_cb(void);
 // Invoked when received GET CONFIGURATION DESCRIPTOR request
 // Application return pointer to descriptor, whose contents must exist long enough for transfer to complete
 uint8_t const * tud_descriptor_configuration_cb(uint8_t index);
+
+// Invoked when received GET OTHER SPEED CONFIGURATION DESCRIPTOR request
+// Application return pointer to descriptor, whose contents must exist long enough for transfer to complete
+TU_ATTR_WEAK uint8_t const * tud_descriptor_other_speed_configuration_cb(uint8_t index);
+
 
 // Invoked when received GET STRING DESCRIPTOR request
 // Application return pointer to descriptor, whose contents must exist long enough for transfer to complete
@@ -173,6 +182,10 @@ TU_ATTR_WEAK bool tud_vendor_control_complete_cb(uint8_t rhport, tusb_control_re
 // Config number, interface count, string index, total length, attribute, power in mA
 #define TUD_CONFIG_DESCRIPTOR(config_num, _itfcount, _stridx, _total_len, _attribute, _power_ma) \
   9, TUSB_DESC_CONFIGURATION, U16_TO_U8S_LE(_total_len), _itfcount, config_num, _stridx, TU_BIT(7) | _attribute, (_power_ma)/2
+
+// Config number, interface count, string index, total length, attribute, power in mA
+#define TUD_OTHER_SPEED_CONFIG_DESCRIPTOR(config_num, _itfcount, _stridx, _total_len, _attribute, _power_ma) \
+  9, TUSB_DESC_OTHER_SPEED_CONFIG, U16_TO_U8S_LE(_total_len), _itfcount, config_num, _stridx, TU_BIT(7) | _attribute, (_power_ma)/2
 
 //------------- CDC -------------//
 
