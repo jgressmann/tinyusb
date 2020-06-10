@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License (MIT)
  *
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
@@ -36,6 +36,52 @@
 #ifndef CFG_TUD_TASK_QUEUE_SZ
 #define CFG_TUD_TASK_QUEUE_SZ   16
 #endif
+
+static void custom_init_cb(void)
+{
+  if (tud_custom_init_cb) {
+    tud_custom_init_cb();
+  }
+}
+
+static void custom_reset_cb(uint8_t rhport)
+{
+  if (tud_custom_reset_cb) {
+    tud_custom_reset_cb(rhport);
+  }
+}
+
+static bool custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t* p_length)
+{
+  if (tud_custom_open_cb) {
+    return tud_custom_open_cb(rhport, desc_intf, p_length);
+  }
+  return false;
+}
+
+static bool custom_control_request_cb(uint8_t rhport, tusb_control_request_t const * request)
+{
+  if (tud_custom_control_request_cb) {
+    tud_custom_control_request_cb(rhport, request);
+  }
+  return false;
+}
+
+static bool custom_control_complete_cb(uint8_t rhport, tusb_control_request_t const * request)
+{
+  if (tud_custom_control_complete_cb) {
+    tud_custom_control_complete_cb(rhport, request);
+  }
+  return false;
+}
+
+static bool custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, uint32_t xferred_bytes)
+{
+  if (tud_custom_xfer_cb) {
+    return tud_custom_xfer_cb(rhport, ep_addr, event, xferred_bytes);
+  }
+  return false;
+}
 
 //--------------------------------------------------------------------+
 // Device Data
@@ -196,6 +242,19 @@ static usbd_class_driver_t const _usbd_driver[] =
       .control_request  = netd_control_request,
       .control_complete = netd_control_complete,
       .xfer_cb          = netd_xfer_cb,
+      .sof              = NULL,
+  },
+  #endif
+
+  #if CFG_TUD_CUSTOM
+  {
+      DRIVER_NAME("CUSTOM")
+      .init             = custom_init_cb,
+      .reset            = custom_reset_cb,
+      .open             = custom_open_cb,
+      .control_request  = custom_control_request_cb,
+      .control_complete = custom_control_complete_cb,
+      .xfer_cb          = custom_xfer_cb,
       .sof              = NULL,
   },
   #endif
@@ -635,7 +694,7 @@ static bool process_control_request(uint8_t rhport, tusb_control_request_t const
 
       if (drvid < 0xFF) {
         TU_ASSERT(drvid < USBD_CLASS_DRIVER_COUNT);
-        
+
         // Some classes such as USBTMC needs to clear/re-init its buffer when receiving CLEAR_FEATURE request
         // We will forward all request targeted endpoint to class drivers after
         // - For class-type requests: driver is fully responsible to reply to host
@@ -1011,9 +1070,9 @@ bool usbd_edpt_stalled(uint8_t rhport, uint8_t ep_addr)
 
 /**
  * usbd_edpt_close will disable an endpoint.
- * 
+ *
  * In progress transfers on this EP may be delivered after this call.
- * 
+ *
  */
 void usbd_edpt_close(uint8_t rhport, uint8_t ep_addr)
 {
