@@ -25,34 +25,17 @@
 
 #pragma once
 
-#include <stdint.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-#define SLIPSTREAM_VERSION  1
-#define SLIPSTREAM_MAX_PAYLOAD 62
+#define SC_M1_NAME_SHORT "SuperCAN M1"
+#define SC_M1_NAME_LONG "SuperCAN Mark I"
+#define SC_M1_EP_SIZE     64
+#define SC_M1_EP_BULK_OUT 0x01
+#define SC_M1_EP_BULK_IN  0x81
 
-typedef uint16_t st_be16_t;
 
-struct slipstream_frame_header {
-    uint16_t version    :  2;
-    uint16_t seq        :  3;
-    uint16_t ack        :  3;
-    uint16_t len        :  6;
-    uint16_t reserved   :  2;
-};
-
-// frames carry messages, n-m relation
-struct slipstream_frame {
-    struct slipstream_frame_header header;
-    uint8_t data[SLIPSTREAM_MAX_PAYLOAD];
-};
-
-// message header
-struct slipstream_message {
-    uint8_t len;
-    uint8_t data[0];
-};
-
-enum {
-    static_assert_slipstream_msg_header_size_is_2 = sizeof(int[sizeof(struct slipstream_frame_header) == 2 ? 1 : -1]),
-    static_assert_slipstream_msg_size_is_64 = sizeof(int[sizeof(struct slipstream_frame) == 64 ? 1 : -1])
-};
+#ifdef __cplusplus
+} // extern "C"
+#endif

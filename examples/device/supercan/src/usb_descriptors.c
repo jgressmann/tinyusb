@@ -25,50 +25,54 @@
 
 #include <tusb.h>
 
+#include <supercan_m1.h>
 
-static tusb_desc_device_t const desc_device =
-{
-	  .bLength            = sizeof(tusb_desc_device_t),
-	  .bDescriptorType    = TUSB_DESC_DEVICE,
-	  .bcdUSB             = 0x0200,
 
-	  .bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
-	  .bDeviceSubClass    = 0,
-	  .bDeviceProtocol    = 0,
+static const tusb_desc_device_t device = {
+	.bLength            = sizeof(tusb_desc_device_t),
+	.bDescriptorType    = TUSB_DESC_DEVICE,
+	.bcdUSB             = 0x0200,
 
-	  .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
+	.bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
+	.bDeviceSubClass    = 0,
+	.bDeviceProtocol    = 0,
 
-	  .idVendor           = 0xdead,
-	  .idProduct          = 0xbeef,
-	  .bcdDevice          = 0x0200,
+	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
-	  .iManufacturer      = 0x01,
-	  .iProduct           = 0x02,
-	  .iSerialNumber      = 0x00,
+	.idVendor           = 0x4242,
+	.idProduct          = 0x0001,
+	.bcdDevice          = 0x0001,
 
-	  .bNumConfigurations = 0x01
+	.iManufacturer      = 0x01,
+	.iProduct           = 0x02,
+	.iSerialNumber      = 0x00,
+
+	.bNumConfigurations = 0x01
 };
 
 // Invoked when received GET DEVICE DESCRIPTOR
 // Application return pointer to descriptor
 uint8_t const * tud_descriptor_device_cb(void)
 {
-	return (uint8_t const *) &desc_device;
+	return (uint8_t const *) &device;
 }
+
 
 //--------------------------------------------------------------------+
 // Configuration Descriptor
 //--------------------------------------------------------------------+
 
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_VENDOR_DESC_LEN)
-
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 1*9 + 2*7)
 static uint8_t const desc_configuration[] =
 {
 	// Config number, interface count, string index, total length, attribute, power in mA
-	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0, 100),
 
-	// Interface index, string index, EP Out & IN address, EP size
-	TUD_VENDOR_DESCRIPTOR(0, 3, 0x01, 0x81, 64),
+	9, TUSB_DESC_INTERFACE, 0, 0, 2, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 3,
+
+  	7, TUSB_DESC_ENDPOINT, SC_M1_EP_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
+  	7, TUSB_DESC_ENDPOINT, SC_M1_EP_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
+
 };
 
 
@@ -81,6 +85,7 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 	return desc_configuration;
 }
 
+
 //--------------------------------------------------------------------+
 // String Descriptors
 //--------------------------------------------------------------------+
@@ -88,10 +93,10 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 // array of pointer to string descriptors
 char const* string_desc_arr [] =
 {
-	(const char[]) { 0x09, 0x04 }, 		// 0: is supported language is English (0x0409)
-	"J. Gressmann, R. Riedel",       	// 1: Manufacturer
-	"SuperCAN",						 	// 2: Product
-	"Slipstream",                       // 3: ???
+	(const char[]) { 0x09, 0x04 },   // 0: is supported language is English (0x0409)
+	"2guys",                         // 1: Manufacturer
+	SC_M1_NAME_SHORT,	                 // 2: Product
+	SC_M1_NAME_LONG,                           // 3: Interface
 };
 
 static uint16_t _desc_str[32];

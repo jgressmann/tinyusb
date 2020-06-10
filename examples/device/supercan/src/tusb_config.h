@@ -67,10 +67,9 @@
 #define CFG_TUD_VENDOR_EPSIZE     64
 
 //------------- CLASS -------------//
-#define CFG_TUD_VENDOR              1
-#define CFG_TUD_VENDOR_RX_BUFSIZE   64
-#define CFG_TUD_VENDOR_TX_BUFSIZE   64
-
+#define CFG_TUD_CUSTOM  1
+#define CFG_TUD_CUSTOM_RX_BUFSIZE   64
+#define CFG_TUD_CUSTOM_TX_BUFSIZE   64
 
 #ifdef __cplusplus
 } // extern "C" {
