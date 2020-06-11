@@ -77,25 +77,25 @@
 #define M_CAN_TS_COUNTER_BITS   15
 #define M_CAN_NMBT_TQ_MIN            0x0004
 #define M_CAN_NMBT_TQ_MAX            0x0181
-#define M_CAN_NMBT_PRE_MIN           0x0001
-#define M_CAN_NMBT_PRE_MAX           0x0200
+#define M_CAN_NMBT_BRP_MIN           0x0001
+#define M_CAN_NMBT_BRP_MAX           0x0200
 #define M_CAN_NMBT_SJW_MIN           0x0001
 #define M_CAN_NMBT_SJW_MAX           0x0080
-#define M_CAN_NMBT_SEG1_MIN          0x0002
-#define M_CAN_NMBT_SEG1_MAX          0x0100
-#define M_CAN_NMBT_SEG2_MIN          0x0002
-#define M_CAN_NMBT_SEG2_MAX          0x0080
+#define M_CAN_NMBT_TSEG1_MIN         0x0002
+#define M_CAN_NMBT_TSEG1_MAX         0x0100
+#define M_CAN_NMBT_TSEG2_MIN         0x0002
+#define M_CAN_NMBT_TSEG2_MAX         0x0080
 
 #define M_CAN_DTBT_TQ_MIN            0x04
 #define M_CAN_DTBT_TQ_MAX            0x31
-#define M_CAN_DTBT_PRE_MIN           0x01
-#define M_CAN_DTBT_PRE_MAX           0x20
+#define M_CAN_DTBT_BRP_MIN           0x01
+#define M_CAN_DTBT_BRP_MAX           0x20
 #define M_CAN_DTBT_SJW_MIN           0x01
 #define M_CAN_DTBT_SJW_MAX           0x10
-#define M_CAN_DTBT_SEG1_MIN          0x01
-#define M_CAN_DTBT_SEG1_MAX          0x20
-#define M_CAN_DTBT_SEG2_MIN          0x01
-#define M_CAN_DTBT_SEG2_MAX          0x10
+#define M_CAN_DTBT_TSEG1_MIN         0x01
+#define M_CAN_DTBT_TSEG1_MAX         0x20
+#define M_CAN_DTBT_TSEG2_MIN         0x01
+#define M_CAN_DTBT_TSEG2_MAX         0x10
 
 static inline void m_can_init_begin(Can *can)
 {

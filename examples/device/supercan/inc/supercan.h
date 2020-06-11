@@ -32,7 +32,7 @@ extern "C" {
 #define SC_NAME "SuperCAN"
 #define SC_VERSION          1
 
-#define SC_HEADER_LEN           2
+#define SC_HEADER_LEN           sizeof(struct sc_msg_header)
 #define SC_HEADER_ID_OFFSET     0
 #define SC_HEADER_LEN_OFFSET    1
 
@@ -44,7 +44,8 @@ extern "C" {
 
 #define SC_MSG_BITTIMING        0x06
 #define SC_MSG_MODE             0x07
-#define SC_MSG_BUS              0x08
+#define SC_MSG_OPTIONS          0x08
+#define SC_MSG_BUS              0x09
 
 
 #define SC_MSG_CAN_STATUS       0x10
@@ -59,7 +60,7 @@ extern "C" {
 
 #define SC_FEATURE_FLAG_CAN_FD       0x01 // device supports CAN-FD
 #define SC_FEATURE_FLAG_AUTO_RE      0x02 // device supports automatic retransmission
-#define SC_FEATURE_FLAG_EH           0x04 // device supports automatic retransmission
+#define SC_FEATURE_FLAG_EH           0x04 // device CAN protocol exception handling
 
 #define SC_CAN_FLAG_EXT         0x01 // extended (29 bit id) frame
 #define SC_CAN_FLAG_RTR         0x02 // remote request frame
@@ -79,87 +80,103 @@ extern "C" {
 
 #define SC_MODE_FLAG_RX         0x00 // enable reception
 #define SC_MODE_FLAG_TX         0x01 // enable transmission
-#define SC_MODE_FLAG_CAN_FD     0x02 // enable CAN-FD
+#define SC_MODE_FLAG_FD         0x02 // enable CAN-FD
 #define SC_MODE_FLAG_BRS        0x04 // enable CAN-FD bitrate switching
 #define SC_MODE_FLAG_AUTO_RE    0x08 // enable automatic retransmission (tx)
 #define SC_MODE_FLAG_EH         0x10 // enable protocol exception handling (error frames)
 
+#define SC_OPTION_TXR           0x01 // if enabled, the device sends SC_MSG_CAN_TXR
+
+struct sc_msg_header {
+    uint8_t id;
+    uint8_t len;
+} SC_PACKED;
+
 // This is the only message that uses
 // non-device byte order.
 struct sc_msg_hello {
+    uint8_t id;
+    uint8_t len;
     uint8_t proto_version;
     uint8_t byte_order;
     uint16_t buffer_size; // always in network byte order
+    uint8_t unused[2];
 } SC_PACKED;
 
 struct sc_msg_config {
+    uint8_t id;
+    uint8_t len;
     uint8_t channel;
     uint8_t args[1];
 } SC_PACKED;
 
 struct sc_msg_info {
+    uint8_t id;
+    uint8_t len;
     uint8_t channels;
     uint8_t features;
     uint32_t can_clk_hz;
-    uint16_t nmbt_pre_max;
-    uint16_t nmbt_pre_min;
+    uint16_t nmbt_brp_max;
+    uint16_t nmbt_brp_min;
     uint16_t nmbt_tq_max;
     uint8_t nmbt_tq_min;
-    uint8_t nmbt_seg1_min;
-    uint16_t nmbt_seg1_max;
+    uint8_t nmbt_tseg1_min;
+    uint16_t nmbt_tseg1_max;
     uint8_t nmbt_sjw_min;
     uint8_t nmbt_sjw_max;
-    uint8_t nmbt_seg2_min;
-    uint8_t nmbt_seg2_max;
-    uint8_t dtbt_pre_max;
-    uint8_t dtbt_pre_min;
+    uint8_t nmbt_tseg2_min;
+    uint8_t nmbt_tseg2_max;
+    uint8_t dtbt_brp_max;
+    uint8_t dtbt_brp_min;
     uint8_t dtbt_tq_max;
     uint8_t dtbt_tq_min;
-    uint8_t dtbt_seg1_min;
-    uint8_t dtbt_seg1_max;
+    uint8_t dtbt_tseg1_min;
+    uint8_t dtbt_tseg1_max;
     uint8_t dtbt_sjw_min;
     uint8_t dtbt_sjw_max;
-    uint8_t dtbt_seg2_min;
-    uint8_t dtbt_seg2_max;
+    uint8_t dtbt_tseg2_min;
+    uint8_t dtbt_tseg2_max;
 } SC_PACKED;
 
 struct sc_msg_status {
+    uint8_t id;
+    uint8_t len;
     uint8_t channel;
     uint8_t flags;
-    uint32_t timestamp;     // CAN bittime
+    uint32_t timestamp_us;
     uint16_t rx_lost;       // messages can->usb lost since last time b/c of full rx fifo
     uint16_t tx_dropped;    // messages usb->can dropped since last time b/c of full tx fifo
 } SC_PACKED;
 
 struct sc_msg_bittiming {
+    uint8_t id;
+    uint8_t len;
     uint8_t channel;
     uint8_t nmbt_sjw;
-    uint16_t nmbt_pre;
-    uint16_t nmbt_seg1;
-    uint8_t nmbt_seg2;
-    uint8_t dtbt_pre;
+    uint16_t nmbt_brp;
+    uint16_t nmbt_tseg1;
+    uint8_t nmbt_tseg2;
+    uint8_t dtbt_brp;
     uint8_t dtbt_sjw;
-    uint8_t dtbt_seg1;
-    uint8_t dtbt_seg2;
-    // uint8_t arbitration_sjw;            // CAN / CAN-FD
-    // uint32_t arbitration_bitrate_bps;   // CAN / CAN-FD
-    // uint32_t data_bitrate_bps;          // CAN-FD
-    // uint8_t data_sjw;                   // CAN-FD
-    // uint8_t arbitration_sample_point;   // normlized to [0-1] * 255
-    // uint8_t data_sample_point;          // normlized to [0-1] * 255
-
+    uint8_t dtbt_tseg1;
+    uint8_t dtbt_tseg2;
+    uint8_t unused[3];
 } SC_PACKED;
 
 struct sc_msg_can_rx {
+    uint8_t id;
+    uint8_t len;
     uint8_t channel;
     uint8_t dlc;
     uint32_t can_id;
-    uint32_t timestamp;
+    uint32_t timestamp_us;
     uint8_t flags;
     uint8_t data[0];
 } SC_PACKED;
 
 struct sc_msg_can_tx {
+    uint8_t id;
+    uint8_t len;
     uint8_t channel;
     uint8_t dlc;
     uint32_t can_id;
@@ -169,29 +186,27 @@ struct sc_msg_can_tx {
 } SC_PACKED;
 
 struct sc_msg_can_txr {
-    uint8_t channel;
-    uint8_t flags;
-    uint32_t timestamp;
-    uint16_t track_id;
-} SC_PACKED;
-
-struct sc_msg {
     uint8_t id;
     uint8_t len;
-    union {
-        struct sc_msg_hello hello;
-        struct sc_msg_info info;
-        struct sc_msg_bittiming bittiming;
-        struct sc_msg_can_rx rx;
-        struct sc_msg_can_tx tx;
-        struct sc_msg_can_txr txr;
-        struct sc_msg_status status;
-        struct sc_msg_config config;
-    } u;
+    uint8_t channel;
+    uint8_t flags;
+    uint32_t timestamp_us;
+    uint16_t track_id;
+    uint8_t unused[2];
 } SC_PACKED;
 
+
 enum {
-    static_assert_sc_msg_is_not_larger_than_64_bytes = sizeof(int[sizeof(struct sc_msg) <= 64 ? 1 : -1]),
+    static_assert_sizeof_sc_msg_header_is_2 = sizeof(int[sizeof(struct sc_msg_header)  == 2 ? 1 : -1]),
+    static_assert_sc_msg_hello_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_hello) & 0x3) == 0 ? 1 : -1]),
+    static_assert_sc_msg_info_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_info) & 0x3) == 0 ? 1 : -1]),
+    static_assert_sc_msg_bittiming_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_bittiming) & 0x3) == 0 ? 1 : -1]),
+    // static_assert_sc_msg_can_rx_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_rx) & 0x3) == 0 ? 1 : -1]),
+    // static_assert_sc_msg_can_tx_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_tx) & 0x3) == 0 ? 1 : -1]),
+    static_assert_sc_msg_can_txr_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_txr) & 0x3) == 0 ? 1 : -1]),
+    static_assert_sc_msg_status_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_status) & 0x3) == 0 ? 1 : -1]),
+    static_assert_sc_msg_config_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_config) & 0x3) == 0 ? 1 : -1]),
+
 };
 
 #ifdef __cplusplus
