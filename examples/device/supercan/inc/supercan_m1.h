@@ -30,10 +30,10 @@ extern "C" {
 #endif
 
 #define SC_M1_NAME_SHORT "SuperCAN M1"
-#define SC_M1_NAME_LONG "SuperCAN Mark I"
-#define SC_M1_EP_SIZE     64
-#define SC_M1_EP_BULK_OUT 0x01
-#define SC_M1_EP_BULK_IN  0x81
+#define SC_M1_NAME_LONG  "SuperCAN Mark I"
+#define SC_M1_EP_SIZE       64
+#define SC_M1_EP_BULK_OUT   0x03
+#define SC_M1_EP_BULK_IN    (0x80 | SC_M1_EP_BULK_OUT)
 
 
 #ifdef __cplusplus

@@ -609,7 +609,6 @@ void tud_custom_init_cb(void)
 
 void tud_custom_reset_cb(uint8_t rhport)
 {
-	(void) rhport;
 	TU_LOG2("port %u reset\n", rhport);
 	memset(&usb, 0, sizeof(usb));
 	usb.port = rhport;
@@ -617,7 +616,6 @@ void tud_custom_reset_cb(uint8_t rhport)
 
 bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t* p_length)
 {
-	(void)desc_intf;
 	TU_LOG2("port %u open\n", rhport);
 
 	if (unlikely(rhport != usb.port)) {
@@ -632,6 +630,9 @@ bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf,
 		TU_ASSERT(dcd_edpt_open(rhport, (tusb_desc_endpoint_t const *)(ptr + i * 7)));
 	}
 
+
+
+	// TU_ASSERT(dcd_edpt_open(rhport, (tusb_desc_endpoint_t const *)(ptr + i * 7)));
 	TU_ASSERT(dcd_edpt_xfer(rhport, SC_M1_EP_BULK_OUT, usb.rx_buffers[usb.rx_bank], BUFFER_SIZE));
 
 
@@ -1068,6 +1069,26 @@ bool tud_vendor_control_complete_cb(uint8_t rhport, tusb_control_request_t const
 	(void) request;
 
 	return true;
+}
+
+void vendord_init(void)
+{
+	tud_custom_init_cb();
+}
+
+void vendord_reset(uint8_t rhport)
+{
+	tud_custom_reset_cb(rhport);
+}
+
+bool vendord_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_len)
+{
+	return tud_custom_open_cb(rhport, itf_desc, p_len);
+}
+
+bool vendord_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
+{
+	return tud_custom_xfer_cb(rhport, ep_addr, result, xferred_bytes);
 }
 
 //--------------------------------------------------------------------+

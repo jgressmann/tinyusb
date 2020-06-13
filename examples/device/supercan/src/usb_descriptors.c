@@ -23,30 +23,35 @@
  *
  */
 
+#include "class/cdc/cdc_device.h"
 #include <tusb.h>
 
 #include <supercan_m1.h>
 #include <usb_descriptors.h>
 
+#define _PID_MAP(itf, n)  ( (CFG_TUD_##itf) << (n) )
+#define USB_PID           (0x4000 | _PID_MAP(CDC, 0) | _PID_MAP(MSC, 1) | _PID_MAP(HID, 2) | \
+                           _PID_MAP(MIDI, 3) | _PID_MAP(VENDOR, 4) )
+
 
 static const tusb_desc_device_t device = {
 	.bLength            = sizeof(tusb_desc_device_t),
 	.bDescriptorType    = TUSB_DESC_DEVICE,
-	.bcdUSB             = 0x0201,
+	.bcdUSB             = 0x0210,
 
-	.bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
-	.bDeviceSubClass    = 0,
-	.bDeviceProtocol    = 0,
+	.bDeviceClass       = TUSB_CLASS_MISC,
+	.bDeviceSubClass    = MISC_SUBCLASS_COMMON,
+	.bDeviceProtocol    = MISC_PROTOCOL_IAD,
 
 	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
 	.idVendor           = 0x4243,
-	.idProduct          = 0x0001,
+	.idProduct          = 0x4011,
 	.bcdDevice          = 0x0001,
 
 	.iManufacturer      = 0x01,
 	.iProduct           = 0x02,
-	.iSerialNumber      = 0x00,
+	.iSerialNumber      = 0x03,
 
 	.bNumConfigurations = 0x01
 };
@@ -63,18 +68,50 @@ uint8_t const * tud_descriptor_device_cb(void)
 // Configuration Descriptor
 //--------------------------------------------------------------------+
 
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 1*9 + 2*7)
-static uint8_t const desc_configuration[] =
+// #define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + 1*9 + 2*7)
+
+// static uint8_t const desc_configuration[] =
+// {
+// 	// Config number, interface count, string index, total length, attribute, power in mA
+// 	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0, 100),
+
+// 	// Interface number, string index, EP notification address and size, EP data address (out, in) and size.
+// 	  TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 64),
+
+
+// 	9, TUSB_DESC_INTERFACE, 0, 0, 2, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 3,
+
+//   	7, TUSB_DESC_ENDPOINT, SC_M1_EP_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
+//   	7, TUSB_DESC_ENDPOINT, SC_M1_EP_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
+
+// };
+
+
+enum
 {
-	// Config number, interface count, string index, total length, attribute, power in mA
-	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0, 100),
-
-	9, TUSB_DESC_INTERFACE, 0, 0, 2, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 3,
-
-  	7, TUSB_DESC_ENDPOINT, SC_M1_EP_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
-  	7, TUSB_DESC_ENDPOINT, SC_M1_EP_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
-
+  ITF_NUM_CDC = 0,
+  ITF_NUM_CDC_DATA,
+  ITF_NUM_VENDOR,
+  ITF_NUM_TOTAL
 };
+
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_VENDOR_DESC_LEN)
+
+#define EPNUM_CDC       2
+#define EPNUM_VENDOR    SC_M1_EP_BULK_OUT
+
+uint8_t const desc_configuration[] =
+{
+  // Config number, interface count, string index, total length, attribute, power in mA
+  TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 100),
+
+  // Interface number, string index, EP notification address and size, EP data address (out, in) and size.
+  TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, 0x81, 8, EPNUM_CDC, 0x80 | EPNUM_CDC, 64),
+
+  // Interface number, string index, EP Out & IN address, EP size
+  TUD_VENDOR_DESCRIPTOR(ITF_NUM_VENDOR, 5, EPNUM_VENDOR, 0x80 | EPNUM_VENDOR, 64)
+};
+
 
 
 
@@ -105,6 +142,7 @@ static uint8_t const bos_desc[] =
 
 	// Vendor Code, iLandingPage
 	// TUD_BOS_WEBUSB_DESCRIPTOR(VENDOR_REQUEST_WEBUSB, 1),
+	//TUD_BOS_PLATFORM_DESCRIPTOR(TUD_BOS_WEBUSB_UUID, U16_TO_U8S_LE(0x0100), VENDOR_REQUEST_SUPERCAN),
 
 	// Microsoft OS 2.0 descriptor
 	TUD_BOS_MS_OS_20_DESCRIPTOR(MS_OS_20_DESC_LEN, VENDOR_REQUEST_MICROSOFT)
@@ -159,8 +197,11 @@ char const* string_desc_arr [] =
 	(const char[]) { 0x09, 0x04 },   // 0: is supported language is English (0x0409)
 	"2guys",                         // 1: Manufacturer
 	SC_M1_NAME_SHORT,                // 2: Product
-	SC_M1_NAME_LONG,                 // 3: Interface
+	"123456",                        // 3: Serial
+	"TinyUSB CDC",                   // 4: CDC
+	SC_M1_NAME_LONG,                 // 5: CDC
 };
+
 
 static uint16_t _desc_str[32];
 
