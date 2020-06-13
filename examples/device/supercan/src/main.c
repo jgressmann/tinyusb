@@ -1,14 +1,26 @@
 /*
+ * The MIT License (MIT)
+ *
  * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published
- * by the Free Software Foundation; version 2 of the License.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ *
  */
 
 #include <stdlib.h>
@@ -33,7 +45,7 @@
 
 #include <supercan.h>
 #include <supercan_m1.h>
-
+#include <usb_descriptors.h>
 #include <m_can.h>
 
 
@@ -964,6 +976,96 @@ send_txr:
 		TU_LOG2("port %u ep %02x event %d bytes %u\n", rhport, ep_addr, event, (unsigned)xferred_bytes);
 		return false;
 	}
+
+	return true;
+}
+
+
+static inline const char* recipient_str(tusb_request_recipient_t r)
+{
+	switch (r) {
+	case TUSB_REQ_RCPT_DEVICE:
+		return "device (0)";
+	case TUSB_REQ_RCPT_INTERFACE:
+		return "interface (1)";
+	case TUSB_REQ_RCPT_ENDPOINT:
+		return "endpoint (2)";
+	case TUSB_REQ_RCPT_OTHER:
+		return "other (3)";
+	default:
+		return "???";
+	}
+}
+
+static inline const char* type_str(tusb_request_type_t value)
+{
+	switch (value) {
+	case TUSB_REQ_TYPE_STANDARD:
+		return "standard (0)";
+	case TUSB_REQ_TYPE_CLASS:
+		return "class (1)";
+	case TUSB_REQ_TYPE_VENDOR:
+		return "vendor (2)";
+	case TUSB_REQ_TYPE_INVALID:
+		return "invalid (3)";
+	default:
+		return "???";
+	}
+}
+
+static inline const char* dir_str(tusb_dir_t value)
+{
+	switch (value) {
+	case TUSB_DIR_OUT:
+		return "out (0)";
+	case TUSB_DIR_IN:
+		return "in (1)";
+	default:
+		return "???";
+	}
+}
+
+
+bool tud_vendor_control_request_cb(uint8_t rhport, tusb_control_request_t const * request)
+{
+	// TU_LOG2("port %u req\n", rhport);
+
+	if (unlikely(rhport != usb.port)) {
+		return false;
+	}
+
+	TU_LOG2("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
+		request->bmRequestType,
+		recipient_str(request->bmRequestType_bit.recipient),
+		type_str(request->bmRequestType_bit.type),
+		dir_str(request->bmRequestType_bit.direction),
+		request->bRequest, request->wValue, request->wIndex,
+		request->wLength);
+
+	switch (request->bRequest) {
+	case VENDOR_REQUEST_SUPERCAN: {
+		return true;
+	} break;
+	case VENDOR_REQUEST_MICROSOFT: {
+		if ( request->wIndex == 7 ) {
+			// Get Microsoft OS 2.0 compatible descriptor
+			uint16_t total_len;
+			memcpy(&total_len, desc_ms_os_20+8, 2);
+			return tud_control_xfer(rhport, request, (void*)desc_ms_os_20, total_len);
+		}
+	} break;
+	default:
+		break;
+	}
+
+	// stall unknown request
+	return false;
+}
+
+bool tud_vendor_control_complete_cb(uint8_t rhport, tusb_control_request_t const *request)
+{
+	(void) rhport;
+	(void) request;
 
 	return true;
 }

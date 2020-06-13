@@ -26,12 +26,13 @@
 #include <tusb.h>
 
 #include <supercan_m1.h>
+#include <usb_descriptors.h>
 
 
 static const tusb_desc_device_t device = {
 	.bLength            = sizeof(tusb_desc_device_t),
 	.bDescriptorType    = TUSB_DESC_DEVICE,
-	.bcdUSB             = 0x0200,
+	.bcdUSB             = 0x0201,
 
 	.bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
 	.bDeviceSubClass    = 0,
@@ -39,7 +40,7 @@ static const tusb_desc_device_t device = {
 
 	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
-	.idVendor           = 0x4242,
+	.idVendor           = 0x4243,
 	.idProduct          = 0x0001,
 	.bcdDevice          = 0x0001,
 
@@ -76,6 +77,7 @@ static uint8_t const desc_configuration[] =
 };
 
 
+
 // Invoked when received GET CONFIGURATION DESCRIPTOR
 // Application return pointer to descriptor
 // Descriptor contents must exist long enough for transfer to complete
@@ -84,6 +86,67 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 	(void) index; // for multiple configurations
 	return desc_configuration;
 }
+
+
+
+//#define MS_OS_20_GUID 0xD8, 0xDD, 0x60, 0xDF, 0x45, 0x89, 0x4C, 0xC7, 0x9C, 0xD2, 0x65, 0x9D, 0x9E, 0x64, 0x8A, 0x9F
+
+
+
+//TUD_BOS_WEBUSB_DESC_LEN
+#define BOS_TOTAL_LEN      (TUD_BOS_DESC_LEN + 0 + TUD_BOS_MICROSOFT_OS_DESC_LEN)
+
+
+
+static uint8_t const bos_desc[] =
+{
+	// total length, number of device caps
+	TUD_BOS_DESCRIPTOR(BOS_TOTAL_LEN, 1),
+
+	// Vendor Code, iLandingPage
+	// TUD_BOS_WEBUSB_DESCRIPTOR(VENDOR_REQUEST_WEBUSB, 1),
+
+	// Microsoft OS 2.0 descriptor
+	TUD_BOS_MS_OS_20_DESCRIPTOR(MS_OS_20_DESC_LEN, VENDOR_REQUEST_MICROSOFT)
+};
+
+uint8_t const * tud_descriptor_bos_cb(void)
+{
+	return bos_desc;
+}
+
+
+uint8_t const desc_ms_os_20[MS_OS_20_DESC_LEN] =
+{
+  // Set header: length, type, windows version, total length
+  U16_TO_U8S_LE(0x000A), U16_TO_U8S_LE(MS_OS_20_SET_HEADER_DESCRIPTOR), U32_TO_U8S_LE(0x06030000), U16_TO_U8S_LE(MS_OS_20_DESC_LEN),
+
+  // Configuration subset header: length, type, configuration index, reserved, configuration total length
+  U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_CONFIGURATION), 0, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A),
+
+  // Function Subset header: length, type, first interface, reserved, subset length
+  U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 2, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A-0x08),
+
+  // MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
+  U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
+
+  // MS OS 2.0 Registry property descriptor: length, type
+  U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A-0x08-0x08-0x14), U16_TO_U8S_LE(MS_OS_20_FEATURE_REG_PROPERTY),
+  U16_TO_U8S_LE(0x0007), U16_TO_U8S_LE(0x002A), // wPropertyDataType, wPropertyNameLength and PropertyName "DeviceInterfaceGUIDs\0" in UTF-16
+  'D', 0x00, 'e', 0x00, 'v', 0x00, 'i', 0x00, 'c', 0x00, 'e', 0x00, 'I', 0x00, 'n', 0x00, 't', 0x00, 'e', 0x00,
+  'r', 0x00, 'f', 0x00, 'a', 0x00, 'c', 0x00, 'e', 0x00, 'G', 0x00, 'U', 0x00, 'I', 0x00, 'D', 0x00, 's', 0x00, 0x00, 0x00,
+  U16_TO_U8S_LE(0x0050), // wPropertyDataLength
+	//bPropertyData: “{f4ef82e0-dc07-4f21-8660-ae50cb3149c9}”.
+  '{', 0x00, 'F', 0x00, '4', 0x00, 'E', 0x00, 'F', 0x00, '8', 0x00, '2', 0x00, 'E', 0x00, '0', 0x00, '-', 0x00,
+  'D', 0x00, 'C', 0x00, '0', 0x00, '7', 0x00, '-', 0x00, '4', 0x00, 'F', 0x00, '2', 0x00, '1', 0x00, '-', 0x00,
+  '8', 0x00, '6', 0x00, '6', 0x00, '0', 0x00, '-', 0x00, 'A', 0x00, 'E', 0x00, '5', 0x00, '0', 0x00, 'C', 0x00,
+  'B', 0x00, '3', 0x00, '1', 0x00, '4', 0x00, '9', 0x00, 'C', 0x00, '9', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+
+
+TU_VERIFY_STATIC(sizeof(desc_ms_os_20) == MS_OS_20_DESC_LEN, "descriptor size mismatch");
 
 
 //--------------------------------------------------------------------+
@@ -95,8 +158,8 @@ char const* string_desc_arr [] =
 {
 	(const char[]) { 0x09, 0x04 },   // 0: is supported language is English (0x0409)
 	"2guys",                         // 1: Manufacturer
-	SC_M1_NAME_SHORT,	                 // 2: Product
-	SC_M1_NAME_LONG,                           // 3: Interface
+	SC_M1_NAME_SHORT,                // 2: Product
+	SC_M1_NAME_LONG,                 // 3: Interface
 };
 
 static uint16_t _desc_str[32];
