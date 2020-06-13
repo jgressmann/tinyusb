@@ -37,6 +37,7 @@
 #define CFG_TUD_TASK_QUEUE_SZ   16
 #endif
 
+#if CFG_TUD_CUSTOM
 static void custom_init_cb(void)
 {
   if (tud_custom_init_cb) {
@@ -82,6 +83,8 @@ static bool custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event,
   }
   return false;
 }
+#endif
+
 
 //--------------------------------------------------------------------+
 // Device Data
