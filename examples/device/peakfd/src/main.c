@@ -387,12 +387,12 @@ static inline void can_configure(struct can *c)
 	can->RXESC.reg = CAN_RXESC_RBDS_DATA64 + CAN_RXESC_F0DS_DATA64;
 
 	// clear existing interrupt flags
-	CAN0->IR.reg = CAN0->IR.reg;
+	can->IR.reg = can->IR.reg;
 	// enable interrupt line 0
 	CAN0->ILE.reg = CAN_ILE_EINT0;
 
 	// wanted interrupts
-	CAN0->IE.reg =
+	can->IE.reg =
 		CAN_IE_TSWE     // time stamp counter wrap
 		| CAN_IE_BOE    // bus off
 		| CAN_IE_EWE    // error warning
