@@ -30,6 +30,10 @@
 
 #include "vendor_device.h"
 #include "device/usbd_pvt.h"
+#if CFG_TUD_VENDOR_CUSTOM
+
+#else  // !CFG_TUD_VENDOR_CUSTOM
+
 
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF
@@ -227,5 +231,6 @@ bool vendord_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
 
   return true;
 }
+#endif // CFG_TUD_VENDOR_CUSTOM
 
 #endif
