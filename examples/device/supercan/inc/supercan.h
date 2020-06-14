@@ -99,7 +99,7 @@ struct sc_msg_hello {
     uint8_t len;
     uint8_t proto_version;
     uint8_t byte_order;
-    uint16_t buffer_size; // always in network byte order
+    uint16_t msg_buffer_size; // always in network byte order
     uint8_t unused[2];
 } SC_PACKED;
 
@@ -117,10 +117,10 @@ struct sc_msg_info {
     uint8_t features;
     uint32_t can_clk_hz;
     uint16_t nmbt_brp_max;
-    uint16_t nmbt_brp_min;
     uint16_t nmbt_tq_max;
     uint8_t nmbt_tq_min;
     uint8_t nmbt_tseg1_min;
+    uint8_t nmbt_brp_min;
     uint16_t nmbt_tseg1_max;
     uint8_t nmbt_sjw_min;
     uint8_t nmbt_sjw_max;
@@ -136,6 +136,7 @@ struct sc_msg_info {
     uint8_t dtbt_sjw_max;
     uint8_t dtbt_tseg2_min;
     uint8_t dtbt_tseg2_max;
+    uint8_t unused[1];
 } SC_PACKED;
 
 struct sc_msg_status {

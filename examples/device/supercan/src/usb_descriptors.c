@@ -26,6 +26,8 @@
 #include "class/cdc/cdc_device.h"
 #include <tusb.h>
 
+#define SC_PACKED __packed
+#include <supercan.h>
 #include <supercan_m1.h>
 #include <usb_descriptors.h>
 
@@ -46,7 +48,7 @@ static const tusb_desc_device_t device = {
 	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
 	.idVendor           = 0x4243,
-	.idProduct          = 0x4011,
+	.idProduct          = USB_PID,
 	.bcdDevice          = 0x0001,
 
 	.iManufacturer      = 0x01,
@@ -95,21 +97,30 @@ enum
   ITF_NUM_TOTAL
 };
 
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_VENDOR_DESC_LEN)
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + 9+6*7)
 
 #define EPNUM_CDC       2
-#define EPNUM_VENDOR    SC_M1_EP_BULK_OUT
+#define EPNUM_VENDOR    SC_M1_EP_CMD_BULK_OUT
 
 uint8_t const desc_configuration[] =
 {
-  // Config number, interface count, string index, total length, attribute, power in mA
-  TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 100),
+	// Config number, interface count, string index, total length, attribute, power in mA
+	TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 100),
 
-  // Interface number, string index, EP notification address and size, EP data address (out, in) and size.
-  TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, 0x81, 8, EPNUM_CDC, 0x80 | EPNUM_CDC, 64),
+	// Interface number, string index, EP notification address and size, EP data address (out, in) and size.
+	TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, 0x81, 8, EPNUM_CDC, 0x80 | EPNUM_CDC, SC_M1_EP_SIZE),
 
   // Interface number, string index, EP Out & IN address, EP size
-  TUD_VENDOR_DESCRIPTOR(ITF_NUM_VENDOR, 5, EPNUM_VENDOR, 0x80 | EPNUM_VENDOR, 64)
+//   TUD_VENDOR_DESCRIPTOR(ITF_NUM_VENDOR, 5, EPNUM_VENDOR, 0x80 | EPNUM_VENDOR, SC_M1_EP_SIZE)
+
+	9, TUSB_DESC_INTERFACE, ITF_NUM_VENDOR, 0, 6, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 5,
+
+	7, TUSB_DESC_ENDPOINT, SC_M1_EP_CMD_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
+	7, TUSB_DESC_ENDPOINT, SC_M1_EP_CMD_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
+	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG0_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
+	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG0_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
+	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG1_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
+	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG1_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 };
 
 
@@ -199,7 +210,7 @@ char const* string_desc_arr [] =
 	SC_M1_NAME_SHORT,                // 2: Product
 	"123456",                        // 3: Serial
 	"TinyUSB CDC",                   // 4: CDC
-	SC_M1_NAME_LONG,                 // 5: CDC
+	SC_NAME,                         // 5:
 };
 
 
