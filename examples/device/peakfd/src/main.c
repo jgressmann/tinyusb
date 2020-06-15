@@ -42,6 +42,10 @@
 #include <peak_canfd.h>
 #include <peak_usb_fd.h>
 
+#if CONF_CPU_FREQUENCY != 120000000
+# error "CONF_CPU_FREQUENCY" must 120000000
+#endif
+
 
 #define CAN_CLK_HZ CONF_CPU_FREQUENCY
 
@@ -284,7 +288,7 @@ struct can_rx_fifo_element {
 
 struct can {
 	CFG_TUSB_MEM_ALIGN struct can_tx_fifo_element tx_fifo[CAN_TX_FIFO_SIZE];
-	CFG_TUSB_MEM_ALIGN struct can_tx_event_fifo_element tx_event_fifo[CAN_TX_FIFO_SIZE];
+	// CFG_TUSB_MEM_ALIGN struct can_tx_event_fifo_element tx_event_fifo[CAN_TX_FIFO_SIZE];
 	CFG_TUSB_MEM_ALIGN struct can_rx_fifo_element rx_fifo[CAN_RX_FIFO_SIZE];
 	uint16_t message_marker_map[CAN_TX_FIFO_SIZE];
 	TaskHandle_t task;
@@ -306,7 +310,7 @@ struct can {
 	volatile uint8_t status_flags;
 	uint8_t led;
 	bool enabled;
-	bool desync;
+	// bool desync;
 };
 
 static struct {
@@ -354,6 +358,7 @@ static inline void can_configure(struct can *c)
 	can->CCCR.bit.DAR = (c->mode_flags & SC_MODE_FLAG_AUTO_RE) != SC_MODE_FLAG_AUTO_RE;
 	can->CCCR.bit.PXHD = (c->mode_flags & SC_MODE_FLAG_EH) != SC_MODE_FLAG_EH;
 
+
 	TU_LOG2("nominal brp=%u sjw=%u tseg1=%u tseg2=%u\n",
 		c->nmbt_brp, c->nmbt_sjw, c->nmbt_tseg1, c->nmbt_tseg2
 	);
@@ -373,6 +378,9 @@ static inline void can_configure(struct can *c)
 			| CAN_DBTP_DTSEG2(c->dtbt_tseg2-1)
 			| CAN_DBTP_DSJW(c->dtbt_sjw-1);
 
+	// can->NBTP.reg = CAN_NBTP_NBRP(2) | CAN_NBTP_NTSEG1(62) | CAN_NBTP_NTSEG2(15) | CAN_NBTP_NSJW(15); /* 500kBit @ 120 / 3 = 40MHz, 80% */
+    // can->DBTP.reg = CAN_DBTP_DBRP(2) | CAN_DBTP_DTSEG1(12) | CAN_DBTP_DTSEG2(5) | CAN_DBTP_DSJW(5); /* 2MBit @ 120 / 3 = 40MHz, 70% */
+
 	// tx fifo
 	can->TXBC.reg = CAN_TXBC_TBSA((uint32_t) c->tx_fifo) | CAN_TXBC_TFQS(CAN_TX_FIFO_SIZE);
 	//	REG_CAN0_TXBC |= CAN_TXBC_TFQM; // reset default
@@ -389,7 +397,10 @@ static inline void can_configure(struct can *c)
 	// clear existing interrupt flags
 	can->IR.reg = can->IR.reg;
 	// enable interrupt line 0
-	CAN0->ILE.reg = CAN_ILE_EINT0;
+	can->ILE.reg = CAN_ILE_EINT0;
+
+	// select interrupt line 0
+	// can->ILS.reg = 0; // reset default
 
 	// wanted interrupts
 	can->IE.reg =
@@ -407,8 +418,8 @@ static inline void can_configure(struct can *c)
 	// m_can_init_end(can);
 }
 
-static void can_init_module();
-static void can_init_module()
+static void can_init_module(void);
+static void can_init_module(void)
 {
 	memset(&cans, 0, sizeof(cans));
 
@@ -432,17 +443,30 @@ static void can_init_module()
 	NVIC_SetPriority(CAN1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 }
 
-static void can_int(uint8_t index)
+static inline void can_int(uint8_t index)
 {
 	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
 	struct can *can = &cans.can[index];
+
+	// if (m_can_rx0_msg_fifo_avail(can->m_can)) {
+	// 	TU_LOG2("CAN%u has can msg\n", index);
+	// }
+
+	// TU_LOG2("CAN%u CCCR=%08lx NBTP=%08lx DBTP=%08lx ECR=%08lx PSR=%08lx RXF0S=%08lx\n",
+	// 	index,
+	// 	can->m_can->CCCR.reg,
+	// 	can->m_can->NBTP.reg,
+	// 	can->m_can->DBTP.reg,
+	// 	can->m_can->ECR.reg,
+	// 	can->m_can->PSR.reg,
+	// 	can->m_can->RXF0S.reg);
 
 	bool notify = false;
 	CAN_IR_Type ir = can->m_can->IR;
 	if (ir.bit.TSW) {
 		uint32_t ts_high = __sync_add_and_fetch(&can->ts_high, 1u << M_CAN_TS_COUNTER_BITS);
 		(void)ts_high;
-		// TU_LOG2("CAN%u ts_high %08x\n", index, ts_high);
+		// TU_LOG2("CAN%u ts_high %08lx\n", index, ts_high);
 	}
 
 	uint8_t prev_status = can->status_flags;
