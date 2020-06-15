@@ -1664,11 +1664,13 @@ static void can_task(void *param)
 
 		for (bool done = false; !done; ) {
 			done = true;
-			uint8_t *ptr;
+			uint8_t *beg;
 			uint8_t *end;
+			uint8_t *ptr;
 start:
-			ptr = usb_can->msg_tx_buffers[usb_can->msg_tx_bank] + usb_can->msg_tx_offsets[usb_can->msg_tx_bank];
-			end = ptr + MSG_TX_BUFFER_SIZE;
+			beg = usb_can->msg_tx_buffers[usb_can->msg_tx_bank];
+			end = beg + MSG_TX_BUFFER_SIZE;
+			ptr = beg + usb_can->msg_tx_offsets[usb_can->msg_tx_bank];
 
 			if (!usb_can->msg_tx_offsets[usb_can->msg_tx_bank]) {
 

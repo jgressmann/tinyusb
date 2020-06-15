@@ -562,17 +562,6 @@ static inline void sc_can_bulk_in_submit(uint8_t index)
 	can->msg_tx_bank = !can->msg_tx_bank;
 }
 
-static inline void sc_seal_msg_buffer(uint8_t index)
-{
-	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can), );
-	struct usb_can *can_usb = &usb.can[index];
-	// const uint8_t bytes_to_add = 4;
-	// if (likely(can_usb->msg_tx_offsets[can_usb->msg_tx_bank] + bytes_to_add <= MSG_BUFFER_SIZE)) {
-	// 	memset(&can_usb->msg_tx_buffers[can_usb->msg_tx_bank][can_usb->msg_tx_offsets[can_usb->msg_tx_bank]], 0, bytes_to_add);
-	// 	can_usb->msg_tx_offsets[can_usb->msg_tx_bank] += bytes_to_add;
-	// }
-}
-
 static void sc_cmd_bulk_out(uint32_t xferred_bytes);
 static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes);
 static void sc_can_bulk_in(uint8_t index);
@@ -877,7 +866,6 @@ send_txr:
 						rep->flags = SC_CAN_FLAG_DRP;
 					} else {
 						if (sc_can_bulk_in_ep_ready(index)) {
-							sc_seal_msg_buffer(index);
 							sc_can_bulk_in_submit(index);
 							goto send_txr;
 						} else {
@@ -930,7 +918,6 @@ send_txr:
 
 	if (usb_can->msg_tx_offsets[usb_can->msg_tx_bank] > 0 && sc_can_bulk_in_ep_ready(index)) {
 		// TU_LOG2("usb tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
-		sc_seal_msg_buffer(index);
 		sc_can_bulk_in_submit(index);
 	}
 }
@@ -944,10 +931,7 @@ static void sc_can_bulk_in(uint8_t index)
 	usb_can->msg_tx_offsets[!usb_can->msg_tx_bank] = 0;
 
 	if (usb_can->msg_tx_offsets[usb_can->msg_tx_bank]) {
-		sc_seal_msg_buffer(index);
-		// send off current bank data
 		// TU_LOG2("usb msg tx %u bytes\n", usb.msg_tx_offsets[usb.msg_tx_bank]);
-
 		sc_can_bulk_in_submit(index);
 	}
 }
@@ -1450,7 +1434,6 @@ start:
 				} else {
 					if (sc_can_bulk_in_ep_ready(index)) {
 						usb_can->msg_tx_offsets[usb_can->msg_tx_bank] = out_ptr - out_beg;
-						sc_seal_msg_buffer(index);
 						sc_can_bulk_in_submit(index);
 						goto start;
 					} else {
@@ -1496,7 +1479,6 @@ start:
 					} else {
 						if (sc_can_bulk_in_ep_ready(index)) {
 							usb_can->msg_tx_offsets[usb_can->msg_tx_bank] = out_ptr - out_beg;
-							sc_seal_msg_buffer(index);
 							sc_can_bulk_in_submit(index);
 							goto start;
 						} else {
@@ -1513,8 +1495,6 @@ start:
 
 
 		if (usb_can->msg_tx_offsets[usb_can->msg_tx_bank] > 0 && sc_can_bulk_in_ep_ready(index)) {
-			sc_seal_msg_buffer(index);
-
 			// TU_LOG2("usb tx %u bytes\n", usb.msg_tx_offsets[usb.msg_tx_bank]);
 			sc_can_bulk_in_submit(index);
 		}
