@@ -337,11 +337,11 @@ static inline void can_set_state1(Can *can, IRQn_Type interrupt_id, bool enabled
 {
 	if (enabled) {
 		// clear any old interrupts
-		can->IR = can->IR;
-		// enable interrupt
-		NVIC_EnableIRQ(interrupt_id);
+		// can->IR = can->IR;
 		// disable initialization
 		m_can_init_end(can);
+		// enable interrupt
+		NVIC_EnableIRQ(interrupt_id);
 	} else {
 		NVIC_DisableIRQ(interrupt_id);
 		m_can_init_begin(can);
