@@ -74,7 +74,7 @@ extern "C" {
 #define SC_STATUS_FLAG_ERROR_PASSIVE 0x04
 #define SC_STATUS_FLAG_RX_FULL       0x08 // rx queue is full, can -> usb messages lost
 #define SC_STATUS_FLAG_TX_FULL       0x10 // tx queue is full, usb -> can messages lost
-#define SC_STATUS_FLAG_TX_DESYNC     0x20 // no USB buffer space to queue TXR message
+#define SC_STATUS_FLAG_TXR_DESYNC    0x20 // no USB buffer space to queue TXR message
 
 
 
@@ -139,16 +139,6 @@ struct sc_msg_info {
     uint8_t unused[1];
 } SC_PACKED;
 
-struct sc_msg_status {
-    uint8_t id;
-    uint8_t len;
-    uint8_t channel;
-    uint8_t flags;
-    uint32_t timestamp_us;
-    uint16_t rx_lost;       // messages can->usb lost since last time b/c of full rx fifo
-    uint16_t tx_dropped;    // messages usb->can dropped since last time b/c of full tx fifo
-} SC_PACKED;
-
 struct sc_msg_bittiming {
     uint8_t id;
     uint8_t len;
@@ -162,6 +152,16 @@ struct sc_msg_bittiming {
     uint8_t dtbt_tseg1;
     uint8_t dtbt_tseg2;
     uint8_t unused[3];
+} SC_PACKED;
+
+struct sc_msg_can_status {
+    uint8_t id;
+    uint8_t len;
+    uint8_t channel;
+    uint8_t flags;
+    uint32_t timestamp_us;
+    uint16_t rx_lost;       // messages can->usb lost since last time b/c of full rx fifo
+    uint16_t tx_dropped;    // messages usb->can dropped since last time b/c of full tx fifo
 } SC_PACKED;
 
 struct sc_msg_can_rx {
@@ -202,10 +202,8 @@ enum {
     static_assert_sc_msg_hello_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_hello) & 0x3) == 0 ? 1 : -1]),
     static_assert_sc_msg_info_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_info) & 0x3) == 0 ? 1 : -1]),
     static_assert_sc_msg_bittiming_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_bittiming) & 0x3) == 0 ? 1 : -1]),
-    // static_assert_sc_msg_can_rx_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_rx) & 0x3) == 0 ? 1 : -1]),
-    // static_assert_sc_msg_can_tx_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_tx) & 0x3) == 0 ? 1 : -1]),
     static_assert_sc_msg_can_txr_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_txr) & 0x3) == 0 ? 1 : -1]),
-    static_assert_sc_msg_status_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_status) & 0x3) == 0 ? 1 : -1]),
+    static_assert_sc_msg_can_status_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_status) & 0x3) == 0 ? 1 : -1]),
     static_assert_sc_msg_config_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_config) & 0x3) == 0 ? 1 : -1]),
 
 };

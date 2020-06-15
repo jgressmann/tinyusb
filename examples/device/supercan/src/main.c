@@ -1364,8 +1364,8 @@ start:
 				uint32_t ts = can->ts_high | can->m_can->TSCV.bit.TSC;
 				uint32_t us = can_time_to_us(can, ts);
 
-				struct sc_msg_status *msg = (struct sc_msg_status *)out_ptr;
-				msg->len = sizeof(struct sc_msg_status);
+				struct sc_msg_can_status *msg = (struct sc_msg_can_status *)out_ptr;
+				msg->len = sizeof(*msg);
 				msg->id = SC_MSG_CAN_STATUS;
 				msg->channel = index;
 				msg->timestamp_us = us;
@@ -1376,7 +1376,7 @@ start:
 					msg->flags |= SC_STATUS_FLAG_TX_FULL;
 				}
 				if (can->desync) {
-					msg->flags |= SC_STATUS_FLAG_TX_DESYNC;
+					msg->flags |= SC_STATUS_FLAG_TXR_DESYNC;
 				}
 				can->rx_lost = 0;
 				can->tx_dropped = 0;
