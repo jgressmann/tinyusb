@@ -74,7 +74,9 @@
 // #define M_CAN_REG_TXEFS_OFFSET             (0xF4) /**< Tx Event FIFO Status */
 // #define M_CAN_REG_TXEFA_OFFSET             (0xF8) /**< Tx Event FIFO Acknowledge */
 
-#define M_CAN_TS_COUNTER_BITS   15
+
+#define M_CAN_TS_COUNTER_BITS   16 // mcan_users_manual_v330.pdf p. 14, 60001507E.pdf is wrong
+
 #define M_CAN_NMBT_TQ_MIN            0x0004
 #define M_CAN_NMBT_TQ_MAX            0x0181
 #define M_CAN_NMBT_BRP_MIN           0x0001

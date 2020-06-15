@@ -271,7 +271,7 @@ static void can_int(uint8_t index)
 	if (ir.bit.TSW) {
 		uint32_t ts_high = __sync_add_and_fetch(&can->ts_high, 1u << M_CAN_TS_COUNTER_BITS);
 		(void)ts_high;
-		// TU_LOG2("CAN%u ts_high %08lx\n", index, ts_high);
+		// TU_LOG2("CAN%u ts_high=%08lx\n", index, ts_high);
 	}
 
 	uint8_t curr_status = 0;
@@ -1415,6 +1415,7 @@ start:
 					}
 					msg->can_id = id;
 
+					// TU_LOG2("CAN%u ts hi=%08lx lo=%04x\n", index, can->ts_high, r1.bit.RXTS);
 					uint32_t ts = can->ts_high | r1.bit.RXTS;
 					msg->timestamp_us = can_time_to_us(can, ts);
 
