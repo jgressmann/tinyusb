@@ -265,13 +265,13 @@ static void can_int(uint8_t index)
 	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
 	struct can *can = &cans.can[index];
 
-	TU_LOG2("IE %08lx IR %08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
+	// TU_LOG2("IE=%08lx IR=%08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
 
 	CAN_IR_Type ir = can->m_can->IR;
 	if (ir.bit.TSW) {
 		uint32_t ts_high = __sync_add_and_fetch(&can->ts_high, 1u << M_CAN_TS_COUNTER_BITS);
 		(void)ts_high;
-		// TU_LOG2("CAN%u ts_high %08x\n", index, ts_high);
+		// TU_LOG2("CAN%u ts_high %08lx\n", index, ts_high);
 	}
 
 	uint8_t curr_status = 0;
@@ -323,7 +323,7 @@ static void can_int(uint8_t index)
 
 void CAN0_Handler(void)
 {
-	TU_LOG2("CAN0 int\n");
+	// TU_LOG2("CAN0 int\n");
 	can_int(0);
 }
 
