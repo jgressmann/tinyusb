@@ -1364,22 +1364,23 @@ static void can_task(void *param)
 
 		for (bool done = false; !done; ) {
 			done = true;
-			uint8_t *ptr;
-			uint8_t *end;
+			uint8_t *out_beg;
+			uint8_t *out_end;
+			uint8_t *out_ptr;
 start:
-			ptr = usb_can->msg_tx_buffers[usb_can->msg_tx_bank] + usb_can->msg_tx_offsets[usb_can->msg_tx_bank];
-			end = ptr + MSG_BUFFER_SIZE;
+			out_beg = usb_can->msg_tx_buffers[usb_can->msg_tx_bank];
+			out_end = out_beg + MSG_BUFFER_SIZE;
+			out_ptr = out_beg + usb_can->msg_tx_offsets[usb_can->msg_tx_bank];
 
-			if (!usb_can->msg_tx_offsets[usb_can->msg_tx_bank]) {
+			if (out_ptr == out_beg) {
 
 				// place status messages
-
 				done = false;
 
 				uint32_t ts = can->ts_high | can->m_can->TSCV.bit.TSC;
 				uint32_t us = can_time_to_us(can, ts);
 
-				struct sc_msg_status *msg = (struct sc_msg_status *)ptr;
+				struct sc_msg_status *msg = (struct sc_msg_status *)out_ptr;
 				msg->len = sizeof(struct sc_msg_status);
 				msg->id = SC_MSG_CAN_STATUS;
 				msg->channel = index;
@@ -1395,7 +1396,7 @@ start:
 				}
 				can->rx_lost = 0;
 				can->tx_dropped = 0;
-				ptr += msg->len;
+				out_ptr += msg->len;
 			}
 
 			if (m_can_rx0_msg_fifo_avail(can->m_can)) {
@@ -1414,9 +1415,9 @@ start:
 					bytes += 4 - (bytes & 3);
 				}
 
-				if (end - ptr >= bytes) {
-					struct sc_msg_can_rx *msg = (struct sc_msg_can_rx *)ptr;
-					ptr += bytes;
+				if (out_end - out_ptr >= bytes) {
+					struct sc_msg_can_rx *msg = (struct sc_msg_can_rx *)out_ptr;
+					out_ptr += bytes;
 
 					msg->id = SC_MSG_CAN_RX;
 					msg->len = bytes;
@@ -1448,7 +1449,7 @@ start:
 					msg->dlc = r1.bit.DLC;
 				} else {
 					if (sc_can_bulk_in_ep_ready(index)) {
-						usb_can->msg_tx_offsets[usb_can->msg_tx_bank] = ptr - usb_can->msg_tx_buffers[usb_can->msg_tx_bank];
+						usb_can->msg_tx_offsets[usb_can->msg_tx_bank] = out_ptr - out_beg;
 						sc_seal_msg_buffer(index);
 						sc_can_bulk_in_submit(index);
 						goto start;
@@ -1468,9 +1469,9 @@ start:
 					CAN_TXEFE_0_Type t0 = can->tx_event_fifo[get_index].T0;
 					CAN_TXEFE_1_Type t1 = can->tx_event_fifo[get_index].T1;
 
-					if (end - ptr >= bytes) {
-						struct sc_msg_can_txr *msg = (struct sc_msg_can_txr *)ptr;
-						ptr += bytes;
+					if (out_end - out_ptr >= bytes) {
+						struct sc_msg_can_txr *msg = (struct sc_msg_can_txr *)out_ptr;
+						out_ptr += bytes;
 
 						uint8_t marker_index = t1.bit.MM;
 
@@ -1494,7 +1495,7 @@ start:
 						}
 					} else {
 						if (sc_can_bulk_in_ep_ready(index)) {
-							usb_can->msg_tx_offsets[usb_can->msg_tx_bank] = ptr - usb_can->msg_tx_buffers[usb_can->msg_tx_bank];
+							usb_can->msg_tx_offsets[usb_can->msg_tx_bank] = out_ptr - out_beg;
 							sc_seal_msg_buffer(index);
 							sc_can_bulk_in_submit(index);
 							goto start;
@@ -1507,7 +1508,7 @@ start:
 				can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(get_index);
 			}
 
-			usb_can->msg_tx_offsets[usb_can->msg_tx_bank] = ptr - usb_can->msg_tx_buffers[usb_can->msg_tx_bank];
+			usb_can->msg_tx_offsets[usb_can->msg_tx_bank] = out_ptr - out_beg;
 		}
 
 
