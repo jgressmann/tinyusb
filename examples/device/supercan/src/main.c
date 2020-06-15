@@ -792,7 +792,8 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 
 	const uint8_t rx_bank = usb_can->msg_rx_bank;
-	TU_LOG2("CAN%u rx bank %u\n", index, rx_bank);
+	// TU_LOG2("CAN%u rx bank %u\n", index, rx_bank);
+	(void)rx_bank;
 	uint8_t const * const in_beg = usb_can->msg_rx_buffers[usb_can->msg_rx_bank];
 	uint8_t const *in_ptr = in_beg;
 	uint8_t const * const in_end = in_ptr + xferred_bytes;
@@ -818,11 +819,11 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 		switch (msg->id) {
 		case SC_MSG_EOF: {
-			TU_LOG2("SC_MSG_EOF\n");
+			// TU_LOG2("SC_MSG_EOF\n");
 			in_ptr = in_end;
 		} break;
 		case SC_MSG_CAN_TX: {
-			TU_LOG2("SC_MSG_CAN_TX\n");
+			// TU_LOG2("SC_MSG_CAN_TX\n");
 			struct sc_msg_can_tx const *tmsg = (struct sc_msg_can_tx const *)msg;
 			if (unlikely(msg->len < sizeof(*tmsg))) {
 				TU_LOG1("ERROR: msg too short\n");
