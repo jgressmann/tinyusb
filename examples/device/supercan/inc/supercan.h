@@ -166,7 +166,7 @@ struct sc_msg_can_status {
 
 struct sc_msg_can_rx {
     uint8_t id;
-    uint8_t len;
+    uint8_t len;            // must be a multiple of 4
     uint8_t channel;
     uint8_t dlc;
     uint32_t can_id;
@@ -177,7 +177,7 @@ struct sc_msg_can_rx {
 
 struct sc_msg_can_tx {
     uint8_t id;
-    uint8_t len;
+    uint8_t len;            // must be a multiple of 4
     uint8_t channel;
     uint8_t dlc;
     uint32_t can_id;
