@@ -275,29 +275,21 @@ static void can_int(uint8_t index)
 
 	uint8_t curr_status = 0;
 
-	// bool had_ep = (prev_status & SC_STATUS_FLAG_ERROR_PASSIVE) == SC_STATUS_FLAG_ERROR_PASSIVE;
-	// notify |= had_ep != ir.bit.EP;
 	if (ir.bit.EP) {
 		TU_LOG2("CAN%u error passive\n", index);
 		curr_status |= SC_STATUS_FLAG_ERROR_PASSIVE;
 	}
 
-	// bool had_ew = (prev_status & SC_STATUS_FLAG_ERROR_WARNING) == SC_STATUS_FLAG_ERROR_WARNING;
-	// notify |= had_ew != ir.bit.EW;
 	if (ir.bit.EW) {
 		TU_LOG2("CAN%u error warning\n", index);
 		curr_status |= SC_STATUS_FLAG_ERROR_WARNING;
 	}
 
-	// bool had_bo = (prev_status & SC_STATUS_FLAG_BUS_OFF) == SC_STATUS_FLAG_BUS_OFF;
-	// notify |= had_bo != ir.bit.BO;
 	if (ir.bit.BO) {
 		TU_LOG2("CAN%u bus off\n", index);
 		curr_status |= SC_STATUS_FLAG_BUS_OFF;
 	}
 
-	// bool had_rx_fifo0_msg_lost = (prev_status & SC_STATUS_FLAG_RX_FULL) == SC_STATUS_FLAG_RX_FULL;
-	// notify |= had_rx_fifo0_msg_lost != ir.bit.RF0L;
 	if (ir.bit.RF0L) {
 		TU_LOG2("CAN%u msg lost\n", index);
 		curr_status |= SC_STATUS_FLAG_RX_FULL;
@@ -505,31 +497,6 @@ static struct usb {
 	bool mounted;
 } usb;
 
-// static inline bool usb_bulk_in_ep_ready(void)
-// {
-// 	return 0 == usb.tx_offsets[!usb.tx_bank];
-// }
-
-// static inline void seal_buffer(void)
-// {
-// 	const uint8_t bytes_to_add = 4;
-// 	if (likely(usb.tx_offsets[usb.tx_bank] + bytes_to_add <= CMD_BUFFER_SIZE)) {
-// 		memset(&usb.tx_buffers[usb.tx_bank][usb.tx_offsets[usb.tx_bank]], 0, bytes_to_add);
-// 		usb.tx_offsets[usb.tx_bank] += bytes_to_add;
-// 	}
-// }
-
-// static inline void usb_bulk_in_submit(void)
-// {
-// 	TU_ASSERT(usb_bulk_in_ep_ready(), );
-// 	TU_ASSERT(usb.tx_offsets[usb.tx_bank] > 0, );
-// 	seal_buffer();
-// 	(void)dcd_edpt_xfer(usb.port, SC_M1_EP_CMD_BULK_IN, usb.tx_buffers[usb.tx_bank], usb.tx_offsets[usb.tx_bank]);
-// 	usb.tx_bank = !usb.tx_bank;
-// }
-
-
-
 
 static inline bool sc_cmd_bulk_in_ep_ready(void)
 {
@@ -689,6 +656,7 @@ send_info:
 			dtbt_sjw = tmsg->dtbt_sjw;
 			dtbt_tseg1 = tmsg->dtbt_tseg1;
 			dtbt_tseg2 = tmsg->dtbt_tseg2;
+
 			// clamp
 			can->nmbt_brp = tu_max16(M_CAN_NMBT_BRP_MIN, tu_min16(nmbt_brp, M_CAN_NMBT_BRP_MAX));
 			can->nmbt_tseg1 = tu_max16(M_CAN_NMBT_TSEG1_MIN, tu_min16(nmbt_tseg1, M_CAN_NMBT_TSEG1_MAX));
@@ -698,9 +666,6 @@ send_info:
 			can->dtbt_sjw = tu_max8(M_CAN_DTBT_SJW_MIN, tu_min8(dtbt_sjw, M_CAN_DTBT_SJW_MAX));
 			can->dtbt_tseg1 = tu_max8(M_CAN_DTBT_TSEG1_MIN, tu_min8(dtbt_tseg1, M_CAN_DTBT_TSEG1_MAX));
 			can->dtbt_tseg2 = tu_max8(M_CAN_DTBT_TSEG2_MIN, tu_min8(dtbt_tseg2, M_CAN_DTBT_TSEG2_MAX));
-
-			// can_configure(can);
-
 		} break;
 		case SC_MSG_RESET: {
 			TU_LOG2("SC_MSG_RESET\n");
@@ -721,9 +686,6 @@ send_info:
 
 			struct can *can = &cans.can[tmsg->channel];
 			can->mode_flags = tmsg->args[0];
-
-			// can_configure(can);
-
 		} break;
 		case SC_MSG_OPTIONS: {
 			TU_LOG2("SC_MSG_OPTIONS\n");
@@ -1057,22 +1019,6 @@ bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf,
 		return false;
 	}
 
-	// TU_VERIFY(TUSB_CLASS_VENDOR_SPECIFIC == desc_intf->bInterfaceClass);
-
-
-//   // Open endpoint pair with usbd helper
-//   uint8_t ep_in, ep_out;
-//   TU_ASSERT(usbd_open_edpt_pair(rhport, tu_desc_next(desc_intf), 2, TUSB_XFER_BULK, &ep_out, &ep_in));
-
-//   (*p_length) = sizeof(tusb_desc_interface_t) + 2*sizeof(tusb_desc_endpoint_t);
-
-//   // Prepare for incoming data
-//   TU_ASSERT(usbd_edpt_xfer(rhport, ep_out, usb.rx_buffers[usb.rx_bank], 64));
-
-//   return true;
-
-
-
 	uint8_t const *ptr = (void const *)desc_intf;
 
 	ptr += 9;
@@ -1085,19 +1031,13 @@ bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf,
 		TU_ASSERT(dcd_edpt_open(rhport, ep_desc));
 	}
 
-
-
-	// TU_ASSERT(dcd_edpt_open(rhport, (tusb_desc_endpoint_t const *)(ptr + i * 7)));
 	TU_ASSERT(dcd_edpt_xfer(rhport, SC_M1_EP_CMD_BULK_OUT, usb.cmd_rx_buffers[usb.cmd_rx_bank], CMD_BUFFER_SIZE));
 	for (size_t i = 0; i < TU_ARRAY_SIZE(usb.can); ++i) {
 		struct usb_can *usb_can = &usb.can[i];
 		TU_ASSERT(dcd_edpt_xfer(rhport, usb_can->pipe, usb_can->msg_rx_buffers[usb_can->msg_rx_bank], MSG_BUFFER_SIZE));
 	}
-	// TU_ASSERT(dcd_edpt_xfer(rhport, SC_M1_EP_MSG0_BULK_OUT, usb.rx_buffers[usb.rx_bank], CMD_BUFFER_SIZE));
-
 
 	*p_length = 9+eps*7;
-
 
 	return true;
 }
@@ -1108,8 +1048,6 @@ bool tud_custom_xfer_cb(
 	xfer_result_t event,
 	uint32_t xferred_bytes)
 {
-	// TU_LOG2("tud_custom_xfer_cb\n");
-
 	USB_TRAFFIC_DO_LED;
 
 	(void)event; // always success
@@ -1123,7 +1061,6 @@ bool tud_custom_xfer_cb(
 		sc_cmd_bulk_out(xferred_bytes);
 	} break;
 	case SC_M1_EP_CMD_BULK_IN: {
-		// TU_ASSERT(!usbd_edpt_busy(rhport, ep_addr), false);
 		TU_LOG2("< cmd IN token\n");
 
 		// mark previous bank as free
