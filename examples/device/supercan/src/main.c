@@ -224,7 +224,6 @@ static inline void can_configure(struct can *c)
 		| CAN_IE_RF0LE  // message lost b/c fifo0 was full
 		;
 
-	TU_LOG2("IE %08lx\n", can->IE.reg);
 	if (c->option_flags & SC_OPTION_TXR) {
 		can->IE.reg |= CAN_IE_TEFNE; 	// new message in tx event fifo
 	}
