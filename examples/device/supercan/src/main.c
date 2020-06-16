@@ -619,14 +619,16 @@ static void sc_cmd_bulk_out(uint32_t xferred_bytes)
 		case SC_MSG_DEVICE_INFO: {
 			TU_LOG2("SC_MSG_DEVICE_INFO\n");
 			uint8_t bytes = sizeof(struct sc_msg_dev_info);
-			uint8_t *ptr;
-			uint8_t *end;
+			uint8_t *out_ptr;
+			uint8_t *out_end;
+
+
 send_info:
-			ptr = usb.cmd_tx_buffers[usb.cmd_tx_bank] + usb.cmd_tx_offsets[usb.cmd_tx_bank];
-			end = ptr + CMD_BUFFER_SIZE;
-			if (end - ptr >= bytes) {
+			out_ptr = usb.cmd_tx_buffers[usb.cmd_tx_bank] + usb.cmd_tx_offsets[usb.cmd_tx_bank];
+			out_end = usb.cmd_tx_buffers[usb.cmd_tx_bank] + CMD_BUFFER_SIZE;
+			if (out_end - out_ptr >= bytes) {
 				usb.cmd_tx_offsets[usb.cmd_tx_bank] += bytes;
-				struct sc_msg_dev_info *rep = (struct sc_msg_dev_info *)ptr;
+				struct sc_msg_dev_info *rep = (struct sc_msg_dev_info *)out_ptr;
 				rep->id = SC_MSG_DEVICE_INFO;
 				rep->len = bytes;
 				rep->channels = TU_ARRAY_SIZE(cans.can);
@@ -845,19 +847,17 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 			if (can->m_can->TXFQS.bit.TFQF) {
 				++can->tx_dropped;
-				uint8_t *ptr;
-				uint8_t *end;
-
 				if (can->option_flags & SC_OPTION_TXR) {
+					uint8_t *out_ptr;
+					uint8_t *out_end;
 send_txr:
-					ptr = usb_can->msg_tx_buffers[usb_can->msg_tx_bank] + usb_can->msg_tx_offsets[usb_can->msg_tx_bank];
-					end = ptr + MSG_BUFFER_SIZE;
-
+					out_ptr = usb_can->msg_tx_buffers[usb_can->msg_tx_bank] + usb_can->msg_tx_offsets[usb_can->msg_tx_bank];
+					out_end = usb_can->msg_tx_buffers[usb_can->msg_tx_bank] + MSG_BUFFER_SIZE;
 					uint8_t bytes = sizeof(struct sc_msg_can_txr);
-					if (end - ptr >= bytes) {
+					if (out_end - out_ptr >= bytes) {
 						usb_can->msg_tx_offsets[usb_can->msg_tx_bank] += bytes;
 
-						struct sc_msg_can_txr *rep = (struct sc_msg_can_txr *)ptr;
+						struct sc_msg_can_txr *rep = (struct sc_msg_can_txr *)out_ptr;
 						rep->id = SC_MSG_CAN_TXR;
 						rep->len = bytes;
 						rep->channel = tmsg->channel;
