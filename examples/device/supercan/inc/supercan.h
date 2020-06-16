@@ -110,7 +110,7 @@ struct sc_msg_config {
     uint8_t args[1];
 } SC_PACKED;
 
-struct sc_msg_info {
+struct sc_msg_dev_info {
     uint8_t id;
     uint8_t len;
     uint8_t channels;
@@ -200,7 +200,7 @@ struct sc_msg_can_txr {
 enum {
     static_assert_sizeof_sc_msg_header_is_2 = sizeof(int[sizeof(struct sc_msg_header)  == 2 ? 1 : -1]),
     static_assert_sc_msg_hello_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_hello) & 0x3) == 0 ? 1 : -1]),
-    static_assert_sc_msg_info_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_info) & 0x3) == 0 ? 1 : -1]),
+    static_assert_sc_msg_dev_info_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_dev_info) & 0x3) == 0 ? 1 : -1]),
     static_assert_sc_msg_bittiming_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_bittiming) & 0x3) == 0 ? 1 : -1]),
     static_assert_sc_msg_can_txr_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_txr) & 0x3) == 0 ? 1 : -1]),
     static_assert_sc_msg_can_status_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_status) & 0x3) == 0 ? 1 : -1]),

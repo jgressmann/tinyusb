@@ -618,7 +618,7 @@ static void sc_cmd_bulk_out(uint32_t xferred_bytes)
 		} break;
 		case SC_MSG_DEVICE_INFO: {
 			TU_LOG2("SC_MSG_DEVICE_INFO\n");
-			uint8_t bytes = sizeof(struct sc_msg_info);
+			uint8_t bytes = sizeof(struct sc_msg_dev_info);
 			uint8_t *ptr;
 			uint8_t *end;
 send_info:
@@ -626,7 +626,7 @@ send_info:
 			end = ptr + CMD_BUFFER_SIZE;
 			if (end - ptr >= bytes) {
 				usb.cmd_tx_offsets[usb.cmd_tx_bank] += bytes;
-				struct sc_msg_info *rep = (struct sc_msg_info *)ptr;
+				struct sc_msg_dev_info *rep = (struct sc_msg_dev_info *)ptr;
 				rep->id = SC_MSG_DEVICE_INFO;
 				rep->len = bytes;
 				rep->channels = TU_ARRAY_SIZE(cans.can);
