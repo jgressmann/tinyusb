@@ -30,6 +30,7 @@
 #include <supercan.h>
 #include <supercan_m1.h>
 #include <usb_descriptors.h>
+#include <mcu.h>
 
 #define _PID_MAP(itf, n)  ( (CFG_TUD_##itf) << (n) )
 #define USB_PID           (0x4000 | _PID_MAP(CDC, 0) | _PID_MAP(MSC, 1) | _PID_MAP(HID, 2) | \
@@ -102,7 +103,7 @@ enum
 #define EPNUM_CDC       2
 #define EPNUM_VENDOR    SC_M1_EP_CMD_BULK_OUT
 
-uint8_t const desc_configuration[] =
+static uint8_t const desc_configuration[] =
 {
 	// Config number, interface count, string index, total length, attribute, power in mA
 	TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 100),
@@ -203,18 +204,19 @@ TU_VERIFY_STATIC(sizeof(desc_ms_os_20) == MS_OS_20_DESC_LEN, "descriptor size mi
 //--------------------------------------------------------------------+
 
 // array of pointer to string descriptors
-char const* string_desc_arr [] =
+static char const* string_desc_arr [] =
 {
 	(const char[]) { 0x09, 0x04 },   // 0: is supported language is English (0x0409)
 	"2guys",                         // 1: Manufacturer
 	SC_M1_NAME_SHORT,                // 2: Product
-	"123456",                        // 3: Serial
+	"",                        		 // 3: Serial
 	"TinyUSB CDC",                   // 4: CDC
-	SC_NAME,                         // 5:
+	SC_NAME,                         // 5: SuperCAN interface
 };
 
 
-static uint16_t _desc_str[32];
+static uint16_t _desc_str[33];
+static const char hex_map[16] = "0123456789abcdef";
 
 // Invoked when received GET STRING DESCRIPTOR request
 // Application return pointer to descriptor, whose contents must exist long enough for transfer to complete
@@ -223,25 +225,46 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 	(void) langid;
 
 	uint8_t chr_count;
+	switch (index) {
+	case 0:
+		memcpy(&_desc_str[1], string_desc_arr[0], 2);
+		chr_count = 1;
+		break;
+	case 3: {
+		// Section 9.6, p. 60
+		chr_count = 32;
+		uint32_t serial_number[4];
+		same51_get_serial_number(serial_number);
+		TU_LOG2(
+			"chip serial number %08lx%08lx%08lx%08lx\n",
+			serial_number[0],
+			serial_number[1],
+			serial_number[2],
+			serial_number[3]);
+		for (unsigned i = 0, k = 1; i < 4; ++i) {
+			uint32_t x = serial_number[i];
+			for (unsigned j = 0, shift = 24; j < 4; ++j, shift -= 8, k += 2) {
+				uint8_t y = (x >> shift) & 0xff;
+				uint8_t hi = (y >> 4) & 0xf;
+				uint8_t lo = (y >> 0) & 0xf;
+				_desc_str[k] = hex_map[hi];
+				_desc_str[k+1] = hex_map[lo];
+			}
+		}
+	} break;
+	default: {
+		// Convert ASCII string into UTF-16
+		if ( !(index < sizeof(string_desc_arr)/sizeof(string_desc_arr[0])) ) return NULL;
 
-	if ( index == 0) {
-	  memcpy(&_desc_str[1], string_desc_arr[0], 2);
-	  chr_count = 1;
-	} else {
-	  // Convert ASCII string into UTF-16
+		const char* str = string_desc_arr[index];
 
-	  if ( !(index < sizeof(string_desc_arr)/sizeof(string_desc_arr[0])) ) return NULL;
+		// Cap at max char
+		chr_count = tu_min8(strlen(str), TU_ARRAY_SIZE(_desc_str) - 1);
 
-	  const char* str = string_desc_arr[index];
-
-	  // Cap at max char
-	  chr_count = strlen(str);
-	  if ( chr_count > 31 ) chr_count = 31;
-
-	  for(uint8_t i=0; i<chr_count; i++)
-	  {
-	    _desc_str[1+i] = str[i];
-	  }
+		for (uint8_t i = 0; i < chr_count; ++i) {
+			_desc_str[1+i] = str[i];
+		}
+	} break;
 	}
 
 	// first byte is length (including header), second byte is string type

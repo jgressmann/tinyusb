@@ -47,7 +47,7 @@
 #include <supercan_m1.h>
 #include <usb_descriptors.h>
 #include <m_can.h>
-
+#include <mcu.h>
 
 
 
@@ -621,6 +621,8 @@ send_info:
 				rep->dtbt_tseg1_max = M_CAN_DTBT_TSEG1_MAX;
 				rep->dtbt_tseg2_min = M_CAN_DTBT_TSEG2_MIN;
 				rep->dtbt_tseg2_max = M_CAN_DTBT_TSEG2_MAX;
+				same51_get_serial_number(rep->serial_number);
+
 			} else {
 				if (sc_cmd_bulk_in_ep_ready()) {
 					sc_cmd_bulk_in_submit();
@@ -1161,7 +1163,7 @@ bool tud_vendor_control_request_cb(uint8_t rhport, tusb_control_request_t const 
 		return true;
 	} break;
 	case VENDOR_REQUEST_MICROSOFT: {
-		if ( request->wIndex == 7 ) {
+		if (request->wIndex == 7) {
 			// Get Microsoft OS 2.0 compatible descriptor
 			uint16_t total_len;
 			memcpy(&total_len, desc_ms_os_20+8, 2);

@@ -78,8 +78,8 @@ extern "C" {
 
 
 
-#define SC_MODE_FLAG_RX         0x00 // enable reception
-#define SC_MODE_FLAG_TX         0x01 // enable transmission
+#define SC_MODE_FLAG_RX         0x00 // enable reception (rx)
+#define SC_MODE_FLAG_TX         0x01 // enable transmission (tx)
 #define SC_MODE_FLAG_FD         0x02 // enable CAN-FD
 #define SC_MODE_FLAG_BRS        0x04 // enable CAN-FD bitrate switching
 #define SC_MODE_FLAG_AUTO_RE    0x08 // enable automatic retransmission (tx)
@@ -137,6 +137,7 @@ struct sc_msg_dev_info {
     uint8_t dtbt_tseg2_min;
     uint8_t dtbt_tseg2_max;
     uint8_t unused[1];
+    uint32_t serial_number[4];
 } SC_PACKED;
 
 struct sc_msg_bittiming {
