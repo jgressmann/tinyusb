@@ -35,7 +35,6 @@
 #include <bsp/board.h>
 #include <tusb.h>
 #include <dcd.h>
-#include <usbd_pvt.h>
 
 #include <sam.h>
 
