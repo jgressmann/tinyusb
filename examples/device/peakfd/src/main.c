@@ -329,11 +329,6 @@ static struct {
 static inline void can_init_pins(void)
 {
 	// CAN0 ports
-	REG_PORT_DIRSET0 = PORT_PA20; /* CAN_EN_1 */
-	REG_PORT_DIRSET0 = PORT_PA21; /* CAN_STB_1 */
-	REG_PORT_OUTSET0 = PORT_PA20; /* CAN_EN_1 */
-	REG_PORT_OUTSET0 = PORT_PA21; /* CAN_STB_1 */
-
 	REG_PORT_WRCONFIG0 =
 		PORT_WRCONFIG_HWSEL |           // upper half
 		PORT_WRCONFIG_PINMASK(0x00c0) |
@@ -347,12 +342,6 @@ static inline void can_init_pins(void)
 static inline void can_init_pins(void)
 {
 	// CAN0 ports
-	REG_PORT_DIRSET0 = PORT_PA20; // tx
-	REG_PORT_DIRSET0 = PORT_PA21; // rx
-	REG_PORT_OUTSET0 = PORT_PA20;
-	REG_PORT_OUTSET0 = PORT_PA21;
-
-
 	REG_PORT_WRCONFIG0 =
 		PORT_WRCONFIG_HWSEL |           // upper half
 		PORT_WRCONFIG_PINMASK(0x00c0) |
@@ -362,11 +351,6 @@ static inline void can_init_pins(void)
 		PORT_WRCONFIG_PMUXEN;
 
 	// CAN1 ports
-	REG_PORT_DIRSET1 = PORT_PB14; // tx
-	REG_PORT_DIRSET1 = PORT_PB15; // rx
-	REG_PORT_OUTSET1 = PORT_PB14;
-	REG_PORT_OUTSET1 = PORT_PB15;
-
 	REG_PORT_WRCONFIG1 =
 		PORT_WRCONFIG_PINMASK(0xc000) | // 14+15
 		PORT_WRCONFIG_WRPINCFG |
