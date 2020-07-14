@@ -46,6 +46,10 @@
 # error "CONF_CPU_FREQUENCY" must 120000000
 #endif
 
+#ifndef D5035_01
+# error Only D5035-01 boards supported
+#endif
+
 
 #define CAN_CLK_HZ CONF_CPU_FREQUENCY
 
@@ -320,28 +324,64 @@ static struct {
 
 
 
-
-static inline void can_init_pins(void) // controller and hardware specific setup of i/o pins for CAN
+#if HWRV == 1
+// controller and hardware specific setup of i/o pins for CAN
+static inline void can_init_pins(void)
 {
-	// CAN ports
+	// CAN0 ports
 	REG_PORT_DIRSET0 = PORT_PA20; /* CAN_EN_1 */
 	REG_PORT_DIRSET0 = PORT_PA21; /* CAN_STB_1 */
 	REG_PORT_OUTSET0 = PORT_PA20; /* CAN_EN_1 */
 	REG_PORT_OUTSET0 = PORT_PA21; /* CAN_STB_1 */
 
-	REG_PORT_WRCONFIG0 =	PORT_WRCONFIG_HWSEL |			// upper half
-	PORT_WRCONFIG_PINMASK(0x00c0) |	// 21 + 22
-	PORT_WRCONFIG_WRPINCFG |
-	PORT_WRCONFIG_WRPMUX |
-	PORT_WRCONFIG_PMUX(8) |			// CAN
-	PORT_WRCONFIG_PMUXEN;
+	REG_PORT_WRCONFIG0 =
+		PORT_WRCONFIG_HWSEL |           // upper half
+		PORT_WRCONFIG_PINMASK(0x00c0) |
+		PORT_WRCONFIG_WRPINCFG |
+		PORT_WRCONFIG_WRPMUX |
+		PORT_WRCONFIG_PMUX(8) |         // I, CAN0, DS60001507E-page 32
+		PORT_WRCONFIG_PMUXEN;
 }
+#else // HWRV
+ // controller and hardware specific setup of i/o pins for CAN
+static inline void can_init_pins(void)
+{
+	// CAN0 ports
+	REG_PORT_DIRSET0 = PORT_PA20; // tx
+	REG_PORT_DIRSET0 = PORT_PA21; // rx
+	REG_PORT_OUTSET0 = PORT_PA20;
+	REG_PORT_OUTSET0 = PORT_PA21;
+
+
+	REG_PORT_WRCONFIG0 =
+		PORT_WRCONFIG_HWSEL |           // upper half
+		PORT_WRCONFIG_PINMASK(0x00c0) |
+		PORT_WRCONFIG_WRPINCFG |
+		PORT_WRCONFIG_WRPMUX |
+		PORT_WRCONFIG_PMUX(8) |         // I, CAN0, DS60001507E-page 32
+		PORT_WRCONFIG_PMUXEN;
+
+	// CAN1 ports
+	REG_PORT_DIRSET1 = PORT_PB14; // tx
+	REG_PORT_DIRSET1 = PORT_PB15; // rx
+	REG_PORT_OUTSET1 = PORT_PB14;
+	REG_PORT_OUTSET1 = PORT_PB15;
+
+	REG_PORT_WRCONFIG1 =
+		PORT_WRCONFIG_PINMASK(0xc000) | // 14+15
+		PORT_WRCONFIG_WRPINCFG |
+		PORT_WRCONFIG_WRPMUX |
+		PORT_WRCONFIG_PMUX(7) |         // H, CAN1, DS60001507E-page 32
+		PORT_WRCONFIG_PMUXEN;
+}
+#endif // HWRV
 
 
 static inline void can_init_clock(void) // controller and hardware specific setup of clock for the m_can module
 {
 	REG_MCLK_AHBMASK |= MCLK_AHBMASK_CAN0 | MCLK_AHBMASK_CAN1;
-	REG_GCLK_PCHCTRL27 = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN0/1 to use GLCK0 -> 120MHz
+	REG_GCLK_PCHCTRL27 = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN0 to use GLCK0 -> 120MHz
+	REG_GCLK_PCHCTRL28 = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0 -> 120MHz
 }
 
 static inline void can_configure(struct can *c)
@@ -599,8 +639,8 @@ struct led {
 #if CFG_TUSB_DEBUG > 0
 	const char* name;
 #endif
-	volatile uint16_t time_ms	: 15;
-	volatile uint16_t blink		: 1;
+	volatile uint16_t time_ms;
+	volatile uint8_t blink;
 	uint8_t pin;
 };
 
@@ -612,6 +652,7 @@ struct led {
 	{ 0, 0, pin }
 #endif
 
+#if HWRV == 1
 static struct led leds[] = {
 	LED_STATIC_INITIALIZER("debug", PIN_PA02),
 	LED_STATIC_INITIALIZER("red1", PIN_PB14),
@@ -632,15 +673,55 @@ enum {
 	LED_GREEN2
 };
 
+
+
 #define USB_TRAFFIC_LED LED_ORANGE1
 #define USB_TRAFFIC_BURST_DURATION_MS 8
 #define USB_TRAFFIC_DO_LED led_burst(USB_TRAFFIC_LED, USB_TRAFFIC_BURST_DURATION_MS)
+#define CAN0_LED LED_GREEN1
+#define CAN1_LED LED_GREEN2
+#define POWER_LED LED_RED1
 
-#define CAN_TX_LED LED_GREEN1
-#define CAN_TX_BURST_DURATION_MS 8
+static void led_init(void)
+{
+	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
+	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA12; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA13; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA14; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
+}
+#else // HWRV
+static struct led leds[] = {
+	LED_STATIC_INITIALIZER("debug", PIN_PA02),
+	LED_STATIC_INITIALIZER("red", PIN_PA18),
+	LED_STATIC_INITIALIZER("orange", PIN_PA19),
+	LED_STATIC_INITIALIZER("green", PIN_PB16),
+	LED_STATIC_INITIALIZER("blue", PIN_PB17),
+};
 
-#define CAN_RX_LED LED_GREEN2
-#define CAN_RX_BURST_DURATION_MS CAN_TX_BURST_DURATION_MS
+enum {
+	LED_DEBUG,
+	LED_0,
+	LED_1,
+	LED_2,
+	LED_3,
+};
+
+#define USB_TRAFFIC_DO_LED led_burst(LED_0, 8)
+#define CAN0_LED LED_1
+#define CAN1_LED LED_2
+#define POWER_LED LED_3
+
+static void led_init(void)
+{
+	PORT->Group[0].DIRSET.reg = PORT_PA18;
+	PORT->Group[0].DIRSET.reg = PORT_PA19;
+	PORT->Group[1].DIRSET.reg = PORT_PB16;
+	PORT->Group[1].DIRSET.reg = PORT_PB17;
+}
+
+#endif // HWRV
 
 
 static void led_init(void);
@@ -1222,8 +1303,8 @@ int main(void)
 		peakfd[i].clock_mode = PCAN_UFD_CLK_DEF;
 	}
 
-	cans.can[0].led = LED_GREEN1;
-	cans.can[1].led = LED_GREEN2;
+	cans.can[0].led = CAN0_LED;
+	cans.can[1].led = CAN1_LED;
 	cans.can[0].task = xTaskCreateStatic(&can_task, "can0", TU_ARRAY_SIZE(can_task_stack[0]), (void*)0, configMAX_PRIORITIES-1, can_task_stack[0], &can_task_mem[0]);
 	cans.can[1].task = xTaskCreateStatic(&can_task, "can1", TU_ARRAY_SIZE(can_task_stack[1]), (void*)1, configMAX_PRIORITIES-1, can_task_stack[1], &can_task_mem[1]);
 
@@ -1232,7 +1313,7 @@ int main(void)
 
 
 	led_blink(0, 2000);
-	led_set(LED_RED1, 1);
+	led_set(POWER_LED, 1);
 
 	vTaskStartScheduler();
 	NVIC_SystemReset();
@@ -1582,15 +1663,7 @@ bool tud_vendor_control_complete_cb(uint8_t rhport, tusb_control_request_t const
 //--------------------------------------------------------------------+
 // LED TASK
 //--------------------------------------------------------------------+
-static void led_init(void)
-{
-	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
-	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA12; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA13; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA14; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
-}
+
 
 
 
