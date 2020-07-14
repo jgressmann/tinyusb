@@ -119,7 +119,7 @@ static char const* string_desc_arr [] =
 	(const char[]) { 0x09, 0x04 },   // 0: is supported language is English (0x0409)
 	"Jean Gressmann",                // 1: Manufacturer
 	"SuperDFU",	                     // 2: Product
-	"",                        		 // 3: Serial
+	"",                              // 3: Serial
 	"USB DFU 1.1",
 };
 
@@ -177,7 +177,7 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 	}
 
 	// first byte is length (including header), second byte is string type
-	_desc_str[0] = (TUSB_DESC_STRING << 8 ) | (2*chr_count + 2);
+	_desc_str[0] = (TUSB_DESC_STRING << 8) | (2*chr_count + 2);
 
 	return _desc_str;
 }

@@ -43,6 +43,8 @@
 #include <usb_descriptors.h>
 #include <mcu.h>
 #include <usb_dfu_1_1.h>
+#define EEPROM_SIZE 512
+#include <eeprom.h>
 
 
 
@@ -184,9 +186,10 @@ static struct usb {
 // DEBUG=1 LOG=2 ~24K (text)
 // DEBUG=1 LOG=0 ~14K (text)
 // DEBUG=0 LOG=0 ~12K (text)
-#if !defined(BOOTLOADER_SIZE) || BOOTLOADER_SIZE <= 0
-#error Define BOOTLOADER_SIZE to a multiple of 2
-#endif
+// #if !defined(BOOTLOADER_SIZE) || BOOTLOADER_SIZE <= 0
+// #error Define BOOTLOADER_SIZE to a multiple of 2
+// #endif
+#define BOOTLOADER_SIZE (1u<<15)
 
 // #define NVM_REGIONS 32
 // #define NVM_REGION_SIZE (1ul<<14)
@@ -300,17 +303,110 @@ static inline bool nvm_write_main_page(void *addr, void const *ptr)
 	return true;
 }
 
+static inline bool nvm_see_flush(void)
+{
+	TU_LOG2("SmartEEPROM flush\n");
+	while (!NVMCTRL->STATUS.bit.READY); // wait for nvmctrl to be ready
+
+	// clear flags
+	NVMCTRL->INTFLAG.reg = NVMCTRL->INTFLAG.reg;
+
+	// flush page buffer
+	NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CMD_SEEFLUSH | NVMCTRL_CTRLB_CMDEX_KEY;
+
+	while (!NVMCTRL->STATUS.bit.READY);
+
+	// clear done flag
+	NVMCTRL->INTFLAG.bit.DONE = 1;
+
+	TU_LOG2("INTFLAG %#08lx\n", (uint32_t)NVMCTRL->INTFLAG.reg);
+
+	return !NVMCTRL->INTFLAG.reg;
+}
+
+// adapted from http://www.keil.com/support/docs/3913.htm
+__attribute__((naked, noreturn)) static void boot_jump_asm(uint32_t sp, uint32_t rh)
+{
+	__asm__("MSR MSP, r0");
+	__asm__("BX  r1");
+}
+
+__attribute__((noreturn)) static void boot_jump(void)
+{
+    // Make sure, the CPU is in privileged mode.
+
+    //   if( CONTROL_nPRIV_Msk & __get_CONTROL( ) )
+    //   {  /* not in privileged mode */
+    //     EnablePrivilegedMode( ) ;
+    //   }
+
+    // The function EnablePrivilegedMode( ) triggers a SVC, and enters handler mode (which can only run in privileged mode). The nPRIV bit in the CONTROL register is cleared which can only be done in privileged mode. See ARM: How to write an SVC function about implementing SVC functions.
+    // Disable all enabled interrupts in NVIC.
+
+    NVIC->ICER[ 0 ] = 0xFFFFFFFF ;
+    NVIC->ICER[ 1 ] = 0xFFFFFFFF ;
+    NVIC->ICER[ 2 ] = 0xFFFFFFFF ;
+    NVIC->ICER[ 3 ] = 0xFFFFFFFF ;
+    NVIC->ICER[ 4 ] = 0xFFFFFFFF ;
+    NVIC->ICER[ 5 ] = 0xFFFFFFFF ;
+    NVIC->ICER[ 6 ] = 0xFFFFFFFF ;
+    NVIC->ICER[ 7 ] = 0xFFFFFFFF ;
+
+    // Disable all enabled peripherals which might generate interrupt requests, and clear all pending interrupt flags in those peripherals. Because this is device-specific, refer to the device datasheet for the proper way to clear these peripheral interrupts.
+    // Clear all pending interrupt requests in NVIC.
+
+    NVIC->ICPR[ 0 ] = 0xFFFFFFFF ;
+    NVIC->ICPR[ 1 ] = 0xFFFFFFFF ;
+    NVIC->ICPR[ 2 ] = 0xFFFFFFFF ;
+    NVIC->ICPR[ 3 ] = 0xFFFFFFFF ;
+    NVIC->ICPR[ 4 ] = 0xFFFFFFFF ;
+    NVIC->ICPR[ 5 ] = 0xFFFFFFFF ;
+    NVIC->ICPR[ 6 ] = 0xFFFFFFFF ;
+    NVIC->ICPR[ 7 ] = 0xFFFFFFFF ;
+
+    // Disable SysTick and clear its exception pending bit, if it is used in the bootloader, e. g. by the RTX.
+
+    SysTick->CTRL = 0 ;
+    SCB->ICSR |= SCB_ICSR_PENDSTCLR_Msk ;
+
+    // Disable individual fault handlers if the bootloader used them.
+
+    SCB->SHCSR &= ~( SCB_SHCSR_USGFAULTENA_Msk | \
+                     SCB_SHCSR_BUSFAULTENA_Msk | \
+                     SCB_SHCSR_MEMFAULTENA_Msk ) ;
+
+    // Activate the MSP, if the core is found to currently run with the PSP. As the compiler might still uses the stack, the PSP needs to be copied to the MSP before this.
+
+    if( CONTROL_SPSEL_Msk & __get_CONTROL( ) )
+    {  /* MSP is not active */
+      __set_MSP( __get_PSP( ) ) ;
+      __set_CONTROL( __get_CONTROL( ) & ~CONTROL_SPSEL_Msk ) ;
+    }
+
+    // Load the vector table address of the user application into SCB->VTOR register. Make sure the address meets the alignment requirements.
+
+    SCB->VTOR = BOOTLOADER_SIZE;
+
+    // A few device families, like the NXP 4300 series, will also have a "shadow pointer" to the VTOR, which also needs to be updated with the new address. Review the device datasheet to see if one exists.
+    // The final part is to set the MSP to the value found in the user application vector table and then load the PC with the reset vector value of the user application. This can't be done in C, as it is always possible, that the compiler uses the current SP. But that would be gone after setting the new MSP. So, a call to a small assembler function is done.
+
+	uint32_t* base = (uint32_t*)BOOTLOADER_SIZE;
+	boot_jump_asm(base[0], base[1]);
+}
+
+
 int main(void)
 {
 	board_init();
-
-
 
 
 	TU_LOG2("SmartEEPROM supported: %u\n", NVMCTRL->PARAM.bit.SEE);
 	if (NVMCTRL->PARAM.bit.SEE) {
 		TU_LOG2("SmartEEPROM page size: %u\n", NVMCTRL->SEESTAT.bit.PSZ);
 		TU_LOG2("SmartEEPROM block size: %u\n", NVMCTRL->SEESTAT.bit.SBLK);
+		TU_LOG2("SmartEEPROM register locked: %u\n", NVMCTRL->SEESTAT.bit.RLOCK);
+		TU_LOG2("SmartEEPROM section locked: %u\n", NVMCTRL->SEESTAT.bit.LOCK);
+		TU_LOG2("SmartEEPROM active sector: %u\n", NVMCTRL->SEESTAT.bit.ASEES);
 	}
 	TU_LOG2("Page size: %u\n", 8 << NVMCTRL->PARAM.bit.PSZ);
 	TU_LOG2("Page count: %u\n", NVMCTRL->PARAM.bit.NVMP);
@@ -322,6 +418,7 @@ int main(void)
 	TU_LOG2("NVM status ready? %u\n", NVMCTRL->STATUS.bit.READY);
 	TU_LOG2("NVM region locks? %08lx\n", NVMCTRL->RUNLOCK.reg);
 	TU_LOG2("NVM user? %#08lx\n", NVMCTRL_USER);
+	TU_LOG2("Bootloader size? %#lx\n", BOOTLOADER_SIZE);
 
 
 /*
@@ -330,6 +427,43 @@ writing to the Page Buffer. Cache lines are disabled by writing a one to CTRLA.C
 CTRLA.CACHEDIS1.
 	*/
 	NVMCTRL->CTRLA.reg |= NVMCTRL_CTRLA_CACHEDIS0 | NVMCTRL_CTRLA_CACHEDIS1;
+
+	// setup SmartEEPROM to buffered (1 page)
+	NVMCTRL->SEECFG.reg =
+		// NVMCTRL_SEECFG_APRDIS |
+		NVMCTRL_SEECFG_WMODE_BUFFERED;
+
+
+	if (DFU_EEPROM_MAGIC != DFU_EEPROM->magic.magic64) {
+		TU_LOG2("DFU EEPROM magic mismatch!\n");
+		DFU_EEPROM->magic.magic64 = DFU_EEPROM_MAGIC;
+		DFU_EEPROM->dfu.reg = 0;
+
+		TU_LOG2("SmartEEPROM load: %u\n", NVMCTRL->SEESTAT.bit.LOAD);
+		nvm_see_flush();
+		TU_LOG2("SmartEEPROM load: %u\n", NVMCTRL->SEESTAT.bit.LOAD);
+	} else {
+		TU_LOG2("DFU EEPROM magic match\n");
+		if (DFU_EEPROM->dfu.bit.BTL) {
+			TU_LOG2("clearing bootloader flag\n");
+			DFU_EEPROM->dfu.bit.BTL = 0;
+
+			TU_LOG2("SmartEEPROM load: %u\n", NVMCTRL->SEESTAT.bit.LOAD);
+			nvm_see_flush();
+			TU_LOG2("SmartEEPROM load: %u\n", NVMCTRL->SEESTAT.bit.LOAD);
+		} else {
+			uint32_t *app_ptr = (uint32_t *)BOOTLOADER_SIZE;
+			if (0xffffffff == *app_ptr) {
+				TU_LOG2("Flash erased, remain in bootloader\n", BOOTLOADER_SIZE);
+			} else {
+				// TU_LOG2("App first word %#08lx\n", *app_ptr);
+
+				// take the leap of faith
+				TU_LOG2("GL HF, jumping to %p\n", (uint32_t*)BOOTLOADER_SIZE);
+				boot_jump();
+			}
+		}
+	}
 
 	led_init();
 	tusb_init();
