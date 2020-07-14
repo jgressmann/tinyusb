@@ -42,6 +42,10 @@
 # error "CONF_GCLK_USB_FREQUENCY" must 48000000
 #endif
 
+#if !defined(HWRV)
+# error Define "HWRV"
+#endif
+
 //--------------------------------------------------------------------+
 // Forward USB interrupt events to TinyUSB IRQ Handler
 //--------------------------------------------------------------------+
@@ -75,7 +79,7 @@ void USB_3_Handler (void)
 static inline void init_clock(void)
 {
   /* AUTOWS is enabled by default in REG_NVMCTRL_CTRLA - no need to change the number of wait states when changing the core clock */
-
+#if HWRV == 1
   /* configure XOSC1 for a 16MHz crystal connected to XIN1/XOUT1 */
   OSCCTRL->XOSCCTRL[1].reg =
     OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
@@ -96,7 +100,28 @@ static inline void init_clock(void)
   OSCCTRL->Dpll[1].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(47); /* multiply by 48 -> 48 MHz */
   OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
   while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL1 to be ready */
+#else // HWRV >= 1
+  /* configure XOSC0 for a 16MHz crystal connected to XIN1/XOUT1 */
+  OSCCTRL->XOSCCTRL[0].reg =
+    OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
+    OSCCTRL_XOSCCTRL_RUNSTDBY |
+    OSCCTRL_XOSCCTRL_ENALC |
+    OSCCTRL_XOSCCTRL_IMULT(4) |
+    OSCCTRL_XOSCCTRL_IPTAT(3) |
+    OSCCTRL_XOSCCTRL_XTALEN |
+    OSCCTRL_XOSCCTRL_ENABLE;
+  while(0 == OSCCTRL->STATUS.bit.XOSCRDY0);
 
+  OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC0_Val); /* pre-scaler = 8, input = XOSC1 */
+  OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(59); /* multiply by 60 -> 120 MHz */
+  OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
+  while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
+
+  OSCCTRL->Dpll[1].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(7) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC0_Val); /* pre-scaler = 16, input = XOSC1 */
+  OSCCTRL->Dpll[1].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(47); /* multiply by 48 -> 48 MHz */
+  OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
+  while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL1 to be ready */
+#endif // HWRV
   /* configure clock-generator 0 to use DPLL0 as source -> GCLK0 is used for the core */
   GCLK->GENCTRL[0].reg =
     GCLK_GENCTRL_DIV(0) |
@@ -188,7 +213,8 @@ void board_init(void)
 
   uart_init();
 #if CFG_TUSB_DEBUG >= 2
-  uart_send_str("RR1 UART initialized\n");
+  uart_send_str(BOARD_NAME " UART initialized\n");
+  tu_printf(BOARD_NAME " reset cause %#02x\n", RSTC->RCAUSE.reg);
 #endif
 
   // Led init
@@ -196,7 +222,7 @@ void board_init(void)
   gpio_set_pin_level(LED_PIN, 0);
 
 #if CFG_TUSB_DEBUG >= 2
-  uart_send_str("RR1 LED ping configured\n");
+  uart_send_str(BOARD_NAME " LED pin configured\n");
 #endif
 
 #if CFG_TUSB_OS == OPT_OS_FREERTOS
@@ -210,17 +236,17 @@ void board_init(void)
 
 #if TUSB_OPT_DEVICE_ENABLED
 #if CFG_TUSB_DEBUG >= 2
-  uart_send_str("RR1 USB device enabled\n");
+  uart_send_str(BOARD_NAME " USB device enabled\n");
 #endif
 
-  /* USB Clock init
+  /* USB clock init
    * The USB module requires a GCLK_USB of 48 MHz ~ 0.25% clock
    * for low speed and full speed operation. */
   hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK1_Val | GCLK_PCHCTRL_CHEN);
   hri_mclk_set_AHBMASK_USB_bit(MCLK);
   hri_mclk_set_APBBMASK_USB_bit(MCLK);
 
-  // USB Pin Init
+  // USB pin init
   gpio_set_pin_direction(PIN_PA24, GPIO_DIRECTION_OUT);
   gpio_set_pin_level(PIN_PA24, false);
   gpio_set_pin_pull_mode(PIN_PA24, GPIO_PULL_OFF);
@@ -231,11 +257,9 @@ void board_init(void)
   gpio_set_pin_function(PIN_PA24, PINMUX_PA24H_USB_DM);
   gpio_set_pin_function(PIN_PA25, PINMUX_PA25H_USB_DP);
 
-// USB_0_CLOCK_init();
-  // USB_0_PORT_init();
 
 #if CFG_TUSB_DEBUG >= 2
-  uart_send_str("RR1 USB device configured\n");
+  uart_send_str(BOARD_NAME " USB device configured\n");
 #endif
 #endif
 

@@ -9,13 +9,18 @@ CFLAGS += \
   -D__SAME51J19A__ \
   -DCONF_CPU_FREQUENCY=120000000 \
   -DCONF_GCLK_USB_FREQUENCY=48000000 \
-  -DCFG_TUSB_MCU=OPT_MCU_SAME51
+  -DCFG_TUSB_MCU=OPT_MCU_SAME51 \
+  -DBOOTLOADER_SIZE=0x8000 \
+  -DD5035_01=1 \
+  -DBOARD_NAME="\"D5035-01\"" \
+
+
+ifdef HWRV
+  CFLAGS += -DHWRV=$(HWRV)
+endif
 
 # compiler options for Atmel Studio's 'Debug' configuration
 #-O2 -ffunction-sections -mlong-calls -g3 -Wall -Wextra -mcpu=cortex-m4 -c -std=gnu99 -mfloat-abi=softfp -mfpu=fpv4-sp-d16
-
-# linker options for Atmel Studio's 'Debug' configuration
-#-mthumb -Wl,-Map="mcba_clone.map" --specs=nano.specs -Wl,--start-group -lm  -Wl,--end-group -L"..\\Device_Startup"  -Wl,--gc-sections -mcpu=cortex-m4 -Tsame51j19a_flash.ld
 
 CFLAGS += -Wno-error=undef
 
