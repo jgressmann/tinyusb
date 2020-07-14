@@ -79,7 +79,7 @@ extern uint32_t SystemCoreClock;
 #define configUSE_QUEUE_SETS                    0
 #define configUSE_TIME_SLICING                  0
 #define configUSE_NEWLIB_REENTRANT              0
-#define configENABLE_BACKWARD_COMPATIBILITY     1
+#define configENABLE_BACKWARD_COMPATIBILITY     0
 
 #define configSUPPORT_STATIC_ALLOCATION         1
 #define configSUPPORT_DYNAMIC_ALLOCATION        0
@@ -88,11 +88,11 @@ extern uint32_t SystemCoreClock;
 #define configUSE_IDLE_HOOK                    0
 #define configUSE_TICK_HOOK                    0
 #define configUSE_MALLOC_FAILED_HOOK           0 // cause nested extern warning
-#define configCHECK_FOR_STACK_OVERFLOW         2
+#define configCHECK_FOR_STACK_OVERFLOW         0
 
 /* Run time and task stats gathering related definitions. */
 #define configGENERATE_RUN_TIME_STATS          0
-#define configUSE_TRACE_FACILITY               1 // legacy trace
+#define configUSE_TRACE_FACILITY               0 // legacy trace
 #define configUSE_STATS_FORMATTING_FUNCTIONS   0
 
 /* Co-routine definitions. */
