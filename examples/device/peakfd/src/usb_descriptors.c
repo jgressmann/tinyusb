@@ -43,7 +43,11 @@ static const tusb_desc_device_t device = {
 	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
 	.idVendor           = 0x0c72,
+#if PRO
+	.idProduct          = 0x0011,
+#else
 	.idProduct          = 0x0012,
+#endif
 	.bcdDevice          = 0x0000,
 
 	.iManufacturer      = 0x01,
@@ -53,17 +57,17 @@ static const tusb_desc_device_t device = {
 	.bNumConfigurations = 0x01
 };
 
-static const tusb_desc_device_qualifier_t qualifier = {
-  .bLength            = sizeof(tusb_desc_device_qualifier_t),
-  .bDescriptorType    = TUSB_DESC_DEVICE_QUALIFIER,
-  .bcdUSB             = 0x0200,
-  .bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
-  .bDeviceSubClass    = 0,
-  .bDeviceProtocol    = 0,
-  .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
-  .bNumConfigurations = 1,
-  .bReserved          = 0
-};
+// static const tusb_desc_device_qualifier_t qualifier = {
+//   .bLength            = sizeof(tusb_desc_device_qualifier_t),
+//   .bDescriptorType    = TUSB_DESC_DEVICE_QUALIFIER,
+//   .bcdUSB             = 0x0200,
+//   .bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
+//   .bDeviceSubClass    = 0,
+//   .bDeviceProtocol    = 0,
+//   .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
+//   .bNumConfigurations = 1,
+//   .bReserved          = 0
+// };
 
 // Invoked when received GET DEVICE DESCRIPTOR
 // Application return pointer to descriptor
@@ -84,6 +88,11 @@ uint8_t const * tud_descriptor_device_cb(void)
 
 
 // v3 no error linux
+// #if PRO
+// #	define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 1*9 + 6*7)
+// #else
+// #	define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 1*9 + 4*7)
+// #endif
 #define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 1*9 + 6*7)
 static uint8_t const desc_configuration[] =
 {
@@ -104,7 +113,6 @@ static uint8_t const desc_configuration[] =
   	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_OUT_MSG_CH1, TUSB_XFER_BULK, U16_TO_U8S_LE(FULL_SPEED_BULK_EP_SIZE), 0,
 	/* INT IN MSG CH1 */
   	7, TUSB_DESC_ENDPOINT, PEAK_USB_FD_EP_BULK_IN_MSG_CH1, TUSB_XFER_BULK, U16_TO_U8S_LE(FULL_SPEED_BULK_EP_SIZE), 0,
-
 };
 
 
@@ -155,9 +163,13 @@ char const* string_desc_arr [] =
 	//  iManufacturer           1 PEAK-System Technik GmbH
 //  iProduct                2 PCAN-USB FD
 
-	"J. Gressmann, R. Riedel",       	// 1: Manufacturer
-	"PCAN-USB FD PRO",				 		// 2: Product
-	// "PEAK-USB-FD-CAN Device",			// 3: Interface
+	"J. Gressmann, R. Riedel", // 1: Manufacturer
+#if PRO
+	"PCAN-USB Pro FD clone",         // 2: Product
+#else
+	"PCAN-USB FD clone",             // 2: Product
+#endif
+	// "PEAK-USB-FD-CAN Device",// 3: Interface
 };
 
 static uint16_t _desc_str[32];

@@ -10,19 +10,33 @@ CFLAGS += \
   -DCONF_CPU_FREQUENCY=120000000 \
   -DCONF_GCLK_USB_FREQUENCY=48000000 \
   -DCFG_TUSB_MCU=OPT_MCU_SAME51 \
-  -DBOOTLOADER_SIZE=0x8000 \
   -DD5035_01=1 \
-  -DBOARD_NAME="\"D5035-01\"" \
+  -DBOARD_NAME="\"D5035-01\""
 
+CFLAGS += -Wno-error=undef
 
-ifdef HWRV
-  CFLAGS += -DHWRV=$(HWRV)
+ifdef HWREV
+  CFLAGS += -DHWREV=$(HWREV)
 endif
+
+ifdef START_ADDRESS
+  LDFLAGS += -Wl,--section-start=.text=$(START_ADDRESS)
+endif
+
 
 # compiler options for Atmel Studio's 'Debug' configuration
 #-O2 -ffunction-sections -mlong-calls -g3 -Wall -Wextra -mcpu=cortex-m4 -c -std=gnu99 -mfloat-abi=softfp -mfpu=fpv4-sp-d16
 
-CFLAGS += -Wno-error=undef
+# Create various files
+#"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-objcopy.exe" -O binary "Inbetriebnahme.elf" "Inbetriebnahme.bin"
+#"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-objcopy.exe" -O ihex -R .eeprom -R .fuse -R .lock -R .signature  "Inbetriebnahme.elf" "Inbetriebnahme.hex"
+#"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-objcopy.exe" -j .eeprom --set-section-flags=.eeprom=alloc,load --change-section-lma .eeprom=0 --no-change-warnings -O binary "Inbetriebnahme.elf" "Inbetriebnahme.eep" || exit 0
+#"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-objdump.exe" -h -S "Inbetriebnahme.elf" > "Inbetriebnahme.lss"
+#"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-objcopy.exe" -O srec -R .eeprom -R .fuse -R .lock -R .signature  "Inbetriebnahme.elf" "Inbetriebnahme.srec"
+#"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-size.exe" "Inbetriebnahme.elf"
+
+
+
 
 # All source paths should be relative to the top level.
 LD_FILE = hw/bsp/$(BOARD)/same51j19a_flash.ld

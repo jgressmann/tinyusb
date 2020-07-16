@@ -42,8 +42,8 @@
 # error "CONF_GCLK_USB_FREQUENCY" must 48000000
 #endif
 
-#if !defined(HWRV)
-# error Define "HWRV"
+#if !defined(HWREV)
+# error Define "HWREV"
 #endif
 
 //--------------------------------------------------------------------+
@@ -79,7 +79,7 @@ void USB_3_Handler (void)
 static inline void init_clock(void)
 {
   /* AUTOWS is enabled by default in REG_NVMCTRL_CTRLA - no need to change the number of wait states when changing the core clock */
-#if HWRV == 1
+#if HWREV == 1
   /* configure XOSC1 for a 16MHz crystal connected to XIN1/XOUT1 */
   OSCCTRL->XOSCCTRL[1].reg =
     OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
@@ -100,7 +100,7 @@ static inline void init_clock(void)
   OSCCTRL->Dpll[1].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(47); /* multiply by 48 -> 48 MHz */
   OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
   while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL1 to be ready */
-#else // HWRV >= 1
+#else // HWREV >= 1
   /* configure XOSC0 for a 16MHz crystal connected to XIN1/XOUT1 */
   OSCCTRL->XOSCCTRL[0].reg =
     OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
@@ -121,7 +121,7 @@ static inline void init_clock(void)
   OSCCTRL->Dpll[1].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(47); /* multiply by 48 -> 48 MHz */
   OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
   while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL1 to be ready */
-#endif // HWRV
+#endif // HWREV
   /* configure clock-generator 0 to use DPLL0 as source -> GCLK0 is used for the core */
   GCLK->GENCTRL[0].reg =
     GCLK_GENCTRL_DIV(0) |

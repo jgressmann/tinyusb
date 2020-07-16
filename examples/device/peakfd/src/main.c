@@ -324,54 +324,39 @@ static struct {
 
 
 
-#if HWRV == 1
-// controller and hardware specific setup of i/o pins for CAN
-static inline void can_init_pins(void)
-{
-	// CAN0 ports
-	REG_PORT_WRCONFIG0 =
-		PORT_WRCONFIG_HWSEL |           // upper half
-		PORT_WRCONFIG_PINMASK(0x00c0) |
-		PORT_WRCONFIG_WRPINCFG |
-		PORT_WRCONFIG_WRPMUX |
-		PORT_WRCONFIG_PMUX(8) |         // I, CAN0, DS60001507E-page 32
-		PORT_WRCONFIG_PMUXEN;
-}
-#else // HWRV
  // controller and hardware specific setup of i/o pins for CAN
 static inline void can_init_pins(void)
 {
-	// CAN0 ports
-	REG_PORT_WRCONFIG0 =
+	// CAN0 port
+	PORT->Group[0].WRCONFIG.reg =
 		PORT_WRCONFIG_HWSEL |           // upper half
-		PORT_WRCONFIG_PINMASK(0x00c0) |
+		PORT_WRCONFIG_PINMASK(0x00c0) | // PA22/23
 		PORT_WRCONFIG_WRPINCFG |
 		PORT_WRCONFIG_WRPMUX |
-		PORT_WRCONFIG_PMUX(8) |         // I, CAN0, DS60001507E-page 32
+		PORT_WRCONFIG_PMUX(8) |         // I, CAN0, DS60001507E-page 32, 910
 		PORT_WRCONFIG_PMUXEN;
 
-	// CAN1 ports
-	REG_PORT_WRCONFIG1 =
-		PORT_WRCONFIG_PINMASK(0xc000) | // 14+15
+	// CAN1 port
+	PORT->Group[1].WRCONFIG.reg =
+		PORT_WRCONFIG_PINMASK(0xc000) | // PB14/15 = 0xc000, PB12/13 = 0x3000
 		PORT_WRCONFIG_WRPINCFG |
 		PORT_WRCONFIG_WRPMUX |
-		PORT_WRCONFIG_PMUX(7) |         // H, CAN1, DS60001507E-page 32
+		PORT_WRCONFIG_PMUX(7) |         // H, CAN1, DS60001507E page 32, 910
 		PORT_WRCONFIG_PMUXEN;
 }
-#endif // HWRV
-
 
 static inline void can_init_clock(void) // controller and hardware specific setup of clock for the m_can module
 {
-	REG_MCLK_AHBMASK |= MCLK_AHBMASK_CAN0 | MCLK_AHBMASK_CAN1;
-	REG_GCLK_PCHCTRL27 = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN0 to use GLCK0 -> 120MHz
-	REG_GCLK_PCHCTRL28 = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0 -> 120MHz
+	MCLK->AHBMASK.bit.CAN0_ = 1;
+	MCLK->AHBMASK.bit.CAN1_ = 1;
+	GCLK->PCHCTRL[CAN0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0 -> 120MHz
+	GCLK->PCHCTRL[CAN1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0 -> 120MHz
 }
 
 static inline void can_configure(struct can *c)
 {
 	Can *can = c->m_can;
-	// m_can_init_begin(can);
+
 	m_can_conf_begin(can);
 
 	can->CCCR.bit.TXP = 1;  // Enable Transmit Pause
@@ -439,7 +424,6 @@ static inline void can_configure(struct can *c)
 
 
 	m_can_conf_end(can);
-	// m_can_init_end(can);
 }
 
 static void can_init_module(void);
@@ -636,7 +620,7 @@ struct led {
 	{ 0, 0, pin }
 #endif
 
-#if HWRV == 1
+#if HWREV == 1
 static struct led leds[] = {
 	LED_STATIC_INITIALIZER("debug", PIN_PA02),
 	LED_STATIC_INITIALIZER("red1", PIN_PB14),
@@ -675,7 +659,7 @@ static void led_init(void)
 	PORT->Group[0].DIRSET.reg = PORT_PA14; /* Debug-LED */
 	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
 }
-#else // HWRV
+#else // HWREV
 static struct led leds[] = {
 	LED_STATIC_INITIALIZER("debug", PIN_PA02),
 	LED_STATIC_INITIALIZER("red", PIN_PA18),
@@ -705,7 +689,7 @@ static void led_init(void)
 	PORT->Group[1].DIRSET.reg = PORT_PB17;
 }
 
-#endif // HWRV
+#endif // HWREV
 
 
 static void led_init(void);
@@ -1064,8 +1048,8 @@ static void peak_cmd_bulk_out(uint32_t xferred_bytes)
 				TU_LOG1("channel %u out of bounds\n", channel);
 				continue;
 			}
-			struct pucan_options *puo = (struct pucan_options *)cmd;
-			uint16_t options = le16_to_cpu(puo->options);
+			// struct pucan_options *puo = (struct pucan_options *)cmd;
+			// uint16_t options = le16_to_cpu(puo->options);
 // #define PUCAN_OPTION_ERROR		0x0001
 // #define PUCAN_OPTION_BUSLOAD		0x0002
 // #define PUCAN_OPTION_CANDFDISO		0x0004
@@ -1507,7 +1491,7 @@ bool tud_custom_control_request_cb(uint8_t rhport, tusb_control_request_t const 
 					.bl_version = {2, 1, 0},
 					.hw_version = 1,
 					.fw_version = {3, 2, 0},
-					.dev_id = {0, ~0},
+					.dev_id = {0, 1},
 					.flags = 2
 				};
 				TU_LOG2_MEM(&rep, sizeof(rep), 2);
@@ -1592,7 +1576,7 @@ bool tud_custom_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t event, ui
 	USB_TRAFFIC_DO_LED;
 	(void)event; // always success
 
-	if (rhport != usb.port) {
+	if (unlikely(rhport != usb.port)) {
 		return false;
 	}
 
@@ -1647,10 +1631,6 @@ bool tud_vendor_control_complete_cb(uint8_t rhport, tusb_control_request_t const
 //--------------------------------------------------------------------+
 // LED TASK
 //--------------------------------------------------------------------+
-
-
-
-
 static void led_task(void *param)
 {
 	(void) param;
@@ -1692,20 +1672,21 @@ static void led_task(void *param)
 static void can_task(void *param)
 {
 	const uint8_t index = (uint8_t)(uintptr_t)param;
+	const uint8_t usb_index = 0; // Linux doesn't appear to send tokens for pipe 0x03
 	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
-	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can), );
+	TU_ASSERT(usb_index < TU_ARRAY_SIZE(usb.can), );
 
 	TU_LOG2("CAN%u task start\n", index);
 
 	struct can *can = &cans.can[index];
-	struct usb_can *usb_can = &usb.can[index];
+	struct usb_can *usb_can = &usb.can[usb_index];
 
 	uint8_t last_status = 0;
 
 	while (42) {
 		(void)ulTaskNotifyTake(pdFALSE, ~0);
 
-		// TU_LOG2("can task loop\n");
+		// TU_LOG2("CAN%u task loop\n", index);
 		if (unlikely(!usb.mounted)) {
 			continue;
 		}
@@ -1715,9 +1696,6 @@ static void can_task(void *param)
 		}
 
 		led_burst(can->led, 8);
-
-
-
 
 		for (bool done = false; !done; ) {
 			done = true;
@@ -1771,10 +1749,10 @@ start:
 
 						ptr += sizeof(*ovr_msg);
 					} else {
-						if (usb_can_bulk_in_ep_ready(index)) {
+						if (usb_can_bulk_in_ep_ready(usb_index)) {
 							usb_can->msg_tx_offsets[usb_can->msg_tx_bank] = ptr - usb_can->msg_tx_buffers[usb_can->msg_tx_bank];
-							peak_seal_msg_buffer(index);
-							usb_can_bulk_in_submit(index);
+							peak_seal_msg_buffer(usb_index);
+							usb_can_bulk_in_submit(usb_index);
 							goto start;
 						} else {
 							TU_LOG1("!CAN%u: no space for rx ovr msg\n", index);
@@ -1810,10 +1788,10 @@ start:
 
 						ptr += sizeof(*status_msg);
 					} else {
-						if (usb_can_bulk_in_ep_ready(index)) {
+						if (usb_can_bulk_in_ep_ready(usb_index)) {
 							usb_can->msg_tx_offsets[usb_can->msg_tx_bank] = ptr - usb_can->msg_tx_buffers[usb_can->msg_tx_bank];
-							peak_seal_msg_buffer(index);
-							usb_can_bulk_in_submit(index);
+							peak_seal_msg_buffer(usb_index);
+							usb_can_bulk_in_submit(usb_index);
 							goto start;
 						} else {
 							TU_LOG1("!CAN%u: no space for status msg\n", index);
@@ -1886,10 +1864,10 @@ start:
 
 					msg->flags = cpu_to_le16(flags);
 				} else {
-					if (usb_can_bulk_in_ep_ready(index)) {
+					if (usb_can_bulk_in_ep_ready(usb_index)) {
 						usb_can->msg_tx_offsets[usb_can->msg_tx_bank] = ptr - usb_can->msg_tx_buffers[usb_can->msg_tx_bank];
-						peak_seal_msg_buffer(index);
-						usb_can_bulk_in_submit(index);
+						peak_seal_msg_buffer(usb_index);
+						usb_can_bulk_in_submit(usb_index);
 						goto start;
 					} else {
 						++can->rx_lost;
@@ -1952,11 +1930,11 @@ start:
 			usb_can->msg_tx_offsets[usb_can->msg_tx_bank] = ptr - usb_can->msg_tx_buffers[usb_can->msg_tx_bank];
 		}
 
-		if (usb_can->msg_tx_offsets[usb_can->msg_tx_bank] > 0 && usb_can_bulk_in_ep_ready(index)) {
-			peak_seal_msg_buffer(index);
+		if (usb_can->msg_tx_offsets[usb_can->msg_tx_bank] > 0 && usb_can_bulk_in_ep_ready(usb_index)) {
+			peak_seal_msg_buffer(usb_index);
 
 			// TU_LOG2("usb tx %u bytes\n", usb.msg_tx_offsets[usb.msg_tx_bank]);
-			usb_can_bulk_in_submit(index);
+			usb_can_bulk_in_submit(usb_index);
 		}
 	}
 }

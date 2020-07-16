@@ -2,7 +2,12 @@ include ../../../tools/top.mk
 include ../../make.mk
 
 FREERTOS_SRC = lib/FreeRTOS/FreeRTOS/Source
-CFLAGS += -Wno-error
+
+ifdef PRO
+  CFLAGS += -DPRO=$(PRO)
+else
+  CFLAGS += -DPRO=0
+endif
 
 INC += \
 	inc \
