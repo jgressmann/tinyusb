@@ -203,8 +203,10 @@ static inline void m_can_rx0_pop(Can *can)
 static inline void m_can_rx0_clear(Can *can)
 {
 	while (m_can_rx0_msg_fifo_avail(can)) {
+#if CFG_TUSB_DEBUG > 1
 		uint8_t index = can->RXF0S.bit.F0GI;
 		TU_LOG2("msg @ %u\n", index);
+#endif
 		m_can_rx0_pop(can);
 	}
 }

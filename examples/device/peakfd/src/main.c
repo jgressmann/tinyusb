@@ -885,15 +885,19 @@ static void peak_cmd_bulk_out(uint32_t xferred_bytes)
 			uint8_t sjw = (x->sjw_t & PUCAN_TSLOW_SJW_MASK) + 1;
 			uint8_t seg1 = x->tseg1 + 1;
 			uint8_t seg2 = x->tseg2 + 1;
+#if CFG_TUSB_DEBUG > 1
 			bool tsample = (x->sjw_t & 0x80) == 0x80;
 			TU_LOG2("PEAK brp=%u sjw=%u seg1=%u seg2=%u tsample=%u\n", brp, sjw, seg1, seg2, tsample);
+#endif
+
 			// const uint16_t max_tq = (1 << PUCAN_TSLOW_TSGEG1_BITS) + (1 << PUCAN_TSLOW_TSGEG2_BITS) + (1 << PUCAN_TSLOW_SJW_BITS);
 			uint16_t tqs = sjw + seg1 + seg2;
 			uint32_t bitrate_bps = peak_clock_mhz[peakfd[channel].clock_mode] / (brp * tqs);
 			TU_LOG2("bitrate %lu [bps]\n", bitrate_bps);
+#if CFG_TUSB_DEBUG > 1
 			uint8_t ratio01 = ((sjw + seg1) * 255) / tqs;
 			TU_LOG2("sp %u [1/1000]\n", (ratio01 * 1000) / 255);
-
+#endif
 
 			const struct m_can_reg lim_min = {
 				.brp = M_CAN_NMBT_BRP_MIN,
@@ -934,8 +938,10 @@ static void peak_cmd_bulk_out(uint32_t xferred_bytes)
 				&result);
 
 			TU_LOG2("M_CAN brp=%u sjw=%u seg1=%u seg2=%u\n", result.brp, result.sjw, result.tseg1, result.tseg2);
+#if CFG_TUSB_DEBUG > 1
 			uint8_t m_can_ratio01 = ((result.sjw + result.tseg1) * 255) / (result.sjw + result.tseg1 + result.tseg2);
 			TU_LOG2("M_CAN sp %u [1/1000]\n", (m_can_ratio01 * 1000) / 255);
+#endif
 
 
 			// no CAN-FD
@@ -964,13 +970,15 @@ static void peak_cmd_bulk_out(uint32_t xferred_bytes)
 			uint8_t sjw = x->sjw + 1;
 			uint8_t seg1 = x->tseg1 + 1;
 			uint8_t seg2 = x->tseg2 + 1;
+#if CFG_TUSB_DEBUG > 1
 			TU_LOG2("PEAK FD brp=%u sjw=%u seg1=%u seg2=%u\n", brp, sjw, seg1, seg2);
 			uint16_t tqs = sjw + seg1 + seg2;
 			uint32_t bitrate_bps = peak_clock_mhz[peakfd[channel].clock_mode] / (brp * tqs);
 			TU_LOG2("bitrate %lu [bps]\n", bitrate_bps);
+
 			uint8_t ratio01 = ((sjw + seg1) * 255) / tqs;
 			TU_LOG2("sp %u [1/1000]\n", (ratio01 * 1000) / 255);
-
+#endif
 			const struct m_can_reg lim_min = {
 				.brp = M_CAN_DTBT_BRP_MIN,
 				.sjw = M_CAN_DTBT_SJW_MIN,
@@ -1002,11 +1010,11 @@ static void peak_cmd_bulk_out(uint32_t xferred_bytes)
 				&lim_max,
 				&result);
 
-
+#if CFG_TUSB_DEBUG > 1
 			TU_LOG2("M_CAN FD brp=%u sjw=%u seg1=%u seg2=%u\n", result.brp, result.sjw, result.tseg1, result.tseg2);
 			uint8_t m_can_ratio01 = ((result.sjw + result.tseg1) * 255) / (result.sjw + result.tseg1 + result.tseg2);
 			TU_LOG2("M_CAN sp %u [1/1000]\n", (m_can_ratio01 * 1000) / 255);
-
+#endif
 			// CAN FD
 			can->mode_flags |= SC_MODE_FLAG_FD | SC_MODE_FLAG_BRS;
 
@@ -1104,9 +1112,10 @@ static void peak_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 	struct usb_can *usb_can = &usb.can[index];
 	led_burst(can->led, 8);
 
-
+#if CFG_TUSB_DEBUG > 1
 	const uint8_t rx_bank = usb_can->msg_rx_bank;
 	TU_LOG2("CAN%u rx bank %u\n", index, rx_bank);
+#endif
 	uint8_t const * const in_beg = usb_can->msg_rx_buffers[usb_can->msg_rx_bank];
 	uint8_t const *in_ptr = in_beg;
 	uint8_t const * const in_end = in_ptr + xferred_bytes;
@@ -1405,7 +1414,7 @@ bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf,
 	return true;
 }
 
-static const char* recipient_str(tusb_request_recipient_t r)
+static inline const char* recipient_str(tusb_request_recipient_t r)
 {
 	switch (r) {
 	case TUSB_REQ_RCPT_DEVICE:
@@ -1421,7 +1430,7 @@ static const char* recipient_str(tusb_request_recipient_t r)
 	}
 }
 
-static const char* type_str(tusb_request_type_t value)
+static inline const char* type_str(tusb_request_type_t value)
 {
 	switch (value) {
 	case TUSB_REQ_TYPE_STANDARD:
@@ -1437,7 +1446,7 @@ static const char* type_str(tusb_request_type_t value)
 	}
 }
 
-static const char* dir_str(tusb_dir_t value)
+static inline const char* dir_str(tusb_dir_t value)
 {
 	switch (value) {
 	case TUSB_DIR_OUT:
