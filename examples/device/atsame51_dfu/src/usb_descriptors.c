@@ -96,7 +96,7 @@ Bit 0: download capable
 	9,
 		DFU_DESC_FUNCTIONAL,
 		(1<<3) | (1<<2) | (0<<1) | (1<<0) /*attrs*/,
-		U16_TO_U8S_LE(1000) /* timeout [ms]*/,
+		U16_TO_U8S_LE(100) /* timeout [ms]*/,
 		U16_TO_U8S_LE(MCU_NVM_PAGE_SIZE)/* xfer size*/,
 		U16_TO_U8S_LE(0x0101)/*bcdVersion*/
 };

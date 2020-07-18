@@ -28,24 +28,18 @@
 #include <string.h>
 #include <inttypes.h>
 
-#include <FreeRTOS.h>
-#include <task.h>
-#include <semphr.h>
 
 #include <bsp/board.h>
 #include <tusb.h>
-#include <dcd.h>
 
 #include <sam.h>
-
 #include <hal/include/hal_gpio.h>
 
 #include <usb_descriptors.h>
 #include <mcu.h>
 #include <usb_dfu_1_1.h>
-#define EEPROM_SIZE 512
-#include <eeprom.h>
-
+#include <dfu_ram.h>
+#include <dfu_app.h>
 
 
 #if TU_BIG_ENDIAN == TU_BYTE_ORDER
@@ -68,9 +62,6 @@ static inline uint16_t cpu_to_be16(uint16_t value) { return __builtin_bswap16(va
 static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(value); }
 #endif
 
-
-
-
 #ifndef likely
 #define likely(x) __builtin_expect(!!(x),1)
 #endif
@@ -79,39 +70,23 @@ static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(va
 #define unlikely(x) __builtin_expect(!!(x),0)
 #endif
 
-// static task for usbd
-// Increase stack size when debug log is enabled
-#if CFG_TUSB_DEBUG
-	#define USBD_STACK_SIZE (3*configMINIMAL_STACK_SIZE)
-#else
-	#define USBD_STACK_SIZE (3*configMINIMAL_STACK_SIZE/2)
-#endif
-
-static StackType_t usb_device_stack[USBD_STACK_SIZE];
-static StaticTask_t usb_device_stack_mem;
-
-static StackType_t led_task_stack[configMINIMAL_STACK_SIZE];
-static StaticTask_t led_task_mem;
-
-static void tusb_device_task(void* param);
-static void led_task(void* param);
-
 
 struct led {
 #if CFG_TUSB_DEBUG > 0
 	const char* name;
 #endif
-	volatile uint16_t time_ms	: 15;
-	volatile uint16_t blink		: 1;
+	uint16_t time_ms;
+	uint16_t left;
+	uint8_t blink;
 	uint8_t pin;
 };
 
 #if CFG_TUSB_DEBUG > 0
 #define LED_STATIC_INITIALIZER(name, pin) \
-	{ name, 0, 0, pin }
+	{ name, 0, 0, 0, pin }
 #else
 #define LED_STATIC_INITIALIZER(name, pin) \
-	{ 0, 0, pin }
+	{ 0, 0, 0, pin }
 #endif
 
 static struct led leds[] = {
@@ -140,6 +115,7 @@ enum {
 
 
 static void led_init(void);
+static void led_task(void);
 static inline void led_set(uint8_t index, bool on)
 {
 	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
@@ -169,8 +145,6 @@ static inline void led_burst(uint8_t index, uint16_t duration_ms)
 	gpio_set_pin_level(leds[index].pin, 1);
 }
 
-// #define CMD_BUFFER_SIZE 64
-// #define MSG_BUFFER_SIZE 512
 
 
 static struct usb {
@@ -214,6 +188,8 @@ static struct dfu {
 	uint16_t current_block_cleared : 1;
 	uint32_t page_buffer[MCU_NVM_PAGE_SIZE / 4];
 } dfu;
+
+struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_SECTION_NAME)));
 
 static inline bool nvm_erase_block(void *addr)
 {
@@ -316,80 +292,79 @@ static inline bool nvm_see_flush(void)
 }
 
 // adapted from http://www.keil.com/support/docs/3913.htm
-__attribute__((naked, noreturn)) static void boot_jump_asm(uint32_t sp, uint32_t rh)
+__attribute__((naked, noreturn)) static void app_jump(uint32_t sp, uint32_t rh)
 {
+	(void)sp;
+	(void)rh;
 	__asm__("MSR MSP, r0");
 	__asm__("BX  r1");
 }
 
-__attribute__((noreturn)) static void boot_jump(void)
+__attribute__((noreturn)) static void start_app(uint32_t addr)
 {
-    // Make sure, the CPU is in privileged mode.
+	// Make sure, the CPU is in privileged mode.
 
-    //   if( CONTROL_nPRIV_Msk & __get_CONTROL( ) )
-    //   {  /* not in privileged mode */
-    //     EnablePrivilegedMode( ) ;
-    //   }
+	//   if( CONTROL_nPRIV_Msk & __get_CONTROL( ) )
+	//   {  /* not in privileged mode */
+	//	 EnablePrivilegedMode( ) ;
+	//   }
 
-    // The function EnablePrivilegedMode( ) triggers a SVC, and enters handler mode (which can only run in privileged mode). The nPRIV bit in the CONTROL register is cleared which can only be done in privileged mode. See ARM: How to write an SVC function about implementing SVC functions.
-    // Disable all enabled interrupts in NVIC.
+	// The function EnablePrivilegedMode( ) triggers a SVC, and enters handler mode (which can only run in privileged mode). The nPRIV bit in the CONTROL register is cleared which can only be done in privileged mode. See ARM: How to write an SVC function about implementing SVC functions.
+	// Disable all enabled interrupts in NVIC.
 
-    NVIC->ICER[ 0 ] = 0xFFFFFFFF ;
-    NVIC->ICER[ 1 ] = 0xFFFFFFFF ;
-    NVIC->ICER[ 2 ] = 0xFFFFFFFF ;
-    NVIC->ICER[ 3 ] = 0xFFFFFFFF ;
-    NVIC->ICER[ 4 ] = 0xFFFFFFFF ;
-    NVIC->ICER[ 5 ] = 0xFFFFFFFF ;
-    NVIC->ICER[ 6 ] = 0xFFFFFFFF ;
-    NVIC->ICER[ 7 ] = 0xFFFFFFFF ;
+	for (size_t i = 0; i < TU_ARRAY_SIZE(NVIC->ICER); ++i) {
+		NVIC->ICER[i] = ~0;
+	}
 
-    // Disable all enabled peripherals which might generate interrupt requests, and clear all pending interrupt flags in those peripherals. Because this is device-specific, refer to the device datasheet for the proper way to clear these peripheral interrupts.
-    // Clear all pending interrupt requests in NVIC.
+	// Disable all enabled peripherals which might generate interrupt requests, and clear all pending interrupt flags in those peripherals. Because this is device-specific, refer to the device datasheet for the proper way to clear these peripheral interrupts.
+	// Clear all pending interrupt requests in NVIC.
+	for (size_t i = 0; i < TU_ARRAY_SIZE(NVIC->ICPR); ++i) {
+		NVIC->ICPR[i] = ~0;
+	}
 
-    NVIC->ICPR[ 0 ] = 0xFFFFFFFF ;
-    NVIC->ICPR[ 1 ] = 0xFFFFFFFF ;
-    NVIC->ICPR[ 2 ] = 0xFFFFFFFF ;
-    NVIC->ICPR[ 3 ] = 0xFFFFFFFF ;
-    NVIC->ICPR[ 4 ] = 0xFFFFFFFF ;
-    NVIC->ICPR[ 5 ] = 0xFFFFFFFF ;
-    NVIC->ICPR[ 6 ] = 0xFFFFFFFF ;
-    NVIC->ICPR[ 7 ] = 0xFFFFFFFF ;
+	// Disable SysTick and clear its exception pending bit, if it is used in the bootloader, e. g. by the RTX.
+	SysTick->CTRL = 0;
+	SCB->ICSR |= SCB_ICSR_PENDSTCLR_Msk;
 
-    // Disable SysTick and clear its exception pending bit, if it is used in the bootloader, e. g. by the RTX.
+	// Disable individual fault handlers if the bootloader used them.
 
-    SysTick->CTRL = 0 ;
-    SCB->ICSR |= SCB_ICSR_PENDSTCLR_Msk ;
+	SCB->SHCSR &= ~( SCB_SHCSR_USGFAULTENA_Msk | \
+					 SCB_SHCSR_BUSFAULTENA_Msk | \
+					 SCB_SHCSR_MEMFAULTENA_Msk );
 
-    // Disable individual fault handlers if the bootloader used them.
+	// Activate the MSP, if the core is found to currently run with the PSP. As the compiler might still uses the stack, the PSP needs to be copied to the MSP before this.
 
-    SCB->SHCSR &= ~( SCB_SHCSR_USGFAULTENA_Msk | \
-                     SCB_SHCSR_BUSFAULTENA_Msk | \
-                     SCB_SHCSR_MEMFAULTENA_Msk ) ;
+	if (CONTROL_SPSEL_Msk & __get_CONTROL())
+	{
+		  /* MSP is not active */
+		__set_MSP( __get_PSP( ) ) ;
+		__set_CONTROL( __get_CONTROL( ) & ~CONTROL_SPSEL_Msk ) ;
+	}
 
-    // Activate the MSP, if the core is found to currently run with the PSP. As the compiler might still uses the stack, the PSP needs to be copied to the MSP before this.
+	// Load the vector table address of the user application into SCB->VTOR register. Make sure the address meets the alignment requirements.
 
-    if( CONTROL_SPSEL_Msk & __get_CONTROL( ) )
-    {  /* MSP is not active */
-      __set_MSP( __get_PSP( ) ) ;
-      __set_CONTROL( __get_CONTROL( ) & ~CONTROL_SPSEL_Msk ) ;
-    }
+	SCB->VTOR = BOOTLOADER_SIZE;
 
-    // Load the vector table address of the user application into SCB->VTOR register. Make sure the address meets the alignment requirements.
-
-    SCB->VTOR = BOOTLOADER_SIZE;
-
-    // A few device families, like the NXP 4300 series, will also have a "shadow pointer" to the VTOR, which also needs to be updated with the new address. Review the device datasheet to see if one exists.
-    // The final part is to set the MSP to the value found in the user application vector table and then load the PC with the reset vector value of the user application. This can't be done in C, as it is always possible, that the compiler uses the current SP. But that would be gone after setting the new MSP. So, a call to a small assembler function is done.
+	// A few device families, like the NXP 4300 series, will also have a "shadow pointer" to the VTOR, which also needs to be updated with the new address. Review the device datasheet to see if one exists.
+	// The final part is to set the MSP to the value found in the user application vector table and then load the PC with the reset vector value of the user application. This can't be done in C, as it is always possible, that the compiler uses the current SP. But that would be gone after setting the new MSP. So, a call to a small assembler function is done.
 
 	uint32_t* base = (uint32_t*)BOOTLOADER_SIZE;
-	boot_jump_asm(base[0], base[1]);
+	app_jump(base[0], base[1]);
 }
+
+#define SUPERDFU_VERSION_MAJOR 0
+#define SUPERDFU_VERSION_MINOR 1
+#define SUPERDFU_VERSION_PATCH 0
+#define STR2(x) #x
+#define STR(x) STR2(x)
+
 
 
 int main(void)
 {
 	board_init();
 
+	TU_LOG2("SuperDFU v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " starting...\n");
 
 	TU_LOG2("SmartEEPROM supported: %u\n", NVMCTRL->PARAM.bit.SEE);
 	if (NVMCTRL->PARAM.bit.SEE) {
@@ -402,6 +377,7 @@ int main(void)
 	TU_LOG2("Page size: %u\n", 8 << NVMCTRL->PARAM.bit.PSZ);
 	TU_LOG2("Page count: %u\n", NVMCTRL->PARAM.bit.NVMP);
 	uint32_t bootload_protected_bytes = (15-NVMCTRL->STATUS.bit.BOOTPROT) * (1u<<13u);
+	(void)bootload_protected_bytes;
 	TU_LOG2("Bootloader protected bytes: %lu\n", bootload_protected_bytes);
 	TU_LOG2("Bootloader protection enabled: %u\n", !NVMCTRL->STATUS.bit.BPDIS);
 	TU_LOG2("Bank A is mapped at 0x00000000: %u\n", !NVMCTRL->STATUS.bit.AFIRST);
@@ -409,86 +385,87 @@ int main(void)
 	TU_LOG2("NVM status ready? %u\n", NVMCTRL->STATUS.bit.READY);
 	TU_LOG2("NVM region locks? %08lx\n", NVMCTRL->RUNLOCK.reg);
 	TU_LOG2("NVM user? %#08lx\n", NVMCTRL_USER);
-	TU_LOG2("Bootloader size? %#lx\n", BOOTLOADER_SIZE);
+	TU_LOG2("Bootloader size? %#lx\n", (unsigned long)BOOTLOADER_SIZE);
 
+	bool should_start_app = true;
+	struct dfu_app_hdr const *app_hdr = (struct dfu_app_hdr const *)(uintptr_t)BOOTLOADER_SIZE;
 
-/*
-	Disable cache lines before writing to the Page Buffer when executing from NVM or reading data from NVM while
-writing to the Page Buffer. Cache lines are disabled by writing a one to CTRLA.CACHEDIS0 and
-CTRLA.CACHEDIS1.
-	*/
-	NVMCTRL->CTRLA.reg |= NVMCTRL_CTRLA_CACHEDIS0 | NVMCTRL_CTRLA_CACHEDIS1;
-
-	// setup SmartEEPROM to buffered (1 page)
-	NVMCTRL->SEECFG.reg =
-		// NVMCTRL_SEECFG_APRDIS |
-		NVMCTRL_SEECFG_WMODE_BUFFERED;
-
-
-	if (DFU_EEPROM_MAGIC != DFU_EEPROM->magic.magic64) {
-		TU_LOG2("DFU EEPROM magic mismatch!\n");
-		DFU_EEPROM->magic.magic64 = DFU_EEPROM_MAGIC;
-		DFU_EEPROM->dfu.reg = 0;
-
-		TU_LOG2("SmartEEPROM load: %u\n", NVMCTRL->SEESTAT.bit.LOAD);
-		nvm_see_flush();
-		TU_LOG2("SmartEEPROM load: %u\n", NVMCTRL->SEESTAT.bit.LOAD);
+	if (0 == memcmp(DFU_RAM_MAGIC_STRING, dfu_hdr.magic, sizeof(dfu_hdr.magic))) {
+		should_start_app = (dfu_hdr.flags & DFU_RAM_FLAG_DFU_REQ) == DFU_RAM_FLAG_DFU_REQ;
+		TU_LOG2("Bootloader start requested: %d\n", should_start_app);
 	} else {
-		TU_LOG2("DFU EEPROM magic match\n");
-		if (DFU_EEPROM->dfu.bit.BTL) {
-			TU_LOG2("clearing bootloader flag\n");
-			DFU_EEPROM->dfu.bit.BTL = 0;
+		TU_LOG2("Bootloader ram section dfuram @ %p not initalized\n", &dfu_hdr);
+		// initialize header
+		memset(&dfu_hdr, 0, sizeof(struct dfu_hdr));
+		memcpy(dfu_hdr.magic, DFU_RAM_MAGIC_STRING, sizeof(dfu_hdr.magic));
+	}
 
-			TU_LOG2("SmartEEPROM load: %u\n", NVMCTRL->SEESTAT.bit.LOAD);
-			nvm_see_flush();
-			TU_LOG2("SmartEEPROM load: %u\n", NVMCTRL->SEESTAT.bit.LOAD);
-		} else {
-			uint32_t *app_ptr = (uint32_t *)BOOTLOADER_SIZE;
-			if (0xffffffff == *app_ptr) {
-				TU_LOG2("Flash erased, remain in bootloader\n");
-			} else {
-				// TU_LOG2("App first word %#08lx\n", *app_ptr);
-
-				// take the leap of faith
-				TU_LOG2("GL HF, jumping to %p\n", (uint32_t*)BOOTLOADER_SIZE);
-				boot_jump();
+	if (should_start_app) {
+		TU_LOG2("Checking app header @ %p\n", app_hdr);
+		int error = dfu_app_validate(app_hdr);
+		if (error) {
+			should_start_app = false;
+			switch (error) {
+			case DFU_APP_ERROR_MAGIC_MISMATCH:
+				TU_LOG2("magic mismatch\n");
+				break;
+			case DFU_APP_ERROR_UNSUPPORED_HDR_VERSION:
+				TU_LOG2("unsupported version %u\n", app_hdr->dfu_app_hdr_version);
+				break;
+			case DFU_APP_ERROR_INVALID_SIZE:
+				TU_LOG2("invalid size %lu [bytes]\n", app_hdr->app_size);
+				break;
+			case DFU_APP_ERROR_CRC_CALC_FAILED:
+				TU_LOG2("crc calc failed\n");
+				break;
+			case DFU_APP_ERROR_CRC_VERIFICATION_FAILED:
+				TU_LOG2("app crc verification failed %08lx\n", app_hdr->app_crc);
+				break;
+			default:
+				TU_LOG2("unknown error %d\n", error);
+				break;
 			}
+		} else {
+			TU_LOG2(
+				"Found %s v%u.%u.%u\n",
+				app_hdr->app_name,
+				app_hdr->app_version_major,
+				app_hdr->app_version_minor,
+				app_hdr->app_version_patch);
 		}
 	}
 
-	led_init();
-	tusb_init();
+	if (should_start_app) {
+		// check if stable
+		should_start_app = dfu_hdr.counter < 3;
+	}
 
-	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);
-	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
+	if (should_start_app && false) {
+		// increment counter in case the app crashes and resets the device
+		++dfu_hdr.counter;
+		start_app(BOOTLOADER_SIZE + sizeof(*app_hdr));
+		return 0; // never reached
+	}
 
-
-	led_blink(0, 2000);
-	led_set(LED_RED1, 1);
+	TU_LOG2("SuperDFU v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " running\n");
 
 	dfu.status.bStatus = DFU_ERROR_OK;
 	dfu.status.bState = DFU_STATE_DFU_IDLE;
 	dfu.status.bwPollTimeout = cpu_to_le32(100);
 	dfu.status.iString = 0;
 
+	led_init();
+	tusb_init();
 
-
-	vTaskStartScheduler();
-	NVIC_SystemReset();
-	return 0;
-}
-
-
-//--------------------------------------------------------------------+
-// USB DEVICE TASK
-//--------------------------------------------------------------------+
-static void tusb_device_task(void* param)
-{
-	(void) param;
+	led_blink(0, 2000);
+	led_set(LED_RED1, 1);
 
 	while (1) {
 		tud_task();
+		led_task();
 	}
+
+	return 0;
 }
 
 //--------------------------------------------------------------------+
@@ -962,39 +939,38 @@ static void led_init(void)
 	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
 }
 
-
-
-static void led_task(void *param)
+static void led_task(void)
 {
-	(void) param;
+	static uint32_t last_ms = 0;
+	uint32_t now = board_millis();
+	uint32_t elapsed = now - last_ms;
+	last_ms = now;
 
-	uint16_t left[TU_ARRAY_SIZE(leds)];
-	memset(&left, 0, sizeof(left));
-	const uint8_t TICK_MS = 8;
-
-	while (42) {
-		for (uint8_t i = 0; i < TU_ARRAY_SIZE(leds); ++i) {
+	if (elapsed) {
+		for (size_t i = 0; i < TU_ARRAY_SIZE(leds); ++i) {
 			uint16_t t = leds[i].time_ms;
-			if (t) {
-				if (leds[i].blink) {
-					if (0 == left[i]) {
-						// TU_LOG2("led %s (%u) toggle\n", leds[i].name, i);
-						gpio_toggle_pin_level(leds[i].pin);
-						left[i] = t / TICK_MS;
-					} else {
-						--left[i];
-					}
+			if (!t) {
+				continue;
+			}
+
+			if (leds[i].blink) {
+				if (elapsed >= leds[i].left) {
+					// TU_LOG2("led %s (%u) toggle\n", leds[i].name, i);
+					gpio_toggle_pin_level(leds[i].pin);
+					leds[i].left = t - (elapsed - leds[i].left);
 				} else {
-					// burst
-					t -= tu_min16(t, TICK_MS);
-					leds[i].time_ms = t;
-					if (!t) {
+					leds[i].left -= elapsed;
+				}
+			} else {
+				// burst
+				if (leds[i].left) {
+					uint16_t sub = tu_min16(elapsed, leds[i].left);
+					leds[i].left -= sub;
+					if (!leds[i].left) {
 						gpio_set_pin_level(leds[i].pin, 0);
 					}
 				}
 			}
 		}
-
-		vTaskDelay(pdMS_TO_TICKS(TICK_MS));
 	}
 }

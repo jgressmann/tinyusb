@@ -26,49 +26,34 @@
 #pragma once
 
 #include <stdint.h>
-#include <inttypes.h>
-#include <sam.h>
 
-#if !defined(EEPROM_SIZE)
-#   error Define EEPROM_SIZE
-#endif
 
-#define EEPROM_START ((uint8_t *const)SEEPROM_ADDR)
-#define EEPROM_END ((uint8_t *const)(SEEPROM_ADDR + EEPROM_SIZE))
-
-#define DFU_EEPROM_SIZE 16
-#define DFU_EEPROM_START EEPROM_START
-#define DFU_EEPROM_END (EEPROM_START + DFU_EEPROM_SIZE)
-
-#define DFU_EEPROM_MAGIC \
-	((((uint64_t)'S') << 56) \
-	| (((uint64_t)'u') << 48) \
-	| (((uint64_t)'p') << 40) \
-	| (((uint64_t)'e') << 32) \
-	| (((uint64_t)'r') << 24) \
-	| (((uint64_t)'D') << 16) \
-	| (((uint64_t)'F') << 8) \
-	| (((uint64_t)'U') << 0))
-
-typedef union {
-	struct {
-		uint8_t BTL:1;         /*!< bit:  0 want DFU mode                           */
-	} bit;                     /*!< Structure used for bit  access                  */
-	uint8_t reg;               /*!< Type      used for register access              */
-} dfu_eeprom_reg;
-
-typedef struct dfu_eeprom {
-	union {
-		uint64_t magic64;
-		uint8_t magic8[8];
-	} magic;
-	dfu_eeprom_reg dfu;
-	uint8_t reserved[7];
-} dfu_eeprom;
-
-#define DFU_EEPROM ((dfu_eeprom*)DFU_EEPROM_START)
+#define DFU_RAM_SECTION_NAME ".dfuram"
+#define DFU_RAM_MAGIC_STRING "SuperDFU RHv1\0\0\0"
+#define DFU_RAM_FLAG_DFU_REQ 0x1
 
 
 
+struct dfu_hdr {
+	uint8_t magic[16];
+	uint32_t flags;
+	uint32_t counter;
+} __packed;
 
+
+extern struct dfu_hdr dfu_hdr __attribute__((used,section(DFU_RAM_SECTION_NAME)));
+
+static inline void dfu_request_dfu(int req)
+{
+	if (req) {
+		dfu_hdr.flags |= DFU_RAM_FLAG_DFU_REQ;
+	} else {
+		dfu_hdr.flags &= ~DFU_RAM_FLAG_DFU_REQ;
+	}
+}
+
+static inline void dfu_mark_stable(void)
+{
+	dfu_hdr.counter = 0;
+}
 
