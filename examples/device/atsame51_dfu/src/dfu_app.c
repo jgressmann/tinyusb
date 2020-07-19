@@ -27,6 +27,7 @@
 #include <string.h>
 #include <sam.h>
 #include <mcu.h>
+#include <tusb.h>
 
 #ifndef MCU_NVM_SIZE
 #error Define MCU_NVM_SIZE
@@ -50,32 +51,35 @@ int dfu_app_validate(struct dfu_app_hdr const *hdr)
 	// p. 112 of 60001507E.pdf
 	uint32_t crc = 0;
 	uint32_t length = hdr->app_size / 4;
-	uint32_t addr = ((uintptr_t)(hdr + 1)) / 4;
+	uint32_t addr = ((uintptr_t)(hdr + 1));
 
-	for (int i = 0; i < 3; ++i) {
-		DSU->LENGTH.bit.LENGTH = DSU_LENGTH_LENGTH(length);
-		DSU->ADDR.bit.ADDR = DSU_ADDR_ADDR(addr);
-		DSU->DATA.bit.DATA = DSU_DATA_DATA(0xffffffff);
+	TU_LOG2("addr %08lx\n", addr);
+	TU_LOG2("len %08lx [words]\n", length);
 
-		// start computation
-		DSU->CTRL.bit.CRC = 1;
-		while (!DSU->STATUSA.bit.DONE);
+	// for (int i = 0; i < 3; ++i) {
+	// 	DSU->LENGTH.bit.LENGTH = DSU_LENGTH_LENGTH(length);
+	// 	DSU->ADDR.bit.ADDR = DSU_ADDR_ADDR(addr);
+	// 	DSU->DATA.bit.DATA = DSU_DATA_DATA(0xffffffff);
 
-		if (!DSU->STATUSA.bit.BERR) {
-			crc = 1;
-			break;
-		}
-	}
+	// 	// start computation
+	// 	DSU->CTRL.bit.CRC = 1;
+	// 	while (!DSU->STATUSA.bit.DONE);
 
-	if (!crc) {
-		return DFU_APP_ERROR_CRC_CALC_FAILED;
-	}
+	// 	if (!DSU->STATUSA.bit.BERR) {
+	// 		crc = 1;
+	// 		break;
+	// 	}
+	// }
 
-	// fetch computed value
-	crc = DSU->DATA.reg;
-	if (crc != hdr->app_crc) {
-		return DFU_APP_ERROR_CRC_VERIFICATION_FAILED;
-	}
+	// if (!crc) {
+	// 	return DFU_APP_ERROR_CRC_CALC_FAILED;
+	// }
+
+	// // fetch computed value
+	// crc = DSU->DATA.reg;
+	// if (crc != hdr->app_crc) {
+	// 	return DFU_APP_ERROR_CRC_VERIFICATION_FAILED;
+	// }
 
 	return DFU_APP_ERROR_NONE;
 }

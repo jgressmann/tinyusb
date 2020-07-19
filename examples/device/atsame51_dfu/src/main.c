@@ -294,10 +294,10 @@ static inline bool nvm_see_flush(void)
 // adapted from http://www.keil.com/support/docs/3913.htm
 __attribute__((naked, noreturn)) static void app_jump(uint32_t sp, uint32_t rh)
 {
-	(void)sp;
-	(void)rh;
-	__asm__("MSR MSP, r0");
-	__asm__("BX  r1");
+	__asm__(
+		"MSR MSP, r0\n"
+		"BX  r1\n"
+		);
 }
 
 __attribute__((noreturn)) static void start_app(uint32_t addr)
@@ -343,12 +343,13 @@ __attribute__((noreturn)) static void start_app(uint32_t addr)
 
 	// Load the vector table address of the user application into SCB->VTOR register. Make sure the address meets the alignment requirements.
 
-	SCB->VTOR = BOOTLOADER_SIZE;
+	SCB->VTOR = addr;
 
 	// A few device families, like the NXP 4300 series, will also have a "shadow pointer" to the VTOR, which also needs to be updated with the new address. Review the device datasheet to see if one exists.
 	// The final part is to set the MSP to the value found in the user application vector table and then load the PC with the reset vector value of the user application. This can't be done in C, as it is always possible, that the compiler uses the current SP. But that would be gone after setting the new MSP. So, a call to a small assembler function is done.
 
-	uint32_t* base = (uint32_t*)BOOTLOADER_SIZE;
+	uint32_t* base = (uint32_t*)(uintptr_t)addr;
+	TU_LOG2("stack @ %p reset @ %p\n", (void*)base[0], (void*)base[1]);
 	app_jump(base[0], base[1]);
 }
 
@@ -440,7 +441,7 @@ int main(void)
 		should_start_app = dfu_hdr.counter < 3;
 	}
 
-	if (should_start_app && false) {
+	if (should_start_app) {
 		// increment counter in case the app crashes and resets the device
 		++dfu_hdr.counter;
 		start_app(BOOTLOADER_SIZE + sizeof(*app_hdr));

@@ -23,6 +23,21 @@ ifdef START_ADDRESS
   LDFLAGS += -Wl,--section-start=.text=$(START_ADDRESS)
 endif
 
+# All source paths should be relative to the top level.
+LD_FILE = hw/bsp/$(BOARD)/same51j19a_flash.ld
+ifdef APP
+ifneq ($(APP),0)
+  # All source paths should be relative to the top level.
+  LD_FILE = hw/bsp/$(BOARD)/same51j19a_flash_app.ld
+  CFLAGS += -DSUPER_DFU_APP=1
+endif
+endif
+ifdef BOOTLOADER
+ifneq ($(BOOTLOADER),0)
+  # All source paths should be relative to the top level.
+  LD_FILE = hw/bsp/$(BOARD)/same51j19a_flash_bootloader.ld
+endif
+endif
 
 # compiler options for Atmel Studio's 'Debug' configuration
 #-O2 -ffunction-sections -mlong-calls -g3 -Wall -Wextra -mcpu=cortex-m4 -c -std=gnu99 -mfloat-abi=softfp -mfpu=fpv4-sp-d16
@@ -38,18 +53,22 @@ endif
 
 
 
-# All source paths should be relative to the top level.
-LD_FILE = hw/bsp/$(BOARD)/same51j19a_flash.ld
+
+
+# SRC_C += \
+# 	hw/mcu/microchip/same/asf4/same51/gcc/gcc/startup_same51.c \
+# 	hw/mcu/microchip/same/asf4/same51/gcc/system_same51.c \
+# 	hw/mcu/microchip/same/asf4/same51/hpl/gclk/hpl_gclk.c \
+# 	hw/mcu/microchip/same/asf4/same51/hpl/mclk/hpl_mclk.c \
+# 	hw/mcu/microchip/same/asf4/same51/hpl/osc32kctrl/hpl_osc32kctrl.c \
+# 	hw/mcu/microchip/same/asf4/same51/hpl/oscctrl/hpl_oscctrl.c \
+# 	hw/mcu/microchip/same/asf4/same51/hal/src/hal_atomic.c \
+# 	hw/mcu/microchip/same/asf4/same51/hal/utils/src/utils_syscalls.c
 
 SRC_C += \
 	hw/mcu/microchip/same/asf4/same51/gcc/gcc/startup_same51.c \
 	hw/mcu/microchip/same/asf4/same51/gcc/system_same51.c \
-	hw/mcu/microchip/same/asf4/same51/hpl/gclk/hpl_gclk.c \
-	hw/mcu/microchip/same/asf4/same51/hpl/mclk/hpl_mclk.c \
-	hw/mcu/microchip/same/asf4/same51/hpl/osc32kctrl/hpl_osc32kctrl.c \
-	hw/mcu/microchip/same/asf4/same51/hpl/oscctrl/hpl_oscctrl.c \
-	hw/mcu/microchip/same/asf4/same51/hal/src/hal_atomic.c \
-	hw/mcu/microchip/same/asf4/same51/hal/utils/src/utils_syscalls.c
+	hw/mcu/microchip/same/asf4/same51/hal/utils/src/utils_syscalls.c \
 
 INC += \
 	$(TOP)/hw/mcu/microchip/same/asf4/same51/ \
@@ -74,3 +93,39 @@ JLINK_IF = swd
 
 # flash using jlink
 flash: flash-jlink
+
+# $(BUILD)/$(BOARD)-firmware.superdfu.bin: $(BUILD)/$(BOARD)-firmware.bin
+# 	@echo CREATE $@
+# 	@cp $(BUILD)/$(BOARD)-firmware.bin $@
+# 	@python3 $(TOP)/examples/device/atsame51_dfu/src/superdfu-patch.py -e little $@
+
+# $(BUILD)/$(BOARD)-firmware.superdfu.hex: $(BUILD)/$(BOARD)-firmware.superdfu.bin
+# 	@echo CREATE $@
+# 	@$(OBJCOPY) -I binary -O ihex $^ $@
+
+$(BUILD)/$(BOARD)-firmware.superdfu.elf: $(BUILD)/$(BOARD)-firmware.elf
+	@echo CREATE $@
+	@cp $(BUILD)/$(BOARD)-firmware.elf $@
+	@python3 $(TOP)/examples/device/atsame51_dfu/src/superdfu-patch.py -e little $@
+
+$(BUILD)/$(BOARD)-firmware.superdfu.hex: $(BUILD)/$(BOARD)-firmware.superdfu.elf
+	@echo CREATE $@
+	@$(OBJCOPY) -O ihex $^ $@
+
+
+dfu: $(BUILD)/$(BOARD)-firmware.superdfu.elf
+
+flash-dfu: $(BUILD)/$(BOARD)-firmware.superdfu.hex
+	@echo halt > $(BUILD)/$(BOARD).superdfu.jlink
+	@echo r > $(BUILD)/$(BOARD).superdfu.jlink
+	@echo loadfile $^ >> $(BUILD)/$(BOARD).superdfu.jlink
+	@echo r >> $(BUILD)/$(BOARD).superdfu.jlink
+	@echo go >> $(BUILD)/$(BOARD).superdfu.jlink
+	@echo exit >> $(BUILD)/$(BOARD).superdfu.jlink
+	$(JLINKEXE) -device $(JLINK_DEVICE) -if $(JLINK_IF) -JTAGConf -1,-1 -speed auto -CommandFile $(BUILD)/$(BOARD).superdfu.jlink
+
+diff: $(BUILD)/$(BOARD)-firmware.superdfu.elf
+	xxd $(BUILD)/$(BOARD)-firmware.elf >$(BUILD)/$(BOARD)-firmware.xxd
+	xxd $(BUILD)/$(BOARD)-firmware.superdfu.elf >$(BUILD)/$(BOARD)-firmware.superdfu.xxd
+
+#meld $(BUILD)/$(BOARD)-firmware.xxd $(BUILD)/$(BOARD)-firmware.superdfu.xxd

@@ -23,14 +23,14 @@
  *
  */
 
-#include "sam.h"
+#include <sam.h>
 #include "bsp/board.h"
 
-#include "hal/include/hal_gpio.h"
-#include "hal/include/hal_init.h"
-#include "hal/include/hal_usb_device.h"
-#include "hpl/gclk/hpl_gclk_base.h"
-#include "hpl_mclk_config.h"
+#include <hal/include/hal_gpio.h>
+#include <hal/include/hal_init.h>
+#include <hal/include/hal_usb_device.h>
+#include <hpl/gclk/hpl_gclk_base.h>
+#include <hpl_mclk_config.h>
 
 #include <string.h>
 
@@ -262,7 +262,6 @@ void board_init(void)
   uart_send_str(BOARD_NAME " USB device configured\n");
 #endif
 #endif
-
 }
 
 //--------------------------------------------------------------------+
@@ -298,7 +297,7 @@ int board_uart_write(void const * buf, int len)
 #if CFG_TUSB_OS  == OPT_OS_NONE
 volatile uint32_t system_ticks = 0;
 
-void SysTick_Handler (void)
+void SysTick_Handler(void)
 {
   system_ticks++;
 }
