@@ -148,11 +148,6 @@ static inline void led_burst(uint8_t index, uint16_t duration_ms)
 
 
 static struct usb {
-	// CFG_TUSB_MEM_ALIGN uint8_t cmd_rx_buffers[2][CMD_BUFFER_SIZE];
-	// CFG_TUSB_MEM_ALIGN uint8_t cmd_tx_buffers[2][CMD_BUFFER_SIZE];
-	// uint16_t cmd_tx_offsets[2];
-	// uint8_t cmd_rx_bank;
-	// uint8_t cmd_tx_bank;
 	uint8_t port;
 	bool mounted;
 } usb;
@@ -320,7 +315,6 @@ void dfu_rtd_reset(uint8_t rhport)
 		TU_LOG2("Detected USB reset while detach timer is running");
 		dfu_request_dfu(1);
 		NVIC_SystemReset();
-		// while (1);
 	}
 }
 
