@@ -24,7 +24,8 @@ try:
 	parser.add_argument('--strict', type=bool, default=False)
 	args = parser.parse_args()
 
-	header_struct_format = "16sLLBBBB64s233L"
+	#header_struct_format = "16sLLBBBB64s233L"
+	header_struct_format = "16sLLBBBB64s"
 	footer_struct_format = "16s"
 	if args.endian == LITTLE_ENDIAN:
 		header_struct_format = "<" + header_struct_format
@@ -42,7 +43,7 @@ try:
 				if start_index == -1:
 					break
 
-				header = list(struct.unpack(header_struct_format, content[start_index:start_index+SUPER_DFU_HEADER_LEN]))
+				header = list(struct.unpack(header_struct_format, content[start_index:start_index + struct.calcsize(header_struct_format)]))
 
 				end_index = content.find(SUPER_DFU_FOOTER_MARKER, start_index + SUPER_DFU_HEADER_LEN)
 				if end_index == -1:

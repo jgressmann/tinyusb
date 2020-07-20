@@ -34,7 +34,7 @@ SEARCH_DIR(.)
 
 
 /* Memory Spaces Definitions */
-BOOTLOADER_SIZE = 0x8000;
+BOOTLOADER_SIZE = 0x4000;
 
 MEMORY
 {
@@ -51,20 +51,15 @@ STACK_SIZE = DEFINED(STACK_SIZE) ? STACK_SIZE : DEFINED(__stack_size__) ? __stac
 /* Section Definitions */
 SECTIONS
 {
-
-
-
     .dfuapphdr : {
         . = ALIGN(4);
         KEEP (*(.dfuapphdr))
     } > rom
 
-    /* Vector table must be 128-bit aligned */
-    . = ALIGN(128);
-
     .text :
     {
-        . = ALIGN(4);
+        /* Vector table must at least be 1024-byte aligned */
+        . = ALIGN(1024);
         _sfixed = .;
         KEEP(*(.vectors .vectors.*))
         *(.text .text.* .gnu.linkonce.t.*)

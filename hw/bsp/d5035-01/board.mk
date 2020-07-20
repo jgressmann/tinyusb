@@ -19,9 +19,9 @@ ifdef HWREV
   CFLAGS += -DHWREV=$(HWREV)
 endif
 
-ifdef START_ADDRESS
-  LDFLAGS += -Wl,--section-start=.text=$(START_ADDRESS)
-endif
+# ifdef START_ADDRESS
+#   LDFLAGS += -Wl,--section-start=.text=$(START_ADDRESS)
+# endif
 
 # All source paths should be relative to the top level.
 LD_FILE = hw/bsp/$(BOARD)/same51j19a_flash.ld
@@ -67,8 +67,19 @@ endif
 
 SRC_C += \
 	hw/mcu/microchip/same/asf4/same51/gcc/gcc/startup_same51.c \
-	hw/mcu/microchip/same/asf4/same51/gcc/system_same51.c \
-	hw/mcu/microchip/same/asf4/same51/hal/utils/src/utils_syscalls.c \
+  hw/mcu/microchip/same/asf4/same51/gcc/system_same51.c \
+
+ifdef SYSCALLS
+ifneq ($(SYSCALLS),0)
+  SRC_C += hw/mcu/microchip/same/asf4/same51/hal/utils/src/utils_syscalls.c
+endif
+endif
+
+ifdef LOG
+ifneq ($(LOG),0)
+  SRC_C += hw/mcu/microchip/same/asf4/same51/hal/utils/src/utils_syscalls.c
+endif
+endif
 
 INC += \
 	$(TOP)/hw/mcu/microchip/same/asf4/same51/ \
@@ -94,26 +105,22 @@ JLINK_IF = swd
 # flash using jlink
 flash: flash-jlink
 
-# $(BUILD)/$(BOARD)-firmware.superdfu.bin: $(BUILD)/$(BOARD)-firmware.bin
-# 	@echo CREATE $@
-# 	@cp $(BUILD)/$(BOARD)-firmware.bin $@
-# 	@python3 $(TOP)/examples/device/atsame51_dfu/src/superdfu-patch.py -e little $@
-
-# $(BUILD)/$(BOARD)-firmware.superdfu.hex: $(BUILD)/$(BOARD)-firmware.superdfu.bin
-# 	@echo CREATE $@
-# 	@$(OBJCOPY) -I binary -O ihex $^ $@
 
 $(BUILD)/$(BOARD)-firmware.superdfu.elf: $(BUILD)/$(BOARD)-firmware.elf
 	@echo CREATE $@
 	@cp $(BUILD)/$(BOARD)-firmware.elf $@
-	@python3 $(TOP)/examples/device/atsame51_dfu/src/superdfu-patch.py -e little $@
+	@python3 $(TOP)/examples/device/atsame51_dfu/src/superdfu-patch.py --strict 1 -e little $@
 
 $(BUILD)/$(BOARD)-firmware.superdfu.hex: $(BUILD)/$(BOARD)-firmware.superdfu.elf
 	@echo CREATE $@
 	@$(OBJCOPY) -O ihex $^ $@
 
+$(BUILD)/$(BOARD)-firmware.superdfu.bin: $(BUILD)/$(BOARD)-firmware.superdfu.elf
+	@echo CREATE $@
+	@$(OBJCOPY) -O binary $^ $@
 
-dfu: $(BUILD)/$(BOARD)-firmware.superdfu.elf
+
+dfu: $(BUILD)/$(BOARD)-firmware.superdfu.elf $(BUILD)/$(BOARD)-firmware.superdfu.hex $(BUILD)/$(BOARD)-firmware.superdfu.bin
 
 flash-dfu: $(BUILD)/$(BOARD)-firmware.superdfu.hex
 	@echo halt > $(BUILD)/$(BOARD).superdfu.jlink

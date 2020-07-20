@@ -52,10 +52,10 @@ struct dfu_app_hdr {
 	uint8_t app_version_minor;
 	uint8_t app_version_patch;
 	uint8_t app_name[64];
-	uint32_t reserved[9 + 224];
+	// uint32_t reserved[9 + 224];
 } __packed;
 
-_Static_assert(MCU_VECTOR_TABLE_ALIGNMENT == sizeof(struct dfu_app_hdr), "structure size must be 128 bytes");
+_Static_assert(MCU_VECTOR_TABLE_ALIGNMENT >= sizeof(struct dfu_app_hdr), "structure size must not exceed vector table alignment");
 
 struct dfu_app_ftr {
 	uint8_t magic[16];

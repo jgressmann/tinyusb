@@ -37,7 +37,7 @@ MEMORY
   ram       (rwx) : ORIGIN = 0x20000100, LENGTH = 0x00030000 - LENGTH(dfuram)
 }
 
-STACK_SIZE = 0x1000;
+STACK_SIZE = 0x0100;
 
 /* Section Definitions */
 SECTIONS

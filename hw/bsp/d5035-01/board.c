@@ -101,7 +101,7 @@ static inline void init_clock(void)
   OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
   while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL1 to be ready */
 #else // HWREV >= 1
-  /* configure XOSC0 for a 16MHz crystal connected to XIN1/XOUT1 */
+  /* configure XOSC0 for a 16MHz crystal connected to XIN0/XOUT0 */
   OSCCTRL->XOSCCTRL[0].reg =
     OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
     OSCCTRL_XOSCCTRL_RUNSTDBY |
@@ -122,6 +122,7 @@ static inline void init_clock(void)
   OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
   while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL1 to be ready */
 #endif // HWREV
+
   /* configure clock-generator 0 to use DPLL0 as source -> GCLK0 is used for the core */
   GCLK->GENCTRL[0].reg =
     GCLK_GENCTRL_DIV(0) |
@@ -197,7 +198,10 @@ static inline void uart_send_buffer(uint8_t const *text, size_t len)
 
 static inline void uart_send_str(const char* text)
 {
-  uart_send_buffer((uint8_t const *)text, strlen(text));
+  while (*text) {
+    SERCOM5->USART.DATA.reg = *text++;
+    while((SERCOM5->USART.INTFLAG.reg & SERCOM_SPI_INTFLAG_TXC) == 0);
+  }
 }
 
 
@@ -288,9 +292,10 @@ int board_uart_read(uint8_t* buf, int len)
 int board_uart_write(void const * buf, int len)
 {
   if (len < 0) {
-    len = strlen((char*)buf);
+    uart_send_str(buf);
+  } else {
+    uart_send_buffer(buf, len);
   }
-  uart_send_buffer(buf, len);
   return len;
 }
 

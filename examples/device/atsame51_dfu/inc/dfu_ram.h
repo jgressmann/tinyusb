@@ -26,6 +26,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 
 
 #define DFU_RAM_SECTION_NAME ".dfuram"
