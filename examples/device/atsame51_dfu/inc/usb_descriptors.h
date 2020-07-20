@@ -27,3 +27,6 @@
 
 #include <stdint.h>
 
+enum {
+	DFU_USB_TIMEOUT_MS = 100u
+};

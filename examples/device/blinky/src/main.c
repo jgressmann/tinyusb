@@ -177,6 +177,11 @@ static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(DFU_APP_FTR_SE
 };
 #endif
 
+static struct dfu_get_status_reply dfu_status;
+static uint32_t dfu_timer_start_ms;
+static uint16_t dfu_timer_duration_ms;
+static bool dfu_timer_running;
+
 int main(void)
 {
 	board_init();
@@ -187,6 +192,12 @@ int main(void)
 		dfu_app_hdr.app_version_major,
 		dfu_app_hdr.app_version_minor,
 		dfu_app_hdr.app_version_patch);
+
+	dfu_request_dfu(0); // no bootloader request
+
+	dfu_status.bStatus = DFU_ERROR_OK;
+	dfu_status.bwPollTimeout = 100; // ms
+	dfu_status.bState = DFU_STATE_APP_IDLE;
 
 	led_init();
 	tusb_init();
@@ -200,6 +211,10 @@ int main(void)
 #if SUPER_DFU_APP
 		dfu_mark_stable();
 #endif
+		if (dfu_timer_running && board_millis() - dfu_timer_start_ms >= dfu_timer_duration_ms) {
+			dfu_timer_running = false;
+			dfu_status.bState = DFU_STATE_APP_IDLE;
+		}
 		// TU_LOG2("loo[\n");
 	}
 
@@ -246,7 +261,136 @@ void tud_resume_cb(void)
 	led_blink(0, 250);
 }
 
+#if CFG_TUD_DFU_RT_CUSTOM
 
+static inline const char* recipient_str(tusb_request_recipient_t r)
+{
+	switch (r) {
+	case TUSB_REQ_RCPT_DEVICE:
+		return "device (0)";
+	case TUSB_REQ_RCPT_INTERFACE:
+		return "interface (1)";
+	case TUSB_REQ_RCPT_ENDPOINT:
+		return "endpoint (2)";
+	case TUSB_REQ_RCPT_OTHER:
+		return "other (3)";
+	default:
+		return "???";
+	}
+}
+
+static inline const char* type_str(tusb_request_type_t value)
+{
+	switch (value) {
+	case TUSB_REQ_TYPE_STANDARD:
+		return "standard (0)";
+	case TUSB_REQ_TYPE_CLASS:
+		return "class (1)";
+	case TUSB_REQ_TYPE_VENDOR:
+		return "vendor (2)";
+	case TUSB_REQ_TYPE_INVALID:
+		return "invalid (3)";
+	default:
+		return "???";
+	}
+}
+
+static inline const char* dir_str(tusb_dir_t value)
+{
+	switch (value) {
+	case TUSB_DIR_OUT:
+		return "out (0)";
+	case TUSB_DIR_IN:
+		return "in (1)";
+	default:
+		return "???";
+	}
+}
+
+
+void dfu_rtd_init(void)
+{
+}
+
+void dfu_rtd_reset(uint8_t rhport)
+{
+	(void) rhport;
+
+	if (dfu_timer_running && board_millis() - dfu_timer_start_ms <= dfu_timer_duration_ms) {
+		TU_LOG2("Detected USB reset while detach timer is running");
+		dfu_request_dfu(1);
+		NVIC_SystemReset();
+		// while (1);
+	}
+}
+
+bool dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_length)
+{
+	(void) rhport;
+
+	// Ensure this is DFU Runtime
+	TU_VERIFY(itf_desc->bInterfaceSubClass == TUD_DFU_APP_SUBCLASS);
+	TU_VERIFY(itf_desc->bInterfaceProtocol == DFU_PROTOCOL_RT);
+
+	uint8_t const * p_desc = tu_desc_next( itf_desc );
+	(*p_length) = sizeof(tusb_desc_interface_t);
+
+	if (TUSB_DESC_FUNCTIONAL == tu_desc_type(p_desc)) {
+		(*p_length) += p_desc[DESC_OFFSET_LEN];
+		p_desc = tu_desc_next(p_desc);
+	}
+
+	return true;
+}
+
+bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * request)
+{
+	(void) rhport;
+	(void) request;
+
+	// nothing to do
+	return true;
+}
+
+bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * request)
+{
+	// Handle class request only
+	TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
+	TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
+
+	TU_LOG2("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
+		request->bmRequestType,
+		recipient_str(request->bmRequestType_bit.recipient),
+		type_str(request->bmRequestType_bit.type),
+		dir_str(request->bmRequestType_bit.direction),
+		request->bRequest, request->wValue, request->wIndex,
+		request->wLength);
+
+
+	switch (request->bRequest) {
+	case DFU_REQUEST_GETSTATUS:
+		return tud_control_xfer(rhport, request, &dfu_status, sizeof(dfu_status));
+	case DFU_REQUEST_DETACH:
+		TU_LOG2("detach request, timeout %u [ms]\n", request->wValue);
+		dfu_status.bState = DFU_STATE_APP_DETACH;
+		dfu_timer_start_ms = board_millis();
+		dfu_timer_duration_ms = request->wValue;
+		dfu_timer_running = true;
+		return false; // stall pipe to trigger reset
+	}
+
+	return false;
+}
+
+bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
+{
+  (void) rhport;
+  (void) ep_addr;
+  (void) result;
+  (void) xferred_bytes;
+  return true;
+}
+#endif
 
 //--------------------------------------------------------------------+
 // LED TASK

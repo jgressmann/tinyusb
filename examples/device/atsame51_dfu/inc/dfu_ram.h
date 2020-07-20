@@ -52,6 +52,11 @@ static inline void dfu_request_dfu(int req)
 	}
 }
 
+static inline bool dfu_requested_dfu(void)
+{
+	return (dfu_hdr.flags & DFU_RAM_FLAG_DFU_REQ) == DFU_RAM_FLAG_DFU_REQ;
+}
+
 static inline void dfu_mark_stable(void)
 {
 	dfu_hdr.counter = 0;

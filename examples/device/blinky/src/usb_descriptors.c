@@ -23,6 +23,7 @@
  *
  */
 
+// #include <class/cdc/cdc_device.h>
 #include <tusb.h>
 
 #include <usb_descriptors.h>
@@ -33,7 +34,7 @@
 static const tusb_desc_device_t device = {
 	.bLength            = sizeof(tusb_desc_device_t),
 	.bDescriptorType    = TUSB_DESC_DEVICE,
-	.bcdUSB             = 0x0100,
+	.bcdUSB             = 0x0210,
 
 	.bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
 	.bDeviceSubClass    = 0x00,
@@ -61,14 +62,39 @@ uint8_t const * tud_descriptor_device_cb(void)
 
 
 
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN)
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_DFU_RT_DESC_LEN)
 
 static uint8_t const desc_configuration[] =
 {
 	// Config number, interface count, string index, total length, attribute, power in mA
-	TUD_CONFIG_DESCRIPTOR(1, 0, 0, CONFIG_TOTAL_LEN, 0, 100),
+	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0, 100),
 
-
+	9, TUSB_DESC_INTERFACE, 0, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_RT, 4, \
+  	/* Function */
+#if 0
+	DFU attributes
+Bit 7..4: reserved
+Bit 3: device will perform a bus
+detach-attach sequence when it
+receives a DFU_DETACH request.
+The host must not issue a USB
+Reset. (bitWillDetach)
+0 = no
+1 = yes
+Bit 2: device is able to communicate
+via USB after Manifestation phase.
+(bitManifestationTolerant)
+0 = no, must see bus reset
+1 = yes
+Bit 1: upload capable (bitCanUpload)
+0 = no
+1 = yes
+Bit 0: download capable
+(bitCanDnload)
+0 = no
+1 = yes
+#endif
+	9, DFU_DESC_FUNCTIONAL, 0x1/*attrs*/, U16_TO_U8S_LE(DFU_USB_RESET_TIMEOUT_MS) /* timeout [ms]*/, U16_TO_U8S_LE(64)/* xfer size*/, U16_TO_U8S_LE(0x0101)/*bcdVersion*/
 };
 
 
@@ -90,6 +116,7 @@ static char const* string_desc_arr [] =
 	"Jean Gressmann",                // 1: Manufacturer
 	"Blinky",	                     // 2: Product
 	"",                              // 3: Serial
+	"USB DFU 1.1",                   // 4: DFU
 };
 
 

@@ -44,7 +44,9 @@ int dfu_app_validate(struct dfu_app_hdr const *hdr)
 		return DFU_APP_ERROR_UNSUPPORED_HDR_VERSION;
 	}
 
-	if (0 == (hdr->app_size / 4) || hdr->app_size >= MCU_NVM_SIZE) {
+	if (0 == (hdr->app_size / 4) ||
+		0 != (hdr->app_size % 4) ||
+		hdr->app_size >= MCU_NVM_SIZE) {
 		return DFU_APP_ERROR_INVALID_SIZE;
 	}
 
