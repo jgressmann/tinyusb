@@ -349,7 +349,7 @@ __attribute__((noreturn)) static void start_app(uint32_t addr)
 	// The final part is to set the MSP to the value found in the user application vector table and then load the PC with the reset vector value of the user application. This can't be done in C, as it is always possible, that the compiler uses the current SP. But that would be gone after setting the new MSP. So, a call to a small assembler function is done.
 
 	uint32_t* base = (uint32_t*)(uintptr_t)addr;
-	TU_LOG2("stack @ %p reset @ %p\n", (void*)base[0], (void*)base[1]);
+	// TU_LOG2("stack @ %p reset @ %p\n", (void*)base[0], (void*)base[1]);
 	app_jump(base[0], base[1]);
 }
 
@@ -358,6 +358,7 @@ __attribute__((noreturn)) static void start_app(uint32_t addr)
 #define SUPERDFU_VERSION_PATCH 0
 #define STR2(x) #x
 #define STR(x) STR2(x)
+#define NAME "SuperDFU"
 
 
 
@@ -365,70 +366,70 @@ int main(void)
 {
 	board_init();
 
-	TU_LOG2("SuperDFU v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " starting...\n");
+	TU_LOG2(NAME " v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " starting...\n");
 
-	TU_LOG2("SmartEEPROM supported: %u\n", NVMCTRL->PARAM.bit.SEE);
-	if (NVMCTRL->PARAM.bit.SEE) {
-		TU_LOG2("SmartEEPROM page size: %u\n", NVMCTRL->SEESTAT.bit.PSZ);
-		TU_LOG2("SmartEEPROM block size: %u\n", NVMCTRL->SEESTAT.bit.SBLK);
-		TU_LOG2("SmartEEPROM register locked: %u\n", NVMCTRL->SEESTAT.bit.RLOCK);
-		TU_LOG2("SmartEEPROM section locked: %u\n", NVMCTRL->SEESTAT.bit.LOCK);
-		TU_LOG2("SmartEEPROM active sector: %u\n", NVMCTRL->SEESTAT.bit.ASEES);
-	}
-	TU_LOG2("Page size: %u\n", 8 << NVMCTRL->PARAM.bit.PSZ);
-	TU_LOG2("Page count: %u\n", NVMCTRL->PARAM.bit.NVMP);
-	uint32_t bootload_protected_bytes = (15-NVMCTRL->STATUS.bit.BOOTPROT) * (1u<<13u);
-	(void)bootload_protected_bytes;
-	TU_LOG2("Bootloader protected bytes: %lu\n", bootload_protected_bytes);
-	TU_LOG2("Bootloader protection enabled: %u\n", !NVMCTRL->STATUS.bit.BPDIS);
-	TU_LOG2("Bank A is mapped at 0x00000000: %u\n", !NVMCTRL->STATUS.bit.AFIRST);
-	TU_LOG2("NVM write mode? %u\n", NVMCTRL->CTRLA.bit.WMODE);
-	TU_LOG2("NVM status ready? %u\n", NVMCTRL->STATUS.bit.READY);
-	TU_LOG2("NVM region locks? %08lx\n", NVMCTRL->RUNLOCK.reg);
-	TU_LOG2("NVM user? %#08lx\n", NVMCTRL_USER);
-	TU_LOG2("Bootloader size? %#lx\n", (unsigned long)BOOTLOADER_SIZE);
+	// TU_LOG2("SmartEEPROM supported: %u\n", NVMCTRL->PARAM.bit.SEE);
+	// if (NVMCTRL->PARAM.bit.SEE) {
+	// 	TU_LOG2("SmartEEPROM page size: %u\n", NVMCTRL->SEESTAT.bit.PSZ);
+	// 	TU_LOG2("SmartEEPROM block size: %u\n", NVMCTRL->SEESTAT.bit.SBLK);
+	// 	TU_LOG2("SmartEEPROM register locked: %u\n", NVMCTRL->SEESTAT.bit.RLOCK);
+	// 	TU_LOG2("SmartEEPROM section locked: %u\n", NVMCTRL->SEESTAT.bit.LOCK);
+	// 	TU_LOG2("SmartEEPROM active sector: %u\n", NVMCTRL->SEESTAT.bit.ASEES);
+	// }
+	// TU_LOG2("Page size: %u\n", 8 << NVMCTRL->PARAM.bit.PSZ);
+	// TU_LOG2("Page count: %u\n", NVMCTRL->PARAM.bit.NVMP);
+	// uint32_t bootload_protected_bytes = (15-NVMCTRL->STATUS.bit.BOOTPROT) * (1u<<13u);
+	// (void)bootload_protected_bytes;
+	// TU_LOG2("Bootloader protected bytes: %lu\n", bootload_protected_bytes);
+	// TU_LOG2("Bootloader protection enabled: %u\n", !NVMCTRL->STATUS.bit.BPDIS);
+	// TU_LOG2("Bank A is mapped at 0x00000000: %u\n", !NVMCTRL->STATUS.bit.AFIRST);
+	// TU_LOG2("NVM write mode? %u\n", NVMCTRL->CTRLA.bit.WMODE);
+	// TU_LOG2("NVM status ready? %u\n", NVMCTRL->STATUS.bit.READY);
+	// TU_LOG2("NVM region locks? %08lx\n", NVMCTRL->RUNLOCK.reg);
+	// TU_LOG2("NVM user? %#08lx\n", NVMCTRL_USER);
+	// TU_LOG2("Bootloader size? %#lx\n", (unsigned long)BOOTLOADER_SIZE);
 
 	bool should_start_app = true;
 	struct dfu_app_hdr const *app_hdr = (struct dfu_app_hdr const *)(uintptr_t)BOOTLOADER_SIZE;
 
 	if (0 == memcmp(DFU_RAM_MAGIC_STRING, dfu_hdr.magic, sizeof(dfu_hdr.magic))) {
 		should_start_app = (dfu_hdr.flags & DFU_RAM_FLAG_DFU_REQ) == DFU_RAM_FLAG_DFU_REQ;
-		TU_LOG2("Bootloader start requested: %d\n", should_start_app);
+		TU_LOG2(NAME " bootloader start requested: %d\n", should_start_app);
 	} else {
-		TU_LOG2("Bootloader ram section dfuram @ %p not initalized\n", &dfu_hdr);
+		TU_LOG2(NAME " bootloader ram section dfuram @ %p not initalized\n", &dfu_hdr);
 		// initialize header
 		memset(&dfu_hdr, 0, sizeof(struct dfu_hdr));
 		memcpy(dfu_hdr.magic, DFU_RAM_MAGIC_STRING, sizeof(dfu_hdr.magic));
 	}
 
 	if (should_start_app) {
-		TU_LOG2("Checking app header @ %p\n", app_hdr);
+		TU_LOG2(NAME " checking app header @ %p\n", app_hdr);
 		int error = dfu_app_validate(app_hdr);
 		if (error) {
 			should_start_app = false;
 			switch (error) {
 			case DFU_APP_ERROR_MAGIC_MISMATCH:
-				TU_LOG2("magic mismatch\n");
+				TU_LOG2(NAME " magic mismatch\n");
 				break;
 			case DFU_APP_ERROR_UNSUPPORED_HDR_VERSION:
-				TU_LOG2("unsupported version %u\n", app_hdr->dfu_app_hdr_version);
+				TU_LOG2(NAME " unsupported version %u\n", app_hdr->dfu_app_hdr_version);
 				break;
 			case DFU_APP_ERROR_INVALID_SIZE:
-				TU_LOG2("invalid size %lu [bytes]\n", app_hdr->app_size);
+				TU_LOG2(NAME " invalid size %lu [bytes]\n", app_hdr->app_size);
 				break;
 			case DFU_APP_ERROR_CRC_CALC_FAILED:
-				TU_LOG2("crc calc failed\n");
+				TU_LOG2(NAME " crc calc failed\n");
 				break;
 			case DFU_APP_ERROR_CRC_VERIFICATION_FAILED:
-				TU_LOG2("app crc verification failed %08lx\n", app_hdr->app_crc);
+				TU_LOG2(NAME " app crc verification failed %08lx\n", app_hdr->app_crc);
 				break;
 			default:
-				TU_LOG2("unknown error %d\n", error);
+				TU_LOG2(NAME " unknown error %d\n", error);
 				break;
 			}
 		} else {
 			TU_LOG2(
-				"Found %s v%u.%u.%u\n",
+				NAME " found %s v%u.%u.%u\n",
 				app_hdr->app_name,
 				app_hdr->app_version_major,
 				app_hdr->app_version_minor,
@@ -439,11 +440,14 @@ int main(void)
 	if (should_start_app) {
 		// check if stable
 		should_start_app = dfu_hdr.counter < 3;
+		TU_LOG2(NAME " stable counter %lu\n", dfu_hdr.counter);
 	}
 
 	if (should_start_app) {
 		// increment counter in case the app crashes and resets the device
+		TU_LOG2(NAME " incrementing stable counter\n");
 		++dfu_hdr.counter;
+		TU_LOG2(NAME " gl hf, starting %s...\n", app_hdr->app_name);
 		start_app(BOOTLOADER_SIZE + sizeof(*app_hdr));
 		return 0; // never reached
 	}

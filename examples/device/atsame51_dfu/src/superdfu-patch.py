@@ -9,7 +9,7 @@ import sys
 LITTLE_ENDIAN = 'little'
 BIG_ENDIAN = 'big'
 SUPER_DFU_HEADER_MARKER = b'SuperDFU AHv1\0\0\0'
-SUPER_DFU_HEADER_LEN = 128
+SUPER_DFU_HEADER_LEN = 1024
 SUPER_DFU_FOOTER_MARKER = b'SuperDFU AFv1\0\0\0'
 SUPER_DFU_FOOTER_LEN = 16
 
@@ -21,9 +21,10 @@ try:
 	parser = argparse.ArgumentParser(description='patch firmware bin file SuperDFU header')
 	parser.add_argument('files', nargs=argparse.REMAINDER)
 	parser.add_argument('-e', '--endian', choices=['little','big'], required=True)
+	parser.add_argument('--strict', type=bool, default=False)
 	args = parser.parse_args()
 
-	header_struct_format = "16sLLBBBB64s9L"
+	header_struct_format = "16sLLBBBB64s233L"
 	footer_struct_format = "16s"
 	if args.endian == LITTLE_ENDIAN:
 		header_struct_format = "<" + header_struct_format
@@ -87,7 +88,9 @@ try:
 				f.write(content)
 
 			print(f"Saved")
-
+		elif args.strict and not changed:
+			print(f"ERROR: {file} unchanged")
+			sys.exit(2)
 
 
 except Exception as e:

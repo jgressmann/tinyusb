@@ -157,19 +157,6 @@ static struct usb {
 	bool mounted;
 } usb;
 
-// DEBUG=1 LOG=2 ~24K (text)
-// DEBUG=1 LOG=0 ~14K (text)
-// DEBUG=0 LOG=0 ~12K (text)
-// #if !defined(BOOTLOADER_SIZE) || BOOTLOADER_SIZE <= 0
-// #error Define BOOTLOADER_SIZE to a multiple of 2
-// #endif
-#define BOOTLOADER_SIZE (1u<<15)
-
-// #define NVM_REGIONS 32
-// #define NVM_REGION_SIZE (1ul<<14)
-// #define NVM_APP_REGION_OFFSET (((1ul<<19) - BOOTLOADER_SIZE) / NVM_REGION_SIZE)
-#define NVM_BOOTLOADER_BLOCKS (BOOTLOADER_SIZE / MCU_NVM_BLOCK_SIZE + (BOOTLOADER_SIZE % MCU_NVM_BLOCK_SIZE ? 1 : 0))
-#define NVM_PROG_BLOCKS (MCU_NVM_SIZE / 2 - NVM_BOOTLOADER_BLOCKS)
 
 
 #if SUPER_DFU_APP
@@ -278,7 +265,7 @@ static void led_task(void)
 {
 	static uint32_t last_ms = 0;
 	uint32_t now = board_millis();
-	TU_LOG2("now: %lu\n", now);
+	// TU_LOG2("now: %lu\n", now);
 	uint32_t elapsed = now - last_ms;
 	last_ms = now;
 

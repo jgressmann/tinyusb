@@ -27,6 +27,7 @@
 
 #include <stdint.h>
 #include <assert.h>
+#include <mcu.h>
 
 #define DFU_APP_HDR_SECTION_NAME ".dfuapphdr"
 #define DFU_APP_FTR_SECTION_NAME ".dfuappftr"
@@ -51,11 +52,10 @@ struct dfu_app_hdr {
 	uint8_t app_version_minor;
 	uint8_t app_version_patch;
 	uint8_t app_name[64];
-	// uint32_t app_vector_addr;
-	uint32_t reserved[9];
+	uint32_t reserved[9 + 224];
 } __packed;
 
-_Static_assert(128 == sizeof(struct dfu_app_hdr), "structure size must be 128 bytes");
+_Static_assert(MCU_VECTOR_TABLE_ALIGNMENT == sizeof(struct dfu_app_hdr), "structure size must be 128 bytes");
 
 struct dfu_app_ftr {
 	uint8_t magic[16];

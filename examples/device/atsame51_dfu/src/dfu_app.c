@@ -55,20 +55,38 @@ int dfu_app_validate(struct dfu_app_hdr const *hdr)
 
 	TU_LOG2("addr %08lx\n", addr);
 	TU_LOG2("len %08lx [words]\n", length);
+	TU_LOG2("NVMCTRL->CTRLA.reg %04x\n", NVMCTRL->CTRLA.reg);
+
+	MCLK->AHBMASK.bit.DSU_ = 1;
+	MCLK->APBBMASK.bit.DSU_ = 1;
+	// GCLK->PCHCTRL[DSU_CLK_AHB_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0 -> 120MHz
+	// GCLK->PCHCTRL[35].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK2 -> 60MHz */
+
 
 	// for (int i = 0; i < 3; ++i) {
+	// 	// while (!DSU->STATUSA.bit.DONE);
+	// 	DSU->CTRL.bit.SWRST = 1;
+	// 	TU_LOG2("DSU CTRL %#02x STATUSA %#02x\n", DSU->CTRL.reg, DSU->STATUSA.reg);
+	// 	// while (!DSU->STATUSA.bit.DONE);
+
+	// 	TU_LOG2("start crc\n");
+
 	// 	DSU->LENGTH.bit.LENGTH = DSU_LENGTH_LENGTH(length);
 	// 	DSU->ADDR.bit.ADDR = DSU_ADDR_ADDR(addr);
 	// 	DSU->DATA.bit.DATA = DSU_DATA_DATA(0xffffffff);
 
 	// 	// start computation
 	// 	DSU->CTRL.bit.CRC = 1;
+
 	// 	while (!DSU->STATUSA.bit.DONE);
+
+	// 	TU_LOG2("end crc\n");
 
 	// 	if (!DSU->STATUSA.bit.BERR) {
 	// 		crc = 1;
 	// 		break;
 	// 	}
+
 	// }
 
 	// if (!crc) {

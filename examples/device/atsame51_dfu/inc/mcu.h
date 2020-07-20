@@ -35,6 +35,7 @@
 #define MCU_NVM_SIZE (1ul<<19)
 #define MCU_NVM_PAGE_SIZE NVMCTRL_PAGE_SIZE // Atmel
 #define MCU_NVM_BLOCK_SIZE NVMCTRL_BLOCK_SIZE // Atmel
+#define MCU_VECTOR_TABLE_ALIGNMENT 1024 // https://interrupt.memfault.com/blog/how-to-write-a-bootloader-from-scratch
 
 static inline void same51_get_serial_number(uint32_t serial[4])
 {
