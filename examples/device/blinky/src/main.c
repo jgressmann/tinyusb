@@ -89,6 +89,7 @@ struct led {
 	{ 0, 0, 0, pin }
 #endif
 
+#if HWREV == 1
 static struct led leds[] = {
 	LED_STATIC_INITIALIZER("debug", PIN_PA02),
 	LED_STATIC_INITIALIZER("red1", PIN_PB14),
@@ -109,9 +110,53 @@ enum {
 	LED_GREEN2
 };
 
+
+
 #define USB_TRAFFIC_LED LED_ORANGE1
 #define USB_TRAFFIC_BURST_DURATION_MS 8
 #define USB_TRAFFIC_DO_LED led_burst(USB_TRAFFIC_LED, USB_TRAFFIC_BURST_DURATION_MS)
+#define POWER_LED LED_RED1
+#define BLINK_LED LED_GREEN2
+
+static void led_init(void)
+{
+	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
+	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA12; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA13; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA14; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
+}
+#else // HWREV
+static struct led leds[] = {
+	LED_STATIC_INITIALIZER("debug", PIN_PA02),
+	LED_STATIC_INITIALIZER("red", PIN_PA18),
+	LED_STATIC_INITIALIZER("orange", PIN_PA19),
+	LED_STATIC_INITIALIZER("green", PIN_PB16),
+	LED_STATIC_INITIALIZER("blue", PIN_PB17),
+};
+
+enum {
+	LED_DEBUG,
+	LED_0,
+	LED_1,
+	LED_2,
+	LED_3,
+};
+
+#define USB_TRAFFIC_DO_LED led_burst(LED_0, 8)
+#define POWER_LED LED_0
+#define BLINK_LED LED_3
+
+static void led_init(void)
+{
+	PORT->Group[0].DIRSET.reg = PORT_PA18;
+	PORT->Group[0].DIRSET.reg = PORT_PA19;
+	PORT->Group[1].DIRSET.reg = PORT_PB16;
+	PORT->Group[1].DIRSET.reg = PORT_PB17;
+}
+
+#endif // HWREV
 
 
 static void led_init(void);
@@ -196,7 +241,9 @@ int main(void)
 	led_init();
 	tusb_init();
 
-	led_blink(LED_GREEN2, 500);
+	led_blink(0, 2000);
+	led_set(POWER_LED, 1);
+	led_blink(BLINK_LED, 500);
 
 	dfu_app_watchdog_disable();
 
@@ -389,16 +436,6 @@ bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
 //--------------------------------------------------------------------+
 // LED TASK
 //--------------------------------------------------------------------+
-static void led_init(void)
-{
-	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
-	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA12; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA13; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA14; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
-}
-
 static void led_task(void)
 {
 	static uint32_t last_ms = 0;
