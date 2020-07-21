@@ -29,7 +29,7 @@
 #include <stdio.h>
 
 #if SUPERDFU_DEBUG
-#define SUPERDFU_DEBUG_LOG_BUFFER_SIZE 128
+#define SUPERDFU_DEBUG_LOG_BUFFER_SIZE 256
 extern char dfu_log_buffer[SUPERDFU_DEBUG_LOG_BUFFER_SIZE];
 
 #define LOG(...) \

@@ -34,7 +34,7 @@
 #error Define MCU_NVM_SIZE
 #endif
 
-int dfu_app_validate(struct dfu_app_hdr const *hdr)
+int dfu_app_hdr_validate(struct dfu_app_hdr const *hdr)
 {
 	if (memcmp(DFU_APP_HDR_MAGIC_STRING, hdr->magic, sizeof(hdr->magic))) {
 		// magic mismatch
@@ -95,4 +95,3 @@ int dfu_app_validate(struct dfu_app_hdr const *hdr)
 
 	return DFU_APP_ERROR_NONE;
 }
-

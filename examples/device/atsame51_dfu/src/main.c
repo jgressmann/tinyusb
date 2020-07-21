@@ -155,17 +155,8 @@ static struct usb {
 	bool mounted;
 } usb;
 
-// DEBUG=1 LOG=2 ~24K (text)
-// DEBUG=1 LOG=0 ~14K (text)
-// DEBUG=0 LOG=0 ~12K (text)
-// #if !defined(BOOTLOADER_SIZE) || BOOTLOADER_SIZE <= 0
-// #error Define BOOTLOADER_SIZE to a multiple of 2
-// #endif
-#define BOOTLOADER_SIZE (1u<<14)
 
-// #define NVM_REGIONS 32
-// #define NVM_REGION_SIZE (1ul<<14)
-// #define NVM_APP_REGION_OFFSET (((1ul<<19) - BOOTLOADER_SIZE) / NVM_REGION_SIZE)
+#define BOOTLOADER_SIZE (1u<<14)
 #define NVM_BOOTLOADER_BLOCKS (BOOTLOADER_SIZE / MCU_NVM_BLOCK_SIZE)
 #define NVM_PROG_BLOCKS (MCU_NVM_SIZE / 2 - NVM_BOOTLOADER_BLOCKS)
 
@@ -382,7 +373,7 @@ int main(void)
 
 	if (should_start_app) {
 		LOG(NAME " checking app header @ %p\n", app_hdr);
-		int error = dfu_app_validate(app_hdr);
+		int error = dfu_app_hdr_validate(app_hdr);
 		if (error) {
 			dfu.status.bStatus = DFU_ERROR_FIRMWARE;
 			should_start_app = false;
@@ -426,9 +417,20 @@ int main(void)
 		// increment counter in case the app crashes and resets the device
 		LOG(NAME " incrementing stable counter\n");
 		++dfu_hdr.counter;
+
+
+		// Setup watchdog timer in case app hangs, we'll now
+		// by the counter value.
+		LOG(NAME " setting 1s watchdog timer\n");
+		WDT->CONFIG.bit.PER = WDT_CONFIG_PER_CYC1024_Val;
+		WDT->CTRLA.bit.ENABLE = 1;
+		// while (!WDT->SYNCBUSY.bit.ENABLE);
+
 		board_uart_write(NAME " gl hf, starting ", -1);
 		board_uart_write(app_hdr->app_name, -1);
 		board_uart_write("...\n", -1);
+
+		// go go go
 		start_app(BOOTLOADER_SIZE + MCU_VECTOR_TABLE_ALIGNMENT);
 		return 0; // never reached
 	}

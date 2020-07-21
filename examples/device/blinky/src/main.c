@@ -146,7 +146,6 @@ static inline void led_burst(uint8_t index, uint16_t duration_ms)
 }
 
 
-
 static struct usb {
 	uint8_t port;
 	bool mounted;
@@ -199,6 +198,7 @@ int main(void)
 
 	led_blink(LED_GREEN2, 500);
 
+	dfu_app_watchdog_disable();
 
 	while (1) {
 		tud_task();
