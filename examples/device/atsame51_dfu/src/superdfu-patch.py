@@ -2,7 +2,6 @@
 
 import argparse
 import binascii
-import crcmod
 import struct
 import sys
 
@@ -13,36 +12,6 @@ SUPER_DFU_HEADER_MARKER = b'SuperDFU AHv1\0\0\0'
 SUPER_DFU_HEADER_LEN = 1024
 SUPER_DFU_FOOTER_MARKER = b'SuperDFU AFv1\0\0\0'
 SUPER_DFU_FOOTER_LEN = 16
-
-INIT_VALUE = 0xffffffff
-
-def gen_same51_crc32_table():
-	def gen_index(r):
-		for i in range(8):
-			r = (0 if r & 1 == 1 else 0xEDB88320) ^ r >> 1
-		return r ^ 0xFF000000
-
-
-	t = []
-	for i in range(256):
-		t.append(gen_index(i))
-
-	return t
-
-# https://github.com/knicholson32/SAMD_CRC32/blob/master/SAMD_CRC32.cpp
-SAME51_CRC32_TABLE = gen_same51_crc32_table()
-
-def same51_crc32(byteslike):
-	crc = INIT_VALUE
-	for byte in byteslike:
-		crc = SAME51_CRC32_TABLE[(crc & 0xff) ^ byte] ^ crc >> 8
-
-	return crc
-
-#CRC = crcmod.mkCrcFun(0x1EDB88320, rev=False)
-#CRC = crcmod.predefined.mkPredefinedCrcFun('crc-32')
-#CRC = same51_crc32
-CRC = binascii.crc32
 
 
 try:
@@ -77,7 +46,7 @@ try:
 					break
 
 				app_len = end_index - start_index - SUPER_DFU_HEADER_LEN
-				app_crc = CRC(content[start_index+SUPER_DFU_HEADER_LEN:end_index])
+				app_crc = binascii.crc32(content[start_index+SUPER_DFU_HEADER_LEN:end_index])
 
 				print(f"SuperDFU application header found @ {start_index:08x}, footer @ {end_index:08x}, len {app_len:08x}, crc {app_crc:08x}")
 				# print(repr(header))
@@ -86,23 +55,6 @@ try:
 				header[2] = app_crc
 
 				struct.pack_into(header_struct_format, content, start_index, *header)
-					# header[0],
-					# header[1],
-					# header[2],
-					# header[3],
-					# header[4],
-					# header[5],
-					# header[6],
-					# header[7],
-					# header[8],
-					# header[9],
-					# header[10],
-					# header[11],
-					# header[12],
-					# header[13],
-					# header[14],
-					# header[15],
-					# header[16])
 
 				changed = True
 

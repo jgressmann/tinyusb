@@ -194,11 +194,6 @@ static inline bool nvm_erase_block(void *addr)
 
 	NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CMD_EB | NVMCTRL_CTRLB_CMDEX_KEY;
 
-	// if (!NVMCTRL->STATUS.bit.READY) {
-	// 	LOG("erasing block at %lx\n", other_bank_offset);
-	// }
-
-
 	while (!NVMCTRL->STATUS.bit.READY);
 
 	// clear done flag
@@ -234,7 +229,7 @@ static inline bool nvm_write_main_page(void *addr, void const *ptr)
 	// clear done flag
 	NVMCTRL->INTFLAG.bit.DONE = 1;
 
-	LOG("INTFLAG %#08lx\n", (uint32_t)NVMCTRL->INTFLAG.reg);
+	// LOG("INTFLAG %#08lx\n", (uint32_t)NVMCTRL->INTFLAG.reg);
 
 	// check for errors
 	if (unlikely(NVMCTRL->INTFLAG.reg)) {
@@ -252,7 +247,7 @@ static inline bool nvm_write_main_page(void *addr, void const *ptr)
 	// clear done flag
 	NVMCTRL->INTFLAG.bit.DONE = 1;
 
-	LOG("INTFLAG %#08lx\n", (uint32_t)NVMCTRL->INTFLAG.reg);
+	// LOG("INTFLAG %#08lx\n", (uint32_t)NVMCTRL->INTFLAG.reg);
 
 	// check for errors
 	if (unlikely(NVMCTRL->INTFLAG.reg)) {
@@ -321,7 +316,7 @@ __attribute__((noreturn)) static void start_app(uint32_t addr)
 	// The final part is to set the MSP to the value found in the user application vector table and then load the PC with the reset vector value of the user application. This can't be done in C, as it is always possible, that the compiler uses the current SP. But that would be gone after setting the new MSP. So, a call to a small assembler function is done.
 
 	uint32_t* base = (uint32_t*)(uintptr_t)addr;
-	LOG("stack @ %p reset @ %p\n", (void*)base[0], (void*)base[1]);
+	// LOG("stack @ %p reset @ %p\n", (void*)base[0], (void*)base[1]);
 	app_jump(base[0], base[1]);
 }
 

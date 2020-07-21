@@ -52,13 +52,11 @@ int dfu_app_validate(struct dfu_app_hdr const *hdr)
 	}
 
 	// p. 112 of 60001507E.pdf
-	uint32_t crc = 0;
 	uint32_t length = hdr->app_size;
 	uint32_t addr = (((uintptr_t)hdr) + MCU_VECTOR_TABLE_ALIGNMENT);
 
-	LOG("addr %#08lx len %#08lx\n", addr, length);
-
-	LOG("PAC->STATUSB.reg %#08lx\n", PAC->STATUSB.reg);
+	// LOG("addr %#08lx len %#08lx\n", addr, length);
+	// LOG("PAC->STATUSB.reg %#08lx\n", PAC->STATUSB.reg);
 
 	// boot default
 	// MCLK->AHBMASK.bit.DSU_ = 1;
@@ -67,15 +65,12 @@ int dfu_app_validate(struct dfu_app_hdr const *hdr)
 
 	// disable DSU protection
 	PAC->WRCTRL.reg = PAC_WRCTRL_KEY_CLR | PAC_WRCTRL_PERID(33);
-	LOG("PAC->STATUSB.reg %#08lx\n", PAC->STATUSB.reg);
+	// LOG("PAC->STATUSB.reg %#08lx\n", PAC->STATUSB.reg);
 
-	// LOG("*addr %#08lx\n", ((uint32_t*)addr)[7]);
-	// uint32_t iaddr = (uint32_t)(&((uint32_t*)addr)[7]);
-
-
+	// yes, both need to be divided by 4 (word size)
 	DSU->LENGTH.bit.LENGTH = length / 4;
 	DSU->ADDR.bit.ADDR = addr / 4;
-	LOG("DSU->ADDR.bit.ADDR %#08lx\n", DSU->ADDR.bit.ADDR);
+	// LOG("DSU->ADDR.bit.ADDR %#08lx\n", DSU->ADDR.bit.ADDR);
 	DSU->DATA.bit.DATA = 0xffffffff;
 
 	// start computation
@@ -84,26 +79,16 @@ int dfu_app_validate(struct dfu_app_hdr const *hdr)
 	while (!DSU->STATUSA.bit.DONE);
 
 	PAC->WRCTRL.reg = PAC_WRCTRL_KEY_SET | PAC_WRCTRL_PERID(33);
-	LOG("PAC->STATUSB.reg %#08lx\n", PAC->STATUSB.reg);
-
-	// LOG("end crc\n");
+	// LOG("PAC->STATUSB.reg %#08lx\n", PAC->STATUSB.reg);
 
 	if (DSU->STATUSA.bit.BERR) {
 		return DFU_APP_ERROR_CRC_CALC_FAILED;
 	}
 
 	// fetch computed value
-	crc = ~DSU->DATA.reg;
-	LOG("CRC32 computed %#08lx\n", crc);
-	// uint32_t rev_crc = 0;
-	// for (int i = 0; i < 32; ++i) {
-	// 	rev_crc |= ((crc >> i) & 1) << (32 - i -1);
-	// }
+	uint32_t crc = ~DSU->DATA.reg;
+	// LOG("CRC32 computed %#08lx\n", crc);
 
-	// uint32_t neg_crc = crc ^ 0xffffffff;
-	// LOG("1\n");
-	// //LOG("CRC32 computed %#08lx negated %#08lx rev %#08lx\n", crc, neg_crc, rev_crc);
-	// LOG("2\n");
 	if (crc != hdr->app_crc) {
 		return DFU_APP_ERROR_CRC_VERIFICATION_FAILED;
 	}
