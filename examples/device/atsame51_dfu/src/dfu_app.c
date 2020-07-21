@@ -24,6 +24,7 @@
  */
 
 #include <dfu_app.h>
+#include <dfu_debug.h>
 #include <string.h>
 #include <sam.h>
 #include <mcu.h>
@@ -52,54 +53,60 @@ int dfu_app_validate(struct dfu_app_hdr const *hdr)
 
 	// p. 112 of 60001507E.pdf
 	uint32_t crc = 0;
-	uint32_t length = hdr->app_size / 4;
-	uint32_t addr = ((uintptr_t)(hdr + 1));
+	uint32_t length = hdr->app_size;
+	uint32_t addr = (((uintptr_t)hdr) + MCU_VECTOR_TABLE_ALIGNMENT);
 
-	TU_LOG2("addr %08lx\n", addr);
-	TU_LOG2("len %08lx [words]\n", length);
-	TU_LOG2("NVMCTRL->CTRLA.reg %04x\n", NVMCTRL->CTRLA.reg);
+	LOG("addr %#08lx len %#08lx\n", addr, length);
 
-	MCLK->AHBMASK.bit.DSU_ = 1;
-	MCLK->APBBMASK.bit.DSU_ = 1;
-	// GCLK->PCHCTRL[DSU_CLK_AHB_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0 -> 120MHz
-	// GCLK->PCHCTRL[35].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK2 -> 60MHz */
+	LOG("PAC->STATUSB.reg %#08lx\n", PAC->STATUSB.reg);
+
+	// boot default
+	// MCLK->AHBMASK.bit.DSU_ = 1;
+	// MCLK->APBBMASK.bit.DSU_ = 1;
 
 
-	// for (int i = 0; i < 3; ++i) {
-	// 	// while (!DSU->STATUSA.bit.DONE);
-	// 	DSU->CTRL.bit.SWRST = 1;
-	// 	TU_LOG2("DSU CTRL %#02x STATUSA %#02x\n", DSU->CTRL.reg, DSU->STATUSA.reg);
-	// 	// while (!DSU->STATUSA.bit.DONE);
+	// disable DSU protection
+	PAC->WRCTRL.reg = PAC_WRCTRL_KEY_CLR | PAC_WRCTRL_PERID(33);
+	LOG("PAC->STATUSB.reg %#08lx\n", PAC->STATUSB.reg);
 
-	// 	TU_LOG2("start crc\n");
+	// LOG("*addr %#08lx\n", ((uint32_t*)addr)[7]);
+	// uint32_t iaddr = (uint32_t)(&((uint32_t*)addr)[7]);
 
-	// 	DSU->LENGTH.bit.LENGTH = DSU_LENGTH_LENGTH(length);
-	// 	DSU->ADDR.bit.ADDR = DSU_ADDR_ADDR(addr);
-	// 	DSU->DATA.bit.DATA = DSU_DATA_DATA(0xffffffff);
 
-	// 	// start computation
-	// 	DSU->CTRL.bit.CRC = 1;
+	DSU->LENGTH.bit.LENGTH = length / 4;
+	DSU->ADDR.bit.ADDR = addr / 4;
+	LOG("DSU->ADDR.bit.ADDR %#08lx\n", DSU->ADDR.bit.ADDR);
+	DSU->DATA.bit.DATA = 0xffffffff;
 
-	// 	while (!DSU->STATUSA.bit.DONE);
+	// start computation
+	DSU->CTRL.bit.CRC = 1;
 
-	// 	TU_LOG2("end crc\n");
+	while (!DSU->STATUSA.bit.DONE);
 
-	// 	if (!DSU->STATUSA.bit.BERR) {
-	// 		crc = 1;
-	// 		break;
-	// 	}
+	PAC->WRCTRL.reg = PAC_WRCTRL_KEY_SET | PAC_WRCTRL_PERID(33);
+	LOG("PAC->STATUSB.reg %#08lx\n", PAC->STATUSB.reg);
 
+	// LOG("end crc\n");
+
+	if (DSU->STATUSA.bit.BERR) {
+		return DFU_APP_ERROR_CRC_CALC_FAILED;
+	}
+
+	// fetch computed value
+	crc = ~DSU->DATA.reg;
+	LOG("CRC32 computed %#08lx\n", crc);
+	// uint32_t rev_crc = 0;
+	// for (int i = 0; i < 32; ++i) {
+	// 	rev_crc |= ((crc >> i) & 1) << (32 - i -1);
 	// }
 
-	// if (!crc) {
-	// 	return DFU_APP_ERROR_CRC_CALC_FAILED;
-	// }
-
-	// // fetch computed value
-	// crc = DSU->DATA.reg;
-	// if (crc != hdr->app_crc) {
-	// 	return DFU_APP_ERROR_CRC_VERIFICATION_FAILED;
-	// }
+	// uint32_t neg_crc = crc ^ 0xffffffff;
+	// LOG("1\n");
+	// //LOG("CRC32 computed %#08lx negated %#08lx rev %#08lx\n", crc, neg_crc, rev_crc);
+	// LOG("2\n");
+	if (crc != hdr->app_crc) {
+		return DFU_APP_ERROR_CRC_VERIFICATION_FAILED;
+	}
 
 	return DFU_APP_ERROR_NONE;
 }

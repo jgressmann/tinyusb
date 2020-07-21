@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import binascii
 import crcmod
 import struct
 import sys
@@ -13,8 +14,35 @@ SUPER_DFU_HEADER_LEN = 1024
 SUPER_DFU_FOOTER_MARKER = b'SuperDFU AFv1\0\0\0'
 SUPER_DFU_FOOTER_LEN = 16
 
-CRC = crcmod.mkCrcFun(0x1EDB88320, initCrc=0xffffffff, rev=True)
-#CRC32 = crcmod.predefined.mkPredefinedCrcFun('crc-32')
+INIT_VALUE = 0xffffffff
+
+def gen_same51_crc32_table():
+	def gen_index(r):
+		for i in range(8):
+			r = (0 if r & 1 == 1 else 0xEDB88320) ^ r >> 1
+		return r ^ 0xFF000000
+
+
+	t = []
+	for i in range(256):
+		t.append(gen_index(i))
+
+	return t
+
+# https://github.com/knicholson32/SAMD_CRC32/blob/master/SAMD_CRC32.cpp
+SAME51_CRC32_TABLE = gen_same51_crc32_table()
+
+def same51_crc32(byteslike):
+	crc = INIT_VALUE
+	for byte in byteslike:
+		crc = SAME51_CRC32_TABLE[(crc & 0xff) ^ byte] ^ crc >> 8
+
+	return crc
+
+#CRC = crcmod.mkCrcFun(0x1EDB88320, rev=False)
+#CRC = crcmod.predefined.mkPredefinedCrcFun('crc-32')
+#CRC = same51_crc32
+CRC = binascii.crc32
 
 
 try:
@@ -24,7 +52,6 @@ try:
 	parser.add_argument('--strict', type=bool, default=False)
 	args = parser.parse_args()
 
-	#header_struct_format = "16sLLBBBB64s233L"
 	header_struct_format = "16sLLBBBB64s"
 	footer_struct_format = "16s"
 	if args.endian == LITTLE_ENDIAN:
@@ -50,7 +77,7 @@ try:
 					break
 
 				app_len = end_index - start_index - SUPER_DFU_HEADER_LEN
-				app_crc = CRC(content[start_index+SUPER_DFU_HEADER_LEN:end_index], crc=0xffffffff)
+				app_crc = CRC(content[start_index+SUPER_DFU_HEADER_LEN:end_index])
 
 				print(f"SuperDFU application header found @ {start_index:08x}, footer @ {end_index:08x}, len {app_len:08x}, crc {app_crc:08x}")
 				# print(repr(header))

@@ -40,18 +40,8 @@
 #include <usb_dfu_1_1.h>
 #include <dfu_ram.h>
 #include <dfu_app.h>
+#include <dfu_debug.h>
 
-#if SUPERDFU_DEBUG
-static char log_buffer[128];
-
-#define LOG(...) \
-	do { \
-		int chars = snprintf(log_buffer, sizeof(log_buffer), __VA_ARGS__); \
-		board_uart_write(log_buffer, chars); \
-	} while (0)
-#else
-#define LOG(...)
-#endif
 
 
 #if TU_BIG_ENDIAN == TU_BYTE_ORDER
@@ -82,7 +72,7 @@ static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(va
 #define unlikely(x) __builtin_expect(!!(x),0)
 #endif
 
-//#define SUPERDFU_LEDS 1
+#define SUPERDFU_LEDS 0
 #if SUPERDFU_LEDS
 struct led {
 #if SUPERDFU_DEBUG > 0
