@@ -32,7 +32,7 @@ SEARCH_DIR(.)
 /* Memory Spaces Definitions */
 MEMORY
 {
-  dfurom     (rx) : ORIGIN = 0x00000000, LENGTH = 0x00008000
+  dfurom     (rx) : ORIGIN = 0x00000000, LENGTH = 0x00004000
   dfuram     (rw) : ORIGIN = 0x20000000, LENGTH = 0x00000080
   ram       (rwx) : ORIGIN = 0x20000100, LENGTH = 0x00030000 - LENGTH(dfuram)
 }
