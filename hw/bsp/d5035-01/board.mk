@@ -19,17 +19,13 @@ ifdef HWREV
   CFLAGS += -DHWREV=$(HWREV)
 endif
 
-# ifdef START_ADDRESS
-#   LDFLAGS += -Wl,--section-start=.text=$(START_ADDRESS)
-# endif
-
 # All source paths should be relative to the top level.
 LD_FILE = hw/bsp/$(BOARD)/same51j19a_flash.ld
 ifdef APP
 ifneq ($(APP),0)
   # All source paths should be relative to the top level.
   LD_FILE = hw/bsp/$(BOARD)/same51j19a_flash_app.ld
-  CFLAGS += -DSUPER_DFU_APP=1
+  CFLAGS += -DSUPERDFU_APP=1
 endif
 endif
 ifdef BOOTLOADER
@@ -119,8 +115,14 @@ $(BUILD)/$(BOARD)-firmware.superdfu.bin: $(BUILD)/$(BOARD)-firmware.superdfu.elf
 	@echo CREATE $@
 	@$(OBJCOPY) -O binary $^ $@
 
+$(BUILD)/$(BOARD)-firmware.dfu: $(BUILD)/$(BOARD)-firmware.superdfu.bin
+	@echo CREATE $@
+	dfu-tool -v convert dfu $^ $@
+	dfu-tool -v set-vendor $@ $(VID)
+	dfu-tool -v set-product $@ $(PID)
 
-dfu: $(BUILD)/$(BOARD)-firmware.superdfu.elf $(BUILD)/$(BOARD)-firmware.superdfu.hex $(BUILD)/$(BOARD)-firmware.superdfu.bin
+dfu: $(BUILD)/$(BOARD)-firmware.dfu
+
 
 flash-dfu: $(BUILD)/$(BOARD)-firmware.superdfu.hex
 	@echo halt > $(BUILD)/$(BOARD).superdfu.jlink

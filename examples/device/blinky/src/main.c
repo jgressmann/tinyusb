@@ -198,7 +198,7 @@ static struct usb {
 
 
 
-#if SUPER_DFU_APP
+#if SUPERDFU_APP
 struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_SECTION_NAME)));
 static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SECTION_NAME))) = {
 	.magic = DFU_APP_HDR_MAGIC_STRING,
@@ -250,14 +250,13 @@ int main(void)
 	while (1) {
 		tud_task();
 		led_task();
-#if SUPER_DFU_APP
+#if SUPERDFU_APP
 		dfu_mark_stable();
 #endif
 		if (dfu_timer_running && board_millis() - dfu_timer_start_ms >= dfu_timer_duration_ms) {
 			dfu_timer_running = false;
 			dfu_status.bState = DFU_STATE_APP_IDLE;
 		}
-		// TU_LOG2("loo[\n");
 	}
 
 	return 0;
