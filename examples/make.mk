@@ -18,7 +18,7 @@ check_defined = \
 __check_defined = \
     $(if $(value $1),, \
     $(error Undefined make flag: $1$(if $2, ($2))))
-    
+
 # Build directory
 BUILD = _build/build-$(BOARD)
 
@@ -72,7 +72,7 @@ CFLAGS += \
 ifeq ($(DEBUG), 1)
   CFLAGS += -Og -ggdb
 else
-	CFLAGS += -Os
+  CFLAGS += -Os
 endif
 
 # TUSB Logging option

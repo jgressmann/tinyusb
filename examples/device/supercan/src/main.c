@@ -139,8 +139,8 @@ static struct {
 
 
 
-
-
+#if defined(D5035)
+#else
 static inline void can_init_pins(void) // controller and hardware specific setup of i/o pins for CAN
 {
 	// CAN ports
@@ -156,6 +156,7 @@ static inline void can_init_pins(void) // controller and hardware specific setup
 	PORT_WRCONFIG_PMUX(8) |			// CAN
 	PORT_WRCONFIG_PMUXEN;
 }
+#endif
 
 
 static inline void can_init_clock(void) // controller and hardware specific setup of clock for the m_can module
@@ -1020,6 +1021,8 @@ bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf,
 		return false;
 	}
 
+	TU_VERIFY(TUSB_CLASS_VENDOR_SPECIFIC == desc_intf->bInterfaceClass);
+
 	uint8_t const *ptr = (void const *)desc_intf;
 
 	ptr += 9;
@@ -1184,6 +1187,7 @@ bool tud_vendor_control_complete_cb(uint8_t rhport, tusb_control_request_t const
 
 	return true;
 }
+
 #if CFG_TUD_VENDOR_CUSTOM
 void vendord_init(void)
 {
@@ -1203,6 +1207,142 @@ bool vendord_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
 bool vendord_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
 {
 	return tud_custom_xfer_cb(rhport, ep_addr, result, xferred_bytes);
+}
+#endif
+
+#if CFG_TUD_DFU_RT_CUSTOM
+void dfu_rtd_init(void)
+{
+}
+
+static uint8_t jump_to_bootloader;
+
+void dfu_rtd_reset(uint8_t rhport)
+{
+	(void) rhport;
+
+	if (jump_to_bootloader) {
+
+	} else {
+		jump_to_bootloader = 0;
+	}
+}
+
+bool dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_length)
+{
+  (void) rhport;
+
+  // Ensure this is DFU Runtime
+  TU_VERIFY(itf_desc->bInterfaceSubClass == TUD_DFU_APP_SUBCLASS);
+  TU_VERIFY(itf_desc->bInterfaceProtocol == DFU_PROTOCOL_RT);
+
+  uint8_t const * p_desc = tu_desc_next( itf_desc );
+  (*p_length) = sizeof(tusb_desc_interface_t);
+
+  if ( TUSB_DESC_FUNCTIONAL == tu_desc_type(p_desc) )
+  {
+    (*p_length) += p_desc[DESC_OFFSET_LEN];
+    p_desc = tu_desc_next(p_desc);
+  }
+
+  return true;
+}
+
+bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * request)
+{
+  (void) rhport;
+  (void) request;
+
+  // nothing to do
+  return true;
+}
+
+
+
+#if 0
+Table 3.1 Summary of DFU Class-Specific Requests
+bmRequestType bRequest wValue wIndex wLength Data
+00100001b DFU_DETACH wTimeout Interface Zero None
+00100001b DFU_DNLOAD wBlockNum Interface Length Firm-
+ware
+10100001b DFU_UPLOAD Zero Interface Length Firm-
+ware
+10100001b DFU_GETSTATUS Zero Interface 6 Status
+00100001b DFU_CLRSTATUS Zero Interface Zero None
+10100001b DFU_GETSTATE Zero Interface 1 State
+00100001b DFU_ABORT Zero Interface Zero None
+#endif
+
+bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * request)
+{
+  // Handle class request only
+  TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
+  TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
+
+  TU_LOG2("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
+		request->bmRequestType,
+		recipient_str(request->bmRequestType_bit.recipient),
+		type_str(request->bmRequestType_bit.type),
+		dir_str(request->bmRequestType_bit.direction),
+		request->bRequest, request->wValue, request->wIndex,
+		request->wLength);
+
+//   DFU-RT control request
+// req type 0xa1 (reci interface (1) type class (1) dir in (1)) req 0x03, value 0x0000 index 0x0003 reqlen 6
+#if 0
+The device responds to the DFU_GETSTATUS request with a payload packet containing the following
+data:
+Offset Field Size Value Description
+0 bStatus 1 Number An indication of the status resulting from the
+execution of the most recent request.
+1 bwPollTim
+eout 3 Number Minimum time, in milliseconds, that the h ost
+should wait before sending a subsequent
+DFU_GETSTATUS request. *
+4 bState 1 Number An indication of the state that the device is going to
+enter immediately following transmission of this
+response. (By the time the host receives this
+information, this is the current state of the device.)
+5 iString 1 Index Index of status description in string table. **
+#endif
+  switch (request->bRequest) {
+  case 3: { // DFU_GETSTATUS
+    uint8_t bytes[6] = { 0 }; // state appIDLE (0)
+    tud_control_xfer(rhport, request, bytes, TU_ARRAY_SIZE(bytes));
+    return true;
+  } break;
+  }
+
+//   switch ( request->bRequest )
+//   {
+//     case 0xa1: { // 10100001b DFU_GETSTATE
+//       uint8_t bytes[1] = {
+//         0x00, // no error
+//         0x80, 0x00, 0x00, // 128 ms
+//         0x00, // appIDLE
+//         0x00, // string table index
+//       };
+//       tud_control_xfer(rhport, request, bytes, TU_ARRAY_SIZE(bytes));
+//     } break;
+//     case DFU_REQUEST_DETACH:
+//     TU_LOG2("DFU_REQUEST_DETACH\n");
+//       tud_control_status(rhport, request);
+//       tud_dfu_rt_reboot_to_dfu();
+//     break;
+
+//     default: return false; // stall unsupported request
+//   }
+
+  return false;
+}
+
+bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
+{
+  (void) rhport;
+  (void) ep_addr;
+  (void) result;
+  (void) xferred_bytes;
+  return true;
 }
 #endif
 

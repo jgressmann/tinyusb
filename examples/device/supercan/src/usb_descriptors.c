@@ -90,15 +90,9 @@ uint8_t const * tud_descriptor_device_cb(void)
 // };
 
 
-enum
-{
-  ITF_NUM_CDC = 0,
-  ITF_NUM_CDC_DATA,
-  ITF_NUM_VENDOR,
-  ITF_NUM_TOTAL
-};
 
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + 9+6*7)
+
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + 9+6*7 + TUD_DFU_RT_DESC_LEN)
 
 #define EPNUM_CDC       2
 #define EPNUM_VENDOR    SC_M1_EP_CMD_BULK_OUT
@@ -106,15 +100,15 @@ enum
 static uint8_t const desc_configuration[] =
 {
 	// Config number, interface count, string index, total length, attribute, power in mA
-	TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 100),
+	TUD_CONFIG_DESCRIPTOR(1, USB_IF_COUNT, 0, CONFIG_TOTAL_LEN, 0, 100),
 
 	// Interface number, string index, EP notification address and size, EP data address (out, in) and size.
-	TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, 0x81, 8, EPNUM_CDC, 0x80 | EPNUM_CDC, SC_M1_EP_SIZE),
+	TUD_CDC_DESCRIPTOR(USB_IF_CDC, 4, 0x81, 8, EPNUM_CDC, 0x80 | EPNUM_CDC, SC_M1_EP_SIZE),
 
   // Interface number, string index, EP Out & IN address, EP size
 //   TUD_VENDOR_DESCRIPTOR(ITF_NUM_VENDOR, 5, EPNUM_VENDOR, 0x80 | EPNUM_VENDOR, SC_M1_EP_SIZE)
 
-	9, TUSB_DESC_INTERFACE, ITF_NUM_VENDOR, 0, 6, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 5,
+	9, TUSB_DESC_INTERFACE, USB_IF_VENDOR, 0, 6, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 5,
 
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_CMD_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_CMD_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
@@ -122,6 +116,38 @@ static uint8_t const desc_configuration[] =
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG0_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG1_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG1_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
+
+	// Interface number, string index, attributes, detach timeout, transfer size */
+	// TUD_DFU_RT_DESCRIPTOR(ITF_NUM_DFU, 6, 0x0d, 1000, 4096),
+  	//TUD_DFU_RT_DESCRIPTOR(ITF_NUM_DFU_RT, 4, 0x0d, 1000, 4096),
+
+	9, TUSB_DESC_INTERFACE, USB_IF_DFU_RT, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_RT, 6, \
+  	/* Function */
+#if 0
+	DFU attributes
+Bit 7..4: reserved
+Bit 3: device will perform a bus
+detach-attach sequence when it
+receives a DFU_DETACH request.
+The host must not issue a USB
+Reset. (bitWillDetach)
+0 = no
+1 = yes
+Bit 2: device is able to communicate
+via USB after Manifestation phase.
+(bitManifestationTolerant)
+0 = no, must see bus reset
+1 = yes
+Bit 1: upload capable (bitCanUpload)
+0 = no
+1 = yes
+Bit 0: download capable
+(bitCanDnload)
+0 = no
+1 = yes
+#endif
+	9, DFU_DESC_FUNCTIONAL, 0x1/*attrs*/, U16_TO_U8S_LE(1000) /* timeout [ms]*/, U16_TO_U8S_LE(64)/* xfer size*/, U16_TO_U8S_LE(0x0101)/*bcdVersion*/
+
 };
 
 
@@ -138,12 +164,9 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 
 
 
-//#define MS_OS_20_GUID 0xD8, 0xDD, 0x60, 0xDF, 0x45, 0x89, 0x4C, 0xC7, 0x9C, 0xD2, 0x65, 0x9D, 0x9E, 0x64, 0x8A, 0x9F
 
 
-
-//TUD_BOS_WEBUSB_DESC_LEN
-#define BOS_TOTAL_LEN      (TUD_BOS_DESC_LEN + 0 + TUD_BOS_MICROSOFT_OS_DESC_LEN)
+#define BOS_TOTAL_LEN      (TUD_BOS_DESC_LEN + TUD_BOS_MICROSOFT_OS_DESC_LEN)
 
 
 
@@ -212,6 +235,7 @@ static char const* string_desc_arr [] =
 	"",                        		 // 3: Serial
 	"TinyUSB CDC",                   // 4: CDC
 	SC_NAME,                         // 5: SuperCAN interface
+	"USB DFU 1.1",
 };
 
 

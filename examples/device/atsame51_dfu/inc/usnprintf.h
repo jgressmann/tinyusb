@@ -23,16 +23,28 @@
  *
  */
 
+
 #pragma once
 
-#include <stdint.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-static inline void same51_get_serial_number(uint32_t serial[4])
-{
-	serial[0] = *(uint32_t const *)0x008061FC;
-	serial[1] = *(uint32_t const *)0x00806010;
-	serial[2] = *(uint32_t const *)0x00806014;
-	serial[3] = *(uint32_t const *)0x00806018;
-}
 
-#define ATSAME51_FLASH_TRANSFER_SIZE 128
+/* micro snprintf replacement
+ *
+ * This implementation supports these specifiers: cdipsuxX.
+ * These are the supported _length_ specifers (integers only): (none), h, hh, j, l, ll, z, t
+ * Flags (+-#0(space) are ignored except for # and + which are honored.
+ * Width specifier * is _not_ supported. Number specifiers are ignored.
+ * Precision specifiers are ignored.
+ **/
+int usnprintf(
+	char * restrict buffer,
+	size_t size,
+	char const * restrict fmt,
+	...);
+
+#ifdef __cplusplus
+} // extern "C"
+#endif

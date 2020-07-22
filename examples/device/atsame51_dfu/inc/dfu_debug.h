@@ -26,15 +26,16 @@
 #pragma once
 
 #include <bsp/board.h>
-#include <stdio.h>
+#include <usnprintf.h>
+
 
 #if SUPERDFU_DEBUG
-#define SUPERDFU_DEBUG_LOG_BUFFER_SIZE 256
+#define SUPERDFU_DEBUG_LOG_BUFFER_SIZE 128
 extern char dfu_log_buffer[SUPERDFU_DEBUG_LOG_BUFFER_SIZE];
 
 #define LOG(...) \
 	do { \
-		int chars = snprintf(dfu_log_buffer, sizeof(dfu_log_buffer), __VA_ARGS__); \
+		int chars = usnprintf(dfu_log_buffer, sizeof(dfu_log_buffer), __VA_ARGS__); \
 		board_uart_write(dfu_log_buffer, chars); \
 	} while (0)
 #else

@@ -33,3 +33,12 @@
 #define MS_OS_20_DESC_LEN  0xB2
 
 extern uint8_t const desc_ms_os_20[MS_OS_20_DESC_LEN];
+
+enum
+{
+	USB_IF_CDC = 0,
+	USB_IF_CDC_DATA,
+	USB_IF_VENDOR,
+	USB_IF_DFU_RT,
+	USB_IF_COUNT
+};

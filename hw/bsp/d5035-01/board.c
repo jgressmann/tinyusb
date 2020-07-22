@@ -27,12 +27,6 @@
 #include "bsp/board.h"
 
 #include <hal/include/hal_gpio.h>
-#include <hal/include/hal_init.h>
-#include <hal/include/hal_usb_device.h>
-#include <hpl/gclk/hpl_gclk_base.h>
-#include <hpl_mclk_config.h>
-
-#include <string.h>
 
 #if CONF_CPU_FREQUENCY != 120000000
 # error "CONF_CPU_FREQUENCY" must 120000000
@@ -189,8 +183,7 @@ static inline void uart_init(void)
 
 static inline void uart_send_buffer(uint8_t const *text, size_t len)
 {
-  for (size_t i = 0; i < len; ++i)
-  {
+  for (size_t i = 0; i < len; ++i) {
     SERCOM5->USART.DATA.reg = text[i];
     while((SERCOM5->USART.INTFLAG.reg & SERCOM_SPI_INTFLAG_TXC) == 0);
   }
