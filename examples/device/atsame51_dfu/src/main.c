@@ -502,8 +502,12 @@ void dfu_rtd_reset(uint8_t rhport)
 {
 	(void)rhport;
 	LOG("reset\n");
-	if (DFU_STATE_DFU_MANIFEST == dfu.status.bState) {
+	switch (dfu.status.bState) {
+	case DFU_STATE_DFU_MANIFEST:
+	case DFU_STATE_DFU_MANIFEST_SYNC:
+	case DFU_STATE_DFU_MANIFEST_WAIT_RESET:
 		NVIC_SystemReset();
+		break;
 	}
 }
 
@@ -544,7 +548,7 @@ static void dfu_state_download_sync_complete(tusb_control_request_t const *reque
 		LOG("> write qw @ %p\n", (void*)dfu.prog_offset);
 		if (nvm_write_qw((void*)dfu.prog_offset, &dfu.write_buffer[o])) {
 			if (0 == memcmp(&dfu.write_buffer[o], (void*)dfu.prog_offset, 16)) {
-				LOG("> verify page @ %p\n", (void*)dfu.prog_offset);
+				LOG("> verified qw @ %p\n", (void*)dfu.prog_offset);
 				dfu.prog_offset += 16;
 			} else {
 				LOG("> target content\n");
@@ -557,7 +561,7 @@ static void dfu_state_download_sync_complete(tusb_control_request_t const *reque
 				break;
 			}
 		} else {
-			LOG("> write failed for page @ %p\n", (void*)dfu.prog_offset);
+			LOG("> write failed for qw @ %p\n", (void*)dfu.prog_offset);
 			dfu.status.bStatus = DFU_ERROR_WRITE;
 			dfu.status.bState = DFU_STATE_DFU_ERROR;
 			break;
@@ -568,15 +572,15 @@ static void dfu_state_download_sync_complete(tusb_control_request_t const *reque
 bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * request)
 {
 	(void)rhport;
-	LOG("complete req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
-		request->bmRequestType,
-		recipient_str(request->bmRequestType_bit.recipient),
-		type_str(request->bmRequestType_bit.type),
-		dir_str(request->bmRequestType_bit.direction),
-		request->bRequest, request->wValue, request->wIndex,
-		request->wLength);
+	// LOG("complete req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
+	// 	request->bmRequestType,
+	// 	recipient_str(request->bmRequestType_bit.recipient),
+	// 	type_str(request->bmRequestType_bit.type),
+	// 	dir_str(request->bmRequestType_bit.direction),
+	// 	request->bRequest, request->wValue, request->wIndex,
+	// 	request->wLength);
 
-	LOG("DFU state=%u, status=%u\n", dfu.status.bState, dfu.status.bStatus);
+	// LOG("DFU state=%u, status=%u\n", dfu.status.bState, dfu.status.bStatus);
 
 	// LOG("dfu_rtd_control_complete\n");
 
@@ -588,27 +592,6 @@ bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * req
 	// default:
 	// 	LOG("> UNHANDLED STATE\n");
 	// 	break;
-	}
-
-	return true;
-}
-
-
-static inline bool dfu_state_manifest_wait_reset(tusb_control_request_t const *request)
-{
-	const int port = 0;
-	LOG("DFU_STATE_DFU_MANIFEST_WAIT_RESET\n");
-	switch (request->bRequest) {
-	case DFU_REQUEST_GETSTATUS:
-		LOG("> DFU_REQUEST_GETSTATUS\n");
-		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-		}
-		break;
-	default:
-		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-		break;
 	}
 
 	return true;
