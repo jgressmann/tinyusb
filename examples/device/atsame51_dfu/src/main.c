@@ -147,7 +147,7 @@ static inline void led_burst(uint8_t index, uint16_t duration_ms)
 }
 #endif
 
-#define BOOTLOADER_SIZE (1u<<14)
+#define BOOTLOADER_SIZE 0x4000
 #define NVM_BOOTLOADER_BLOCKS (BOOTLOADER_SIZE / MCU_NVM_BLOCK_SIZE)
 #define NVM_PROG_BLOCKS (MCU_NVM_SIZE / 2 - NVM_BOOTLOADER_BLOCKS)
 
@@ -159,10 +159,8 @@ static struct dfu {
 	struct dfu_get_status_reply status;
 	uint32_t download_size;
 	uint32_t prog_offset;
-	uint16_t cleared_pages_left : 15;
-	uint16_t current_block_cleared : 1;
+	uint16_t cleared_pages_left;
 	uint32_t page_buffer[MCU_NVM_PAGE_SIZE / 4];
-	// uint32_t page_buffer[4];
 } dfu;
 
 struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_SECTION_NAME)));
@@ -279,17 +277,17 @@ __attribute__((noreturn)) static void start_app(uint32_t addr)
 
 	// Disable individual fault handlers if the bootloader used them.
 
-	SCB->SHCSR &= ~( SCB_SHCSR_USGFAULTENA_Msk | \
-					 SCB_SHCSR_BUSFAULTENA_Msk | \
-					 SCB_SHCSR_MEMFAULTENA_Msk );
+	// SCB->SHCSR &= ~( SCB_SHCSR_USGFAULTENA_Msk | \
+	// 				 SCB_SHCSR_BUSFAULTENA_Msk | \
+	// 				 SCB_SHCSR_MEMFAULTENA_Msk );
 
 	// Activate the MSP, if the core is found to currently run with the PSP. As the compiler might still uses the stack, the PSP needs to be copied to the MSP before this.
 
-	if (CONTROL_SPSEL_Msk & __get_CONTROL()) {
-		  /* MSP is not active */
-		__set_MSP( __get_PSP( ) ) ;
-		__set_CONTROL( __get_CONTROL( ) & ~CONTROL_SPSEL_Msk ) ;
-	}
+	// if (CONTROL_SPSEL_Msk & __get_CONTROL()) {
+	// 	  /* MSP is not active */
+	// 	__set_MSP( __get_PSP( ) ) ;
+	// 	__set_CONTROL( __get_CONTROL( ) & ~CONTROL_SPSEL_Msk ) ;
+	// }
 
 	// Load the vector table address of the user application into SCB->VTOR register. Make sure the address meets the alignment requirements.
 
@@ -551,10 +549,9 @@ bool dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
 
 static bool dfu_state_download_sync_complete(tusb_control_request_t const *request)
 {
-	if (!dfu.current_block_cleared) {
+	if (!dfu.cleared_pages_left) {
 		LOG("> clearing block @ %#08lx\n", dfu.prog_offset);
 		if (nvm_erase_block((void*)dfu.prog_offset)) {
-			dfu.current_block_cleared = 1;
 			dfu.cleared_pages_left = MCU_NVM_BLOCK_SIZE / MCU_NVM_PAGE_SIZE;
 		} else {
 			LOG("\tclearing failed for block @ %#08lx\n", dfu.prog_offset);
@@ -571,7 +568,6 @@ static bool dfu_state_download_sync_complete(tusb_control_request_t const *reque
 			dfu.download_size += request->wLength;
 			dfu.prog_offset += sizeof(dfu.page_buffer);
 			--dfu.cleared_pages_left;
-			dfu.current_block_cleared = dfu.cleared_pages_left > 0;
 			dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
 		} else {
 			LOG("> target content\n");
@@ -750,13 +746,9 @@ static inline bool dfu_state_idle(tusb_control_request_t const *request)
 	switch (request->bRequest) {
 	case DFU_REQUEST_DNLOAD:
 		LOG("> DFU_REQUEST_DNLOAD\n");
-		// dfu.prog_offset = MCU_NVM_SIZE / 2 + NVM_BOOTLOADER_BLOCKS * MCU_NVM_BLOCK_SIZE;
 		dfu.prog_offset = BOOTLOADER_SIZE;
-		dfu.current_block_cleared = 0;
 		dfu.download_size = 0;
-		// dfu.page_buffer_size = 0;
 		dfu.cleared_pages_left = 0;
-		// memset(dfu.page_buffer_copy, 0, sizeof(dfu.page_buffer_copy));
 
 		dfu.status.bStatus = DFU_ERROR_OK;
 		dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
