@@ -525,7 +525,16 @@ void dfu_rtd_reset(uint8_t rhport)
 {
 	(void)rhport;
 	LOG("reset\n");
-	if (DFU_STATE_DFU_MANIFEST == dfu.status.bState) {
+	switch (dfu.status.bState) {
+	case DFU_STATE_DFU_MANIFEST:
+	case DFU_STATE_DFU_MANIFEST_SYNC:
+	case DFU_STATE_DFU_MANIFEST_WAIT_RESET:
+		NVIC_SystemReset();
+		break;
+	}
+
+
+	if (dfu.download_size) {
 		NVIC_SystemReset();
 	}
 }
