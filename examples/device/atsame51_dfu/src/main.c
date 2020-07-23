@@ -147,13 +147,6 @@ static inline void led_burst(uint8_t index, uint16_t duration_ms)
 }
 #endif
 
-
-static struct usb {
-	uint8_t port;
-	bool mounted;
-} usb;
-
-
 #define BOOTLOADER_SIZE (1u<<14)
 #define NVM_BOOTLOADER_BLOCKS (BOOTLOADER_SIZE / MCU_NVM_BLOCK_SIZE)
 #define NVM_PROG_BLOCKS (MCU_NVM_SIZE / 2 - NVM_BOOTLOADER_BLOCKS)
@@ -169,6 +162,7 @@ static struct dfu {
 	uint16_t cleared_pages_left : 15;
 	uint16_t current_block_cleared : 1;
 	uint32_t page_buffer[MCU_NVM_PAGE_SIZE / 4];
+	// uint32_t page_buffer[4];
 } dfu;
 
 struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_SECTION_NAME)));
@@ -324,28 +318,6 @@ int main(void)
 
 	LOG(NAME " v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " starting...\n");
 
-	// LOG("SmartEEPROM supported: %u\n", NVMCTRL->PARAM.bit.SEE);
-	// if (NVMCTRL->PARAM.bit.SEE) {
-	// 	LOG("SmartEEPROM page size: %u\n", NVMCTRL->SEESTAT.bit.PSZ);
-	// 	LOG("SmartEEPROM block size: %u\n", NVMCTRL->SEESTAT.bit.SBLK);
-	// 	LOG("SmartEEPROM register locked: %u\n", NVMCTRL->SEESTAT.bit.RLOCK);
-	// 	LOG("SmartEEPROM section locked: %u\n", NVMCTRL->SEESTAT.bit.LOCK);
-	// 	LOG("SmartEEPROM active sector: %u\n", NVMCTRL->SEESTAT.bit.ASEES);
-	// }
-	// LOG("Page size: %u\n", 8 << NVMCTRL->PARAM.bit.PSZ);
-	// LOG("Page count: %u\n", NVMCTRL->PARAM.bit.NVMP);
-	// uint32_t bootload_protected_bytes = (15-NVMCTRL->STATUS.bit.BOOTPROT) * (1u<<13u);
-	// (void)bootload_protected_bytes;
-	// LOG("Bootloader protected bytes: %lu\n", bootload_protected_bytes);
-	// LOG("Bootloader protection enabled: %u\n", !NVMCTRL->STATUS.bit.BPDIS);
-	// LOG("Bank A is mapped at 0x00000000: %u\n", !NVMCTRL->STATUS.bit.AFIRST);
-	// LOG("NVM write mode? %u\n", NVMCTRL->CTRLA.bit.WMODE);
-	// LOG("NVM status ready? %u\n", NVMCTRL->STATUS.bit.READY);
-	// LOG("NVM region locks? %08lx\n", NVMCTRL->RUNLOCK.reg);
-	// LOG("NVM user? %#08lx\n", NVMCTRL_USER);
-	// LOG("Bootloader size? %#lx\n", (unsigned long)BOOTLOADER_SIZE);
-
-
 	dfu.status.bStatus = DFU_ERROR_OK;
 	dfu.status.bState = DFU_STATE_DFU_IDLE;
 #if SUPERDFU_DEBUG
@@ -373,9 +345,10 @@ int main(void)
 		LOG(NAME " checking app header @ %p\n", app_hdr);
 		int error = dfu_app_hdr_validate(app_hdr);
 		if (error) {
-			// dfu-util doesn't like this, dfu-tool doesn't care
-			// dfu.status.bStatus = DFU_ERROR_FIRMWARE;
+			dfu.status.bState = DFU_STATE_DFU_ERROR;
+			dfu.status.bStatus = DFU_ERROR_FIRMWARE;
 			should_start_app = false;
+
 			switch (error) {
 			case DFU_APP_ERROR_MAGIC_MISMATCH:
 				LOG(NAME " magic mismatch\n");
@@ -465,8 +438,6 @@ void tud_mount_cb(void)
 #if SUPERDFU_LEDS
 	led_blink(0, 250);
 #endif
-	usb.mounted = true;
-
 }
 
 // Invoked when device is unmounted
@@ -476,7 +447,6 @@ void tud_umount_cb(void)
 #if SUPERDFU_LEDS
 	led_blink(0, 1000);
 #endif
-	usb.mounted = false;
 }
 
 // Invoked when usb bus is suspended
@@ -486,7 +456,6 @@ void tud_suspend_cb(bool remote_wakeup_en)
 {
 	(void) remote_wakeup_en;
 	LOG("suspend\n");
-	usb.mounted = false;
 #if SUPERDFU_LEDS
 	led_blink(0, 500);
 #endif
@@ -496,13 +465,12 @@ void tud_suspend_cb(bool remote_wakeup_en)
 void tud_resume_cb(void)
 {
 	LOG("resume\n");
-	usb.mounted = true;
 #if SUPERDFU_LEDS
 	led_blink(0, 250);
 #endif
 }
 
-
+#if SUPERDFU_DEBUG
 static inline const char* recipient_str(tusb_request_recipient_t r)
 {
 	switch (r) {
@@ -546,6 +514,7 @@ static inline const char* dir_str(tusb_dir_t value)
 		return "???";
 	}
 }
+#endif
 
 #if CFG_TUD_DFU_RT_CUSTOM
 
@@ -556,22 +525,16 @@ void dfu_rtd_init(void)
 
 void dfu_rtd_reset(uint8_t rhport)
 {
-	if (DFU_STATE_DFU_MANIFEST_WAIT_RESET == dfu.status.bState) {
+	(void)rhport;
+	LOG("reset\n");
+	if (DFU_STATE_DFU_MANIFEST == dfu.status.bState) {
 		NVIC_SystemReset();
-	} else {
-		usb.port = rhport;
 	}
 }
 
 bool dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_length)
 {
-	if (unlikely(rhport != usb.port)) {
-		return false;
-	}
-
-	// Ensure this is DFU Runtime
-	TU_VERIFY(itf_desc->bInterfaceSubClass == TUD_DFU_APP_SUBCLASS);
-	TU_VERIFY(itf_desc->bInterfaceProtocol == DFU_PROTOCOL_RT);
+	(void)rhport;
 
 	uint8_t const * p_desc = tu_desc_next(itf_desc);
 	(*p_length) = sizeof(tusb_desc_interface_t);
@@ -592,11 +555,6 @@ static bool dfu_state_download_sync_complete(tusb_control_request_t const *reque
 	if (!dfu.current_block_cleared) {
 		LOG("> clearing block @ %#08lx\n", dfu.prog_offset);
 		if (nvm_erase_block((void*)dfu.prog_offset)) {
-			// TU_LOG2_MEM((void*)dfu.prog_offset, MCU_NVM_BLOCK_SIZE, 2);
-			// for (unsigned i = 0; i < MCU_NVM_BLOCK_SIZE / 4; ++i) {
-			// 	LOG("mem @ %#08lx[%u]: %08x\n", dfu.prog_offset, i * 4, *(uint32_t*)(dfu.prog_offset + i * 4));
-			// }
-
 			dfu.current_block_cleared = 1;
 			dfu.cleared_pages_left = MCU_NVM_BLOCK_SIZE / MCU_NVM_PAGE_SIZE;
 		} else {
@@ -638,11 +596,7 @@ static bool dfu_state_download_sync_complete(tusb_control_request_t const *reque
 
 bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * request)
 {
-	if (unlikely(rhport != usb.port)) {
-		LOG("USB port mismatch (expected %u, have %u)\n", usb.port, rhport);
-		return false;
-	}
-
+	(void)rhport;
 	LOG("complete req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
 		request->bmRequestType,
 		recipient_str(request->bmRequestType_bit.recipient),
@@ -650,9 +604,6 @@ bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * req
 		dir_str(request->bmRequestType_bit.direction),
 		request->bRequest, request->wValue, request->wIndex,
 		request->wLength);
-
-	TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
-	TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
 
 	LOG("DFU state=%u, status=%u\n", dfu.status.bState, dfu.status.bStatus);
 
@@ -674,11 +625,12 @@ bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * req
 
 static inline bool dfu_state_manifest_wait_reset(tusb_control_request_t const *request)
 {
+	const int port = 0;
 	LOG("DFU_STATE_DFU_MANIFEST_WAIT_RESET\n");
 	switch (request->bRequest) {
 	case DFU_REQUEST_GETSTATUS:
 		LOG("> DFU_REQUEST_GETSTATUS\n");
-		if (unlikely(!tud_control_xfer(usb.port, request, &dfu.status, sizeof(dfu.status)))) {
+		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
 			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
 			dfu.status.bState = DFU_STATE_DFU_ERROR;
 		}
@@ -691,90 +643,27 @@ static inline bool dfu_state_manifest_wait_reset(tusb_control_request_t const *r
 	return true;
 }
 
-// static inline bool dfu_state_manifest_sync(tusb_control_request_t const *request)
-// {
-// 	LOG("DFU_STATE_DFU_MANIFEST_SYNC\n");
-// 	switch (request->bRequest) {
-// 	case DFU_REQUEST_GETSTATUS:
-// 		LOG("> DFU_REQUEST_GETSTATUS\n");
-// 		dfu.status.bState = DFU_STATE_DFU_MANIFEST_WAIT_RESET;
-// 		if (unlikely(!tud_control_xfer(usb.port, request, &dfu.status, sizeof(dfu.status)))) {
-// 			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-// 			dfu.status.bState = DFU_STATE_DFU_ERROR;
-// 		}
-// 		// // manifest
-// 		// LOG("> clear bootloader blocks\n");
-// 		// for (uint8_t i = 0; i < NVM_BOOTLOADER_BLOCKS; ++i) {
-// 		// 	if (nvm_erase_block((void*)(MCU_NVM_SIZE / 2 + i * MCU_NVM_BLOCK_SIZE))) {
-
-// 		// 	} else {
-// 		// 		dfu.status.bStatus = DFU_ERROR_ERASE;
-// 		// 		dfu.status.bState = DFU_STATE_DFU_ERROR;
-// 		// 		return false;
-// 		// 	}
-// 		// }
-
-// 		// LOG("> copy bootloader pages\n");
-// 		// for (uint32_t i = 0; i < NVM_BOOTLOADER_BLOCKS * (MCU_NVM_BLOCK_SIZE / MCU_NVM_PAGE_SIZE); ++i) {
-// 		// 	void *src = (void*)(i * MCU_NVM_PAGE_SIZE);
-// 		// 	void *dst = (void*)(MCU_NVM_SIZE / 2 + i * MCU_NVM_PAGE_SIZE);
-// 		// 	if (nvm_write_main_page(dst, src)) {
-// 		// 		if (0 == memcmp(dst, src, MCU_NVM_PAGE_SIZE)) {
-
-// 		// 		} else {
-// 		// 			dfu.status.bStatus = DFU_ERROR_VERIFY;
-// 		// 			dfu.status.bState = DFU_STATE_DFU_ERROR;
-// 		// 			return false;
-// 		// 		}
-// 		// 	} else {
-// 		// 		dfu.status.bStatus = DFU_ERROR_WRITE;
-// 		// 		dfu.status.bState = DFU_STATE_DFU_ERROR;
-// 		// 		return false;
-// 		// 	}
-// 		// }
-
-// 		// LOG("> swap banks\n");
-// 		// while (!NVMCTRL->STATUS.bit.READY); // wait for nvmctrl to be ready
-
-// 		// // clear flags
-// 		// NVMCTRL->INTFLAG.reg = NVMCTRL->INTFLAG.reg;
-
-// 		// // clear page buffer
-// 		// NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CMD_BKSWRST | NVMCTRL_CTRLB_CMDEX_KEY;
-// 		// 	// if (!NVMCTRL->STATUS.bit.READY) {
-// 		// 	// 	LOG("erasing page buffer\n");
-// 		// 	// }
-// 		// // wait for erase
-// 		// while (!NVMCTRL->STATUS.bit.READY);
-// 		break;
-// 	case DFU_REQUEST_ABORT:
-// 		LOG("> DFU_REQUEST_ABORT\n");
-// 		dfu.status.bStatus = DFU_ERROR_OK;
-// 		dfu.status.bState = DFU_STATE_DFU_IDLE;
-// 		break;
-// 	default:
-// 		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-// 		break;
-// 	}
-
-// 	return true;
-// }
-
 static inline bool dfu_state_error(tusb_control_request_t const *request)
 {
+	const int port = 0;
 	LOG("DFU_STATE_DFU_ERROR\n");
 	switch (request->bRequest) {
-	case DFU_REQUEST_GETSTATUS:
-		LOG("> DFU_REQUEST_GETSTATUS\n");
-		if (unlikely(!tud_control_xfer(usb.port, request, &dfu.status, sizeof(dfu.status)))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-		}
-		break;
+	// case DFU_REQUEST_GETSTATUS:
+	// 	LOG("> DFU_REQUEST_GETSTATUS\n");
+	// 	if (unlikely(!tud_control_xfer(usb.port, request, &dfu.status, sizeof(dfu.status)))) {
+	// 		dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+	// 		dfu.status.bState = DFU_STATE_DFU_ERROR;
+	// 	}
+	// 	break;
 	case DFU_REQUEST_CLRSTATUS:
 		LOG("> DFU_REQUEST_CLRSTATUS\n");
 		dfu.status.bStatus = DFU_ERROR_OK;
 		dfu.status.bState = DFU_STATE_DFU_IDLE;
+		if (!tud_control_xfer(port, request, NULL, 0)) {
+			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+			dfu.status.bState = DFU_STATE_DFU_ERROR;
+			return false;
+		}
 		break;
 	default:
 		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
@@ -786,15 +675,16 @@ static inline bool dfu_state_error(tusb_control_request_t const *request)
 
 static inline bool dfu_state_download_sync(tusb_control_request_t const *request)
 {
+	const int port = 0;
 	LOG("DFU_STATE_DFU_DNLOAD_SYNC\n");
 	switch (request->bRequest) {
-	case DFU_REQUEST_GETSTATUS:
-		LOG("> DFU_REQUEST_GETSTATUS\n");
-		if (unlikely(!tud_control_xfer(usb.port, request, &dfu.status, sizeof(dfu.status)))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-		}
-		break;
+	// case DFU_REQUEST_GETSTATUS:
+	// 	LOG("> DFU_REQUEST_GETSTATUS\n");
+	// 	if (unlikely(!tud_control_xfer(usb.port, request, &dfu.status, sizeof(dfu.status)))) {
+	// 		dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+	// 		dfu.status.bState = DFU_STATE_DFU_ERROR;
+	// 	}
+	// 	break;
 	case DFU_REQUEST_ABORT:
 		LOG("> DFU_REQUEST_ABORT\n");
 		dfu.status.bStatus = DFU_ERROR_OK;
@@ -805,11 +695,18 @@ static inline bool dfu_state_download_sync(tusb_control_request_t const *request
 		break;
 	}
 
+	if (!tud_control_xfer(port, request, NULL, 0)) {
+		dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+		dfu.status.bState = DFU_STATE_DFU_ERROR;
+		return false;
+	}
+
 	return true;
 }
 
 static inline bool dfu_state_download_idle(tusb_control_request_t const *request)
 {
+	const int port = 0;
 	LOG("DFU_STATE_DFU_DNLOAD_IDLE\n");
 	switch (request->bRequest) {
 	case DFU_REQUEST_DNLOAD:
@@ -827,7 +724,7 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 			}
 
 			memset(dfu.page_buffer, 0, sizeof(dfu.page_buffer));
-			if (!tud_control_xfer(usb.port, request, dfu.page_buffer, sizeof(dfu.page_buffer))) {
+			if (!tud_control_xfer(port, request, dfu.page_buffer, sizeof(dfu.page_buffer))) {
 				dfu.status.bStatus = DFU_ERROR_UNKNOWN;
 				dfu.status.bState = DFU_STATE_DFU_ERROR;
 				return false;
@@ -836,28 +733,21 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 			dfu.status.bState = DFU_STATE_DFU_DNLOAD_SYNC;
 		} else {
 			if (dfu.download_size) {
-				dfu.status.bState = DFU_STATE_DFU_MANIFEST_WAIT_RESET;
-				if (!tud_control_xfer(usb.port, request, NULL, 0)) {
-					dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-					dfu.status.bState = DFU_STATE_DFU_ERROR;
-					return false;
-				}
-				// dfu.status.bState = DFU_STATE_DFU_MANIFEST_WAIT_RESET;
+				//dfu.status.bState = DFU_STATE_DFU_MANIFEST_WAIT_RESET;
 				// dfu.status.bState = DFU_STATE_DFU_IDLE;
-				return true;
+				dfu.status.bState = DFU_STATE_DFU_MANIFEST_SYNC;
 			} else {
 				LOG("> no data received\n");
 				dfu.status.bStatus = DFU_ERROR_NOTDONE;
 				dfu.status.bState = DFU_STATE_DFU_ERROR;
+			}
+
+			if (!tud_control_xfer(port, request, NULL, 0)) {
+				dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+				dfu.status.bState = DFU_STATE_DFU_ERROR;
 				return false;
 			}
-		}
-		break;
-	case DFU_REQUEST_GETSTATUS:
-		LOG("> DFU_REQUEST_GETSTATUS\n");
-		if (unlikely(!tud_control_xfer(usb.port, request, &dfu.status, sizeof(dfu.status)))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
+			return true;
 		}
 		break;
 	default:
@@ -887,13 +777,6 @@ static inline bool dfu_state_idle(tusb_control_request_t const *request)
 		dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
 		return dfu_state_download_idle(request);
 
-	case DFU_REQUEST_GETSTATUS:
-		LOG("> DFU_REQUEST_GETSTATUS\n");
-		if (unlikely(!tud_control_xfer(usb.port, request, &dfu.status, sizeof(dfu.status)))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-		}
-		break;
 	default:
 		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
 		return false;
@@ -904,11 +787,6 @@ static inline bool dfu_state_idle(tusb_control_request_t const *request)
 
 bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const *request)
 {
-	if (unlikely(rhport != usb.port)) {
-		LOG("USB port mismatch (expected %u, have %u)\n", usb.port, rhport);
-		return false;
-	}
-
 	LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
 		request->bmRequestType,
 		recipient_str(request->bmRequestType_bit.recipient),
@@ -922,6 +800,34 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const *reque
 
 	LOG("DFU state=%u, status=%u\n", dfu.status.bState, dfu.status.bStatus);
 
+	switch (request->bRequest) {
+	case DFU_REQUEST_GETSTATUS:
+		LOG("> DFU_REQUEST_GETSTATUS\n");
+		switch (dfu.status.bState) {
+		case DFU_STATE_DFU_MANIFEST_SYNC:
+			dfu.status.bState = DFU_STATE_DFU_MANIFEST;
+			break;
+		case DFU_STATE_DFU_MANIFEST:
+			dfu.status.bState = DFU_STATE_DFU_IDLE;
+			break;
+		}
+
+
+		if (unlikely(!tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status)))) {
+			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+			dfu.status.bState = DFU_STATE_DFU_ERROR;
+		}
+		return true;
+	case DFU_REQUEST_DETACH: // dfu-util sends this
+		if (unlikely(!tud_control_xfer(rhport, request, NULL, 0))) {
+			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+			dfu.status.bState = DFU_STATE_DFU_ERROR;
+			return false;
+		}
+		return true;
+	}
+
+
 	switch (dfu.status.bState) {
 	case DFU_STATE_DFU_IDLE:
 		return dfu_state_idle(request);
@@ -933,8 +839,8 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const *reque
 		return dfu_state_error(request);
 	// case DFU_STATE_DFU_MANIFEST_SYNC:
 	// 	return dfu_state_manifest_sync(request);
-	 case DFU_STATE_DFU_MANIFEST_WAIT_RESET:
-	 	return dfu_state_manifest_wait_reset(request);
+	//  case DFU_STATE_DFU_MANIFEST_WAIT_RESET:
+	//  	return dfu_state_manifest_wait_reset(request);
 	default:
 		LOG("> UNHANDLED STATE\n");
 		break;

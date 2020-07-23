@@ -416,7 +416,8 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 		dfu_timer_start_ms = board_millis();
 		dfu_timer_duration_ms = request->wValue;
 		dfu_timer_running = true;
-		return false; // stall pipe to trigger reset
+		// return false; // stall pipe to trigger reset
+		return tud_control_xfer(rhport, request, NULL, 0);
 	}
 
 	return false;

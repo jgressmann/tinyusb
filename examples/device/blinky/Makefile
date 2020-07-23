@@ -15,3 +15,4 @@ EXAMPLE_SOURCE += $(wildcard src/*.c)
 SRC_C += $(addprefix $(CURRENT_PATH)/, $(EXAMPLE_SOURCE))
 
 include ../../rules.mk
+include $(TOP)/examples/device/atsame51_dfu/src/dfu.mk
