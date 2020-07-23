@@ -10,7 +10,9 @@ INC += \
 	$(TOP)/src/device
 
 ifdef SUPERDFU_DEBUG
-  CFLAGS += -DSUPERDFU_DEBUG=$(SUPERDFU_DEBUG)
+	CFLAGS += -DSUPERDFU_DEBUG=$(SUPERDFU_DEBUG)
+else
+	CFLAGS += -DSUPERDFU_DEBUG=0
 endif
 
 # Example source

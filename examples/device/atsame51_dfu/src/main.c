@@ -373,7 +373,8 @@ int main(void)
 		LOG(NAME " checking app header @ %p\n", app_hdr);
 		int error = dfu_app_hdr_validate(app_hdr);
 		if (error) {
-			dfu.status.bStatus = DFU_ERROR_FIRMWARE;
+			// dfu-util doesn't like this, dfu-tool doesn't care
+			// dfu.status.bStatus = DFU_ERROR_FIRMWARE;
 			should_start_app = false;
 			switch (error) {
 			case DFU_APP_ERROR_MAGIC_MISMATCH:
