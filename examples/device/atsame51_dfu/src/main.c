@@ -147,7 +147,7 @@ static inline void led_burst(uint8_t index, uint16_t duration_ms)
 }
 #endif
 
-#define BOOTLOADER_SIZE (1u<<14)
+#define BOOTLOADER_SIZE 0x4000
 #define NVM_BOOTLOADER_BLOCKS (BOOTLOADER_SIZE / MCU_NVM_BLOCK_SIZE)
 #define NVM_PROG_BLOCKS (MCU_NVM_SIZE / 2 - NVM_BOOTLOADER_BLOCKS)
 
@@ -159,10 +159,8 @@ static struct dfu {
 	struct dfu_get_status_reply status;
 	uint32_t download_size;
 	uint32_t prog_offset;
-	uint16_t cleared_pages_left : 15;
-	uint16_t current_block_cleared : 1;
-	uint32_t page_buffer[MCU_NVM_PAGE_SIZE / 4];
-	// uint32_t page_buffer[4];
+	uint16_t writes_left;
+	uint32_t write_buffer[16];
 } dfu;
 
 struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_SECTION_NAME)));
@@ -171,7 +169,7 @@ static inline bool nvm_erase_block(void *addr)
 {
 	LOG("erase block %p\n", addr);
 
-	while (!NVMCTRL->STATUS.bit.READY); // wait for nvmctrl to be ready
+	// while (!NVMCTRL->STATUS.bit.READY); // wait for nvmctrl to be ready
 
 	NVMCTRL->ADDR.reg = NVMCTRL_ADDR_ADDR((uintptr_t)addr);
 
@@ -192,38 +190,15 @@ static inline bool nvm_erase_block(void *addr)
 	return true;
 }
 
-static inline bool nvm_write_main_page(void *addr, void const *ptr)
+static inline bool nvm_write_qw(void *addr, void const *ptr)
 {
-	LOG("write main page @ %p\n", addr);
+	// LOG("write qw @ %p\n", addr);
 
-	while (!NVMCTRL->STATUS.bit.READY); // wait for nvmctrl to be ready
-
-	// clear flags
-	NVMCTRL->INTFLAG.reg = NVMCTRL->INTFLAG.reg;
-
-	// clear page buffer
-	NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CMD_PBC | NVMCTRL_CTRLB_CMDEX_KEY;
-		// if (!NVMCTRL->STATUS.bit.READY) {
-		// 	LOG("erasing page buffer\n");
-		// }
-	// wait for erase
-	while (!NVMCTRL->STATUS.bit.READY);
-
-	// clear done flag
-	NVMCTRL->INTFLAG.bit.DONE = 1;
-
-	// LOG("INTFLAG %#08lx\n", (uint32_t)NVMCTRL->INTFLAG.reg);
-
-	// check for errors
-	if (unlikely(NVMCTRL->INTFLAG.reg)) {
-		return false;
-	}
-
-	memcpy(addr, ptr, MCU_NVM_PAGE_SIZE);
+	memcpy(addr, ptr, 16);
 
 	NVMCTRL->ADDR.reg = NVMCTRL_ADDR_ADDR((uintptr_t)addr);
 
-	NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CMD_WP | NVMCTRL_CTRLB_CMDEX_KEY;
+	NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CMD_WQW | NVMCTRL_CTRLB_CMDEX_KEY;
 
 	while (!NVMCTRL->STATUS.bit.READY);
 
@@ -547,51 +522,47 @@ bool dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
 	return true;
 }
 
-static bool dfu_state_download_sync_complete(tusb_control_request_t const *request)
+static void dfu_state_download_sync_complete(tusb_control_request_t const *request)
 {
-	// LOG("> page buffer\n");
-	// TU_LOG1_MEM(dfu.page_buffer, sizeof(dfu.page_buffer), 2);
-
-	if (!dfu.current_block_cleared) {
+	if (!dfu.writes_left) {
 		LOG("> clearing block @ %#08lx\n", dfu.prog_offset);
 		if (nvm_erase_block((void*)dfu.prog_offset)) {
-			dfu.current_block_cleared = 1;
-			dfu.cleared_pages_left = MCU_NVM_BLOCK_SIZE / MCU_NVM_PAGE_SIZE;
+			dfu.writes_left = MCU_NVM_BLOCK_SIZE / sizeof(dfu.write_buffer);
 		} else {
 			LOG("\tclearing failed for block @ %#08lx\n", dfu.prog_offset);
 			dfu.status.bStatus = DFU_ERROR_ERASE;
 			dfu.status.bState = DFU_STATE_DFU_ERROR;
-			return false;
+			return;
 		}
 	}
 
-	LOG("> write page @ %p\n", (void*)dfu.prog_offset);
-	if (nvm_write_main_page((void*)dfu.prog_offset, dfu.page_buffer)) {
-		if (0 == memcmp(dfu.page_buffer, (void*)dfu.prog_offset, sizeof(dfu.page_buffer))) {
-			LOG("> verify page @ %p\n", (void*)dfu.prog_offset);
-			dfu.download_size += request->wLength;
-			dfu.prog_offset += sizeof(dfu.page_buffer);
-			--dfu.cleared_pages_left;
-			dfu.current_block_cleared = dfu.cleared_pages_left > 0;
-			dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
+	dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
+	dfu.download_size += request->wLength;
+	--dfu.writes_left;
+
+	for (size_t o = 0; o < sizeof(dfu.write_buffer); o += 16) {
+		LOG("> write qw @ %p\n", (void*)dfu.prog_offset);
+		if (nvm_write_qw((void*)dfu.prog_offset, &dfu.write_buffer[o])) {
+			if (0 == memcmp(&dfu.write_buffer[o], (void*)dfu.prog_offset, 16)) {
+				LOG("> verify page @ %p\n", (void*)dfu.prog_offset);
+				dfu.prog_offset += 16;
+			} else {
+				LOG("> target content\n");
+				TU_LOG1_MEM(&dfu.write_buffer[o], 16, 2);
+				LOG("> actual content\n");
+				TU_LOG1_MEM((void*)dfu.prog_offset, 16, 2);
+				LOG("> verification failed for qw @ %p\n", (void*)dfu.prog_offset);
+				dfu.status.bStatus = DFU_ERROR_VERIFY;
+				dfu.status.bState = DFU_STATE_DFU_ERROR;
+				break;
+			}
 		} else {
-			LOG("> target content\n");
-			TU_LOG1_MEM(dfu.page_buffer, MCU_NVM_PAGE_SIZE, 2);
-			LOG("> actual content\n");
-			TU_LOG1_MEM((void*)dfu.prog_offset, MCU_NVM_PAGE_SIZE, 2);
-			LOG("> verification failed for page @ %p\n", (void*)dfu.prog_offset);
-			dfu.status.bStatus = DFU_ERROR_VERIFY;
+			LOG("> write failed for page @ %p\n", (void*)dfu.prog_offset);
+			dfu.status.bStatus = DFU_ERROR_WRITE;
 			dfu.status.bState = DFU_STATE_DFU_ERROR;
-			return false;
+			break;
 		}
-	} else {
-		LOG("> write failed for page @ %p\n", (void*)dfu.prog_offset);
-		dfu.status.bStatus = DFU_ERROR_WRITE;
-		dfu.status.bState = DFU_STATE_DFU_ERROR;
-		return false;
 	}
-
-	return true;
 }
 
 bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * request)
@@ -611,7 +582,7 @@ bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * req
 
 	switch (dfu.status.bState) {
 	case DFU_STATE_DFU_DNLOAD_SYNC:
-		return dfu_state_download_sync_complete(request);
+		dfu_state_download_sync_complete(request);
 	default:
 		break;
 	// default:
@@ -648,13 +619,6 @@ static inline bool dfu_state_error(tusb_control_request_t const *request)
 	const int port = 0;
 	LOG("DFU_STATE_DFU_ERROR\n");
 	switch (request->bRequest) {
-	// case DFU_REQUEST_GETSTATUS:
-	// 	LOG("> DFU_REQUEST_GETSTATUS\n");
-	// 	if (unlikely(!tud_control_xfer(usb.port, request, &dfu.status, sizeof(dfu.status)))) {
-	// 		dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-	// 		dfu.status.bState = DFU_STATE_DFU_ERROR;
-	// 	}
-	// 	break;
 	case DFU_REQUEST_CLRSTATUS:
 		LOG("> DFU_REQUEST_CLRSTATUS\n");
 		dfu.status.bStatus = DFU_ERROR_OK;
@@ -678,13 +642,6 @@ static inline bool dfu_state_download_sync(tusb_control_request_t const *request
 	const int port = 0;
 	LOG("DFU_STATE_DFU_DNLOAD_SYNC\n");
 	switch (request->bRequest) {
-	// case DFU_REQUEST_GETSTATUS:
-	// 	LOG("> DFU_REQUEST_GETSTATUS\n");
-	// 	if (unlikely(!tud_control_xfer(usb.port, request, &dfu.status, sizeof(dfu.status)))) {
-	// 		dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-	// 		dfu.status.bState = DFU_STATE_DFU_ERROR;
-	// 	}
-	// 	break;
 	case DFU_REQUEST_ABORT:
 		LOG("> DFU_REQUEST_ABORT\n");
 		dfu.status.bStatus = DFU_ERROR_OK;
@@ -715,7 +672,7 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 			LOG("> download_size=%#lx\n", dfu.download_size);
 			LOG("> prog_offset=%#lx\n", dfu.prog_offset);
 
-			TU_ASSERT(request->wLength <= sizeof(dfu.page_buffer));
+			TU_ASSERT(request->wLength <= sizeof(dfu.write_buffer));
 
 			if (dfu.download_size + request->wLength > NVM_PROG_BLOCKS * MCU_NVM_BLOCK_SIZE) {
 				dfu.status.bStatus = DFU_ERROR_ADDRESS;
@@ -723,8 +680,8 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 				return false;
 			}
 
-			memset(dfu.page_buffer, 0, sizeof(dfu.page_buffer));
-			if (!tud_control_xfer(port, request, dfu.page_buffer, sizeof(dfu.page_buffer))) {
+			// memset(dfu.write_buffer, 0, sizeof(dfu.write_buffer));
+			if (!tud_control_xfer(port, request, dfu.write_buffer, sizeof(dfu.write_buffer))) {
 				dfu.status.bStatus = DFU_ERROR_UNKNOWN;
 				dfu.status.bState = DFU_STATE_DFU_ERROR;
 				return false;
@@ -767,11 +724,9 @@ static inline bool dfu_state_idle(tusb_control_request_t const *request)
 		LOG("> DFU_REQUEST_DNLOAD\n");
 		// dfu.prog_offset = MCU_NVM_SIZE / 2 + NVM_BOOTLOADER_BLOCKS * MCU_NVM_BLOCK_SIZE;
 		dfu.prog_offset = BOOTLOADER_SIZE;
-		dfu.current_block_cleared = 0;
 		dfu.download_size = 0;
-		// dfu.page_buffer_size = 0;
-		dfu.cleared_pages_left = 0;
-		// memset(dfu.page_buffer_copy, 0, sizeof(dfu.page_buffer_copy));
+		dfu.writes_left = 0;
+
 
 		dfu.status.bStatus = DFU_ERROR_OK;
 		dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
@@ -837,10 +792,6 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const *reque
 		return dfu_state_download_sync(request);
 	case DFU_STATE_DFU_ERROR:
 		return dfu_state_error(request);
-	// case DFU_STATE_DFU_MANIFEST_SYNC:
-	// 	return dfu_state_manifest_sync(request);
-	//  case DFU_STATE_DFU_MANIFEST_WAIT_RESET:
-	//  	return dfu_state_manifest_wait_reset(request);
 	default:
 		LOG("> UNHANDLED STATE\n");
 		break;
