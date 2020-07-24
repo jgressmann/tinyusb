@@ -450,12 +450,6 @@ enum {
 #define CAN0_LED LED_GREEN1
 #define CAN1_LED LED_GREEN2
 
-// #define CAN_TX_LED LED_GREEN1
-// #define CAN_TX_BURST_DURATION_MS 8
-
-// #define CAN_RX_LED LED_GREEN2
-// #define CAN_RX_BURST_DURATION_MS CAN_TX_BURST_DURATION_MS
-
 static void led_init(void)
 {
 	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
@@ -482,7 +476,7 @@ enum {
 	LED_3,
 };
 
-#define USB_TRAFFIC_DO_LED led_burst(LED_0, 8)
+#define USB_TRAFFIC_DO_LED led_burst(LED_3, 8)
 #define POWER_LED LED_0
 #define CAN0_LED LED_1
 #define CAN1_LED LED_2
