@@ -13,13 +13,16 @@ $(BUILD)/$(BOARD)-firmware.superdfu.bin: $(BUILD)/$(BOARD)-firmware.superdfu.elf
 
 $(BUILD)/$(BOARD)-firmware.dfu: $(BUILD)/$(BOARD)-firmware.superdfu.bin
 	@echo CREATE $@
-	$(CP) $^ $@
-	dfu-suffix -v $(VID) -p $(PID) -a $@
+	dfu-tool convert dfu $^ $@
+	dfu-tool set-vendor $@ $(VID)
+	dfu-tool set-product $@ $(PID)
+	#$(CP) $^ $@
+	#dfu-tool -v $(VID) -p $(PID) -a $@
 
 dfu: $(BUILD)/$(BOARD)-firmware.dfu
 
 dfu-upload: $(BUILD)/$(BOARD)-firmware.dfu
-	sudo dfu-util -D $(BUILD)/$(BOARD)-firmware.dfu
+	sudo dfu-tool write $(BUILD)/$(BOARD)-firmware.dfu
 
 flash-dfu: $(BUILD)/$(BOARD)-firmware.superdfu.hex
 	@echo halt > $(BUILD)/$(BOARD).superdfu.jlink
