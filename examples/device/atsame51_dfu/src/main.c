@@ -534,7 +534,7 @@ void dfu_rtd_reset(uint8_t rhport)
 	}
 
 
-	if (dfu.download_size) {
+	if (dfu.download_size) { // hack for dfu-util, use with -R
 		NVIC_SystemReset();
 	}
 }
@@ -647,6 +647,19 @@ static inline bool dfu_state_manifest_wait_reset(tusb_control_request_t const *r
 	return true;
 }
 
+static inline bool dfu_state_download_idle(tusb_control_request_t const *request);
+static inline bool dfu_start_download(tusb_control_request_t const *request)
+{
+	LOG("> DFU_REQUEST_DNLOAD\n");
+	dfu.prog_offset = BOOTLOADER_SIZE;
+	dfu.download_size = 0;
+	dfu.cleared_pages_left = 0;
+
+	dfu.status.bStatus = DFU_ERROR_OK;
+	dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
+	return dfu_state_download_idle(request);
+}
+
 static inline bool dfu_state_error(tusb_control_request_t const *request)
 {
 	const int port = 0;
@@ -662,6 +675,8 @@ static inline bool dfu_state_error(tusb_control_request_t const *request)
 			return false;
 		}
 		break;
+	case DFU_REQUEST_DNLOAD: // dfu-tool (fwupd 1.2.5) doesn't clear status
+		return dfu_start_download(request);
 	default:
 		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
 		break;
@@ -754,15 +769,7 @@ static inline bool dfu_state_idle(tusb_control_request_t const *request)
 
 	switch (request->bRequest) {
 	case DFU_REQUEST_DNLOAD:
-		LOG("> DFU_REQUEST_DNLOAD\n");
-		dfu.prog_offset = BOOTLOADER_SIZE;
-		dfu.download_size = 0;
-		dfu.cleared_pages_left = 0;
-
-		dfu.status.bStatus = DFU_ERROR_OK;
-		dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
-		return dfu_state_download_idle(request);
-
+		return dfu_start_download(request);
 	default:
 		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
 		return false;

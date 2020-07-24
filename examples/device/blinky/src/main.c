@@ -409,6 +409,7 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 
 	switch (request->bRequest) {
 	case DFU_REQUEST_GETSTATUS:
+
 		return tud_control_xfer(rhport, request, &dfu_status, sizeof(dfu_status));
 	case DFU_REQUEST_DETACH:
 		TU_LOG2("detach request, timeout %u [ms]\n", request->wValue);
@@ -416,7 +417,6 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 		dfu_timer_start_ms = board_millis();
 		dfu_timer_duration_ms = request->wValue;
 		dfu_timer_running = true;
-		// return false; // stall pipe to trigger reset
 		return tud_control_xfer(rhport, request, NULL, 0);
 	}
 
