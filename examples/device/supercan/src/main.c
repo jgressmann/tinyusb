@@ -551,6 +551,7 @@ static struct dfu {
 static void dfu_timer_expired(TimerHandle_t t);
 static void dfu_timer_expired(TimerHandle_t t)
 {
+	(void)t;
 	dfu.status.bState = DFU_STATE_APP_IDLE;
 }
 
