@@ -25,7 +25,7 @@
 
 #include <dfu_debug.h>
 
-#if SUPERDFU_DEBUG
+#if SUPERDFU_DEBUG && !CFG_TUSB_DEBUG
 char dfu_log_buffer[SUPERDFU_DEBUG_LOG_BUFFER_SIZE];
 #endif
 

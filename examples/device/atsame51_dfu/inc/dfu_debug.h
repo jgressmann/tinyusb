@@ -30,14 +30,18 @@
 
 
 #if SUPERDFU_DEBUG
-#define SUPERDFU_DEBUG_LOG_BUFFER_SIZE 128
+#	if CFG_TUSB_DEBUG > 0
+#		define LOG TU_LOG1
+#	else
+#		define SUPERDFU_DEBUG_LOG_BUFFER_SIZE 128
 extern char dfu_log_buffer[SUPERDFU_DEBUG_LOG_BUFFER_SIZE];
 
-#define LOG(...) \
+#		define LOG(...) \
 	do { \
 		int chars = usnprintf(dfu_log_buffer, sizeof(dfu_log_buffer), __VA_ARGS__); \
 		board_uart_write(dfu_log_buffer, chars); \
 	} while (0)
+#	endif
 #else
-#define LOG(...)
+#	define LOG(...)
 #endif
