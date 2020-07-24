@@ -49,7 +49,7 @@ static const tusb_desc_device_t device = {
 	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
 	.idVendor           = 0x4243,
-	.idProduct          = USB_PID,
+	.idProduct          = 0x0001,
 	.bcdDevice          = 0x0001,
 
 	.iManufacturer      = 0x01,
@@ -70,28 +70,6 @@ uint8_t const * tud_descriptor_device_cb(void)
 //--------------------------------------------------------------------+
 // Configuration Descriptor
 //--------------------------------------------------------------------+
-
-// #define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + 1*9 + 2*7)
-
-// static uint8_t const desc_configuration[] =
-// {
-// 	// Config number, interface count, string index, total length, attribute, power in mA
-// 	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0, 100),
-
-// 	// Interface number, string index, EP notification address and size, EP data address (out, in) and size.
-// 	  TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 64),
-
-
-// 	9, TUSB_DESC_INTERFACE, 0, 0, 2, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 3,
-
-//   	7, TUSB_DESC_ENDPOINT, SC_M1_EP_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
-//   	7, TUSB_DESC_ENDPOINT, SC_M1_EP_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
-
-// };
-
-
-
-
 #define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + 9+6*7 + TUD_DFU_RT_DESC_LEN)
 
 #define EPNUM_CDC       2
@@ -191,30 +169,30 @@ uint8_t const * tud_descriptor_bos_cb(void)
 
 uint8_t const desc_ms_os_20[MS_OS_20_DESC_LEN] =
 {
-  // Set header: length, type, windows version, total length
-  U16_TO_U8S_LE(0x000A), U16_TO_U8S_LE(MS_OS_20_SET_HEADER_DESCRIPTOR), U32_TO_U8S_LE(0x06030000), U16_TO_U8S_LE(MS_OS_20_DESC_LEN),
+	// Set header: length, type, windows version, total length
+	U16_TO_U8S_LE(0x000A), U16_TO_U8S_LE(MS_OS_20_SET_HEADER_DESCRIPTOR), U32_TO_U8S_LE(0x06030000), U16_TO_U8S_LE(MS_OS_20_DESC_LEN),
 
-  // Configuration subset header: length, type, configuration index, reserved, configuration total length
-  U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_CONFIGURATION), 0, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A),
+	// Configuration subset header: length, type, configuration index, reserved, configuration total length
+	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_CONFIGURATION), 0, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A),
 
-  // Function Subset header: length, type, first interface, reserved, subset length
-  U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 2, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A-0x08),
+	// Function Subset header: length, type, first interface, reserved, subset length
+	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 2, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A-0x08),
 
-  // MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
-  U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
+	// MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
+	U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
 
-  // MS OS 2.0 Registry property descriptor: length, type
-  U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A-0x08-0x08-0x14), U16_TO_U8S_LE(MS_OS_20_FEATURE_REG_PROPERTY),
-  U16_TO_U8S_LE(0x0007), U16_TO_U8S_LE(0x002A), // wPropertyDataType, wPropertyNameLength and PropertyName "DeviceInterfaceGUIDs\0" in UTF-16
-  'D', 0x00, 'e', 0x00, 'v', 0x00, 'i', 0x00, 'c', 0x00, 'e', 0x00, 'I', 0x00, 'n', 0x00, 't', 0x00, 'e', 0x00,
-  'r', 0x00, 'f', 0x00, 'a', 0x00, 'c', 0x00, 'e', 0x00, 'G', 0x00, 'U', 0x00, 'I', 0x00, 'D', 0x00, 's', 0x00, 0x00, 0x00,
-  U16_TO_U8S_LE(0x0050), // wPropertyDataLength
+	// MS OS 2.0 Registry property descriptor: length, type
+	U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A-0x08-0x08-0x14), U16_TO_U8S_LE(MS_OS_20_FEATURE_REG_PROPERTY),
+	U16_TO_U8S_LE(0x0007), U16_TO_U8S_LE(0x002A), // wPropertyDataType, wPropertyNameLength and PropertyName "DeviceInterfaceGUIDs\0" in UTF-16
+	'D', 0x00, 'e', 0x00, 'v', 0x00, 'i', 0x00, 'c', 0x00, 'e', 0x00, 'I', 0x00, 'n', 0x00, 't', 0x00, 'e', 0x00,
+	'r', 0x00, 'f', 0x00, 'a', 0x00, 'c', 0x00, 'e', 0x00, 'G', 0x00, 'U', 0x00, 'I', 0x00, 'D', 0x00, 's', 0x00, 0x00, 0x00,
+	U16_TO_U8S_LE(0x0050), // wPropertyDataLength
 	//bPropertyData: “{f4ef82e0-dc07-4f21-8660-ae50cb3149c9}”.
-  '{', 0x00, 'F', 0x00, '4', 0x00, 'E', 0x00, 'F', 0x00, '8', 0x00, '2', 0x00, 'E', 0x00, '0', 0x00, '-', 0x00,
-  'D', 0x00, 'C', 0x00, '0', 0x00, '7', 0x00, '-', 0x00, '4', 0x00, 'F', 0x00, '2', 0x00, '1', 0x00, '-', 0x00,
-  '8', 0x00, '6', 0x00, '6', 0x00, '0', 0x00, '-', 0x00, 'A', 0x00, 'E', 0x00, '5', 0x00, '0', 0x00, 'C', 0x00,
-  'B', 0x00, '3', 0x00, '1', 0x00, '4', 0x00, '9', 0x00, 'C', 0x00, '9', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00
+	'{', 0x00, 'F', 0x00, '4', 0x00, 'E', 0x00, 'F', 0x00, '8', 0x00, '2', 0x00, 'E', 0x00, '0', 0x00, '-', 0x00,
+	'D', 0x00, 'C', 0x00, '0', 0x00, '7', 0x00, '-', 0x00, '4', 0x00, 'F', 0x00, '2', 0x00, '1', 0x00, '-', 0x00,
+	'8', 0x00, '6', 0x00, '6', 0x00, '0', 0x00, '-', 0x00, 'A', 0x00, 'E', 0x00, '5', 0x00, '0', 0x00, 'C', 0x00,
+	'B', 0x00, '3', 0x00, '1', 0x00, '4', 0x00, '9', 0x00, 'C', 0x00, '9', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
 
@@ -231,7 +209,7 @@ static char const* string_desc_arr [] =
 {
 	(const char[]) { 0x09, 0x04 },   // 0: is supported language is English (0x0409)
 	"2guys",                         // 1: Manufacturer
-	SC_M1_NAME_SHORT,                // 2: Product
+	"D5035-01 SuperCAN",             // 2: Product
 	"",                        		 // 3: Serial
 	"TinyUSB CDC",                   // 4: CDC
 	SC_NAME,                         // 5: SuperCAN interface
@@ -292,7 +270,7 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 	}
 
 	// first byte is length (including header), second byte is string type
-	_desc_str[0] = (TUSB_DESC_STRING << 8 ) | (2*chr_count + 2);
+	_desc_str[0] = (TUSB_DESC_STRING << 8) | (2*chr_count + 2);
 
 	return _desc_str;
 }

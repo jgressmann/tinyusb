@@ -10,7 +10,8 @@ INC += \
 	$(TOP)/hw \
 	$(TOP)/src/device \
 	$(TOP)/$(FREERTOS_SRC)/include \
-	$(TOP)/$(FREERTOS_SRC)/portable/GCC/$(FREERTOS_PORT)
+	$(TOP)/$(FREERTOS_SRC)/portable/GCC/$(FREERTOS_PORT) \
+	$(TOP)/examples/device/atsame51_dfu/inc \
 
 # Example source
 EXAMPLE_SOURCE += $(wildcard src/*.c)
@@ -28,3 +29,4 @@ SRC_C += \
 LDFLAGS += -Wl,--undefined=vTaskSwitchContext
 
 include ../../rules.mk
+include $(TOP)/examples/device/atsame51_dfu/src/dfu.mk

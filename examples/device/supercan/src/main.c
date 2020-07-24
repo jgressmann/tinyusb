@@ -24,7 +24,7 @@
  */
 
 #include <stdlib.h>
-#include <stdio.h>
+// #include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
 
@@ -47,7 +47,9 @@
 #include <usb_descriptors.h>
 #include <m_can.h>
 #include <mcu.h>
-
+#include <usb_dfu_1_1.h>
+#include <dfu_ram.h>
+#include <dfu_app.h>
 
 
 #if TU_BIG_ENDIAN == TU_BYTE_ORDER
@@ -70,6 +72,9 @@ static inline uint16_t cpu_to_be16(uint16_t value) { return __builtin_bswap16(va
 static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(value); }
 #endif
 
+#ifndef D5035_01
+# error Only D5035-01 boards supported
+#endif
 
 
 
@@ -139,36 +144,40 @@ static struct {
 
 
 
-#if defined(D5035)
-#else
-static inline void can_init_pins(void) // controller and hardware specific setup of i/o pins for CAN
+
+ // controller and hardware specific setup of i/o pins for CAN
+static inline void can_init_pins(void)
 {
-	// CAN ports
-	REG_PORT_DIRSET0 = PORT_PA20; /* CAN_EN_1 */
-	REG_PORT_DIRSET0 = PORT_PA21; /* CAN_STB_1 */
-	REG_PORT_OUTSET0 = PORT_PA20; /* CAN_EN_1 */
-	REG_PORT_OUTSET0 = PORT_PA21; /* CAN_STB_1 */
+	// CAN0 port
+	PORT->Group[0].WRCONFIG.reg =
+		PORT_WRCONFIG_HWSEL |           // upper half
+		PORT_WRCONFIG_PINMASK(0x00c0) | // PA22/23
+		PORT_WRCONFIG_WRPINCFG |
+		PORT_WRCONFIG_WRPMUX |
+		PORT_WRCONFIG_PMUX(8) |         // I, CAN0, DS60001507E-page 32, 910
+		PORT_WRCONFIG_PMUXEN;
 
-	REG_PORT_WRCONFIG0 =	PORT_WRCONFIG_HWSEL |			// upper half
-	PORT_WRCONFIG_PINMASK(0x00c0) |	// 21 + 22
-	PORT_WRCONFIG_WRPINCFG |
-	PORT_WRCONFIG_WRPMUX |
-	PORT_WRCONFIG_PMUX(8) |			// CAN
-	PORT_WRCONFIG_PMUXEN;
+	// CAN1 port
+	PORT->Group[1].WRCONFIG.reg =
+		PORT_WRCONFIG_PINMASK(0xc000) | // PB14/15 = 0xc000, PB12/13 = 0x3000
+		PORT_WRCONFIG_WRPINCFG |
+		PORT_WRCONFIG_WRPMUX |
+		PORT_WRCONFIG_PMUX(7) |         // H, CAN1, DS60001507E page 32, 910
+		PORT_WRCONFIG_PMUXEN;
 }
-#endif
-
 
 static inline void can_init_clock(void) // controller and hardware specific setup of clock for the m_can module
 {
-	REG_MCLK_AHBMASK |= MCLK_AHBMASK_CAN0 | MCLK_AHBMASK_CAN1;
-	REG_GCLK_PCHCTRL27 = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN0/1 to use GLCK0 -> 120MHz
+	MCLK->AHBMASK.bit.CAN0_ = 1;
+	MCLK->AHBMASK.bit.CAN1_ = 1;
+	GCLK->PCHCTRL[CAN0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0 -> 120MHz
+	GCLK->PCHCTRL[CAN1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0 -> 120MHz
 }
 
 static inline void can_configure(struct can *c)
 {
 	Can *can = c->m_can;
-	// m_can_init_begin(can);
+
 	m_can_conf_begin(can);
 
 	can->CCCR.bit.TXP = 1;  // Enable Transmit Pause
@@ -229,7 +238,6 @@ static inline void can_configure(struct can *c)
 	}
 
 	m_can_conf_end(can);
-	// m_can_init_end(can);
 }
 
 
@@ -399,8 +407,8 @@ struct led {
 #if CFG_TUSB_DEBUG > 0
 	const char* name;
 #endif
-	volatile uint16_t time_ms	: 15;
-	volatile uint16_t blink		: 1;
+	volatile uint16_t time_ms;
+	volatile uint8_t blink;
 	uint8_t pin;
 };
 
@@ -412,6 +420,7 @@ struct led {
 	{ 0, 0, pin }
 #endif
 
+#if HWREV == 1
 static struct led leds[] = {
 	LED_STATIC_INITIALIZER("debug", PIN_PA02),
 	LED_STATIC_INITIALIZER("red1", PIN_PB14),
@@ -432,15 +441,62 @@ enum {
 	LED_GREEN2
 };
 
+
+
 #define USB_TRAFFIC_LED LED_ORANGE1
 #define USB_TRAFFIC_BURST_DURATION_MS 8
 #define USB_TRAFFIC_DO_LED led_burst(USB_TRAFFIC_LED, USB_TRAFFIC_BURST_DURATION_MS)
+#define POWER_LED LED_RED1
+#define CAN0_LED LED_GREEN1
+#define CAN1_LED LED_GREEN2
 
-#define CAN_TX_LED LED_GREEN1
-#define CAN_TX_BURST_DURATION_MS 8
+// #define CAN_TX_LED LED_GREEN1
+// #define CAN_TX_BURST_DURATION_MS 8
 
-#define CAN_RX_LED LED_GREEN2
-#define CAN_RX_BURST_DURATION_MS CAN_TX_BURST_DURATION_MS
+// #define CAN_RX_LED LED_GREEN2
+// #define CAN_RX_BURST_DURATION_MS CAN_TX_BURST_DURATION_MS
+
+static void led_init(void)
+{
+	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
+	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA12; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA13; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA14; /* Debug-LED */
+	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
+}
+#else // HWREV
+static struct led leds[] = {
+	LED_STATIC_INITIALIZER("debug", PIN_PA02),
+	LED_STATIC_INITIALIZER("red", PIN_PA18),
+	LED_STATIC_INITIALIZER("orange", PIN_PA19),
+	LED_STATIC_INITIALIZER("green", PIN_PB16),
+	LED_STATIC_INITIALIZER("blue", PIN_PB17),
+};
+
+enum {
+	LED_DEBUG,
+	LED_0,
+	LED_1,
+	LED_2,
+	LED_3,
+};
+
+#define USB_TRAFFIC_DO_LED led_burst(LED_0, 8)
+#define POWER_LED LED_0
+#define CAN0_LED LED_1
+#define CAN1_LED LED_2
+
+
+static void led_init(void)
+{
+	PORT->Group[0].DIRSET.reg = PORT_PA18;
+	PORT->Group[0].DIRSET.reg = PORT_PA19;
+	PORT->Group[1].DIRSET.reg = PORT_PB16;
+	PORT->Group[1].DIRSET.reg = PORT_PB17;
+}
+
+#endif // HWREV
 
 
 static void led_init(void);
@@ -472,6 +528,31 @@ static inline void led_burst(uint8_t index, uint16_t duration_ms)
 	leds[index].blink = 0;
 	gpio_set_pin_level(leds[index].pin, 1);
 }
+
+
+#if SUPERDFU_APP
+struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_SECTION_NAME)));
+static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SECTION_NAME))) = {
+	.magic = DFU_APP_HDR_MAGIC_STRING,
+	.dfu_app_hdr_version = DFU_APP_HDR_VERSION,
+	.app_version_major = 0,
+	.app_version_minor = 1,
+	.app_version_patch = 0,
+	.app_crc = 0,
+	.app_size = 0,
+	.app_name = "SuperCAN",
+};
+
+static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(DFU_APP_FTR_SECTION_NAME))) = {
+	.magic = DFU_APP_FTR_MAGIC_STRING,
+};
+
+static struct dfu_get_status_reply dfu_status;
+static uint32_t dfu_timer_start_ms;
+static uint16_t dfu_timer_duration_ms;
+static bool dfu_timer_running;
+
+#endif
 
 #define CMD_BUFFER_SIZE 64
 #define MSG_BUFFER_SIZE 512
@@ -903,6 +984,20 @@ static void sc_can_bulk_in(uint8_t index)
 int main(void)
 {
 	board_init();
+
+	TU_LOG2(
+		"%s v%u.%u.%u starting...\n",
+		dfu_app_hdr.app_name,
+		dfu_app_hdr.app_version_major,
+		dfu_app_hdr.app_version_minor,
+		dfu_app_hdr.app_version_patch);
+
+	dfu_request_dfu(0); // no bootloader request
+
+	dfu_status.bStatus = DFU_ERROR_OK;
+	dfu_status.bwPollTimeout = 100; // ms
+	dfu_status.bState = DFU_STATE_APP_IDLE;
+
 	led_init();
 
 	tusb_init();
@@ -911,8 +1006,8 @@ int main(void)
 	can_init_clock();
 	can_init_module();
 
-	cans.can[0].led = LED_GREEN1;
-	cans.can[1].led = LED_GREEN2;
+	cans.can[0].led = CAN0_LED;
+	cans.can[1].led = CAN1_LED;
 	cans.can[0].task = xTaskCreateStatic(&can_task, "can0", TU_ARRAY_SIZE(can_task_stack[0]), (void*)0, configMAX_PRIORITIES-1, can_task_stack[0], &can_task_mem[0]);
 	cans.can[1].task = xTaskCreateStatic(&can_task, "can1", TU_ARRAY_SIZE(can_task_stack[1]), (void*)1, configMAX_PRIORITIES-1, can_task_stack[1], &can_task_mem[1]);
 
@@ -921,7 +1016,9 @@ int main(void)
 
 
 	led_blink(0, 2000);
-	led_set(LED_RED1, 1);
+	led_set(POWER_LED, 1);
+
+	dfu_app_watchdog_disable();
 
 	vTaskStartScheduler();
 	NVIC_SystemReset();
@@ -938,7 +1035,6 @@ static void tusb_device_task(void* param)
 
 	while (1) {
 		tud_task();
-		// TU_LOG2("usb\n");
 	}
 }
 
@@ -1215,69 +1311,50 @@ void dfu_rtd_init(void)
 {
 }
 
-static uint8_t jump_to_bootloader;
-
 void dfu_rtd_reset(uint8_t rhport)
 {
 	(void) rhport;
 
-	if (jump_to_bootloader) {
-
-	} else {
-		jump_to_bootloader = 0;
+	if (dfu_timer_running && board_millis() - dfu_timer_start_ms <= dfu_timer_duration_ms) {
+		TU_LOG2("Detected USB reset while detach timer is running");
+		dfu_request_dfu(1);
+		NVIC_SystemReset();
 	}
 }
 
 bool dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_length)
 {
-  (void) rhport;
+	(void) rhport;
 
-  // Ensure this is DFU Runtime
-  TU_VERIFY(itf_desc->bInterfaceSubClass == TUD_DFU_APP_SUBCLASS);
-  TU_VERIFY(itf_desc->bInterfaceProtocol == DFU_PROTOCOL_RT);
+	// Ensure this is DFU Runtime
+	TU_VERIFY(itf_desc->bInterfaceSubClass == TUD_DFU_APP_SUBCLASS);
+	TU_VERIFY(itf_desc->bInterfaceProtocol == DFU_PROTOCOL_RT);
 
-  uint8_t const * p_desc = tu_desc_next( itf_desc );
-  (*p_length) = sizeof(tusb_desc_interface_t);
+	uint8_t const * p_desc = tu_desc_next( itf_desc );
+	(*p_length) = sizeof(tusb_desc_interface_t);
 
-  if ( TUSB_DESC_FUNCTIONAL == tu_desc_type(p_desc) )
-  {
-    (*p_length) += p_desc[DESC_OFFSET_LEN];
-    p_desc = tu_desc_next(p_desc);
-  }
+	if (TUSB_DESC_FUNCTIONAL == tu_desc_type(p_desc)) {
+		(*p_length) += p_desc[DESC_OFFSET_LEN];
+		p_desc = tu_desc_next(p_desc);
+	}
 
-  return true;
+	return true;
 }
 
 bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * request)
 {
-  (void) rhport;
-  (void) request;
+	(void) rhport;
+	(void) request;
 
-  // nothing to do
-  return true;
+	// nothing to do
+	return true;
 }
-
-
-
-#if 0
-Table 3.1 Summary of DFU Class-Specific Requests
-bmRequestType bRequest wValue wIndex wLength Data
-00100001b DFU_DETACH wTimeout Interface Zero None
-00100001b DFU_DNLOAD wBlockNum Interface Length Firm-
-ware
-10100001b DFU_UPLOAD Zero Interface Length Firm-
-ware
-10100001b DFU_GETSTATUS Zero Interface 6 Status
-00100001b DFU_CLRSTATUS Zero Interface Zero None
-10100001b DFU_GETSTATE Zero Interface 1 State
-00100001b DFU_ABORT Zero Interface Zero None
-#endif
 
 bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * request)
 {
-  // Handle class request only
-  TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
-  TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
+	// Handle class request only
+	TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
+	TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
 
   TU_LOG2("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
 		request->bmRequestType,
@@ -1287,53 +1364,21 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 		request->bRequest, request->wValue, request->wIndex,
 		request->wLength);
 
-//   DFU-RT control request
-// req type 0xa1 (reci interface (1) type class (1) dir in (1)) req 0x03, value 0x0000 index 0x0003 reqlen 6
-#if 0
-The device responds to the DFU_GETSTATUS request with a payload packet containing the following
-data:
-Offset Field Size Value Description
-0 bStatus 1 Number An indication of the status resulting from the
-execution of the most recent request.
-1 bwPollTim
-eout 3 Number Minimum time, in milliseconds, that the h ost
-should wait before sending a subsequent
-DFU_GETSTATUS request. *
-4 bState 1 Number An indication of the state that the device is going to
-enter immediately following transmission of this
-response. (By the time the host receives this
-information, this is the current state of the device.)
-5 iString 1 Index Index of status description in string table. **
-#endif
-  switch (request->bRequest) {
-  case 3: { // DFU_GETSTATUS
-    uint8_t bytes[6] = { 0 }; // state appIDLE (0)
-    tud_control_xfer(rhport, request, bytes, TU_ARRAY_SIZE(bytes));
-    return true;
-  } break;
-  }
 
-//   switch ( request->bRequest )
-//   {
-//     case 0xa1: { // 10100001b DFU_GETSTATE
-//       uint8_t bytes[1] = {
-//         0x00, // no error
-//         0x80, 0x00, 0x00, // 128 ms
-//         0x00, // appIDLE
-//         0x00, // string table index
-//       };
-//       tud_control_xfer(rhport, request, bytes, TU_ARRAY_SIZE(bytes));
-//     } break;
-//     case DFU_REQUEST_DETACH:
-//     TU_LOG2("DFU_REQUEST_DETACH\n");
-//       tud_control_status(rhport, request);
-//       tud_dfu_rt_reboot_to_dfu();
-//     break;
+	switch (request->bRequest) {
+	case DFU_REQUEST_GETSTATUS:
+		return tud_control_xfer(rhport, request, &dfu_status, sizeof(dfu_status));
+	case DFU_REQUEST_DETACH:
+		TU_LOG2("detach request, timeout %u [ms]\n", request->wValue);
+		dfu_status.bState = DFU_STATE_APP_DETACH;
+		dfu_timer_start_ms = board_millis();
+		dfu_timer_duration_ms = request->wValue;
+		dfu_timer_running = true;
+		// return false; // stall pipe to trigger reset
+		return tud_control_xfer(rhport, request, NULL, 0);
+	}
 
-//     default: return false; // stall unsupported request
-//   }
-
-  return false;
+	return false;
 }
 
 bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
@@ -1349,18 +1394,6 @@ bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
 //--------------------------------------------------------------------+
 // LED TASK
 //--------------------------------------------------------------------+
-static void led_init(void)
-{
-	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
-	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA12; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA13; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA14; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
-}
-
-
-
 static void led_task(void *param)
 {
 	(void) param;
