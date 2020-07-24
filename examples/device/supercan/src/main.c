@@ -24,13 +24,14 @@
  */
 
 #include <stdlib.h>
-// #include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
 
 #include <FreeRTOS.h>
 #include <task.h>
 #include <semphr.h>
+#include <timers.h>
+
 
 #include <bsp/board.h>
 #include <tusb.h>
@@ -534,17 +535,24 @@ static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SE
 	.app_version_patch = 0,
 	.app_crc = 0,
 	.app_size = 0,
-	.app_name = "SuperCAN",
+	.app_name = SC_NAME,
 };
 
 static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(DFU_APP_FTR_SECTION_NAME))) = {
 	.magic = DFU_APP_FTR_MAGIC_STRING,
 };
 
-static struct dfu_get_status_reply dfu_status;
-static uint32_t dfu_timer_start_ms;
-static uint16_t dfu_timer_duration_ms;
-static bool dfu_timer_running;
+static struct dfu {
+	struct dfu_get_status_reply status;
+	StaticTimer_t timer_mem;
+	TimerHandle_t timer_handle;
+} dfu;
+
+static void dfu_timer_expired(TimerHandle_t t);
+static void dfu_timer_expired(TimerHandle_t t)
+{
+	dfu.status.bState = DFU_STATE_APP_IDLE;
+}
 
 #endif
 
@@ -979,6 +987,7 @@ int main(void)
 {
 	board_init();
 
+#if SUPERDFU_APP
 	TU_LOG2(
 		"%s v%u.%u.%u starting...\n",
 		dfu_app_hdr.app_name,
@@ -988,9 +997,11 @@ int main(void)
 
 	dfu_request_dfu(0); // no bootloader request
 
-	dfu_status.bStatus = DFU_ERROR_OK;
-	dfu_status.bwPollTimeout = 100; // ms
-	dfu_status.bState = DFU_STATE_APP_IDLE;
+	dfu.status.bStatus = DFU_ERROR_OK;
+	dfu.status.bwPollTimeout = 100; // ms
+	dfu.status.bState = DFU_STATE_APP_IDLE;
+	dfu.timer_handle = xTimerCreateStatic("dfu", pdMS_TO_TICKS(DFU_USB_RESET_TIMEOUT_MS), pdFALSE, NULL, &dfu_timer_expired, &dfu.timer_mem);
+#endif
 
 	led_init();
 
@@ -1007,6 +1018,7 @@ int main(void)
 
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
+
 
 
 	led_blink(0, 2000);
@@ -1300,7 +1312,7 @@ bool vendord_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
 }
 #endif
 
-#if CFG_TUD_DFU_RT_CUSTOM
+#if CFG_TUD_DFU_RT
 void dfu_rtd_init(void)
 {
 }
@@ -1309,7 +1321,7 @@ void dfu_rtd_reset(uint8_t rhport)
 {
 	(void) rhport;
 
-	if (dfu_timer_running && board_millis() - dfu_timer_start_ms <= dfu_timer_duration_ms) {
+	if (DFU_STATE_APP_DETACH == dfu.status.bState) {
 		TU_LOG2("Detected USB reset while detach timer is running");
 		dfu_request_dfu(1);
 		NVIC_SystemReset();
@@ -1361,13 +1373,11 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 
 	switch (request->bRequest) {
 	case DFU_REQUEST_GETSTATUS:
-		return tud_control_xfer(rhport, request, &dfu_status, sizeof(dfu_status));
+		return tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status));
 	case DFU_REQUEST_DETACH:
 		TU_LOG2("detach request, timeout %u [ms]\n", request->wValue);
-		dfu_status.bState = DFU_STATE_APP_DETACH;
-		dfu_timer_start_ms = board_millis();
-		dfu_timer_duration_ms = request->wValue;
-		dfu_timer_running = true;
+		dfu.status.bState = DFU_STATE_APP_DETACH;
+		xTimerStart(dfu.timer_handle, 0);
 		// return false; // stall pipe to trigger reset
 		return tud_control_xfer(rhport, request, NULL, 0);
 	}

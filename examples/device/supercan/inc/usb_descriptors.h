@@ -42,3 +42,8 @@ enum
 	USB_IF_DFU_RT,
 	USB_IF_COUNT
 };
+
+
+enum {
+	DFU_USB_RESET_TIMEOUT_MS = 1000u
+};

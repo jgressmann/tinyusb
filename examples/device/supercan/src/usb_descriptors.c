@@ -70,7 +70,13 @@ uint8_t const * tud_descriptor_device_cb(void)
 //--------------------------------------------------------------------+
 // Configuration Descriptor
 //--------------------------------------------------------------------+
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + 9+6*7 + TUD_DFU_RT_DESC_LEN)
+#if CFG_TUD_DFU_RT
+#	define DFU_DESC_LEN TUD_DFU_RT_DESC_LEN
+#else
+#	define DFU_DESC_LEN 0
+#endif
+
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + 9+6*7 + DFU_DESC_LEN)
 
 #define EPNUM_CDC       2
 #define EPNUM_VENDOR    SC_M1_EP_CMD_BULK_OUT
@@ -98,7 +104,7 @@ static uint8_t const desc_configuration[] =
 	// Interface number, string index, attributes, detach timeout, transfer size */
 	// TUD_DFU_RT_DESCRIPTOR(ITF_NUM_DFU, 6, 0x0d, 1000, 4096),
   	//TUD_DFU_RT_DESCRIPTOR(ITF_NUM_DFU_RT, 4, 0x0d, 1000, 4096),
-
+#if CFG_TUD_DFU_RT
 	9, TUSB_DESC_INTERFACE, USB_IF_DFU_RT, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_RT, 6, \
   	/* Function */
 #if 0
@@ -124,8 +130,8 @@ Bit 0: download capable
 0 = no
 1 = yes
 #endif
-	9, DFU_DESC_FUNCTIONAL, 0x1/*attrs*/, U16_TO_U8S_LE(1000) /* timeout [ms]*/, U16_TO_U8S_LE(64)/* xfer size*/, U16_TO_U8S_LE(0x0101)/*bcdVersion*/
-
+	9, DFU_DESC_FUNCTIONAL, 0x1/*attrs*/, U16_TO_U8S_LE(DFU_USB_RESET_TIMEOUT_MS) /* timeout [ms]*/, U16_TO_U8S_LE(64)/* xfer size*/, U16_TO_U8S_LE(0x0101)/*bcdVersion*/
+#endif
 };
 
 
