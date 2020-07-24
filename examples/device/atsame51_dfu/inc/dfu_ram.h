@@ -42,7 +42,7 @@ struct dfu_hdr {
 } __packed;
 
 
-extern struct dfu_hdr dfu_hdr __attribute__((used,section(DFU_RAM_SECTION_NAME)));
+extern struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_SECTION_NAME)));
 
 static inline void dfu_request_dfu(int req)
 {

@@ -41,7 +41,7 @@
 #define DFU_APP_ERROR_INVALID_SIZE              0x03
 #define DFU_APP_ERROR_CRC_CALC_FAILED           0x04
 #define DFU_APP_ERROR_CRC_VERIFICATION_FAILED   0x05
-#define DFU_APP_HDR_REGION_SIZE                 0x80
+
 
 struct dfu_app_hdr {
 	uint8_t magic[16];
