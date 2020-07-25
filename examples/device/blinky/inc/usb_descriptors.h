@@ -30,3 +30,9 @@
 enum {
 	DFU_USB_RESET_TIMEOUT_MS = 1000u
 };
+
+#define VENDOR_REQUEST_MICROSOFT    0x01
+
+// #define MS_OS_20_DESC_LEN  0xB2
+
+extern uint8_t const desc_ms_os_20[];

@@ -23,11 +23,9 @@
  *
  */
 
-// #include <class/cdc/cdc_device.h>
 #include <tusb.h>
 
 #include <usb_descriptors.h>
-#include <sam.h>
 #include <mcu.h>
 
 
@@ -36,9 +34,9 @@ static const tusb_desc_device_t device = {
 	.bDescriptorType    = TUSB_DESC_DEVICE,
 	.bcdUSB             = 0x0210,
 
-	.bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
-	.bDeviceSubClass    = 0x00,
-	.bDeviceProtocol    = 0x00,
+	.bDeviceClass       = TUSB_CLASS_MISC,
+	.bDeviceSubClass    = MISC_SUBCLASS_COMMON,
+	.bDeviceProtocol    = MISC_PROTOCOL_IAD,
 
 	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
@@ -62,12 +60,12 @@ uint8_t const * tud_descriptor_device_cb(void)
 
 
 
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_DFU_RT_DESC_LEN)
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_DFU_RT_DESC_LEN + 9)
 
 static uint8_t const desc_configuration[] =
 {
 	// Config number, interface count, string index, total length, attribute, power in mA
-	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0, 100),
+	TUD_CONFIG_DESCRIPTOR(1, 2, 0, CONFIG_TOTAL_LEN, 0, 100),
 
 	9, TUSB_DESC_INTERFACE, 0, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_RT, 4, \
   	/* Function */
@@ -99,7 +97,9 @@ Bit 0: download capable
 	(0<<3) | (1<<2) | (0<<1) | (1<<0) /*attrs*/,
 	U16_TO_U8S_LE(DFU_USB_RESET_TIMEOUT_MS) /* timeout [ms]*/,
 	U16_TO_U8S_LE(MCU_NVM_PAGE_SIZE)/* xfer size*/,
-	U16_TO_U8S_LE(0x0101)/*bcdVersion*/
+	U16_TO_U8S_LE(0x0101)/*bcdVersion*/,
+
+	9, TUSB_DESC_INTERFACE, 1, 0, 0, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 2,
 };
 
 
@@ -109,6 +109,66 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 	return desc_configuration;
 }
 
+
+
+
+
+#define MS_OS_20_DESC_LEN (0x0A+0x08 + 2*(0x08+0x14))
+uint8_t const desc_ms_os_20[] =
+{
+	// Set header: length, type, windows version, total length
+	U16_TO_U8S_LE(0x000A), U16_TO_U8S_LE(MS_OS_20_SET_HEADER_DESCRIPTOR), U32_TO_U8S_LE(0x06030000), U16_TO_U8S_LE(MS_OS_20_DESC_LEN),
+
+	// Configuration subset header: length, type, configuration index, reserved, configuration total length
+	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_CONFIGURATION), 0, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A),
+
+	// Function Subset header: length, type, first interface, reserved, subset length
+	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 0, 0, U16_TO_U8S_LE(0x08 + 0x14),
+
+	// MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
+	U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
+
+	// Function Subset header: length, type, first interface, reserved, subset length
+	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 1, 0, U16_TO_U8S_LE(0x08 + 0x14),
+
+	// MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
+	U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
+
+	// // MS OS 2.0 Registry property descriptor: length, type
+	// U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A-0x08-0x08-0x14), U16_TO_U8S_LE(MS_OS_20_FEATURE_REG_PROPERTY),
+	// U16_TO_U8S_LE(0x0007), U16_TO_U8S_LE(0x002A), // wPropertyDataType, wPropertyNameLength and PropertyName "DeviceInterfaceGUIDs\0" in UTF-16
+	// 'D', 0x00, 'e', 0x00, 'v', 0x00, 'i', 0x00, 'c', 0x00, 'e', 0x00, 'I', 0x00, 'n', 0x00, 't', 0x00, 'e', 0x00,
+	// 'r', 0x00, 'f', 0x00, 'a', 0x00, 'c', 0x00, 'e', 0x00, 'G', 0x00, 'U', 0x00, 'I', 0x00, 'D', 0x00, 's', 0x00, 0x00, 0x00,
+	// U16_TO_U8S_LE(0x0050), // wPropertyDataLength
+	// //bPropertyData: “{f4ef82e0-dc07-4f21-8660-ae50cb3149ca}”.
+	// '{', 0x00, 'F', 0x00, '4', 0x00, 'E', 0x00, 'F', 0x00, '8', 0x00, '2', 0x00, 'E', 0x00, '0', 0x00, '-', 0x00,
+	// 'D', 0x00, 'C', 0x00, '0', 0x00, '7', 0x00, '-', 0x00, '4', 0x00, 'F', 0x00, '2', 0x00, '1', 0x00, '-', 0x00,
+	// '8', 0x00, '6', 0x00, '6', 0x00, '0', 0x00, '-', 0x00, 'A', 0x00, 'E', 0x00, '5', 0x00, '0', 0x00, 'C', 0x00,
+	// 'B', 0x00, '3', 0x00, '1', 0x00, '4', 0x00, '9', 0x00, 'C', 0x00, 'A', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+
+
+TU_VERIFY_STATIC(sizeof(desc_ms_os_20) == MS_OS_20_DESC_LEN, "descriptor size mismatch");
+
+
+#define BOS_TOTAL_LEN      (TUD_BOS_DESC_LEN + TUD_BOS_MICROSOFT_OS_DESC_LEN)
+
+static uint8_t const bos_desc[] =
+{
+	// total length, number of device caps
+	TUD_BOS_DESCRIPTOR(BOS_TOTAL_LEN, 1),
+
+	// Microsoft OS 2.0 descriptor
+	TUD_BOS_MS_OS_20_DESCRIPTOR(MS_OS_20_DESC_LEN, VENDOR_REQUEST_MICROSOFT)
+};
+
+uint8_t const * tud_descriptor_bos_cb(void)
+{
+	return bos_desc;
+}
 
 //--------------------------------------------------------------------+
 // String Descriptors
