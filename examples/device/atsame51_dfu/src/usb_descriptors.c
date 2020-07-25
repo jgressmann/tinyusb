@@ -68,7 +68,8 @@ static uint8_t const desc_configuration[] =
 	// Config number, interface count, string index, total length, attribute, power in mA
 	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0, 100),
 
-	9, TUSB_DESC_INTERFACE, 1, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_RT, 4, \
+	// DFU_PROTOCOL_DFU (as per USB DFU 1.1 spec will prevent dfu-util and dfu-tool from finding the device.
+	9, TUSB_DESC_INTERFACE, 0, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_RT, 4, \
   	/* Function */
 #if 0
 	DFU attributes

@@ -524,7 +524,7 @@ void dfu_rtd_init(void)
 void dfu_rtd_reset(uint8_t rhport)
 {
 	(void)rhport;
-	LOG("reset\n");
+	LOG("dfu_rtd_reset\n");
 	switch (dfu.status.bState) {
 	case DFU_STATE_DFU_MANIFEST:
 	case DFU_STATE_DFU_MANIFEST_SYNC:
@@ -535,6 +535,7 @@ void dfu_rtd_reset(uint8_t rhport)
 
 
 	if (dfu.download_size) { // hack for dfu-util, use with -R
+		LOG("reset\n");
 		NVIC_SystemReset();
 	}
 }
