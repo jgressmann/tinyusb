@@ -27,22 +27,9 @@
 
 #include <stdint.h>
 
-#define VENDOR_REQUEST_SUPERCAN     0x01
-#define VENDOR_REQUEST_MICROSOFT    0x02
+#define VENDOR_REQUEST_MICROSOFT    0x01
 
-#define MS_OS_20_DESC_LEN  0xB2
-
-extern uint8_t const desc_ms_os_20[MS_OS_20_DESC_LEN];
-
-enum
-{
-	USB_IF_CDC = 0,
-	USB_IF_CDC_DATA,
-	USB_IF_VENDOR,
-	USB_IF_DFU_RT,
-	USB_IF_COUNT
-};
-
+extern uint8_t const desc_ms_os_20[];
 
 enum {
 	DFU_USB_RESET_TIMEOUT_MS = 1000u

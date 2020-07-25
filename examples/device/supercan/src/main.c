@@ -1025,7 +1025,9 @@ int main(void)
 	led_blink(0, 2000);
 	led_set(POWER_LED, 1);
 
+#if SUPERDFU_APP
 	dfu_app_watchdog_disable();
+#endif
 
 	vTaskStartScheduler();
 	NVIC_SystemReset();
@@ -1104,7 +1106,6 @@ void tud_resume_cb(void)
 void tud_custom_init_cb(void)
 {
 	TU_LOG2("init\n");
-	memset(&usb, 0, sizeof(usb));
 }
 
 void tud_custom_reset_cb(uint8_t rhport)
@@ -1264,17 +1265,15 @@ bool tud_vendor_control_request_cb(uint8_t rhport, tusb_control_request_t const 
 		request->wLength);
 
 	switch (request->bRequest) {
-	case VENDOR_REQUEST_SUPERCAN: {
-		return true;
-	} break;
-	case VENDOR_REQUEST_MICROSOFT: {
+	case VENDOR_REQUEST_MICROSOFT:
 		if (request->wIndex == 7) {
 			// Get Microsoft OS 2.0 compatible descriptor
 			uint16_t total_len;
 			memcpy(&total_len, desc_ms_os_20+8, 2);
+			total_len = le16_to_cpu(total_len);
 			return tud_control_xfer(rhport, request, (void*)desc_ms_os_20, total_len);
 		}
-	} break;
+		break;
 	default:
 		break;
 	}
@@ -1291,7 +1290,7 @@ bool tud_vendor_control_complete_cb(uint8_t rhport, tusb_control_request_t const
 	return true;
 }
 
-#if CFG_TUD_VENDOR_CUSTOM
+#if defined(CFG_TUD_VENDOR_CUSTOM) && CFG_TUD_VENDOR_CUSTOM
 void vendord_init(void)
 {
 	tud_custom_init_cb();
