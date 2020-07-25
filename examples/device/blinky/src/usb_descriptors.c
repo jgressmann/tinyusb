@@ -34,9 +34,12 @@ static const tusb_desc_device_t device = {
 	.bDescriptorType    = TUSB_DESC_DEVICE,
 	.bcdUSB             = 0x0210,
 
-	.bDeviceClass       = TUSB_CLASS_MISC,
-	.bDeviceSubClass    = MISC_SUBCLASS_COMMON,
-	.bDeviceProtocol    = MISC_PROTOCOL_IAD,
+	// .bDeviceClass       = TUSB_CLASS_MISC,
+	// .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
+	// .bDeviceProtocol    = MISC_PROTOCOL_IAD,
+	.bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
+	.bDeviceSubClass    = TUSB_CLASS_UNSPECIFIED,
+	.bDeviceProtocol    = TUSB_CLASS_UNSPECIFIED,
 
 	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
@@ -99,6 +102,7 @@ Bit 0: download capable
 	U16_TO_U8S_LE(MCU_NVM_PAGE_SIZE)/* xfer size*/,
 	U16_TO_U8S_LE(0x0101)/*bcdVersion*/,
 
+	// required for MS OS 2.0
 	9, TUSB_DESC_INTERFACE, 1, 0, 0, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 2,
 };
 
@@ -129,15 +133,8 @@ uint8_t const desc_ms_os_20[] =
 	U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
 
-	// Function Subset header: length, type, first interface, reserved, subset length
-	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 1, 0, U16_TO_U8S_LE(0x08 + 0x14),
-
-	// MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
-	U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
-
 	// // MS OS 2.0 Registry property descriptor: length, type
-	// U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A-0x08-0x08-0x14), U16_TO_U8S_LE(MS_OS_20_FEATURE_REG_PROPERTY),
+	// U16_TO_U8S_LE(0x0084), U16_TO_U8S_LE(MS_OS_20_FEATURE_REG_PROPERTY),
 	// U16_TO_U8S_LE(0x0007), U16_TO_U8S_LE(0x002A), // wPropertyDataType, wPropertyNameLength and PropertyName "DeviceInterfaceGUIDs\0" in UTF-16
 	// 'D', 0x00, 'e', 0x00, 'v', 0x00, 'i', 0x00, 'c', 0x00, 'e', 0x00, 'I', 0x00, 'n', 0x00, 't', 0x00, 'e', 0x00,
 	// 'r', 0x00, 'f', 0x00, 'a', 0x00, 'c', 0x00, 'e', 0x00, 'G', 0x00, 'U', 0x00, 'I', 0x00, 'D', 0x00, 's', 0x00, 0x00, 0x00,
@@ -146,7 +143,19 @@ uint8_t const desc_ms_os_20[] =
 	// '{', 0x00, 'F', 0x00, '4', 0x00, 'E', 0x00, 'F', 0x00, '8', 0x00, '2', 0x00, 'E', 0x00, '0', 0x00, '-', 0x00,
 	// 'D', 0x00, 'C', 0x00, '0', 0x00, '7', 0x00, '-', 0x00, '4', 0x00, 'F', 0x00, '2', 0x00, '1', 0x00, '-', 0x00,
 	// '8', 0x00, '6', 0x00, '6', 0x00, '0', 0x00, '-', 0x00, 'A', 0x00, 'E', 0x00, '5', 0x00, '0', 0x00, 'C', 0x00,
-	// 'B', 0x00, '3', 0x00, '1', 0x00, '4', 0x00, '9', 0x00, 'C', 0x00, 'A', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00
+	// 'B', 0x00, '3', 0x00, '1', 0x00, '4', 0x00, '9', 0x00, 'C', 0x00, 'A', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00,
+
+
+
+	// Function Subset header: length, type, first interface, reserved, subset length
+	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 1, 0, U16_TO_U8S_LE(0x08 + 0x14),
+
+	// MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
+	U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
+
+
+
 };
 
 
