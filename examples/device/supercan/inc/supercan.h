@@ -118,10 +118,10 @@ struct sc_msg_dev_info {
     uint32_t can_clk_hz;
     uint16_t nmbt_brp_max;
     uint16_t nmbt_tq_max;
+    uint16_t nmbt_tseg1_max; // keep here for alignment
     uint8_t nmbt_tq_min;
     uint8_t nmbt_tseg1_min;
     uint8_t nmbt_brp_min;
-    uint16_t nmbt_tseg1_max;
     uint8_t nmbt_sjw_min;
     uint8_t nmbt_sjw_max;
     uint8_t nmbt_tseg2_min;
