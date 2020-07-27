@@ -49,7 +49,7 @@ static const tusb_desc_device_t device = {
 
 	.idVendor           = 0x4243,
 	.idProduct          = 0x0002,
-	.bcdDevice          = 0x0001,
+	.bcdDevice          = HWREV << 8,
 
 	.iManufacturer      = 0x01,
 	.iProduct           = 0x02,
@@ -75,7 +75,15 @@ uint8_t const * tud_descriptor_device_cb(void)
 #	define DFU_DESC_LEN 0
 #endif
 
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 2*(9+4*7) + DFU_DESC_LEN)
+#if HWREV == 1
+#	define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + (9+4*7) + DFU_DESC_LEN)
+#	define DFU_STR_INDEX 5
+#	define DFU_INTERFACE_INDEX 1
+#else
+#	define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 2*(9+4*7) + DFU_DESC_LEN)
+#	define DFU_STR_INDEX 6
+#	define DFU_INTERFACE_INDEX 2
+#endif
 
 static uint8_t const desc_configuration[] =
 {
@@ -87,16 +95,16 @@ static uint8_t const desc_configuration[] =
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_CMD0_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG0_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG0_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
-
+#if HWREV > 1
 	9, TUSB_DESC_INTERFACE, 1, 0, 4, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 5,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_CMD1_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_CMD1_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG1_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG1_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
-
+#endif
 
 #if CFG_TUD_DFU_RT
-	9, TUSB_DESC_INTERFACE, 2, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_RT, 6, \
+	9, TUSB_DESC_INTERFACE, DFU_INTERFACE_INDEX, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_RT, DFU_STR_INDEX, \
   	/* Function */
 #if 0
 	DFU attributes
@@ -143,8 +151,11 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 }
 
 
-
-#define MS_OS_20_DESC_LEN (0x0A+0x08 + 3*(0x08+0x14) + 2*0x84)
+#if HWREV == 1
+#	define MS_OS_20_DESC_LEN (0x0A+0x08 + 2*(0x08+0x14) + 0x84)
+#else
+#	define MS_OS_20_DESC_LEN (0x0A+0x08 + 3*(0x08+0x14) + 2*0x84)
+#endif
 uint8_t const desc_ms_os_20[] =
 {
 	// Set header: length, type, windows version, total length
@@ -171,7 +182,7 @@ uint8_t const desc_ms_os_20[] =
 	'D', 0x00, 'C', 0x00, '0', 0x00, '7', 0x00, '-', 0x00, '4', 0x00, 'F', 0x00, '2', 0x00, '1', 0x00, '-', 0x00,
 	'8', 0x00, '6', 0x00, '6', 0x00, '0', 0x00, '-', 0x00, 'A', 0x00, 'E', 0x00, '5', 0x00, '0', 0x00, 'C', 0x00,
 	'B', 0x00, '3', 0x00, '1', 0x00, '4', 0x00, '9', 0x00, 'C', 0x00, '9', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00,
-
+#if HWREV > 1
 	// Function Subset header: length, type, first interface, reserved, subset length
 	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 1, 0, U16_TO_U8S_LE(0x08 + 0x14 + 0x84),
 
@@ -190,9 +201,9 @@ uint8_t const desc_ms_os_20[] =
 	'D', 0x00, 'C', 0x00, '0', 0x00, '7', 0x00, '-', 0x00, '4', 0x00, 'F', 0x00, '2', 0x00, '1', 0x00, '-', 0x00,
 	'8', 0x00, '6', 0x00, '6', 0x00, '0', 0x00, '-', 0x00, 'A', 0x00, 'E', 0x00, '5', 0x00, '0', 0x00, 'C', 0x00,
 	'B', 0x00, '3', 0x00, '1', 0x00, '4', 0x00, '9', 0x00, 'C', 0x00, '9', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00,
-
+#endif
 	// Function Subset header: length, type, first interface, reserved, subset length
-	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 2, 0, U16_TO_U8S_LE(0x08 + 0x14),
+	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), DFU_INTERFACE_INDEX, 0, U16_TO_U8S_LE(0x08 + 0x14),
 
 	// MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
 	U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
@@ -232,7 +243,9 @@ static char const* string_desc_arr [] =
 	"D5035-01 SuperCAN",             // 2: Product
 	"",                        		 // 3: Serial
 	SC_NAME " (ch0)",
+#if HWREV > 1
 	SC_NAME " (ch1)",
+#endif
 #if CFG_TUD_DFU_RT
 	"USB DFU 1.1",
 #endif

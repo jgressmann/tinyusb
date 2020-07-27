@@ -1061,8 +1061,8 @@ int main(void)
 
 
 	cans.can[0].led = CAN0_LED;
-	cans.can[1].led = CAN1_LED;
 	cans.can[0].task = xTaskCreateStatic(&can_task, "can0", TU_ARRAY_SIZE(can_task_stack[0]), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, can_task_stack[0], &can_task_mem[0]);
+	cans.can[1].led = CAN1_LED;
 	cans.can[1].task = xTaskCreateStatic(&can_task, "can1", TU_ARRAY_SIZE(can_task_stack[1]), (void*)(uintptr_t)1, configMAX_PRIORITIES-1, can_task_stack[1], &can_task_mem[1]);
 
 
