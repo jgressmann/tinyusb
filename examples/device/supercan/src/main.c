@@ -199,14 +199,15 @@ static inline void can_configure(struct can *c)
 		(c->mode_flags & SC_MODE_FLAG_EH) == SC_MODE_FLAG_EH
 	);
 
-	LOG("nominal brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu\n",
+	LOG("nominal brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
 		c->nmbt_brp, c->nmbt_sjw, c->nmbt_tseg1, c->nmbt_tseg2,
-		CAN_CLK_HZ / (c->nmbt_brp * (c->nmbt_sjw + c->nmbt_tseg1 + c->nmbt_tseg2))
+		CAN_CLK_HZ / ((uint32_t)c->nmbt_brp * (c->nmbt_sjw + c->nmbt_tseg1 + c->nmbt_tseg2)),
+		((c->nmbt_sjw + c->nmbt_tseg1) * 1000) / (c->nmbt_sjw + c->nmbt_tseg1 + c->nmbt_tseg2)
 	);
 
 	LOG("data brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu\n",
 		c->dtbt_brp, c->dtbt_sjw, c->dtbt_tseg1, c->dtbt_tseg2,
-		CAN_CLK_HZ / (c->dtbt_brp * (c->dtbt_sjw + c->dtbt_tseg1 + c->dtbt_tseg2))
+		CAN_CLK_HZ / ((uint32_t)c->dtbt_brp * (c->dtbt_sjw + c->dtbt_tseg1 + c->dtbt_tseg2))
 	);
 
 	can->TSCC.reg = CAN_TSCC_TCP(0) | CAN_TSCC_TSS(1);
@@ -326,7 +327,7 @@ static void can_int(uint8_t index)
 	can->m_can->IR = ir;
 
 	if (notify) {
-		LOG("CAN%u notify\n", index);
+		// LOG("CAN%u notify\n", index);
 		BaseType_t woken = pdFALSE;
 		vTaskNotifyGiveFromISR(can->task, &woken);
 		portYIELD_FROM_ISR(woken);
@@ -335,7 +336,7 @@ static void can_int(uint8_t index)
 
 void CAN0_Handler(void)
 {
-	LOG("CAN0 int\n");
+	// LOG("CAN0 int\n");
 	can_int(0);
 }
 
@@ -778,6 +779,10 @@ send_info:
 			can->dtbt_sjw = tu_max8(M_CAN_DTBT_SJW_MIN, tu_min8(dtbt_sjw, M_CAN_DTBT_SJW_MAX));
 			can->dtbt_tseg1 = tu_max8(M_CAN_DTBT_TSEG1_MIN, tu_min8(dtbt_tseg1, M_CAN_DTBT_TSEG1_MAX));
 			can->dtbt_tseg2 = tu_max8(M_CAN_DTBT_TSEG2_MIN, tu_min8(dtbt_tseg2, M_CAN_DTBT_TSEG2_MAX));
+
+			// set nominal bitrate for timestamp calculation
+			can->nm_bitrate_bps = CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (can->nmbt_sjw + can->nmbt_tseg1 + can->nmbt_tseg2));
+
 		} break;
 		case SC_MSG_RESET: {
 			LOG("ch%u SC_MSG_RESET\n", index);
@@ -1047,18 +1052,18 @@ int main(void)
 
 	tusb_init();
 
-	// can_init_pins();
-	// can_init_clock();
-	// can_init_module();
+	can_init_pins();
+	can_init_clock();
+	can_init_module();
 
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
 
 
-	// cans.can[0].led = CAN0_LED;
-	// cans.can[1].led = CAN1_LED;
-	// cans.can[0].task = xTaskCreateStatic(&can_task, "can0", TU_ARRAY_SIZE(can_task_stack[0]), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, can_task_stack[0], &can_task_mem[0]);
-	// cans.can[1].task = xTaskCreateStatic(&can_task, "can1", TU_ARRAY_SIZE(can_task_stack[1]), (void*)(uintptr_t)1, configMAX_PRIORITIES-1, can_task_stack[1], &can_task_mem[1]);
+	cans.can[0].led = CAN0_LED;
+	cans.can[1].led = CAN1_LED;
+	cans.can[0].task = xTaskCreateStatic(&can_task, "can0", TU_ARRAY_SIZE(can_task_stack[0]), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, can_task_stack[0], &can_task_mem[0]);
+	cans.can[1].task = xTaskCreateStatic(&can_task, "can1", TU_ARRAY_SIZE(can_task_stack[1]), (void*)(uintptr_t)1, configMAX_PRIORITIES-1, can_task_stack[1], &can_task_mem[1]);
 
 
 	led_blink(0, 2000);
@@ -1490,10 +1495,10 @@ static void can_task(void *param)
 	struct usb_can *usb_can = &usb.can[index];
 
 	while (42) {
-		LOG("CAN%u task wait\n", index);
+		// LOG("CAN%u task wait\n", index);
 		(void)ulTaskNotifyTake(pdFALSE, ~0);
 
-		LOG("CAN%u task loop\n", index);
+		// LOG("CAN%u task loop\n", index);
 		if (unlikely(!usb.mounted)) {
 			continue;
 		}
