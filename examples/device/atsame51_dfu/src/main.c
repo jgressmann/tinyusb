@@ -238,8 +238,8 @@ static inline bool nvm_write_main_page(void *addr, void const *ptr)
 	return true;
 }
 
-static void start_app_prepare();
-static void start_app_prepare()
+static void start_app_prepare(void);
+static void start_app_prepare(void)
 {
 	// Make sure, the CPU is in privileged mode.
 
@@ -294,58 +294,6 @@ __attribute__((naked, noreturn)) static void app_jump(uint32_t sp, uint32_t rh)
 
 __attribute__((noreturn)) static void start_app_jump(uint32_t addr)
 {
-	// Load the vector table address of the user application into SCB->VTOR register. Make sure the address meets the alignment requirements.
-
-	SCB->VTOR = addr;
-
-	// A few device families, like the NXP 4300 series, will also have a "shadow pointer" to the VTOR, which also needs to be updated with the new address. Review the device datasheet to see if one exists.
-	// The final part is to set the MSP to the value found in the user application vector table and then load the PC with the reset vector value of the user application. This can't be done in C, as it is always possible, that the compiler uses the current SP. But that would be gone after setting the new MSP. So, a call to a small assembler function is done.
-
-	uint32_t* base = (uint32_t*)(uintptr_t)addr;
-	// LOG("stack @ %p reset @ %p\n", (void*)base[0], (void*)base[1]);
-	app_jump(base[0], base[1]);
-}
-
-__attribute__((noreturn)) static void start_app(uint32_t addr)
-{
-	// Make sure, the CPU is in privileged mode.
-
-	//   if( CONTROL_nPRIV_Msk & __get_CONTROL( ) )
-	//   {  /* not in privileged mode */
-	//	 EnablePrivilegedMode( ) ;
-	//   }
-
-	// The function EnablePrivilegedMode( ) triggers a SVC, and enters handler mode (which can only run in privileged mode). The nPRIV bit in the CONTROL register is cleared which can only be done in privileged mode. See ARM: How to write an SVC function about implementing SVC functions.
-	// Disable all enabled interrupts in NVIC.
-
-	for (size_t i = 0; i < TU_ARRAY_SIZE(NVIC->ICER); ++i) {
-		NVIC->ICER[i] = ~0;
-	}
-
-	// Disable all enabled peripherals which might generate interrupt requests, and clear all pending interrupt flags in those peripherals. Because this is device-specific, refer to the device datasheet for the proper way to clear these peripheral interrupts.
-	// Clear all pending interrupt requests in NVIC.
-	for (size_t i = 0; i < TU_ARRAY_SIZE(NVIC->ICPR); ++i) {
-		NVIC->ICPR[i] = ~0;
-	}
-
-	// Disable SysTick and clear its exception pending bit, if it is used in the bootloader, e. g. by the RTX.
-	SysTick->CTRL = 0;
-	SCB->ICSR |= SCB_ICSR_PENDSTCLR_Msk;
-
-	// Disable individual fault handlers if the bootloader used them.
-
-	SCB->SHCSR &= ~( SCB_SHCSR_USGFAULTENA_Msk | \
-					 SCB_SHCSR_BUSFAULTENA_Msk | \
-					 SCB_SHCSR_MEMFAULTENA_Msk );
-
-	// Activate the MSP, if the core is found to currently run with the PSP. As the compiler might still uses the stack, the PSP needs to be copied to the MSP before this.
-
-	if (CONTROL_SPSEL_Msk & __get_CONTROL()) {
-		  /* MSP is not active */
-		__set_MSP( __get_PSP( ) ) ;
-		__set_CONTROL( __get_CONTROL( ) & ~CONTROL_SPSEL_Msk ) ;
-	}
-
 	// Load the vector table address of the user application into SCB->VTOR register. Make sure the address meets the alignment requirements.
 
 	SCB->VTOR = addr;
@@ -481,7 +429,6 @@ int main(void)
 		board_uart_write("...\n", -1);
 
 		// go go go
-		//start_app(BOOTLOADER_SIZE + MCU_VECTOR_TABLE_ALIGNMENT);
 		start_app_jump(BOOTLOADER_SIZE + MCU_VECTOR_TABLE_ALIGNMENT);
 		return 0; // never reached
 	}
