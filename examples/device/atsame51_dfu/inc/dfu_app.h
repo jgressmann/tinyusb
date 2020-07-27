@@ -52,6 +52,7 @@ struct dfu_app_hdr {
 	uint8_t app_version_minor;
 	uint8_t app_version_patch;
 	uint8_t app_name[64];
+	uint8_t watchdog_timeout_s;
 } __packed;
 
 _Static_assert(MCU_VECTOR_TABLE_ALIGNMENT >= sizeof(struct dfu_app_hdr), "structure size must not exceed vector table alignment");
