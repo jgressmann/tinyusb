@@ -13,6 +13,12 @@ INC += \
 	$(TOP)/$(FREERTOS_SRC)/portable/GCC/$(FREERTOS_PORT) \
 	$(TOP)/examples/device/atsame51_dfu/inc \
 
+ifdef SUPERCAN_DEBUG
+	CFLAGS += -DSUPERCAN_DEBUG=$(SUPERCAN_DEBUG)
+else
+	CFLAGS += -DSUPERCAN_DEBUG=0
+endif
+
 # Example source
 EXAMPLE_SOURCE += $(wildcard src/*.c)
 SRC_C += $(addprefix $(CURRENT_PATH)/, $(EXAMPLE_SOURCE))

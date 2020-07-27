@@ -29,6 +29,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "common/tusb_common.h"
+#include <bsp/board.h>
 
 
 void vApplicationMallocFailedHook(void)
@@ -43,6 +44,7 @@ void vApplicationStackOverflowHook(TaskHandle_t pxTask, signed char *pcTaskName)
 	(void) pcTaskName;
 
 	taskDISABLE_INTERRUPTS();
+	board_uart_write(pcTaskName, -1);
 	TU_ASSERT(false, );
 }
 

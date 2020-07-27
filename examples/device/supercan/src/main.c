@@ -45,6 +45,7 @@
 
 #include <supercan.h>
 #include <supercan_m1.h>
+#include <supercan_debug.h>
 #include <usb_descriptors.h>
 #include <m_can.h>
 #include <mcu.h>
@@ -189,12 +190,23 @@ static inline void can_configure(struct can *c)
 	can->CCCR.bit.DAR = (c->mode_flags & SC_MODE_FLAG_AUTO_RE) != SC_MODE_FLAG_AUTO_RE;
 	can->CCCR.bit.PXHD = (c->mode_flags & SC_MODE_FLAG_EH) != SC_MODE_FLAG_EH;
 
-	TU_LOG2("nominal brp=%u sjw=%u tseg1=%u tseg2=%u\n",
-		c->nmbt_brp, c->nmbt_sjw, c->nmbt_tseg1, c->nmbt_tseg2
+	LOG("tx=%u txr=%u rx=1 fd=%u brs=%u auto re=%u eh=%u\n",
+		(c->mode_flags & SC_MODE_FLAG_TX) == SC_MODE_FLAG_TX,
+		(c->option_flags & SC_OPTION_TXR) == SC_OPTION_TXR,
+		(c->mode_flags & SC_MODE_FLAG_FD) == SC_MODE_FLAG_FD,
+		(c->mode_flags & SC_MODE_FLAG_BRS) == SC_MODE_FLAG_BRS,
+		(c->mode_flags & SC_MODE_FLAG_AUTO_RE) == SC_MODE_FLAG_AUTO_RE,
+		(c->mode_flags & SC_MODE_FLAG_EH) == SC_MODE_FLAG_EH
 	);
 
-	TU_LOG2("data brp=%u sjw=%u tseg1=%u tseg2=%u\n",
-		c->dtbt_brp, c->dtbt_sjw, c->dtbt_tseg1, c->dtbt_tseg2
+	LOG("nominal brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu\n",
+		c->nmbt_brp, c->nmbt_sjw, c->nmbt_tseg1, c->nmbt_tseg2,
+		CAN_CLK_HZ / (c->nmbt_brp * (c->nmbt_sjw + c->nmbt_tseg1 + c->nmbt_tseg2))
+	);
+
+	LOG("data brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu\n",
+		c->dtbt_brp, c->dtbt_sjw, c->dtbt_tseg1, c->dtbt_tseg2,
+		CAN_CLK_HZ / (c->dtbt_brp * (c->dtbt_sjw + c->dtbt_tseg1 + c->dtbt_tseg2))
 	);
 
 	can->TSCC.reg = CAN_TSCC_TCP(0) | CAN_TSCC_TSS(1);
@@ -273,34 +285,34 @@ static void can_int(uint8_t index)
 	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
 	struct can *can = &cans.can[index];
 
-	// TU_LOG2("IE=%08lx IR=%08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
+	// LOG("IE=%08lx IR=%08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
 
 	CAN_IR_Type ir = can->m_can->IR;
 	if (ir.bit.TSW) {
 		uint32_t ts_high = __sync_add_and_fetch(&can->ts_high, 1u << M_CAN_TS_COUNTER_BITS);
 		(void)ts_high;
-		// TU_LOG2("CAN%u ts_high=%08lx\n", index, ts_high);
+		// LOG("CAN%u ts_high=%08lx\n", index, ts_high);
 	}
 
 	uint8_t curr_status = 0;
 
 	if (ir.bit.EP) {
-		TU_LOG2("CAN%u error passive\n", index);
+		LOG("CAN%u error passive\n", index);
 		curr_status |= SC_STATUS_FLAG_ERROR_PASSIVE;
 	}
 
 	if (ir.bit.EW) {
-		TU_LOG2("CAN%u error warning\n", index);
+		LOG("CAN%u error warning\n", index);
 		curr_status |= SC_STATUS_FLAG_ERROR_WARNING;
 	}
 
 	if (ir.bit.BO) {
-		TU_LOG2("CAN%u bus off\n", index);
+		LOG("CAN%u bus off\n", index);
 		curr_status |= SC_STATUS_FLAG_BUS_OFF;
 	}
 
 	if (ir.bit.RF0L) {
-		TU_LOG2("CAN%u msg lost\n", index);
+		LOG("CAN%u msg lost\n", index);
 		curr_status |= SC_STATUS_FLAG_RX_FULL;
 	}
 
@@ -314,7 +326,7 @@ static void can_int(uint8_t index)
 	can->m_can->IR = ir;
 
 	if (notify) {
-		// TU_LOG2("CAN%u notify\n", index);
+		LOG("CAN%u notify\n", index);
 		BaseType_t woken = pdFALSE;
 		vTaskNotifyGiveFromISR(can->task, &woken);
 		portYIELD_FROM_ISR(woken);
@@ -323,13 +335,13 @@ static void can_int(uint8_t index)
 
 void CAN0_Handler(void)
 {
-	// TU_LOG2("CAN0 int\n");
+	LOG("CAN0 int\n");
 	can_int(0);
 }
 
 void CAN1_Handler(void)
 {
-	// TU_LOG2("CAN1 int\n");
+	// LOG("CAN1 int\n");
 	can_int(1);
 }
 
@@ -536,6 +548,7 @@ static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SE
 	.app_crc = 0,
 	.app_size = 0,
 	.app_name = SC_NAME,
+	.watchdog_timeout_s = 1,
 };
 
 static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(DFU_APP_FTR_SECTION_NAME))) = {
@@ -598,6 +611,7 @@ static inline void sc_cmd_bulk_in_submit(uint8_t index)
 	TU_ASSERT(sc_cmd_bulk_in_ep_ready(index), );
 	struct usb_cmd *cmd = &usb.cmd[index];
 	TU_ASSERT(cmd->tx_offsets[cmd->tx_bank] > 0, );
+	TU_ASSERT(cmd->tx_offsets[cmd->tx_bank] <= CMD_BUFFER_SIZE, );
 	(void)dcd_edpt_xfer(usb.port, 0x80 | cmd->pipe, cmd->tx_buffers[cmd->tx_bank], cmd->tx_offsets[cmd->tx_bank]);
 	cmd->tx_bank = !cmd->tx_bank;
 }
@@ -614,6 +628,7 @@ static inline void sc_can_bulk_in_submit(uint8_t index)
 	TU_ASSERT(sc_can_bulk_in_ep_ready(index), );
 	struct usb_can *can = &usb.can[index];
 	TU_ASSERT(can->tx_offsets[can->tx_bank] > 0, );
+	TU_ASSERT(can->tx_offsets[can->tx_bank] <= MSG_BUFFER_SIZE, );
 	(void)dcd_edpt_xfer(usb.port, 0x80 | can->pipe, can->tx_buffers[can->tx_bank], can->tx_offsets[can->tx_bank]);
 	can->tx_bank = !can->tx_bank;
 }
@@ -642,7 +657,7 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 	while (in_ptr + SC_HEADER_LEN <= in_end) {
 		struct sc_msg_header const *msg = (struct sc_msg_header const *)in_ptr;
 		if (in_ptr + msg->len > in_end) {
-			TU_LOG1("malformed msg\n");
+			LOG("ch%u malformed msg\n", index);
 			break;
 		}
 
@@ -654,12 +669,12 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 		switch (msg->id) {
 		case SC_MSG_EOF: {
-			TU_LOG2("SC_MSG_EOF\n");
+			LOG("ch%u SC_MSG_EOF\n", index);
 			in_ptr = in_end;
 		} break;
 
 		case SC_MSG_HELLO_DEVICE: {
-			TU_LOG2("SC_MSG_HELLO_DEVICE\n");
+			LOG("ch%u SC_MSG_HELLO_DEVICE\n", index);
 			// reset tx buffer
 			uint8_t len = sizeof(struct sc_msg_hello);
 			usb_cmd->tx_offsets[usb_cmd->tx_bank] = len;
@@ -680,7 +695,7 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 			// assume in token is available
 		} break;
 		case SC_MSG_DEVICE_INFO: {
-			TU_LOG2("SC_MSG_DEVICE_INFO\n");
+			LOG("ch%u SC_MSG_DEVICE_INFO\n", index);
 			uint8_t bytes = sizeof(struct sc_msg_dev_info);
 			uint8_t *out_ptr;
 			uint8_t *out_end;
@@ -730,15 +745,15 @@ send_info:
 			}
 		} break;
 		case SC_MSG_BITTIMING: {
-			TU_LOG2("SC_MSG_BITTIMING\n");
+			LOG("ch%u SC_MSG_BITTIMING\n", index);
 			struct sc_msg_bittiming const *tmsg = (struct sc_msg_bittiming const *)msg;
 			if (unlikely(msg->len < sizeof(*tmsg))) {
-				TU_LOG1("ERROR: msg too short\n");
+				LOG("ch%u ERROR: msg too short\n", index);
 				continue;
 			}
 
 			// if (unlikely(tmsg->channel != index)) {
-			// 	TU_LOG1("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
+			// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
 			// 	continue;
 			// }
 
@@ -765,58 +780,58 @@ send_info:
 			can->dtbt_tseg2 = tu_max8(M_CAN_DTBT_TSEG2_MIN, tu_min8(dtbt_tseg2, M_CAN_DTBT_TSEG2_MAX));
 		} break;
 		case SC_MSG_RESET: {
-			TU_LOG2("SC_MSG_RESET\n");
+			LOG("ch%u SC_MSG_RESET\n", index);
 			// NVIC_SystemReset();
 		} break;
 		case SC_MSG_MODE: {
-			TU_LOG2("SC_MSG_MODE\n");
+			LOG("ch%u SC_MSG_MODE\n", index);
 			struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
 			if (unlikely(msg->len < sizeof(*tmsg))) {
-				TU_LOG1("ERROR: msg too short\n");
+				LOG("ch%u ERROR: msg too short\n", index);
 				continue;
 			}
 
 			// if (unlikely(tmsg->channel != index)) {
-			// 	TU_LOG1("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
+			// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
 			// 	continue;
 			// }
 
 			can->mode_flags = tmsg->args[0];
 		} break;
 		case SC_MSG_OPTIONS: {
-			TU_LOG2("SC_MSG_OPTIONS\n");
+			LOG("ch%u SC_MSG_OPTIONS\n", index);
 			struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
 
 			if (unlikely(msg->len < sizeof(*tmsg))) {
-				TU_LOG1("ERROR: msg too short\n");
+				LOG("ch%u ERROR: msg too short\n", index);
 				continue;
 			}
 
 			// if (unlikely(tmsg->channel != index)) {
-			// 	TU_LOG1("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
+			// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
 			// 	continue;
 			// }
 
 			can->option_flags = tmsg->args[0];
 		} break;
 		case SC_MSG_BUS: {
-			TU_LOG2("SC_MSG_BUS\n");
+			LOG("ch%u SC_MSG_BUS\n", index);
 			struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
 
 			if (unlikely(msg->len < sizeof(*tmsg))) {
-				TU_LOG1("ERROR: msg too short\n");
+				LOG("ERROR: msg too short\n");
 				continue;
 			}
 
 			// if (unlikely(tmsg->channel != index)) {
-			// 	TU_LOG1("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
+			// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
 			// 	continue;
 			// }
 
 			bool was_enabled = can->enabled;
 			can->enabled = tmsg->args[0] != 0;
 			if (was_enabled != can->enabled) {
-				TU_LOG2("channel %u enabled=%u\n", tmsg->channel, can->enabled);
+				LOG("ch%u enabled=%u\n", index, can->enabled);
 				if (can->enabled) {
 					can_configure(can);
 					can->desync = false;
@@ -833,7 +848,7 @@ send_info:
 	}
 
 	if (usb_cmd->tx_offsets[usb_cmd->tx_bank] > 0 && sc_cmd_bulk_in_ep_ready(index)) {
-		// TU_LOG2("usb tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
+		// LOG("usb tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
 		sc_cmd_bulk_in_submit(index);
 	}
 }
@@ -841,6 +856,7 @@ send_info:
 static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 {
 	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can), );
+	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
 
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
@@ -848,7 +864,7 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 
 	const uint8_t rx_bank = usb_can->rx_bank;
-	// TU_LOG2("CAN%u rx bank %u\n", index, rx_bank);
+	// LOG("CAN%u rx bank %u\n", index, rx_bank);
 	(void)rx_bank;
 	uint8_t const * const in_beg = usb_can->rx_buffers[usb_can->rx_bank];
 	uint8_t const *in_ptr = in_beg;
@@ -863,7 +879,7 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 	while (in_ptr + SC_HEADER_LEN <= in_end) {
 		struct sc_msg_header const *msg = (struct sc_msg_header const *)in_ptr;
 		if (in_ptr + msg->len > in_end) {
-			TU_LOG1("malformed msg\n");
+			LOG("ch%u malformed msg\n", index);
 			break;
 		}
 
@@ -875,26 +891,26 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 		switch (msg->id) {
 		case SC_MSG_EOF: {
-			// TU_LOG2("SC_MSG_EOF\n");
+			// LOG("SC_MSG_EOF\n");
 			in_ptr = in_end;
 		} break;
 		case SC_MSG_CAN_TX: {
-			// TU_LOG2("SC_MSG_CAN_TX\n");
+			// LOG("SC_MSG_CAN_TX\n");
 			struct sc_msg_can_tx const *tmsg = (struct sc_msg_can_tx const *)msg;
 			if (unlikely(msg->len < sizeof(*tmsg))) {
-				TU_LOG1("ERROR: msg too short\n");
+				LOG("ch%u ERROR: msg too short\n", index);
 				continue;
 			}
 
-			if (unlikely(tmsg->channel != index)) {
-				TU_LOG1("ERROR: CAN%u channel %u mismatch\n", index, tmsg->channel);
-				continue;
-			}
+			// if (unlikely(tmsg->channel != index)) {
+			// 	LOG("ERROR: CAN%u channel %u mismatch\n", index, tmsg->channel);
+			// 	continue;
+			// }
 
 			const uint8_t can_frame_len = dlc_to_len(tmsg->dlc);
 			if (!(tmsg->flags & SC_CAN_FLAG_RTR)) {
 				if (msg->len < sizeof(*tmsg) + can_frame_len) {
-					TU_LOG1("ERROR: msg too short\n");
+					LOG("ch%u ERROR: msg too short\n", index);
 					continue;
 				}
 			}
@@ -924,7 +940,7 @@ send_txr:
 							sc_can_bulk_in_submit(index);
 							goto send_txr;
 						} else {
-							TU_LOG1("ch %u: desync\n", tmsg->channel);
+							LOG("ch%u: desync\n", index);
 							can->desync = true;
 						}
 					}
@@ -972,14 +988,14 @@ send_txr:
 	}
 
 	if (usb_can->tx_offsets[usb_can->tx_bank] > 0 && sc_can_bulk_in_ep_ready(index)) {
-		// TU_LOG2("usb tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
+		// LOG("usb tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
 		sc_can_bulk_in_submit(index);
 	}
 }
 
 static void sc_cmd_bulk_in(uint8_t index)
 {
-	TU_LOG2("< cmd%u IN token\n", index);
+	LOG("< cmd%u IN token\n", index);
 
 	TU_ASSERT(index < TU_ARRAY_SIZE(usb.cmd), );
 
@@ -988,7 +1004,7 @@ static void sc_cmd_bulk_in(uint8_t index)
 	usb_cmd->tx_offsets[!usb_cmd->tx_bank] = 0;
 
 	if (usb_cmd->tx_offsets[usb_cmd->tx_bank]) {
-		// TU_LOG2("usb msg tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
+		// LOG("usb msg tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
 		sc_cmd_bulk_in_submit(index);
 	}
 }
@@ -1002,7 +1018,7 @@ static void sc_can_bulk_in(uint8_t index)
 	usb_can->tx_offsets[!usb_can->tx_bank] = 0;
 
 	if (usb_can->tx_offsets[usb_can->tx_bank]) {
-		// TU_LOG2("usb msg tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
+		// LOG("usb msg tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
 		sc_can_bulk_in_submit(index);
 	}
 }
@@ -1012,7 +1028,7 @@ int main(void)
 	board_init();
 
 #if SUPERDFU_APP
-	TU_LOG2(
+	LOG(
 		"%s v%u.%u.%u starting...\n",
 		dfu_app_hdr.app_name,
 		dfu_app_hdr.app_version_major,
@@ -1031,18 +1047,18 @@ int main(void)
 
 	tusb_init();
 
-	can_init_pins();
-	can_init_clock();
-	can_init_module();
-
-	cans.can[0].led = CAN0_LED;
-	cans.can[1].led = CAN1_LED;
-	cans.can[0].task = xTaskCreateStatic(&can_task, "can0", TU_ARRAY_SIZE(can_task_stack[0]), (void*)0, configMAX_PRIORITIES-1, can_task_stack[0], &can_task_mem[0]);
-	cans.can[1].task = xTaskCreateStatic(&can_task, "can1", TU_ARRAY_SIZE(can_task_stack[1]), (void*)1, configMAX_PRIORITIES-1, can_task_stack[1], &can_task_mem[1]);
+	// can_init_pins();
+	// can_init_clock();
+	// can_init_module();
 
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
 
+
+	// cans.can[0].led = CAN0_LED;
+	// cans.can[1].led = CAN1_LED;
+	// cans.can[0].task = xTaskCreateStatic(&can_task, "can0", TU_ARRAY_SIZE(can_task_stack[0]), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, can_task_stack[0], &can_task_mem[0]);
+	// cans.can[1].task = xTaskCreateStatic(&can_task, "can1", TU_ARRAY_SIZE(can_task_stack[1]), (void*)(uintptr_t)1, configMAX_PRIORITIES-1, can_task_stack[1], &can_task_mem[1]);
 
 
 	led_blink(0, 2000);
@@ -1066,6 +1082,7 @@ static void tusb_device_task(void* param)
 	(void) param;
 
 	while (1) {
+		LOG("tud_task\n");
 		tud_task();
 	}
 }
@@ -1077,7 +1094,7 @@ static void tusb_device_task(void* param)
 // Invoked when device is mounted
 void tud_mount_cb(void)
 {
-	TU_LOG2("mounted\n");
+	LOG("mounted\n");
 	led_blink(0, 250);
 	usb.mounted = true;
 
@@ -1086,7 +1103,7 @@ void tud_mount_cb(void)
 // Invoked when device is unmounted
 void tud_umount_cb(void)
 {
-	TU_LOG2("unmounted\n");
+	LOG("unmounted\n");
 	led_blink(0, 1000);
 	usb.mounted = false;
 
@@ -1105,7 +1122,7 @@ void tud_umount_cb(void)
 void tud_suspend_cb(bool remote_wakeup_en)
 {
 	(void) remote_wakeup_en;
-	TU_LOG2("suspend\n");
+	LOG("suspend\n");
 	usb.mounted = false;
 	led_blink(0, 500);
 
@@ -1115,7 +1132,7 @@ void tud_suspend_cb(bool remote_wakeup_en)
 // Invoked when usb bus is resumed
 void tud_resume_cb(void)
 {
-	TU_LOG2("resume\n");
+	LOG("resume\n");
 	usb.mounted = true;
 	led_blink(0, 250);
 
@@ -1128,12 +1145,12 @@ void tud_resume_cb(void)
 //--------------------------------------------------------------------+
 void tud_custom_init_cb(void)
 {
-	TU_LOG2("init\n");
+	LOG("init\n");
 }
 
 void tud_custom_reset_cb(uint8_t rhport)
 {
-	TU_LOG2("port %u reset\n", rhport);
+	LOG("port %u reset\n", rhport);
 	memset(&usb, 0, sizeof(usb));
 	usb.port = rhport;
 	usb.cmd[0].pipe = SC_M1_EP_CMD0_BULK_OUT;
@@ -1144,7 +1161,7 @@ void tud_custom_reset_cb(uint8_t rhport)
 
 bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t* p_length)
 {
-	TU_LOG2("port %u open\n", rhport);
+	LOG("port %u open\n", rhport);
 
 	if (unlikely(rhport != usb.port)) {
 		return false;
@@ -1152,7 +1169,7 @@ bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf,
 
 	TU_VERIFY(TUSB_CLASS_VENDOR_SPECIFIC == desc_intf->bInterfaceClass);
 
-	if (unlikely(desc_intf->bInterfaceNumber >= TU_ARRAY_SIZE(cans.can))) {
+	if (unlikely(desc_intf->bInterfaceNumber >= TU_ARRAY_SIZE(usb.can))) {
 		return false;
 	}
 
@@ -1168,7 +1185,7 @@ bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf,
 
 	for (uint8_t i = 0; i < eps; ++i) {
 		tusb_desc_endpoint_t const *ep_desc = (tusb_desc_endpoint_t const *)(ptr + i * 7);
-		TU_LOG2("! ep %02x open\n", ep_desc->bEndpointAddress);
+		LOG("! ep %02x open\n", ep_desc->bEndpointAddress);
 		TU_ASSERT(dcd_edpt_open(rhport, ep_desc));
 	}
 
@@ -1220,7 +1237,7 @@ bool tud_custom_xfer_cb(
 		sc_can_bulk_in(1);
 		break;
 	default:
-		TU_LOG2("port %u ep %02x event %d bytes %u\n", rhport, ep_addr, event, (unsigned)xferred_bytes);
+		LOG("port %u ep %02x event %d bytes %u\n", rhport, ep_addr, event, (unsigned)xferred_bytes);
 		return false;
 	}
 
@@ -1275,13 +1292,13 @@ static inline const char* dir_str(tusb_dir_t value)
 
 bool tud_vendor_control_request_cb(uint8_t rhport, tusb_control_request_t const * request)
 {
-	// TU_LOG2("port %u req\n", rhport);
+	// LOG("port %u req\n", rhport);
 
 	if (unlikely(rhport != usb.port)) {
 		return false;
 	}
 
-	TU_LOG2("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
+	LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
 		request->bmRequestType,
 		recipient_str(request->bmRequestType_bit.recipient),
 		type_str(request->bmRequestType_bit.type),
@@ -1347,7 +1364,7 @@ void dfu_rtd_reset(uint8_t rhport)
 	(void) rhport;
 
 	if (DFU_STATE_APP_DETACH == dfu.status.bState) {
-		TU_LOG2("Detected USB reset while detach timer is running");
+		LOG("Detected USB reset while detach timer is running");
 		dfu_request_dfu(1);
 		NVIC_SystemReset();
 	}
@@ -1387,7 +1404,7 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 	TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
 	TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
 
-  TU_LOG2("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
+  LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
 		request->bmRequestType,
 		recipient_str(request->bmRequestType_bit.recipient),
 		type_str(request->bmRequestType_bit.type),
@@ -1400,7 +1417,7 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 	case DFU_REQUEST_GETSTATUS:
 		return tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status));
 	case DFU_REQUEST_DETACH:
-		TU_LOG2("detach request, timeout %u [ms]\n", request->wValue);
+		LOG("detach request, timeout %u [ms]\n", request->wValue);
 		dfu.status.bState = DFU_STATE_APP_DETACH;
 		xTimerStart(dfu.timer_handle, 0);
 		// return false; // stall pipe to trigger reset
@@ -1437,7 +1454,7 @@ static void led_task(void *param)
 			if (t) {
 				if (leds[i].blink) {
 					if (0 == left[i]) {
-						// TU_LOG2("led %s (%u) toggle\n", leds[i].name, i);
+						// LOG("led %s (%u) toggle\n", leds[i].name, i);
 						gpio_toggle_pin_level(leds[i].pin);
 						left[i] = t / TICK_MS;
 					} else {
@@ -1467,15 +1484,16 @@ static void can_task(void *param)
 	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
 	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can), );
 
-	TU_LOG2("CAN%u task start\n", index);
+	LOG("CAN%u task start\n", index);
 
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
 
 	while (42) {
+		LOG("CAN%u task wait\n", index);
 		(void)ulTaskNotifyTake(pdFALSE, ~0);
 
-		// TU_LOG2("can task loop\n");
+		LOG("CAN%u task loop\n", index);
 		if (unlikely(!usb.mounted)) {
 			continue;
 		}
@@ -1495,9 +1513,9 @@ start:
 			out_beg = usb_can->tx_buffers[usb_can->tx_bank];
 			out_end = out_beg + MSG_BUFFER_SIZE;
 			out_ptr = out_beg + usb_can->tx_offsets[usb_can->tx_bank];
+			TU_ASSERT(out_ptr <= out_end, );
 
 			if (out_ptr == out_beg) {
-
 				// place status messages
 				done = false;
 
@@ -1555,7 +1573,7 @@ start:
 					}
 					msg->can_id = id;
 
-					// TU_LOG2("CAN%u ts hi=%08lx lo=%04x\n", index, can->ts_high, r1.bit.RXTS);
+					// LOG("CAN%u ts hi=%08lx lo=%04x\n", index, can->ts_high, r1.bit.RXTS);
 					uint32_t ts = can->ts_high | r1.bit.RXTS;
 					msg->timestamp_us = can_time_to_us(can, ts);
 
@@ -1574,6 +1592,7 @@ start:
 					msg->dlc = r1.bit.DLC;
 				} else {
 					if (sc_can_bulk_in_ep_ready(index)) {
+						TU_ASSERT(out_ptr <= out_end, );
 						usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 						sc_can_bulk_in_submit(index);
 						goto start;
@@ -1619,6 +1638,7 @@ start:
 						}
 					} else {
 						if (sc_can_bulk_in_ep_ready(index)) {
+							TU_ASSERT(out_ptr <= out_end, );
 							usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 							sc_can_bulk_in_submit(index);
 							goto start;
@@ -1631,12 +1651,13 @@ start:
 				can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(get_index);
 			}
 
+			TU_ASSERT(out_ptr <= out_end, );
 			usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 		}
 
 
 		if (usb_can->tx_offsets[usb_can->tx_bank] > 0 && sc_can_bulk_in_ep_ready(index)) {
-			// TU_LOG2("usb tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
+			// LOG("usb tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
 			sc_can_bulk_in_submit(index);
 		}
 	}
