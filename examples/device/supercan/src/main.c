@@ -201,13 +201,14 @@ static inline void can_configure(struct can *c)
 
 	LOG("nominal brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
 		c->nmbt_brp, c->nmbt_sjw, c->nmbt_tseg1, c->nmbt_tseg2,
-		CAN_CLK_HZ / ((uint32_t)c->nmbt_brp * (c->nmbt_sjw + c->nmbt_tseg1 + c->nmbt_tseg2)),
-		((c->nmbt_sjw + c->nmbt_tseg1) * 1000) / (c->nmbt_sjw + c->nmbt_tseg1 + c->nmbt_tseg2)
+		CAN_CLK_HZ / ((uint32_t)c->nmbt_brp * (c->nmbt_tseg1 + c->nmbt_tseg2)),
+		((c->nmbt_tseg1) * 1000) / (c->nmbt_tseg1 + c->nmbt_tseg2)
 	);
 
-	LOG("data brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu\n",
+	LOG("data brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
 		c->dtbt_brp, c->dtbt_sjw, c->dtbt_tseg1, c->dtbt_tseg2,
-		CAN_CLK_HZ / ((uint32_t)c->dtbt_brp * (c->dtbt_sjw + c->dtbt_tseg1 + c->dtbt_tseg2))
+		CAN_CLK_HZ / ((uint32_t)c->dtbt_brp * (c->dtbt_tseg1 + c->dtbt_tseg2)),
+		((c->dtbt_tseg1) * 1000) / (c->dtbt_tseg1 + c->dtbt_tseg2)
 	);
 
 	can->TSCC.reg = CAN_TSCC_TCP(0) | CAN_TSCC_TSS(1);
@@ -1409,7 +1410,7 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 	TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
 	TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
 
-  LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
+	LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
 		request->bmRequestType,
 		recipient_str(request->bmRequestType_bit.recipient),
 		type_str(request->bmRequestType_bit.type),
@@ -1434,11 +1435,11 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 
 bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
 {
-  (void) rhport;
-  (void) ep_addr;
-  (void) result;
-  (void) xferred_bytes;
-  return true;
+	(void) rhport;
+	(void) ep_addr;
+	(void) result;
+	(void) xferred_bytes;
+	return true;
 }
 #endif
 
