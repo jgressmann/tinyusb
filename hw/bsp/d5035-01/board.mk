@@ -29,12 +29,14 @@ ifneq ($(APP),0)
 else
   CFLAGS += -DSUPERDFU_APP=0
 endif
-endif
 ifdef BOOTLOADER
 ifneq ($(BOOTLOADER),0)
   # All source paths should be relative to the top level.
   LD_FILE = hw/bsp/$(BOARD)/same51j19a_flash_bootloader.ld
 endif
+endif
+else
+  CFLAGS += -DSUPERDFU_APP=0
 endif
 
 # compiler options for Atmel Studio's 'Debug' configuration
