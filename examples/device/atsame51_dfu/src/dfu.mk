@@ -19,7 +19,8 @@ $(BUILD)/$(BOARD)-firmware.dfu: $(BUILD)/$(BOARD)-firmware.superdfu.bin
 	#$(CP) $^ $@
 	#dfu-tool -v $(VID) -p $(PID) -a $@
 
-dfu: $(BUILD)/$(BOARD)-firmware.dfu
+# depend on dfu and hex so we can have both in one build
+dfu: $(BUILD)/$(BOARD)-firmware.dfu $(BUILD)/$(BOARD)-firmware.superdfu.hex
 
 dfu-upload: $(BUILD)/$(BOARD)-firmware.dfu
 	sudo dfu-tool write $(BUILD)/$(BOARD)-firmware.dfu
