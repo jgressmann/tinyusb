@@ -1422,8 +1422,12 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 		return tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status));
 	case DFU_REQUEST_DETACH:
 		LOG("detach request, timeout %u [ms]\n", request->wValue);
-		dfu.status.bState = DFU_STATE_APP_DETACH;
-		xTimerStart(dfu.timer_handle, 0);
+		if (!dfu_signature_compatible()) {
+			TU_LOG1("Bootloader runtime signature incompatible, not starting detach\n");
+		} else {
+			dfu.status.bState = DFU_STATE_APP_DETACH;
+			xTimerStart(dfu.timer_handle, 0);
+		}
 		// return false; // stall pipe to trigger reset
 		return tud_control_xfer(rhport, request, NULL, 0);
 	}
