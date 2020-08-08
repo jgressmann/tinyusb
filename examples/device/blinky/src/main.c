@@ -199,15 +199,13 @@ static struct usb {
 
 
 #if SUPERDFU_APP
-struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_SECTION_NAME)));
+struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_HDR_SECTION_NAME)));
 static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SECTION_NAME))) = {
-	.magic = DFU_APP_HDR_MAGIC_STRING,
-	.dfu_app_hdr_version = DFU_APP_HDR_VERSION,
+	.hdr_magic = DFU_APP_HDR_MAGIC_STRING,
+	.hdr_version = DFU_APP_HDR_VERSION,
 	.app_version_major = 1,
 	.app_version_minor = 0,
-	.app_version_patch = 0,
-	.app_crc = 0,
-	.app_size = 0,
+	.app_version_patch = 1,
 	.app_name = "Blinky",
 };
 
@@ -302,6 +300,7 @@ void tud_resume_cb(void)
 	led_blink(0, 250);
 }
 
+
 #if CFG_TUD_DFU_RT_CUSTOM
 
 static inline const char* recipient_str(tusb_request_recipient_t r)
@@ -357,6 +356,9 @@ void dfu_rtd_reset(uint8_t rhport)
 {
 	(void) rhport;
 
+	TU_LOG2("dfu_rtd_reset\n");
+	TU_LOG2("dfu_timer_running=%u\n", dfu_timer_running);
+
 	if (dfu_timer_running && board_millis() - dfu_timer_start_ms <= dfu_timer_duration_ms) {
 		TU_LOG2("Detected USB reset while detach timer is running");
 		dfu_request_dfu(1);
@@ -409,14 +411,17 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 
 	switch (request->bRequest) {
 	case DFU_REQUEST_GETSTATUS:
-
 		return tud_control_xfer(rhport, request, &dfu_status, sizeof(dfu_status));
 	case DFU_REQUEST_DETACH:
 		TU_LOG2("detach request, timeout %u [ms]\n", request->wValue);
-		dfu_status.bState = DFU_STATE_APP_DETACH;
-		dfu_timer_start_ms = board_millis();
-		dfu_timer_duration_ms = request->wValue;
-		dfu_timer_running = true;
+		if (!dfu_signature_compatible()) {
+			TU_LOG1("Bootloader runtime signature incompatible, not starting detach\n");
+		} else {
+			dfu_status.bState = DFU_STATE_APP_DETACH;
+			dfu_timer_start_ms = board_millis();
+			dfu_timer_duration_ms = request->wValue;
+			dfu_timer_running = true;
+		}
 		return tud_control_xfer(rhport, request, NULL, 0);
 	}
 

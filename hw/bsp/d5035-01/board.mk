@@ -29,15 +29,17 @@ ifneq ($(APP),0)
 else
   CFLAGS += -DSUPERDFU_APP=0
 endif
+else
+  CFLAGS += -DSUPERDFU_APP=0
+endif
+
 ifdef BOOTLOADER
 ifneq ($(BOOTLOADER),0)
   # All source paths should be relative to the top level.
   LD_FILE = hw/bsp/$(BOARD)/same51j19a_flash_bootloader.ld
 endif
 endif
-else
-  CFLAGS += -DSUPERDFU_APP=0
-endif
+
 
 # compiler options for Atmel Studio's 'Debug' configuration
 #-O2 -ffunction-sections -mlong-calls -g3 -Wall -Wextra -mcpu=cortex-m4 -c -std=gnu99 -mfloat-abi=softfp -mfpu=fpv4-sp-d16
@@ -104,37 +106,3 @@ JLINK_IF = swd
 
 # flash using jlink
 flash: flash-jlink
-
-
-# $(BUILD)/$(BOARD)-firmware.superdfu.elf: $(BUILD)/$(BOARD)-firmware.elf
-# 	@echo CREATE $@
-# 	@cp $(BUILD)/$(BOARD)-firmware.elf $@
-# 	@python3 $(TOP)/examples/device/atsame51_dfu/src/superdfu-patch.py --strict 1 -e little $@
-
-# $(BUILD)/$(BOARD)-firmware.superdfu.hex: $(BUILD)/$(BOARD)-firmware.superdfu.elf
-# 	@echo CREATE $@
-# 	@$(OBJCOPY) -O ihex $^ $@
-
-# $(BUILD)/$(BOARD)-firmware.superdfu.bin: $(BUILD)/$(BOARD)-firmware.superdfu.elf
-# 	@echo CREATE $@
-# 	@$(OBJCOPY) -O binary $^ $@
-
-# $(BUILD)/$(BOARD)-firmware.dfu: $(BUILD)/$(BOARD)-firmware.superdfu.bin
-# 	@echo CREATE $@
-# 	dfu-tool -v convert dfu $^ $@
-# 	dfu-tool -v set-vendor $@ $(VID)
-# 	dfu-tool -v set-product $@ $(PID)
-
-# dfu: $(BUILD)/$(BOARD)-firmware.dfu
-
-
-# flash-dfu: $(BUILD)/$(BOARD)-firmware.superdfu.hex
-# 	@echo halt > $(BUILD)/$(BOARD).superdfu.jlink
-# 	@echo r > $(BUILD)/$(BOARD).superdfu.jlink
-# 	@echo loadfile $^ >> $(BUILD)/$(BOARD).superdfu.jlink
-# 	@echo r >> $(BUILD)/$(BOARD).superdfu.jlink
-# 	@echo go >> $(BUILD)/$(BOARD).superdfu.jlink
-# 	@echo exit >> $(BUILD)/$(BOARD).superdfu.jlink
-# 	$(JLINKEXE) -device $(JLINK_DEVICE) -if $(JLINK_IF) -JTAGConf -1,-1 -speed auto -CommandFile $(BUILD)/$(BOARD).superdfu.jlink
-
-

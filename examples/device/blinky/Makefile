@@ -2,6 +2,8 @@ include ../../../tools/top.mk
 include ../../make.mk
 
 CFLAGS += -Wno-error
+CFLAGS += -DVID=0x$(VID) -DPID=0x$(PID)
+
 
 INC += \
 	inc \

@@ -57,15 +57,18 @@ void vendord_init(void)
 void vendord_reset(uint8_t rhport)
 {
 	TU_LOG2("vendord_reset\n");
+	(void) rhport;
 }
 
 bool vendord_open(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t *p_len)
 {
-	TU_LOG2("vendord_open\n");
 	(void) rhport;
 
 	// this function get's called for _non_ vendor interfaces
 	TU_VERIFY(TUSB_CLASS_VENDOR_SPECIFIC == desc_intf->bInterfaceClass);
+
+	TU_LOG2("vendord_open\n");
+
 	// TU_VERIFY(itf_desc->bInterfaceSubClass == TUSB_CLASS_VENDOR_SPECIFIC);
 	// TU_VERIFY(itf_desc->bInterfaceProtocol == DFU_PROTOCOL_RT);
 
@@ -84,6 +87,10 @@ bool vendord_open(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint1
 bool vendord_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
 {
 	TU_LOG2("vendord_xfer_cb\n");
+	(void) rhport;
+	(void) ep_addr;
+	(void) result;
+	(void) xferred_bytes;
 	return false;
 }
 

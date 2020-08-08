@@ -43,7 +43,7 @@ static const tusb_desc_device_t device = {
 
 	.idVendor           = 0x4243,
 	.idProduct          = 0x0001,
-	.bcdDevice          = 0x0001,
+	.bcdDevice          = HWREV << 8,
 
 	.iManufacturer      = 0x01,
 	.iProduct           = 0x02,

@@ -540,17 +540,15 @@ static inline void led_burst(uint8_t index, uint16_t duration_ms)
 
 
 #if SUPERDFU_APP
-struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_SECTION_NAME)));
+struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_HDR_SECTION_NAME)));
 static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SECTION_NAME))) = {
-	.magic = DFU_APP_HDR_MAGIC_STRING,
-	.dfu_app_hdr_version = DFU_APP_HDR_VERSION,
+	.hdr_magic = DFU_APP_HDR_MAGIC_STRING,
+	.hdr_version = DFU_APP_HDR_VERSION,
 	.app_version_major = 0,
 	.app_version_minor = 1,
-	.app_version_patch = 0,
-	.app_crc = 0,
-	.app_size = 0,
+	.app_version_patch = 1,
+	.app_watchdog_timeout_s = 1,
 	.app_name = SC_NAME,
-	.watchdog_timeout_s = 1,
 };
 
 static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(DFU_APP_FTR_SECTION_NAME))) = {

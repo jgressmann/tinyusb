@@ -28,16 +28,17 @@ OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
 OUTPUT_ARCH(arm)
 SEARCH_DIR(.)
 
+BOOTLOADER_SIZE = 0x4000;
 
 /* Memory Spaces Definitions */
 MEMORY
 {
-  dfurom     (rx) : ORIGIN = 0x00000000, LENGTH = 0x00004000
+  dfurom     (rx) : ORIGIN = 0x00000000, LENGTH = BOOTLOADER_SIZE
   dfuram     (rw) : ORIGIN = 0x20000000, LENGTH = 0x00000080
-  ram       (rwx) : ORIGIN = 0x20000100, LENGTH = 0x00030000 - LENGTH(dfuram)
+  ram       (rwx) : ORIGIN = ORIGIN(dfuram) + LENGTH(dfuram), LENGTH = 0x00030000 - LENGTH(dfuram)
 }
 
-STACK_SIZE = 0x0100;
+STACK_SIZE = 0x0200;
 
 /* Section Definitions */
 SECTIONS
@@ -45,7 +46,7 @@ SECTIONS
     .dfuram (NOLOAD) : {
         . = ALIGN(4);
         KEEP(*(.dfuram))
-    } >dfuram
+    } > dfuram
 
     .text :
     {
@@ -139,6 +140,7 @@ SECTIONS
         . = ALIGN(8);
         _estack = .;
     } > ram
+
     . = ALIGN(4);
     _end = . ;
 }

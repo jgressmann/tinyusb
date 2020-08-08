@@ -147,8 +147,8 @@ static inline void led_burst(uint8_t index, uint16_t duration_ms)
 }
 #endif
 
-#define BOOTLOADER_SIZE 0x4000
-#define NVM_BOOTLOADER_BLOCKS (BOOTLOADER_SIZE / MCU_NVM_BLOCK_SIZE)
+
+#define NVM_BOOTLOADER_BLOCKS (MCU_BOOTLOADER_SIZE / MCU_NVM_BLOCK_SIZE)
 #define NVM_PROG_BLOCKS (MCU_NVM_SIZE / 2 - NVM_BOOTLOADER_BLOCKS)
 
 
@@ -163,7 +163,7 @@ static struct dfu {
 	uint32_t page_buffer[MCU_NVM_PAGE_SIZE / 4];
 } dfu;
 
-struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_SECTION_NAME)));
+struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_HDR_SECTION_NAME)));
 
 static inline bool nvm_erase_block(void *addr)
 {
@@ -327,8 +327,8 @@ static inline void watchdog_timeout(uint8_t seconds_in, uint8_t* wdt_reg, uint8_
 }
 
 #define SUPERDFU_VERSION_MAJOR 0
-#define SUPERDFU_VERSION_MINOR 1
-#define SUPERDFU_VERSION_PATCH 1
+#define SUPERDFU_VERSION_MINOR 2
+#define SUPERDFU_VERSION_PATCH 0
 #define STR2(x) #x
 #define STR(x) STR2(x)
 #define NAME "SuperDFU"
@@ -350,18 +350,21 @@ int main(void)
 #endif
 
 	bool should_start_app = true;
-	struct dfu_app_hdr const *app_hdr = (struct dfu_app_hdr const *)(uintptr_t)BOOTLOADER_SIZE;
+	struct dfu_app_hdr const *app_hdr = (struct dfu_app_hdr const *)(uintptr_t)MCU_BOOTLOADER_SIZE;
 
-	if (0 == memcmp(DFU_RAM_MAGIC_STRING, dfu_hdr.magic, sizeof(dfu_hdr.magic))) {
-		should_start_app = (dfu_hdr.flags & DFU_RAM_FLAG_DFU_REQ) != DFU_RAM_FLAG_DFU_REQ;
+	LOG(NAME " checking for bootloader signature @ %p ... ", dfu_hdr_ptr());
+	if (0 == memcmp(DFU_RAM_HDR_MAGIC_STRING, dfu_hdr_ptr()->magic, sizeof(dfu_hdr_ptr()->magic))) {
+		LOG("found\n");
+		should_start_app = (dfu_hdr_ptr()->flags & DFU_RAM_HDR_FLAG_DFU_REQ) != DFU_RAM_HDR_FLAG_DFU_REQ;
 		LOG(NAME " bootloader start requested: %d\n", !should_start_app);
 		// clear bootloader start flag
-		dfu_hdr.flags &= ~DFU_RAM_FLAG_DFU_REQ;
+		dfu_hdr_ptr()->flags &= ~DFU_RAM_HDR_FLAG_DFU_REQ;
 	} else {
-		LOG(NAME " bootloader ram section dfuram @ %p not initalized\n", &dfu_hdr);
+		LOG("not found\n");
 		// initialize header
-		memset(&dfu_hdr, 0, sizeof(struct dfu_hdr));
-		memcpy(dfu_hdr.magic, DFU_RAM_MAGIC_STRING, sizeof(dfu_hdr.magic));
+		memset(dfu_hdr_ptr(), 0, sizeof(struct dfu_hdr));
+		memcpy(dfu_hdr_ptr()->magic, DFU_RAM_HDR_MAGIC_STRING, sizeof(dfu_hdr_ptr()->magic));
+		dfu_hdr_ptr()->version = DFU_RAM_HDR_VERSION;
 	}
 
 	if (should_start_app) {
@@ -377,7 +380,7 @@ int main(void)
 				LOG(NAME " magic mismatch\n");
 				break;
 			case DFU_APP_ERROR_UNSUPPORED_HDR_VERSION:
-				LOG(NAME " unsupported version %u\n", app_hdr->dfu_app_hdr_version);
+				LOG(NAME " unsupported version %u\n", app_hdr->hdr_version);
 				break;
 			case DFU_APP_ERROR_INVALID_SIZE:
 				LOG(NAME " invalid size %lu [bytes]\n", app_hdr->app_size);
@@ -385,8 +388,11 @@ int main(void)
 			case DFU_APP_ERROR_CRC_CALC_FAILED:
 				LOG(NAME " crc calc failed\n");
 				break;
-			case DFU_APP_ERROR_CRC_VERIFICATION_FAILED:
-				LOG(NAME " app crc verification failed %08lx\n", app_hdr->app_crc);
+			case DFU_APP_ERROR_CRC_APP_HEADER_MISMATCH:
+				LOG(NAME " app header crc verification failed %08lx\n", app_hdr->hdr_crc);
+				break;
+			case DFU_APP_ERROR_CRC_APP_DATA_MISMATCH:
+				LOG(NAME " app data crc verification failed %08lx\n", app_hdr->app_crc);
 				break;
 			default:
 				LOG(NAME " unknown error %d\n", error);
@@ -404,21 +410,21 @@ int main(void)
 
 	if (should_start_app) {
 		// check if stable
-		should_start_app = dfu_hdr.counter < 3;
-		LOG(NAME " stable counter %lu\n", dfu_hdr.counter);
+		should_start_app = dfu_hdr_ptr()->counter < 3;
+		LOG(NAME " stable counter %lu\n", dfu_hdr_ptr()->counter);
 	}
 
 	if (should_start_app) {
 		// increment counter in case the app crashes and resets the device
 		LOG(NAME " incrementing stable counter\n");
-		++dfu_hdr.counter;
+		++dfu_hdr_ptr()->counter;
 
 		start_app_prepare();
 
 		// Setup watchdog timer in case app hangs, we'll now
 		// by the counter value.
 		uint8_t per, timeout;
-		watchdog_timeout(app_hdr->watchdog_timeout_s, &per, &timeout);
+		watchdog_timeout(app_hdr->app_watchdog_timeout_s, &per, &timeout);
 		LOG(NAME " setting %u [s] watchdog timer\n", timeout);
 		WDT->CONFIG.bit.PER = per;
 		WDT->CTRLA.bit.ENABLE = 1;
@@ -429,7 +435,7 @@ int main(void)
 		board_uart_write("...\n", -1);
 
 		// go go go
-		start_app_jump(BOOTLOADER_SIZE + MCU_VECTOR_TABLE_ALIGNMENT);
+		start_app_jump(MCU_BOOTLOADER_SIZE + MCU_VECTOR_TABLE_ALIGNMENT);
 		return 0; // never reached
 	}
 
@@ -680,7 +686,7 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 static inline bool dfu_start_download(tusb_control_request_t const *request)
 {
 	LOG("> DFU_REQUEST_DNLOAD\n");
-	dfu.prog_offset = BOOTLOADER_SIZE;
+	dfu.prog_offset = MCU_BOOTLOADER_SIZE;
 	dfu.download_size = 0;
 	dfu.cleared_pages_left = 0;
 
