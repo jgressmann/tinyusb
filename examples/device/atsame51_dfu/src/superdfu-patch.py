@@ -32,13 +32,15 @@ try:
 	for file in args.files:
 		changed = False
 		with open(file, "rb") as f:
+			headers_found = 0
 			start_index = 0
 			content = bytearray(f.read())
 
 			while start_index < len(content):
 				start_index = content.find(SUPER_DFU_HEADER_MARKER, start_index)
 				if start_index == -1:
-					print(f"WARN: No SuperDFU header found in {file}")
+					if 0 == headers_found:
+						print(f"WARN: No SuperDFU header found in {file}")
 					break
 
 				header = list(struct.unpack(header_struct_format, content[start_index:start_index + struct.calcsize(header_struct_format)]))
@@ -66,6 +68,7 @@ try:
 				print(f"SuperDFU application header crc {header_crc:08x}")
 
 				changed = True
+				headers_found += 1
 
 				start_index = end_index + SUPER_DFU_FOOTER_LEN
 
