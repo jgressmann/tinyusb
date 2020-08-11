@@ -32,93 +32,110 @@ extern "C" {
 #define SC_NAME "SuperCAN"
 #define SC_VERSION          1
 
-#define SC_HEADER_LEN           sizeof(struct sc_msg_header)
-#define SC_HEADER_ID_OFFSET     0
-#define SC_HEADER_LEN_OFFSET    1
+#define SC_MSG_HEADER_LEN           sizeof(struct sc_msg_header)
+#define SC_MSG_HEADER_ID_OFFSET     0
+#define SC_MSG_HEADER_LEN_OFFSET    1
 
-#define SC_MSG_EOF              0x00
-#define SC_MSG_HELLO_DEVICE     0x01
-#define SC_MSG_HELLO_HOST       0x02
-#define SC_MSG_DEVICE_INFO      0x03
-#define SC_MSG_RESET            0x04
+#define SC_MSG_EOF              0x00    ///< Indicates the end of messages in the buffer (if short).
+#define SC_MSG_HELLO_DEVICE     0x01    ///< Host -> Device. This is the first message sent to the device, device responds with SC_MSG_HELLO_HOST.
+#define SC_MSG_HELLO_HOST       0x02    ///< Device -> Host. See SC_MSG_HELLO_DEVICE.
 
-#define SC_MSG_BITTIMING        0x06
-#define SC_MSG_MODE             0x07
-#define SC_MSG_OPTIONS          0x08
-#define SC_MSG_BUS              0x09
+#define SC_MSG_BITTIMING        0x10    ///< Host -> Device. Configures bittimings.
+#define SC_MSG_MODE             0x11    ///< Host -> Device. Sets the device mode.
+#define SC_MSG_FEATURES         0x12    ///< Host -> Device. Sets device features.
+#define SC_MSG_BUS              0x13    ///< Host -> Device. Go on / off bus.
 
+// #define SC_MSG_STATUS           0x15    ///< Host <-> Device. Query / Receive device status.
+#define SC_MSG_DEVICE_INFO      0x16    ///< Host <-> Device. Query / Receive device information.
+// #define SC_MSG_RESET            0x17
 
-#define SC_MSG_CAN_STATUS       0x10
-#define SC_MSG_CAN_RX           0x11
-#define SC_MSG_CAN_TX           0x12
-#define SC_MSG_CAN_TXR          0x13
+#define SC_MSG_CAN_STATUS       0x20    ///< Device -> Host. Status of the CAN bus.
+#define SC_MSG_CAN_RX           0x21    ///< Device -> Host. Received CAN frame.
+#define SC_MSG_CAN_TX           0x22    ///< Host -> Device. Send CAN frame.
+#define SC_MSG_CAN_TXR          0x23    ///< Device -> Host. CAN frame transmission receipt.
 
-
+#define SC_MSG_USER_OFFSET      0x80    ///< Custom device messages
 
 #define SC_BYTE_ORDER_LE        0
 #define SC_BYTE_ORDER_BE        1
 
-#define SC_FEATURE_FLAG_CAN_FD       0x01 // device supports CAN-FD
-#define SC_FEATURE_FLAG_AUTO_RE      0x02 // device supports automatic retransmission
-#define SC_FEATURE_FLAG_EH           0x04 // device CAN protocol exception handling
-
-#define SC_CAN_FLAG_EXT         0x01 // extended (29 bit id) frame
-#define SC_CAN_FLAG_RTR         0x02 // remote request frame
-#define SC_CAN_FLAG_FDF         0x04 // CAN-FD frame
-#define SC_CAN_FLAG_BRS         0x08 // CAN-FD bitrate switching (set zero to transmit at arbitration rate)
-#define SC_CAN_FLAG_ESI         0x10 // set to 1 to transmit with active error state
-#define SC_CAN_FLAG_DRP         0x20 // CAN frame was dropped b/c the tx fifo was full
-
-#define SC_STATUS_FLAG_BUS_OFF       0x01
-#define SC_STATUS_FLAG_ERROR_WARNING 0x02
-#define SC_STATUS_FLAG_ERROR_PASSIVE 0x04
-#define SC_STATUS_FLAG_RX_FULL       0x08 // rx queue is full, can -> usb messages lost
-#define SC_STATUS_FLAG_TX_FULL       0x10 // tx queue is full, usb -> can messages lost
-#define SC_STATUS_FLAG_TXR_DESYNC    0x20 // no USB buffer space to queue TXR message
+#define SC_FEATURE_FLAG_FDF             0x0001 ///< Device supports CAN-FD standard.
+#define SC_FEATURE_FLAG_EHD             0x0002 ///< Device supports disabling protocol exception handling. When disabled, a CAN error frame will be transmitted (during normal operation)
+#define SC_FEATURE_FLAG_TXR             0x0004 ///< Device supports CAN frame transmission receipts.
+#define SC_FEATURE_FLAG_FLT             0x0008 ///< Device supports rx message filters
+#define SC_FEATURE_FLAG_MON_MODE        0x0100 ///< Device supports monitoring mode.
+#define SC_FEATURE_FLAG_RES_MODE        0x0200 ///< Device supports restricted mode.
+#define SC_FEATURE_FLAG_EXT_LOOP_MODE   0x0400 ///< Device supports external loopback mode. Transmitted messges are treated as received messages.
+#define SC_FEATURE_FLAG_USER_OFFSET     0x1000 ///< Custom feature flags
 
 
+#define SC_CAN_FLAG_EXT         0x01 ///< Extended (29 bit id) frame
+#define SC_CAN_FLAG_RTR         0x02 ///< Remote request frame
+#define SC_CAN_FLAG_FDF         0x04 ///< CAN-FD frame
+#define SC_CAN_FLAG_BRS         0x08 ///< CAN-FD bitrate switching (set zero to transmit at arbitration rate)
+#define SC_CAN_FLAG_ESI         0x10 ///< Set to 1 to transmit with active error state
+#define SC_CAN_FLAG_DRP         0x20 ///< CAN frame was dropped due to full tx fifo
 
-#define SC_MODE_FLAG_RX         0x00 // enable reception (rx)
-#define SC_MODE_FLAG_TX         0x01 // enable transmission (tx)
-#define SC_MODE_FLAG_FD         0x02 // enable CAN-FD
-#define SC_MODE_FLAG_BRS        0x04 // enable CAN-FD bitrate switching
-#define SC_MODE_FLAG_AUTO_RE    0x08 // enable automatic retransmission (tx)
-#define SC_MODE_FLAG_EH         0x10 // enable protocol exception handling (error frames)
+#define SC_CAN_STATUS_FLAG_BUS_OFF       0x01
+#define SC_CAN_STATUS_FLAG_ERROR_WARNING 0x02
+#define SC_CAN_STATUS_FLAG_ERROR_PASSIVE 0x04
+#define SC_CAN_STATUS_FLAG_RX_FULL       0x08 ///< rx queue is full, CAN -> USB messages were lost
+#define SC_CAN_STATUS_FLAG_TX_FULL       0x10 ///< tx queue is full, USB -> CAN messages were lost
+#define SC_CAN_STATUS_FLAG_TXR_DESYNC    0x20 ///< no USB buffer space to queue TXR message
 
-#define SC_OPTION_TXR           0x01 // if enabled, the device sends SC_MSG_CAN_TXR
+
+/**
+ * Modes set with SC_MSG_MODE
+ */
+#define SC_MODE_NORMAL          0x00 ///< Normal mode of operation
+#define SC_MODE_MONITORING      0x01 ///< Bus monitoring mode (ISO 11898-1, 10.12 Bus monitoring)
+#define SC_MODE_RESTRICTED      0x02 ///< Restricted mode
+#define SC_MODE_EXT_LOOPBACK    0x03 ///< External loopback mode
+#define SC_MODE_FLAG_FDF        0x80 ///< Enables CAN-FD frame format
+// #define SC_MODE_FLAG_BRS        0x80 ///< Enables transmitting CAN-FD frames with bitrate switching
+
+#define SC_MODE_MASK            0x7f ///< Mask of mode
 
 struct sc_msg_header {
     uint8_t id;
     uint8_t len;
 } SC_PACKED;
 
-// This is the only message that uses
-// non-device byte order.
+/**
+ * This is the only message that uses non-device byte order.
+ */
 struct sc_msg_hello {
     uint8_t id;
     uint8_t len;
     uint8_t proto_version;
     uint8_t byte_order;
-    uint16_t msg_buffer_size; // always in network byte order
+    uint16_t msg_buffer_size; ///< always in network byte order
     uint8_t unused[2];
 } SC_PACKED;
 
-struct sc_msg_config {
+
+struct sc_msg_req {
     uint8_t id;
     uint8_t len;
-    uint8_t channel;
-    uint8_t args[1];
+    uint8_t unused[2];
+} SC_PACKED;
+
+
+
+struct sc_chan_info {
+    uint8_t cmd_epp;    ///< Endpoint pair used for commands (e.g. 0x01)
+    uint8_t msg_epp;    ///< Endpoint pair used for CAN & status messges. Note: could be the same as cmd_epp.
+    uint8_t unused[2];
 } SC_PACKED;
 
 struct sc_msg_dev_info {
     uint8_t id;
-    uint8_t len;
-    uint8_t channels;
-    uint8_t features;
+    uint8_t len;                ///< must be a multiple of 4
+    uint16_t features;
     uint32_t can_clk_hz;
     uint16_t nmbt_brp_max;
     uint16_t nmbt_tq_max;
-    uint16_t nmbt_tseg1_max; // keep here for alignment
+    uint16_t nmbt_tseg1_max;    // keep here for alignment
     uint8_t nmbt_tq_min;
     uint8_t nmbt_tseg1_min;
     uint8_t nmbt_brp_min;
@@ -136,8 +153,19 @@ struct sc_msg_dev_info {
     uint8_t dtbt_sjw_max;
     uint8_t dtbt_tseg2_min;
     uint8_t dtbt_tseg2_max;
-    uint8_t unused[1];
-    uint32_t serial_number[4];
+    uint8_t sn_len;
+    uint8_t sn_bytes[16];
+    uint8_t chan_count;
+    uint8_t unused[3];
+    struct sc_chan_info chan_info[0];
+} SC_PACKED;
+
+struct sc_msg_config {
+    uint8_t id;
+    uint8_t len;
+    uint8_t channel;    ///< Zero-based channel index
+    uint8_t unused;
+    uint32_t args[0];
 } SC_PACKED;
 
 struct sc_msg_bittiming {
@@ -161,13 +189,13 @@ struct sc_msg_can_status {
     uint8_t channel;
     uint8_t flags;
     uint32_t timestamp_us;
-    uint16_t rx_lost;       // messages can->usb lost since last time b/c of full rx fifo
-    uint16_t tx_dropped;    // messages usb->can dropped since last time b/c of full tx fifo
+    uint16_t rx_lost;       ///< messages CAN -> USB lost since last time due to full rx fifo
+    uint16_t tx_dropped;    ///< messages USB-> CAN dropped since last time due of full tx fifo
 } SC_PACKED;
 
 struct sc_msg_can_rx {
     uint8_t id;
-    uint8_t len;            // must be a multiple of 4
+    uint8_t len;            ///< must be a multiple of 4
     uint8_t channel;
     uint8_t dlc;
     uint32_t can_id;
@@ -178,7 +206,7 @@ struct sc_msg_can_rx {
 
 struct sc_msg_can_tx {
     uint8_t id;
-    uint8_t len;            // must be a multiple of 4
+    uint8_t len;            ///< must be a multiple of 4
     uint8_t channel;
     uint8_t dlc;
     uint32_t can_id;
@@ -199,14 +227,15 @@ struct sc_msg_can_txr {
 
 
 enum {
-    static_assert_sizeof_sc_msg_header_is_2 = sizeof(int[sizeof(struct sc_msg_header)  == 2 ? 1 : -1]),
-    static_assert_sc_msg_hello_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_hello) & 0x3) == 0 ? 1 : -1]),
-    static_assert_sc_msg_dev_info_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_dev_info) & 0x3) == 0 ? 1 : -1]),
-    static_assert_sc_msg_bittiming_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_bittiming) & 0x3) == 0 ? 1 : -1]),
-    static_assert_sc_msg_can_txr_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_txr) & 0x3) == 0 ? 1 : -1]),
-    static_assert_sc_msg_can_status_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_status) & 0x3) == 0 ? 1 : -1]),
-    static_assert_sc_msg_config_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_config) & 0x3) == 0 ? 1 : -1]),
-
+    sc_static_assert_sizeof_sc_msg_header_is_2 = sizeof(int[sizeof(struct sc_msg_header)  == 2 ? 1 : -1]),
+    sc_static_assert_sc_msg_req_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_req) & 0x3) == 0 ? 1 : -1]),
+    sc_static_assert_sc_msg_hello_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_hello) & 0x3) == 0 ? 1 : -1]),
+    sc_static_assert_sc_msg_dev_info_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_dev_info) & 0x3) == 0 ? 1 : -1]),
+    sc_static_assert_sc_msg_bittiming_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_bittiming) & 0x3) == 0 ? 1 : -1]),
+    sc_static_assert_sc_msg_can_txr_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_txr) & 0x3) == 0 ? 1 : -1]),
+    sc_static_assert_sc_msg_can_status_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_status) & 0x3) == 0 ? 1 : -1]),
+    sc_static_assert_sc_msg_config_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_config) & 0x3) == 0 ? 1 : -1]),
+    sc_static_assert_sc_chan_info_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_chan_info) & 0x3) == 0 ? 1 : -1]),
 };
 
 #ifdef __cplusplus

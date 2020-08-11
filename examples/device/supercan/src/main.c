@@ -130,8 +130,9 @@ struct can {
 	uint8_t dtbt_sjw;
 	uint8_t dtbt_tseg1;
 	uint8_t dtbt_tseg2;
-	uint8_t mode_flags;
-	uint8_t option_flags;
+	uint8_t mode;
+	// uint8_t option_flags;
+	uint16_t features;
 	uint16_t rx_lost;
 	uint16_t tx_dropped;
 	volatile uint8_t status_flags;
@@ -184,19 +185,44 @@ static inline void can_configure(struct can *c)
 
 	can->CCCR.bit.TXP = 1;  // Enable Transmit Pause
 	can->CCCR.bit.EFBI = 1; // Enable Edge Filtering
-	can->CCCR.bit.MON = (c->mode_flags & SC_MODE_FLAG_TX) != SC_MODE_FLAG_TX;
-	can->CCCR.bit.FDOE = (c->mode_flags & SC_MODE_FLAG_FD) == SC_MODE_FLAG_FD;
-	can->CCCR.bit.BRSE = (c->mode_flags & SC_MODE_FLAG_BRS) == SC_MODE_FLAG_BRS;
-	can->CCCR.bit.DAR = (c->mode_flags & SC_MODE_FLAG_AUTO_RE) != SC_MODE_FLAG_AUTO_RE;
-	can->CCCR.bit.PXHD = (c->mode_flags & SC_MODE_FLAG_EH) != SC_MODE_FLAG_EH;
+	can->CCCR.bit.DAR = 0; // Automatic retransmission enabled
 
-	LOG("tx=%u txr=%u rx=1 fd=%u brs=%u auto re=%u eh=%u\n",
-		(c->mode_flags & SC_MODE_FLAG_TX) == SC_MODE_FLAG_TX,
-		(c->option_flags & SC_OPTION_TXR) == SC_OPTION_TXR,
-		(c->mode_flags & SC_MODE_FLAG_FD) == SC_MODE_FLAG_FD,
-		(c->mode_flags & SC_MODE_FLAG_BRS) == SC_MODE_FLAG_BRS,
-		(c->mode_flags & SC_MODE_FLAG_AUTO_RE) == SC_MODE_FLAG_AUTO_RE,
-		(c->mode_flags & SC_MODE_FLAG_EH) == SC_MODE_FLAG_EH
+	uint8_t mode = SC_MODE_MASK & c->mode;
+	switch (mode) {
+	case SC_MODE_NORMAL:
+		can->CCCR.bit.MON = 0;
+		can->CCCR.bit.TEST = 0;
+		can->CCCR.bit.ASM = 0;
+		break;
+	case SC_MODE_MONITORING:
+		can->CCCR.bit.MON = 1;
+		can->CCCR.bit.TEST = 0;
+		can->CCCR.bit.ASM = 0;
+		break;
+	case SC_MODE_RESTRICTED:
+		can->CCCR.bit.MON = 0;
+		can->CCCR.bit.TEST = 0;
+		can->CCCR.bit.ASM = 1;
+		break;
+	case SC_MODE_EXT_LOOPBACK:
+		can->CCCR.bit.MON = 0;
+		can->CCCR.bit.TEST = 1;
+		can->CCCR.bit.ASM = 0;
+		can->TEST.bit.LBCK = 1;
+		break;
+	default:
+		LOG("mode %u not implemented\n", mode);
+		break;
+	}
+
+	can->CCCR.bit.FDOE = (c->mode & SC_MODE_FLAG_FDF) == SC_MODE_FLAG_FDF;
+	can->CCCR.bit.BRSE = 1;
+	can->CCCR.bit.PXHD = (c->features & SC_FEATURE_FLAG_EHD) == SC_FEATURE_FLAG_EHD;
+
+	LOG("MON=%u TEST=%u ASM=%u PXHD=%u FDOE=%u BRSE=%u txr=%u\n",
+		can->CCCR.bit.MON, can->CCCR.bit.TEST, can->CCCR.bit.ASM,
+		can->CCCR.bit.PXHD, can->CCCR.bit.FDOE, can->CCCR.bit.BRSE,
+		(c->features & SC_FEATURE_FLAG_TXR) == SC_FEATURE_FLAG_TXR
 	);
 
 	LOG("nominal brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
@@ -248,7 +274,7 @@ static inline void can_configure(struct can *c)
 		| CAN_IE_RF0LE  // message lost b/c fifo0 was full
 		;
 
-	if (c->option_flags & SC_OPTION_TXR) {
+	if ((c->features & SC_FEATURE_FLAG_TXR) == SC_FEATURE_FLAG_TXR) {
 		can->IE.reg |= CAN_IE_TEFNE; 	// new message in tx event fifo
 	}
 
@@ -300,22 +326,22 @@ static void can_int(uint8_t index)
 
 	if (ir.bit.EP) {
 		LOG("CAN%u error passive\n", index);
-		curr_status |= SC_STATUS_FLAG_ERROR_PASSIVE;
+		curr_status |= SC_CAN_STATUS_FLAG_ERROR_PASSIVE;
 	}
 
 	if (ir.bit.EW) {
 		LOG("CAN%u error warning\n", index);
-		curr_status |= SC_STATUS_FLAG_ERROR_WARNING;
+		curr_status |= SC_CAN_STATUS_FLAG_ERROR_WARNING;
 	}
 
 	if (ir.bit.BO) {
 		LOG("CAN%u bus off\n", index);
-		curr_status |= SC_STATUS_FLAG_BUS_OFF;
+		curr_status |= SC_CAN_STATUS_FLAG_BUS_OFF;
 	}
 
 	if (ir.bit.RF0L) {
 		LOG("CAN%u msg lost\n", index);
-		curr_status |= SC_STATUS_FLAG_RX_FULL;
+		curr_status |= SC_CAN_STATUS_FLAG_RX_FULL;
 	}
 
 	bool notify = can->status_flags != curr_status;
@@ -654,7 +680,7 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 	(void)dcd_edpt_xfer(usb.port, usb_cmd->pipe, usb_cmd->rx_buffers[usb_cmd->rx_bank], CMD_BUFFER_SIZE);
 
 	// process messages
-	while (in_ptr + SC_HEADER_LEN <= in_end) {
+	while (in_ptr + SC_MSG_HEADER_LEN <= in_end) {
 		struct sc_msg_header const *msg = (struct sc_msg_header const *)in_ptr;
 		if (in_ptr + msg->len > in_end) {
 			LOG("ch%u malformed msg\n", index);
@@ -696,10 +722,10 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 		} break;
 		case SC_MSG_DEVICE_INFO: {
 			LOG("ch%u SC_MSG_DEVICE_INFO\n", index);
-			uint8_t bytes = sizeof(struct sc_msg_dev_info);
+			uint8_t bytes = sizeof(struct sc_msg_dev_info) + sizeof(struct sc_chan_info);
+
 			uint8_t *out_ptr;
 			uint8_t *out_end;
-
 
 send_info:
 			out_ptr = usb_cmd->tx_buffers[usb_cmd->tx_bank] + usb_cmd->tx_offsets[usb_cmd->tx_bank];
@@ -709,13 +735,14 @@ send_info:
 				struct sc_msg_dev_info *rep = (struct sc_msg_dev_info *)out_ptr;
 				rep->id = SC_MSG_DEVICE_INFO;
 				rep->len = bytes;
-				rep->channels = 1;
-				rep->features = SC_FEATURE_FLAG_CAN_FD | SC_FEATURE_FLAG_AUTO_RE | SC_FEATURE_FLAG_EH;
+				rep->chan_count = 1;
+				rep->features = SC_FEATURE_FLAG_FDF | SC_FEATURE_FLAG_EHD
+					| SC_FEATURE_FLAG_TXR | SC_FEATURE_FLAG_MON_MODE
+					| SC_FEATURE_FLAG_RES_MODE | SC_FEATURE_FLAG_EXT_LOOP_MODE;
 				rep->can_clk_hz = CAN_CLK_HZ;
 				rep->nmbt_brp_min = M_CAN_NMBT_BRP_MIN;
 				rep->nmbt_brp_max = M_CAN_NMBT_BRP_MAX;
 				rep->nmbt_tq_min = M_CAN_NMBT_TQ_MIN;
-				rep->nmbt_tq_max = M_CAN_NMBT_TQ_MAX;
 				rep->nmbt_tq_max = M_CAN_NMBT_TQ_MAX;
 				rep->nmbt_sjw_min = M_CAN_NMBT_SJW_MIN;
 				rep->nmbt_sjw_max = M_CAN_NMBT_SJW_MAX;
@@ -733,8 +760,19 @@ send_info:
 				rep->dtbt_tseg1_max = M_CAN_DTBT_TSEG1_MAX;
 				rep->dtbt_tseg2_min = M_CAN_DTBT_TSEG2_MIN;
 				rep->dtbt_tseg2_max = M_CAN_DTBT_TSEG2_MAX;
-				same51_get_serial_number(rep->serial_number);
-
+				rep->sn_len = 16;
+				static_assert(sizeof(rep->sn_bytes) >= 16, "expect at least 16 of buffer for serial number");
+				uint32_t serial[4];
+				same51_get_serial_number(serial);
+				for (unsigned i = 0, j = 0; i < 4; ++i) {
+					uint32_t w = serial[i];
+					rep->sn_bytes[j++] = (w >> 24) & 0xff;
+					rep->sn_bytes[j++] = (w >> 16) & 0xff;
+					rep->sn_bytes[j++] = (w >> 8) & 0xff;
+					rep->sn_bytes[j++] = (w >> 0) & 0xff;
+				}
+				rep->chan_info[0].cmd_epp = SC_M1_EP_CMD0_BULK_OUT;
+				rep->chan_info[0].msg_epp = SC_M1_EP_MSG1_BULK_OUT;
 			} else {
 				if (sc_cmd_bulk_in_ep_ready(index)) {
 					sc_cmd_bulk_in_submit(index);
@@ -780,13 +818,13 @@ send_info:
 			can->dtbt_tseg2 = tu_max8(M_CAN_DTBT_TSEG2_MIN, tu_min8(dtbt_tseg2, M_CAN_DTBT_TSEG2_MAX));
 
 			// set nominal bitrate for timestamp calculation
-			can->nm_bitrate_bps = CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (can->nmbt_sjw + can->nmbt_tseg1 + can->nmbt_tseg2));
+			can->nm_bitrate_bps = CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (can->nmbt_tseg1 + can->nmbt_tseg2));
 
 		} break;
-		case SC_MSG_RESET: {
-			LOG("ch%u SC_MSG_RESET\n", index);
-			// NVIC_SystemReset();
-		} break;
+		// case SC_MSG_RESET: {
+		// 	LOG("ch%u SC_MSG_RESET\n", index);
+		// 	// NVIC_SystemReset();
+		// } break;
 		case SC_MSG_MODE: {
 			LOG("ch%u SC_MSG_MODE\n", index);
 			struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
@@ -800,12 +838,11 @@ send_info:
 			// 	continue;
 			// }
 
-			can->mode_flags = tmsg->args[0];
+			can->mode = tmsg->args[0];
 		} break;
-		case SC_MSG_OPTIONS: {
-			LOG("ch%u SC_MSG_OPTIONS\n", index);
+		case SC_MSG_FEATURES: {
+			LOG("ch%u SC_MSG_FEATURES\n", index);
 			struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
-
 			if (unlikely(msg->len < sizeof(*tmsg))) {
 				LOG("ch%u ERROR: msg too short\n", index);
 				continue;
@@ -816,8 +853,24 @@ send_info:
 			// 	continue;
 			// }
 
-			can->option_flags = tmsg->args[0];
+			can->features = tmsg->args[0];
 		} break;
+		// case SC_MSG_OPTIONS: {
+		// 	LOG("ch%u SC_MSG_OPTIONS\n", index);
+		// 	struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
+
+		// 	if (unlikely(msg->len < sizeof(*tmsg))) {
+		// 		LOG("ch%u ERROR: msg too short\n", index);
+		// 		continue;
+		// 	}
+
+		// 	// if (unlikely(tmsg->channel != index)) {
+		// 	// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
+		// 	// 	continue;
+		// 	// }
+
+		// 	can->option_flags = tmsg->args[0];
+		// } break;
 		case SC_MSG_BUS: {
 			LOG("ch%u SC_MSG_BUS\n", index);
 			struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
@@ -880,7 +933,7 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 
 	// process messages
-	while (in_ptr + SC_HEADER_LEN <= in_end) {
+	while (in_ptr + SC_MSG_HEADER_LEN <= in_end) {
 		struct sc_msg_header const *msg = (struct sc_msg_header const *)in_ptr;
 		if (in_ptr + msg->len > in_end) {
 			LOG("ch%u malformed msg\n", index);
@@ -921,7 +974,7 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 			if (can->m_can->TXFQS.bit.TFQF) {
 				++can->tx_dropped;
-				if (can->option_flags & SC_OPTION_TXR) {
+				if (can->features & SC_FEATURE_FLAG_TXR) {
 					uint8_t *out_ptr;
 					uint8_t *out_end;
 send_txr:
@@ -1539,10 +1592,10 @@ start:
 				msg->tx_dropped = can->tx_dropped;
 				msg->flags = can->status_flags;
 				if (can->tx_dropped) {
-					msg->flags |= SC_STATUS_FLAG_TX_FULL;
+					msg->flags |= SC_CAN_STATUS_FLAG_TX_FULL;
 				}
 				if (can->desync) {
-					msg->flags |= SC_STATUS_FLAG_TXR_DESYNC;
+					msg->flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;
 				}
 				can->rx_lost = 0;
 				can->tx_dropped = 0;
@@ -1615,7 +1668,7 @@ start:
 			if (m_can_tx_event_fifo_avail(can->m_can)) {
 				done = false;
 				uint8_t get_index = can->m_can->TXEFS.bit.EFGI;
-				if (can->option_flags & SC_OPTION_TXR) {
+				if (can->features & SC_FEATURE_FLAG_TXR) {
 					uint8_t bytes = sizeof(struct sc_msg_can_txr);
 					CAN_TXEFE_0_Type t0 = can->tx_event_fifo[get_index].T0;
 					CAN_TXEFE_1_Type t1 = can->tx_event_fifo[get_index].T1;
