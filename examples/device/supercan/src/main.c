@@ -388,7 +388,7 @@ static inline void can_set_state1(Can *can, IRQn_Type interrupt_id, bool enabled
 	}
 }
 
-static void can_engage(void)
+static inline void can_engage(void)
 {
 	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
 		struct can *can = &cans.can[i];
@@ -402,6 +402,31 @@ static void can_disengage(void)
 		struct can *can = &cans.can[i];
 		// can->desync = false;
 		can_set_state1(can->m_can, can->interrupt_id, false);
+	}
+}
+
+static void can_reset(void)
+{
+	can_disengage();
+
+	// disable CAN units, reset configuration & status
+	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
+		struct can *can = &cans.can[i];
+		can->enabled = false;
+		can->features = 0;
+		can->status_flags = 0;
+		can->rx_lost = 0;
+		can->tx_dropped = 0;
+		can->desync = false;
+		can->mode = 0;
+		can->nm_bitrate_bps = 0;
+		can->nmbt_brp = 0;
+		can->nmbt_sjw = 0;
+		can->nmbt_tseg1 = 0;
+		can->dtbt_brp = 0;
+		can->dtbt_sjw = 0;
+		can->dtbt_tseg1 = 0;
+		can->dtbt_tseg2 = 0;
 	}
 }
 
@@ -701,6 +726,10 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 		case SC_MSG_HELLO_DEVICE: {
 			LOG("ch%u SC_MSG_HELLO_DEVICE\n", index);
+
+			// reset
+			can_reset();
+
 			// reset tx buffer
 			uint8_t len = sizeof(struct sc_msg_hello);
 			usb_cmd->tx_offsets[usb_cmd->tx_bank] = len;
@@ -855,22 +884,6 @@ send_info:
 
 			can->features = tmsg->args[0];
 		} break;
-		// case SC_MSG_OPTIONS: {
-		// 	LOG("ch%u SC_MSG_OPTIONS\n", index);
-		// 	struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
-
-		// 	if (unlikely(msg->len < sizeof(*tmsg))) {
-		// 		LOG("ch%u ERROR: msg too short\n", index);
-		// 		continue;
-		// 	}
-
-		// 	// if (unlikely(tmsg->channel != index)) {
-		// 	// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
-		// 	// 	continue;
-		// 	// }
-
-		// 	can->option_flags = tmsg->args[0];
-		// } break;
 		case SC_MSG_BUS: {
 			LOG("ch%u SC_MSG_BUS\n", index);
 			struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
@@ -1164,13 +1177,7 @@ void tud_umount_cb(void)
 	led_blink(0, 1000);
 	usb.mounted = false;
 
-	can_disengage();
-
-	// disable cans until explicitly enabled
-	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
-		struct can *can = &cans.can[i];
-		can->enabled = false;
-	}
+	can_reset();
 }
 
 // Invoked when usb bus is suspended
@@ -1183,7 +1190,7 @@ void tud_suspend_cb(bool remote_wakeup_en)
 	usb.mounted = false;
 	led_blink(0, 500);
 
-	can_disengage();
+	can_reset();
 }
 
 // Invoked when usb bus is resumed
@@ -1193,7 +1200,7 @@ void tud_resume_cb(void)
 	usb.mounted = true;
 	led_blink(0, 250);
 
-	can_engage();
+	// can_engage();
 }
 
 
