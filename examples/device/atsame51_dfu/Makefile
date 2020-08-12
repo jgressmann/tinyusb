@@ -1,7 +1,6 @@
 include ../../../tools/top.mk
 include ../../make.mk
 
-CFLAGS += -Wno-error
 
 INC += \
 	inc \

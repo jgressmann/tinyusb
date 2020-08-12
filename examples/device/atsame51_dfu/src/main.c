@@ -178,7 +178,7 @@ static inline bool nvm_erase_block(void *addr)
 	while (!NVMCTRL->STATUS.bit.READY);
 
 	// clear done flag
-	NVMCTRL->INTFLAG.bit.DONE = 1;
+	NVMCTRL->INTFLAG.reg = NVMCTRL_INTFLAG_DONE;
 
 	// LOG("INTFLAG %#08lx\n", (uint32_t)NVMCTRL->INTFLAG.reg);
 
@@ -226,7 +226,7 @@ static inline bool nvm_write_main_page(void *addr, void const *ptr)
 	while (!NVMCTRL->STATUS.bit.READY);
 
 	// clear done flag
-	NVMCTRL->INTFLAG.bit.DONE = 1;
+	NVMCTRL->INTFLAG.reg = NVMCTRL_INTFLAG_DONE;
 
 	// LOG("INTFLAG %#08lx\n", (uint32_t)NVMCTRL->INTFLAG.reg);
 
@@ -241,16 +241,17 @@ static inline bool nvm_write_main_page(void *addr, void const *ptr)
 static void start_app_prepare(void);
 static void start_app_prepare(void)
 {
+#if 0
 	// Make sure, the CPU is in privileged mode.
 
-	//   if( CONTROL_nPRIV_Msk & __get_CONTROL( ) )
-	//   {  /* not in privileged mode */
-	//	 EnablePrivilegedMode( ) ;
-	//   }
+	if( CONTROL_nPRIV_Msk & __get_CONTROL( ) ) {  /* not in privileged mode */
+		 EnablePrivilegedMode( ) ;
+	}
 
 	// The function EnablePrivilegedMode( ) triggers a SVC, and enters handler mode (which can only run in privileged mode). The nPRIV bit in the CONTROL register is cleared which can only be done in privileged mode. See ARM: How to write an SVC function about implementing SVC functions.
-	// Disable all enabled interrupts in NVIC.
+#endif
 
+	// Disable all enabled interrupts in NVIC.
 	for (size_t i = 0; i < TU_ARRAY_SIZE(NVIC->ICER); ++i) {
 		NVIC->ICER[i] = ~0;
 	}
@@ -265,6 +266,7 @@ static void start_app_prepare(void)
 	SysTick->CTRL = 0;
 	SCB->ICSR |= SCB_ICSR_PENDSTCLR_Msk;
 
+#if 0
 	// Disable individual fault handlers if the bootloader used them.
 
 	SCB->SHCSR &= ~( SCB_SHCSR_USGFAULTENA_Msk | \
@@ -278,6 +280,7 @@ static void start_app_prepare(void)
 		__set_MSP( __get_PSP( ) ) ;
 		__set_CONTROL( __get_CONTROL( ) & ~CONTROL_SPSEL_Msk ) ;
 	}
+#endif
 }
 
 

@@ -42,7 +42,7 @@ static const tusb_desc_device_t device = {
 	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
 	.idVendor           = 0x4243,
-	.idProduct          = 0x0001,
+	.idProduct          = 0xffff,
 	.bcdDevice          = HWREV << 8,
 
 	.iManufacturer      = 0x01,
