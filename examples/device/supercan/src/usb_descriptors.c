@@ -240,7 +240,7 @@ static char const* string_desc_arr [] =
 {
 	(const char[]) { 0x09, 0x04 },   // 0: is supported language is English (0x0409)
 	"2guys",                         // 1: Manufacturer
-	"D5035-01 SuperCAN",             // 2: Product
+	BOARD_NAME " " SC_NAME,          // 2: Product
 	"",                        		 // 3: Serial
 	SC_NAME " (ch0)",
 #if HWREV > 1
