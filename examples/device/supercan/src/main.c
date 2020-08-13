@@ -131,7 +131,6 @@ struct can {
 	uint8_t dtbt_tseg1;
 	uint8_t dtbt_tseg2;
 	uint8_t mode;
-	// uint8_t option_flags;
 	uint16_t features;
 	uint16_t rx_lost;
 	uint16_t tx_dropped;
@@ -177,7 +176,7 @@ static inline void can_init_clock(void) // controller and hardware specific setu
 	GCLK->PCHCTRL[CAN1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0 -> 120MHz
 }
 
-static inline void can_configure(struct can *c)
+static void can_configure(struct can *c)
 {
 	Can *can = c->m_can;
 
@@ -282,9 +281,7 @@ static inline void can_configure(struct can *c)
 }
 
 
-
-
-static inline void can_init_module(void)
+static void can_init_module(void)
 {
 	memset(&cans, 0, sizeof(cans));
 
@@ -589,15 +586,19 @@ static inline void led_burst(uint8_t index, uint16_t duration_ms)
 	gpio_set_pin_level(leds[index].pin, 1);
 }
 
+#define MAJOR 0
+#define MINOR 2
+#define PATCH 0
+
 
 #if SUPERDFU_APP
 struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_HDR_SECTION_NAME)));
 static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SECTION_NAME))) = {
 	.hdr_magic = DFU_APP_HDR_MAGIC_STRING,
 	.hdr_version = DFU_APP_HDR_VERSION,
-	.app_version_major = 0,
-	.app_version_minor = 1,
-	.app_version_patch = 1,
+	.app_version_major = MAJOR,
+	.app_version_minor = MINOR,
+	.app_version_patch = PATCH,
 	.app_watchdog_timeout_s = 1,
 	.app_name = SC_NAME,
 };
@@ -742,6 +743,7 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 #else
 			rep->byte_order = SC_BYTE_ORDER_LE;
 #endif
+			rep->cmd_buffer_size = cpu_to_be16(CMD_BUFFER_SIZE);
 			rep->msg_buffer_size = cpu_to_be16(MSG_BUFFER_SIZE);
 
 			// don't process any more messages
@@ -756,13 +758,78 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 			uint8_t *out_ptr;
 			uint8_t *out_end;
 
-send_info:
+send_dev_info:
 			out_ptr = usb_cmd->tx_buffers[usb_cmd->tx_bank] + usb_cmd->tx_offsets[usb_cmd->tx_bank];
 			out_end = usb_cmd->tx_buffers[usb_cmd->tx_bank] + CMD_BUFFER_SIZE;
 			if (out_end - out_ptr >= bytes) {
 				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
 				struct sc_msg_dev_info *rep = (struct sc_msg_dev_info *)out_ptr;
 				rep->id = SC_MSG_DEVICE_INFO;
+				rep->len = bytes;
+				// rep->chan_count = 1;
+				// rep->features = SC_FEATURE_FLAG_FDF | SC_FEATURE_FLAG_EHD
+				// 	| SC_FEATURE_FLAG_TXR | SC_FEATURE_FLAG_MON_MODE
+				// 	| SC_FEATURE_FLAG_RES_MODE | SC_FEATURE_FLAG_EXT_LOOP_MODE;
+				// rep->can_clk_hz = CAN_CLK_HZ;
+				// rep->nmbt_brp_min = M_CAN_NMBT_BRP_MIN;
+				// rep->nmbt_brp_max = M_CAN_NMBT_BRP_MAX;
+				// rep->nmbt_tq_min = M_CAN_NMBT_TQ_MIN;
+				// rep->nmbt_tq_max = M_CAN_NMBT_TQ_MAX;
+				// rep->nmbt_sjw_min = M_CAN_NMBT_SJW_MIN;
+				// rep->nmbt_sjw_max = M_CAN_NMBT_SJW_MAX;
+				// rep->nmbt_tseg1_min = M_CAN_NMBT_TSEG1_MIN;
+				// rep->nmbt_tseg1_max = M_CAN_NMBT_TSEG1_MAX;
+				// rep->nmbt_tseg2_min = M_CAN_NMBT_TSEG2_MIN;
+				// rep->nmbt_tseg2_max = M_CAN_NMBT_TSEG2_MAX;
+				// rep->dtbt_brp_min = M_CAN_DTBT_BRP_MIN;
+				// rep->dtbt_brp_max = M_CAN_DTBT_BRP_MAX;
+				// rep->dtbt_tq_min = M_CAN_DTBT_TQ_MIN;
+				// rep->dtbt_tq_max = M_CAN_DTBT_TQ_MAX;
+				// rep->dtbt_sjw_min = M_CAN_DTBT_SJW_MIN;
+				// rep->dtbt_sjw_max = M_CAN_DTBT_SJW_MAX;
+				// rep->dtbt_tseg1_min = M_CAN_DTBT_TSEG1_MIN;
+				// rep->dtbt_tseg1_max = M_CAN_DTBT_TSEG1_MAX;
+				// rep->dtbt_tseg2_min = M_CAN_DTBT_TSEG2_MIN;
+				// rep->dtbt_tseg2_max = M_CAN_DTBT_TSEG2_MAX;
+				rep->fw_ver_major = MAJOR;
+				rep->fw_ver_minor = MINOR;
+				rep->fw_ver_patch = PATCH;
+				rep->name_len = tu_min8(sizeof(BOARD_NAME " " SC_NAME)-1, sizeof(rep->name_bytes));
+				memcpy(rep->name_bytes, BOARD_NAME " " SC_NAME, rep->name_len);
+				rep->sn_len = 16;
+				static_assert(sizeof(rep->sn_bytes) >= 16, "expect at least 16 of buffer for serial number");
+				uint32_t serial[4];
+				same51_get_serial_number(serial);
+				for (unsigned i = 0, j = 0; i < 4; ++i) {
+					uint32_t w = serial[i];
+					rep->sn_bytes[j++] = (w >> 24) & 0xff;
+					rep->sn_bytes[j++] = (w >> 16) & 0xff;
+					rep->sn_bytes[j++] = (w >> 8) & 0xff;
+					rep->sn_bytes[j++] = (w >> 0) & 0xff;
+				}
+			} else {
+				if (sc_cmd_bulk_in_ep_ready(index)) {
+					sc_cmd_bulk_in_submit(index);
+					goto send_dev_info;
+				} else {
+					// ouch
+				}
+			}
+		} break;
+		case SC_MSG_CAN_INFO: {
+			LOG("ch%u SC_MSG_CAN_INFO\n", index);
+			uint8_t bytes = sizeof(struct sc_msg_can_info) + sizeof(struct sc_chan_info);
+
+			uint8_t *out_ptr;
+			uint8_t *out_end;
+
+send_can_info:
+			out_ptr = usb_cmd->tx_buffers[usb_cmd->tx_bank] + usb_cmd->tx_offsets[usb_cmd->tx_bank];
+			out_end = usb_cmd->tx_buffers[usb_cmd->tx_bank] + CMD_BUFFER_SIZE;
+			if (out_end - out_ptr >= bytes) {
+				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
+				struct sc_msg_can_info *rep = (struct sc_msg_can_info *)out_ptr;
+				rep->id = SC_MSG_CAN_INFO;
 				rep->len = bytes;
 				rep->chan_count = 1;
 				rep->features = SC_FEATURE_FLAG_FDF | SC_FEATURE_FLAG_EHD
@@ -789,23 +856,12 @@ send_info:
 				rep->dtbt_tseg1_max = M_CAN_DTBT_TSEG1_MAX;
 				rep->dtbt_tseg2_min = M_CAN_DTBT_TSEG2_MIN;
 				rep->dtbt_tseg2_max = M_CAN_DTBT_TSEG2_MAX;
-				rep->sn_len = 16;
-				static_assert(sizeof(rep->sn_bytes) >= 16, "expect at least 16 of buffer for serial number");
-				uint32_t serial[4];
-				same51_get_serial_number(serial);
-				for (unsigned i = 0, j = 0; i < 4; ++i) {
-					uint32_t w = serial[i];
-					rep->sn_bytes[j++] = (w >> 24) & 0xff;
-					rep->sn_bytes[j++] = (w >> 16) & 0xff;
-					rep->sn_bytes[j++] = (w >> 8) & 0xff;
-					rep->sn_bytes[j++] = (w >> 0) & 0xff;
-				}
 				rep->chan_info[0].cmd_epp = SC_M1_EP_CMD0_BULK_OUT;
 				rep->chan_info[0].msg_epp = SC_M1_EP_MSG1_BULK_OUT;
 			} else {
 				if (sc_cmd_bulk_in_ep_ready(index)) {
 					sc_cmd_bulk_in_submit(index);
-					goto send_info;
+					goto send_can_info;
 				} else {
 					// ouch
 				}

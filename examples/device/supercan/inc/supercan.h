@@ -39,6 +39,8 @@ extern "C" {
 #define SC_MSG_EOF              0x00    ///< Indicates the end of messages in the buffer (if short).
 #define SC_MSG_HELLO_DEVICE     0x01    ///< Host -> Device. This is the first message sent to the device, device responds with SC_MSG_HELLO_HOST.
 #define SC_MSG_HELLO_HOST       0x02    ///< Device -> Host. See SC_MSG_HELLO_DEVICE.
+#define SC_MSG_DEVICE_INFO      0x03    ///< Host <-> Device. Query / Receive device information.
+#define SC_MSG_CAN_INFO         0x04    ///< Host <-> Device. Query / Receive CAN information.
 
 #define SC_MSG_BITTIMING        0x10    ///< Host -> Device. Configures bittimings.
 #define SC_MSG_MODE             0x11    ///< Host -> Device. Sets the device mode.
@@ -46,8 +48,7 @@ extern "C" {
 #define SC_MSG_BUS              0x13    ///< Host -> Device. Go on / off bus.
 
 // #define SC_MSG_STATUS           0x15    ///< Host <-> Device. Query / Receive device status.
-#define SC_MSG_DEVICE_INFO      0x16    ///< Host <-> Device. Query / Receive device information.
-// #define SC_MSG_RESET            0x17
+
 
 #define SC_MSG_CAN_STATUS       0x20    ///< Device -> Host. Status of the CAN bus.
 #define SC_MSG_CAN_RX           0x21    ///< Device -> Host. Received CAN frame.
@@ -109,11 +110,13 @@ struct sc_msg_hello {
     uint8_t len;
     uint8_t proto_version;
     uint8_t byte_order;
+    uint16_t cmd_buffer_size; ///< always in network byte order
     uint16_t msg_buffer_size; ///< always in network byte order
-    uint8_t unused[2];
 } SC_PACKED;
 
-
+/**
+ * Request from host to device.
+ */
 struct sc_msg_req {
     uint8_t id;
     uint8_t len;
@@ -131,11 +134,24 @@ struct sc_chan_info {
 struct sc_msg_dev_info {
     uint8_t id;
     uint8_t len;                ///< must be a multiple of 4
+    uint8_t sn_len;
+    uint8_t sn_bytes[16];
+    uint8_t fw_ver_major;
+    uint8_t fw_ver_minor;
+    uint8_t fw_ver_patch;
+    uint8_t name_len;
+    uint8_t name_bytes[32];
+    uint8_t unused[1];
+} SC_PACKED;
+
+struct sc_msg_can_info {
+    uint8_t id;
+    uint8_t len;
     uint16_t features;
     uint32_t can_clk_hz;
     uint16_t nmbt_brp_max;
     uint16_t nmbt_tq_max;
-    uint16_t nmbt_tseg1_max;    // keep here for alignment
+    uint16_t nmbt_tseg1_max;
     uint8_t nmbt_tq_min;
     uint8_t nmbt_tseg1_min;
     uint8_t nmbt_brp_min;
@@ -153,10 +169,7 @@ struct sc_msg_dev_info {
     uint8_t dtbt_sjw_max;
     uint8_t dtbt_tseg2_min;
     uint8_t dtbt_tseg2_max;
-    uint8_t sn_len;
-    uint8_t sn_bytes[16];
     uint8_t chan_count;
-    uint8_t unused[3];
     struct sc_chan_info chan_info[0];
 } SC_PACKED;
 
@@ -236,6 +249,7 @@ enum {
     sc_static_assert_sc_msg_can_status_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_status) & 0x3) == 0 ? 1 : -1]),
     sc_static_assert_sc_msg_config_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_config) & 0x3) == 0 ? 1 : -1]),
     sc_static_assert_sc_chan_info_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_chan_info) & 0x3) == 0 ? 1 : -1]),
+    sc_static_assert_sc_msg_can_info_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_info) & 0x3) == 0 ? 1 : -1]),
 };
 
 #ifdef __cplusplus
