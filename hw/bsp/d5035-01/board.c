@@ -68,7 +68,11 @@ void USB_3_Handler (void)
 //--------------------------------------------------------------------+
 #define LED_PIN      PIN_PA02
 
-
+#if HWREV < 3
+# define BOARD_SERCOM SERCOM5
+#else
+# define BOARD_SERCOM SERCOM0
+#endif
 
 static inline void init_clock(void)
 {
@@ -147,17 +151,18 @@ static inline void init_clock(void)
 
 static inline void uart_init(void)
 {
+#if HWREV < 3
   /* configure SERCOM5 on PB02 */
   PORT->Group[1].WRCONFIG.reg =
     PORT_WRCONFIG_WRPINCFG |
     PORT_WRCONFIG_WRPMUX |
-    PORT_WRCONFIG_PMUX(3) |    /* SERCOM5 */
+    PORT_WRCONFIG_PMUX(3) |    /* function D */
     PORT_WRCONFIG_DRVSTR |
     PORT_WRCONFIG_PINMASK(0x0004) | /* PB02 */
     PORT_WRCONFIG_PMUXEN;
 
   MCLK->APBDMASK.bit.SERCOM5_ = 1;
-  GCLK->PCHCTRL[35].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK2 -> 60MHz */
+  GCLK->PCHCTRL[SERCOM5_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK2 -> 60MHz */
 
   SERCOM5->USART.CTRLA.reg = 0x00; /* disable SERCOM -> enable config */
   while(SERCOM5->USART.SYNCBUSY.bit.ENABLE);
@@ -179,21 +184,55 @@ static inline void uart_init(void)
 //  SERCOM5->USART.INTENSET.reg = SERCOM_USART_INTENSET_TXC;
   SERCOM5->SPI.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
   while(SERCOM5->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
+#else
+/* configure SERCOM0 on PA08 */
+  PORT->Group[0].WRCONFIG.reg =
+    PORT_WRCONFIG_WRPINCFG |
+    PORT_WRCONFIG_WRPMUX |
+    PORT_WRCONFIG_PMUX(2) |    /* function C */
+    PORT_WRCONFIG_DRVSTR |
+    PORT_WRCONFIG_PINMASK(0x0100) | /* PA08 */
+    PORT_WRCONFIG_PMUXEN;
+
+  MCLK->APBAMASK.bit.SERCOM0_ = 1;
+  GCLK->PCHCTRL[SERCOM0_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK2 -> 60MHz */
+
+  SERCOM0->USART.CTRLA.reg = 0x00; /* disable SERCOM -> enable config */
+  while(SERCOM0->USART.SYNCBUSY.bit.ENABLE);
+
+  SERCOM0->USART.CTRLA.reg  =  /* CMODE = 0 -> async, SAMPA = 0, FORM = 0 -> USART frame, SMPR = 0 -> arithmetic baud rate */
+    SERCOM_USART_CTRLA_SAMPR(1) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
+//    SERCOM_USART_CTRLA_FORM(0) | /* 0 = USART Frame, 2 = LIN Master */
+    SERCOM_USART_CTRLA_DORD | /* LSB first */
+    SERCOM_USART_CTRLA_MODE(1) | /* 0 = Asynchronous, 1 = USART with internal clock */
+    SERCOM_USART_CTRLA_RXPO(1) | /* SERCOM PAD[1] is used for data reception */
+    SERCOM_USART_CTRLA_TXPO(0); /* SERCOM PAD[0] is used for data transmission */
+
+  SERCOM0->USART.CTRLB.reg = /* RXEM = 0 -> receiver disabled, LINCMD = 0 -> normal USART transmission, SFDE = 0 -> start-of-frame detection disabled, SBMODE = 0 -> one stop bit, CHSIZE = 0 -> 8 bits */
+    SERCOM_USART_CTRLB_TXEN; /* transmitter enabled */
+  SERCOM0->USART.CTRLC.reg = 0x00;
+//  SERCOM0->USART.BAUD.reg = 14; /* 60 / (2 * (14 + 1)) -> @60Mhz: 14 = 2MHz */
+  SERCOM0->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(1) | SERCOM_USART_BAUD_FRAC_BAUD(16); /* 232558 @ 60MHz -> 230400 */
+
+//  SERCOM0->USART.INTENSET.reg = SERCOM_USART_INTENSET_TXC;
+  SERCOM0->SPI.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
+  while(SERCOM0->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
+#endif
 }
 
 static inline void uart_send_buffer(uint8_t const *text, size_t len)
 {
   for (size_t i = 0; i < len; ++i) {
-    SERCOM5->USART.DATA.reg = text[i];
-    while((SERCOM5->USART.INTFLAG.reg & SERCOM_SPI_INTFLAG_TXC) == 0);
+    BOARD_SERCOM->USART.DATA.reg = text[i];
+    while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_SPI_INTFLAG_TXC) == 0);
   }
 }
 
 static inline void uart_send_str(const char* text)
 {
   while (*text) {
-    SERCOM5->USART.DATA.reg = *text++;
-    while((SERCOM5->USART.INTFLAG.reg & SERCOM_SPI_INTFLAG_TXC) == 0);
+    BOARD_SERCOM->USART.DATA.reg = *text++;
+    while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_SPI_INTFLAG_TXC) == 0);
   }
 }
 
