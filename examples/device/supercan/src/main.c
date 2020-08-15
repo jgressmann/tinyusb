@@ -578,6 +578,7 @@ static inline void led_set(uint8_t index, bool on)
 {
 	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
 	leds[index].time_ms = 0;
+	leds[index].blink = 0;
 	gpio_set_pin_level(leds[index].pin, on);
 }
 
@@ -585,6 +586,7 @@ static inline void led_toggle(uint8_t index)
 {
 	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
 	leds[index].time_ms = 0;
+	leds[index].blink = 0;
 	gpio_toggle_pin_level(leds[index].pin);
 }
 
@@ -901,6 +903,8 @@ send_can_info:
 				rep->dtbt_tseg1_max = M_CAN_DTBT_TSEG1_MAX;
 				rep->dtbt_tseg2_min = M_CAN_DTBT_TSEG2_MIN;
 				rep->dtbt_tseg2_max = M_CAN_DTBT_TSEG2_MAX;
+				rep->tx_fifo_size = CAN_TX_FIFO_SIZE;
+				rep->rx_fifo_size = CAN_RX_FIFO_SIZE;
 				rep->chan_info[0].cmd_epp = SC_M1_EP_CMD0_BULK_OUT;
 				rep->chan_info[0].msg_epp = SC_M1_EP_MSG1_BULK_OUT;
 			} else {
@@ -950,6 +954,29 @@ send_can_info:
 			// set nominal bitrate for timestamp calculation
 			can->nm_bitrate_bps = CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (can->nmbt_tseg1 + can->nmbt_tseg2));
 
+			uint8_t bytes = sizeof(struct sc_msg_error);
+
+			uint8_t *out_ptr;
+			uint8_t *out_end;
+
+send_bt_response:
+			out_ptr = usb_cmd->tx_buffers[usb_cmd->tx_bank] + usb_cmd->tx_offsets[usb_cmd->tx_bank];
+			out_end = usb_cmd->tx_buffers[usb_cmd->tx_bank] + CMD_BUFFER_SIZE;
+			if (out_end - out_ptr >= bytes) {
+				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
+				struct sc_msg_error *rep = (struct sc_msg_error *)out_ptr;
+				rep->id = SC_MSG_ERROR;
+				rep->len = sizeof(*rep);
+				rep->channel = 0;
+				rep->error = SC_ERROR_NONE;
+			} else {
+				if (sc_cmd_bulk_in_ep_ready(index)) {
+					sc_cmd_bulk_in_submit(index);
+					goto send_bt_response;
+				} else {
+					// ouch
+				}
+			}
 		} break;
 		// case SC_MSG_RESET: {
 		// 	LOG("ch%u SC_MSG_RESET\n", index);
@@ -969,6 +996,29 @@ send_can_info:
 			// }
 
 			can->mode = tmsg->args[0];
+
+			uint8_t bytes = sizeof(struct sc_msg_error);
+			uint8_t *out_ptr;
+			uint8_t *out_end;
+
+send_mode_response:
+			out_ptr = usb_cmd->tx_buffers[usb_cmd->tx_bank] + usb_cmd->tx_offsets[usb_cmd->tx_bank];
+			out_end = usb_cmd->tx_buffers[usb_cmd->tx_bank] + CMD_BUFFER_SIZE;
+			if (out_end - out_ptr >= bytes) {
+				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
+				struct sc_msg_error *rep = (struct sc_msg_error *)out_ptr;
+				rep->id = SC_MSG_ERROR;
+				rep->len = sizeof(*rep);
+				rep->channel = 0;
+				rep->error = SC_ERROR_NONE;
+			} else {
+				if (sc_cmd_bulk_in_ep_ready(index)) {
+					sc_cmd_bulk_in_submit(index);
+					goto send_mode_response;
+				} else {
+					// ouch
+				}
+			}
 		} break;
 		case SC_MSG_FEATURES: {
 			LOG("ch%u SC_MSG_FEATURES\n", index);
@@ -984,6 +1034,29 @@ send_can_info:
 			// }
 
 			can->features = tmsg->args[0];
+
+			uint8_t bytes = sizeof(struct sc_msg_error);
+			uint8_t *out_ptr;
+			uint8_t *out_end;
+
+send_features_response:
+			out_ptr = usb_cmd->tx_buffers[usb_cmd->tx_bank] + usb_cmd->tx_offsets[usb_cmd->tx_bank];
+			out_end = usb_cmd->tx_buffers[usb_cmd->tx_bank] + CMD_BUFFER_SIZE;
+			if (out_end - out_ptr >= bytes) {
+				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
+				struct sc_msg_error *rep = (struct sc_msg_error *)out_ptr;
+				rep->id = SC_MSG_ERROR;
+				rep->len = sizeof(*rep);
+				rep->channel = 0;
+				rep->error = SC_ERROR_NONE;
+			} else {
+				if (sc_cmd_bulk_in_ep_ready(index)) {
+					sc_cmd_bulk_in_submit(index);
+					goto send_features_response;
+				} else {
+					// ouch
+				}
+			}
 		} break;
 		case SC_MSG_BUS: {
 			LOG("ch%u SC_MSG_BUS\n", index);
@@ -1011,6 +1084,29 @@ send_can_info:
 
 				can_set_state1(can->m_can, can->interrupt_id, can->enabled);
 				canled_set_status(can);
+			}
+
+			uint8_t bytes = sizeof(struct sc_msg_error);
+			uint8_t *out_ptr;
+			uint8_t *out_end;
+
+send_bus_response:
+			out_ptr = usb_cmd->tx_buffers[usb_cmd->tx_bank] + usb_cmd->tx_offsets[usb_cmd->tx_bank];
+			out_end = usb_cmd->tx_buffers[usb_cmd->tx_bank] + CMD_BUFFER_SIZE;
+			if (out_end - out_ptr >= bytes) {
+				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
+				struct sc_msg_error *rep = (struct sc_msg_error *)out_ptr;
+				rep->id = SC_MSG_ERROR;
+				rep->len = sizeof(*rep);
+				rep->channel = 0;
+				rep->error = SC_ERROR_NONE;
+			} else {
+				if (sc_cmd_bulk_in_ep_ready(index)) {
+					sc_cmd_bulk_in_submit(index);
+					goto send_bus_response;
+				} else {
+					// ouch
+				}
 			}
 		} break;
 		default:

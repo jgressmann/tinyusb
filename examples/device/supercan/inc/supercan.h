@@ -37,15 +37,16 @@ extern "C" {
 #define SC_MSG_HEADER_LEN_OFFSET    1
 
 #define SC_MSG_EOF              0x00    ///< Indicates the end of messages in the buffer (if short).
-#define SC_MSG_HELLO_DEVICE     0x01    ///< Host -> Device. This is the first message sent to the device, device responds with SC_MSG_HELLO_HOST.
+#define SC_MSG_HELLO_DEVICE     0x01    ///< Host -> Device. This is the first message sent to the device. The device MUST respond with SC_MSG_HELLO_HOST.
 #define SC_MSG_HELLO_HOST       0x02    ///< Device -> Host. See SC_MSG_HELLO_DEVICE.
 #define SC_MSG_DEVICE_INFO      0x03    ///< Host <-> Device. Query / Receive device information.
 #define SC_MSG_CAN_INFO         0x04    ///< Host <-> Device. Query / Receive CAN information.
 
-#define SC_MSG_BITTIMING        0x10    ///< Host -> Device. Configures bittimings.
-#define SC_MSG_MODE             0x11    ///< Host -> Device. Sets the device mode.
-#define SC_MSG_FEATURES         0x12    ///< Host -> Device. Sets device features.
-#define SC_MSG_BUS              0x13    ///< Host -> Device. Go on / off bus.
+#define SC_MSG_BITTIMING        0x10    ///< Host <-> Device. Configures bittimings. Device responds with SC_MSG_ERROR
+#define SC_MSG_MODE             0x11    ///< Host <-> Device. Sets the device mode. Device responds with SC_MSG_ERROR
+#define SC_MSG_FEATURES         0x12    ///< Host <-> Device. Sets device features. Device responds with SC_MSG_ERROR
+#define SC_MSG_BUS              0x13    ///< Host <-> Device. Go on / off bus. Device responds with SC_MSG_ERROR
+#define SC_MSG_ERROR            0x1f    ///< Device -> Host. Error code of last command.
 
 // #define SC_MSG_STATUS           0x15    ///< Host <-> Device. Query / Receive device status.
 
@@ -75,7 +76,7 @@ extern "C" {
 #define SC_CAN_FLAG_FDF         0x04 ///< CAN-FD frame
 #define SC_CAN_FLAG_BRS         0x08 ///< CAN-FD bitrate switching (set zero to transmit at arbitration rate)
 #define SC_CAN_FLAG_ESI         0x10 ///< Set to 1 to transmit with active error state
-#define SC_CAN_FLAG_DRP         0x20 ///< CAN frame was dropped due to full tx fifo
+#define SC_CAN_FLAG_DRP         0x20 ///< CAN frame was dropped due to full tx fifo (only received if TXR feature active)
 
 #define SC_CAN_STATUS_FLAG_BUS_OFF       0x01
 #define SC_CAN_STATUS_FLAG_ERROR_WARNING 0x02
@@ -96,6 +97,14 @@ extern "C" {
 // #define SC_MODE_FLAG_BRS        0x80 ///< Enables transmitting CAN-FD frames with bitrate switching
 
 #define SC_MODE_MASK            0x7f ///< Mask of mode
+
+/**
+ * Command error codes
+ */
+#define SC_ERROR_UNKNOWN       -1 ///< Unknown error
+#define SC_ERROR_NONE           0 ///< No error
+#define SC_ERROR_PARAM          1 ///< Requested feature / setting not supported
+#define SC_ERROR_MODE           2 ///< Request cannot be processed in current device mode
 
 struct sc_msg_header {
     uint8_t id;
@@ -123,6 +132,15 @@ struct sc_msg_req {
     uint8_t unused[2];
 } SC_PACKED;
 
+/**
+ * Response from device to host.
+ */
+struct sc_msg_error {
+    uint8_t id;
+    uint8_t len;
+    uint8_t channel;
+    int8_t error;
+} SC_PACKED;
 
 
 struct sc_chan_info {
@@ -169,6 +187,9 @@ struct sc_msg_can_info {
     uint8_t dtbt_sjw_max;
     uint8_t dtbt_tseg2_min;
     uint8_t dtbt_tseg2_max;
+    uint8_t tx_fifo_size;
+    uint8_t rx_fifo_size;
+    uint8_t unused[2];
     uint8_t chan_count;
     struct sc_chan_info chan_info[0];
 } SC_PACKED;
@@ -178,7 +199,7 @@ struct sc_msg_config {
     uint8_t len;
     uint8_t channel;    ///< Zero-based channel index
     uint8_t unused;
-    uint32_t args[0];
+    uint32_t args[1];
 } SC_PACKED;
 
 struct sc_msg_bittiming {
@@ -242,6 +263,7 @@ struct sc_msg_can_txr {
 enum {
     sc_static_assert_sizeof_sc_msg_header_is_2 = sizeof(int[sizeof(struct sc_msg_header)  == 2 ? 1 : -1]),
     sc_static_assert_sc_msg_req_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_req) & 0x3) == 0 ? 1 : -1]),
+    sc_static_assert_sc_msg_error_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_error) & 0x3) == 0 ? 1 : -1]),
     sc_static_assert_sc_msg_hello_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_hello) & 0x3) == 0 ? 1 : -1]),
     sc_static_assert_sc_msg_dev_info_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_dev_info) & 0x3) == 0 ? 1 : -1]),
     sc_static_assert_sc_msg_bittiming_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_bittiming) & 0x3) == 0 ? 1 : -1]),
