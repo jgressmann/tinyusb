@@ -135,7 +135,9 @@ struct can {
 	uint16_t rx_lost;
 	uint16_t tx_dropped;
 	volatile uint8_t status_flags;
-	uint8_t led;
+	uint8_t led_status_green;
+	uint8_t led_status_red;
+	uint8_t led_traffic;
 	bool enabled;
 	bool desync;
 };
@@ -385,7 +387,7 @@ static inline void can_set_state1(Can *can, IRQn_Type interrupt_id, bool enabled
 	}
 }
 
-static inline void can_engage(void)
+static inline void cans_engage(void)
 {
 	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
 		struct can *can = &cans.can[i];
@@ -393,7 +395,7 @@ static inline void can_engage(void)
 	}
 }
 
-static void can_disengage(void)
+static inline void cans_disengage(void)
 {
 	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
 		struct can *can = &cans.can[i];
@@ -402,13 +404,13 @@ static void can_disengage(void)
 	}
 }
 
-static void can_reset(void)
+static void cans_reset(void)
 {
-	can_disengage();
-
 	// disable CAN units, reset configuration & status
 	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
 		struct can *can = &cans.can[i];
+		can_set_state1(can->m_can, can->interrupt_id, false);
+
 		can->enabled = false;
 		can->features = 0;
 		can->status_flags = 0;
@@ -522,35 +524,50 @@ static void led_init(void)
 	PORT->Group[0].DIRSET.reg = PORT_PA14; /* Debug-LED */
 	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
 }
-#else // HWREV
+#else // HWREV > 1
 static struct led leds[] = {
 	LED_STATIC_INITIALIZER("debug", PIN_PA02),
 	LED_STATIC_INITIALIZER("red", PIN_PA18),
 	LED_STATIC_INITIALIZER("orange", PIN_PA19),
 	LED_STATIC_INITIALIZER("green", PIN_PB16),
 	LED_STATIC_INITIALIZER("blue", PIN_PB17),
+#if HWREV >= 3
+	LED_STATIC_INITIALIZER("can0_green", PIN_PB02),
+	LED_STATIC_INITIALIZER("can0_red", PIN_PB03),
+	LED_STATIC_INITIALIZER("can1_green", PIN_PB00),
+	LED_STATIC_INITIALIZER("can1_red", PIN_PB01),
+#endif
 };
 
 enum {
-	LED_DEBUG,
-	LED_0,
-	LED_1,
-	LED_2,
-	LED_3,
+	LED_DEBUG_DEFAULT,
+	LED_DEBUG_0,
+	LED_DEBUG_1,
+	LED_DEBUG_2,
+	LED_DEBUG_3,
+#if HWREV >= 3
+	LED_CAN0_STATUS_GREEN,
+	LED_CAN0_STATUS_RED,
+	LED_CAN1_STATUS_GREEN,
+	LED_CAN1_STATUS_RED,
+#endif
 };
 
-#define USB_TRAFFIC_DO_LED led_burst(LED_3, 8)
-#define POWER_LED LED_0
-#define CAN0_LED LED_1
-#define CAN1_LED LED_2
+#define USB_TRAFFIC_DO_LED led_burst(LED_DEBUG_3, 8)
+#define POWER_LED LED_DEBUG_0
+#define CAN0_TRAFFIC_LED LED_DEBUG_1
+#define CAN1_TRAFFIC_LED LED_DEBUG_2
 
 
 static void led_init(void)
 {
-	PORT->Group[0].DIRSET.reg = PORT_PA18;
-	PORT->Group[0].DIRSET.reg = PORT_PA19;
-	PORT->Group[1].DIRSET.reg = PORT_PB16;
-	PORT->Group[1].DIRSET.reg = PORT_PB17;
+	PORT->Group[0].DIRSET.reg = PORT_PA18 | PORT_PA19;
+	PORT->Group[1].DIRSET.reg =
+		PORT_PB16 | PORT_PB17
+#if HWREV >= 3
+		| PORT_PB00 | PORT_PB01 | PORT_PB02 | PORT_PB03
+#endif
+		;
 }
 
 #endif // HWREV
@@ -584,6 +601,33 @@ static inline void led_burst(uint8_t index, uint16_t duration_ms)
 	leds[index].time_ms = duration_ms;
 	leds[index].blink = 0;
 	gpio_set_pin_level(leds[index].pin, 1);
+}
+
+static inline void canled_set_status(struct can *can)
+{
+#if HWREV >= 3
+	const uint16_t BLINK_DELAY_MS = 200;
+	if (can->enabled) {
+		uint8_t status = can->status_flags;
+		if (status) {
+			led_set(can->led_status_green, 0);
+			led_blink(can->led_status_red, BLINK_DELAY_MS);
+		} else {
+			led_blink(can->led_status_green, BLINK_DELAY_MS);
+			led_set(can->led_status_red, 0);
+		}
+	} else {
+		led_set(can->led_status_green, 0);
+		led_set(can->led_status_red, 0);
+	}
+#endif
+}
+
+static inline void cans_led_status_set(void)
+{
+	for (uint8_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
+		canled_set_status(&cans.can[i]);
+	}
 }
 
 #define MAJOR 0
@@ -729,7 +773,8 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 			LOG("ch%u SC_MSG_HELLO_DEVICE\n", index);
 
 			// reset
-			can_reset();
+			cans_reset();
+			cans_led_status_set();
 
 			// reset tx buffer
 			uint8_t len = sizeof(struct sc_msg_hello);
@@ -965,6 +1010,7 @@ send_can_info:
 				}
 
 				can_set_state1(can->m_can, can->interrupt_id, can->enabled);
+				canled_set_status(can);
 			}
 		} break;
 		default:
@@ -986,7 +1032,7 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
-	led_burst(can->led, 8);
+	led_burst(can->led_traffic, 8);
 
 
 	const uint8_t rx_bank = usb_can->rx_bank;
@@ -1181,11 +1227,14 @@ int main(void)
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
 
 
-	cans.can[0].led = CAN0_LED;
+	cans.can[0].led_status_green = LED_CAN0_STATUS_GREEN;
+	cans.can[0].led_status_red = LED_CAN0_STATUS_RED;
+	cans.can[0].led_traffic = CAN0_TRAFFIC_LED;
 	cans.can[0].task = xTaskCreateStatic(&can_task, "can0", TU_ARRAY_SIZE(can_task_stack[0]), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, can_task_stack[0], &can_task_mem[0]);
-	cans.can[1].led = CAN1_LED;
+	cans.can[1].led_status_green = LED_CAN1_STATUS_GREEN;
+	cans.can[1].led_status_red = LED_CAN1_STATUS_RED;
+	cans.can[1].led_traffic = CAN1_TRAFFIC_LED;
 	cans.can[1].task = xTaskCreateStatic(&can_task, "can1", TU_ARRAY_SIZE(can_task_stack[1]), (void*)(uintptr_t)1, configMAX_PRIORITIES-1, can_task_stack[1], &can_task_mem[1]);
-
 
 	led_blink(0, 2000);
 	led_set(POWER_LED, 1);
@@ -1224,6 +1273,7 @@ void tud_mount_cb(void)
 	led_blink(0, 250);
 	usb.mounted = true;
 
+	cans_led_status_set();
 }
 
 // Invoked when device is unmounted
@@ -1233,7 +1283,8 @@ void tud_umount_cb(void)
 	led_blink(0, 1000);
 	usb.mounted = false;
 
-	can_reset();
+	cans_reset();
+	cans_led_status_set();
 }
 
 // Invoked when usb bus is suspended
@@ -1246,7 +1297,8 @@ void tud_suspend_cb(bool remote_wakeup_en)
 	usb.mounted = false;
 	led_blink(0, 500);
 
-	can_reset();
+	cans_reset();
+	cans_led_status_set();
 }
 
 // Invoked when usb bus is resumed
@@ -1626,7 +1678,8 @@ static void can_task(void *param)
 			continue;
 		}
 
-		led_burst(can->led, 8);
+		led_burst(can->led_traffic, 8);
+		canled_set_status(can);
 
 		for (bool done = false; !done; ) {
 			done = true;
