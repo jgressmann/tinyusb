@@ -739,10 +739,13 @@ static void sc_can_bulk_in(uint8_t index);
 static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 {
 	TU_ASSERT(index < TU_ARRAY_SIZE(usb.cmd), );
+	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can), );
 	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
 
 	struct can *can = &cans.can[index];
 	struct usb_cmd *usb_cmd = &usb.cmd[index];
+	struct usb_can *usb_can = &usb.can[index];
+
 
 	uint8_t const *in_ptr = usb_cmd->rx_buffers[usb_cmd->rx_bank];
 	uint8_t const * const in_end = in_ptr + xferred_bytes;
@@ -905,8 +908,8 @@ send_can_info:
 				rep->dtbt_tseg2_max = M_CAN_DTBT_TSEG2_MAX;
 				rep->tx_fifo_size = CAN_TX_FIFO_SIZE;
 				rep->rx_fifo_size = CAN_RX_FIFO_SIZE;
-				rep->chan_info[0].cmd_epp = SC_M1_EP_CMD0_BULK_OUT;
-				rep->chan_info[0].msg_epp = SC_M1_EP_MSG1_BULK_OUT;
+				rep->chan_info[0].cmd_epp = usb_cmd->pipe;
+				rep->chan_info[0].msg_epp = usb_can->pipe;
 			} else {
 				if (sc_cmd_bulk_in_ep_ready(index)) {
 					sc_cmd_bulk_in_submit(index);
