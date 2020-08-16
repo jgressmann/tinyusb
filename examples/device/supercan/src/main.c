@@ -228,13 +228,13 @@ static void can_configure(struct can *c)
 
 	LOG("nominal brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
 		c->nmbt_brp, c->nmbt_sjw, c->nmbt_tseg1, c->nmbt_tseg2,
-		CAN_CLK_HZ / ((uint32_t)c->nmbt_brp * (c->nmbt_tseg1 + c->nmbt_tseg2)),
+		CAN_CLK_HZ / ((uint32_t)c->nmbt_brp * (1 + c->nmbt_tseg1 + c->nmbt_tseg2)),
 		((c->nmbt_tseg1) * 1000) / (c->nmbt_tseg1 + c->nmbt_tseg2)
 	);
 
 	LOG("data brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
 		c->dtbt_brp, c->dtbt_sjw, c->dtbt_tseg1, c->dtbt_tseg2,
-		CAN_CLK_HZ / ((uint32_t)c->dtbt_brp * (c->dtbt_tseg1 + c->dtbt_tseg2)),
+		CAN_CLK_HZ / ((uint32_t)c->dtbt_brp * (1 + c->dtbt_tseg1 + c->dtbt_tseg2)),
 		((c->dtbt_tseg1) * 1000) / (c->dtbt_tseg1 + c->dtbt_tseg2)
 	);
 
@@ -890,7 +890,7 @@ send_can_info:
 				rep->nmbt_brp_max = M_CAN_NMBT_BRP_MAX;
 				rep->nmbt_tq_min = M_CAN_NMBT_TQ_MIN;
 				rep->nmbt_tq_max = M_CAN_NMBT_TQ_MAX;
-				rep->nmbt_sjw_min = M_CAN_NMBT_SJW_MIN;
+				// rep->nmbt_sjw_min = M_CAN_NMBT_SJW_MIN;
 				rep->nmbt_sjw_max = M_CAN_NMBT_SJW_MAX;
 				rep->nmbt_tseg1_min = M_CAN_NMBT_TSEG1_MIN;
 				rep->nmbt_tseg1_max = M_CAN_NMBT_TSEG1_MAX;
@@ -900,7 +900,7 @@ send_can_info:
 				rep->dtbt_brp_max = M_CAN_DTBT_BRP_MAX;
 				rep->dtbt_tq_min = M_CAN_DTBT_TQ_MIN;
 				rep->dtbt_tq_max = M_CAN_DTBT_TQ_MAX;
-				rep->dtbt_sjw_min = M_CAN_DTBT_SJW_MIN;
+				// rep->dtbt_sjw_min = M_CAN_DTBT_SJW_MIN;
 				rep->dtbt_sjw_max = M_CAN_DTBT_SJW_MAX;
 				rep->dtbt_tseg1_min = M_CAN_DTBT_TSEG1_MIN;
 				rep->dtbt_tseg1_max = M_CAN_DTBT_TSEG1_MAX;
@@ -955,7 +955,7 @@ send_can_info:
 			can->dtbt_tseg2 = tu_max8(M_CAN_DTBT_TSEG2_MIN, tu_min8(dtbt_tseg2, M_CAN_DTBT_TSEG2_MAX));
 
 			// set nominal bitrate for timestamp calculation
-			can->nm_bitrate_bps = CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (can->nmbt_tseg1 + can->nmbt_tseg2));
+			can->nm_bitrate_bps = CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (1 + can->nmbt_tseg1 + can->nmbt_tseg2));
 
 			uint8_t bytes = sizeof(struct sc_msg_error);
 
@@ -1797,6 +1797,7 @@ start:
 
 				uint32_t ts = can->ts_high | can->m_can->TSCV.bit.TSC;
 				uint32_t us = can_time_to_us(can, ts);
+				CAN_ECR_Type ecr = can->m_can->ECR;
 
 				struct sc_msg_can_status *msg = (struct sc_msg_can_status *)out_ptr;
 				msg->len = sizeof(*msg);
@@ -1812,6 +1813,8 @@ start:
 				if (can->desync) {
 					msg->flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;
 				}
+				msg->tx_errors = ecr.bit.TEC;
+				msg->rx_errors = ecr.bit.REC;
 				can->rx_lost = 0;
 				can->tx_dropped = 0;
 				out_ptr += msg->len;
