@@ -26,54 +26,6 @@
 
 #include <sam.h>
 
-// #define M_CAN_REG_CREL_OFFSET              (0x00) /**< Core Release */
-// #define M_CAN_REG_ENDN_OFFSET              (0x04) /**< Endian */
-// #define M_CAN_REG_MRCFG_OFFSET             (0x08) /**< Message RAM Configuration */
-// #define M_CAN_REG_DBTP_OFFSET              (0x0C) /**< Fast Bit Timing and Prescaler */
-// #define M_CAN_REG_TEST_OFFSET              (0x10) /**< Test */
-// #define M_CAN_REG_RWD_OFFSET               (0x14) /**< RAM Watchdog */
-// #define M_CAN_REG_CCCR_OFFSET              (0x18) /**< CC Control */
-// #define M_CAN_REG_NBTP_OFFSET              (0x1C) /**< Nominal Bit Timing and Prescaler */
-// #define M_CAN_REG_TSCC_OFFSET              (0x20) /**< Timestamp Counter Configuration */
-// #define M_CAN_REG_TSCV_OFFSET              (0x24) /**< Timestamp Counter Value */
-// #define M_CAN_REG_TOCC_OFFSET              (0x28) /**< Timeout Counter Configuration */
-// #define M_CAN_REG_TOCV_OFFSET              (0x2C) /**< Timeout Counter Value */
-// #define M_CAN_REG_ECR_OFFSET               (0x40) /**< Error Counter */
-// #define M_CAN_REG_PSR_OFFSET               (0x44) /**< Protocol Status */
-// #define M_CAN_REG_TDCR_OFFSET              (0x48) /**< Extended ID Filter Configuration */
-// #define M_CAN_REG_IR_OFFSET                (0x50) /**< Interrupt */
-// #define M_CAN_REG_IE_OFFSET                (0x54) /**< Interrupt Enable */
-// #define M_CAN_REG_ILS_OFFSET               (0x58) /**< Interrupt Line Select */
-// #define M_CAN_REG_ILE_OFFSET               (0x5C) /**< Interrupt Line Enable */
-// #define M_CAN_REG_GFC_OFFSET               (0x80) /**< Global Filter Configuration */
-// #define M_CAN_REG_SIDFC_OFFSET             (0x84) /**< Standard ID Filter Configuration */
-// #define M_CAN_REG_XIDFC_OFFSET             (0x88) /**< Extended ID Filter Configuration */
-// #define M_CAN_REG_XIDAM_OFFSET             (0x90) /**< Extended ID AND Mask */
-// #define M_CAN_REG_HPMS_OFFSET              (0x94) /**< High Priority Message Status */
-// #define M_CAN_REG_NDAT1_OFFSET             (0x98) /**< New Data 1 */
-// #define M_CAN_REG_NDAT2_OFFSET             (0x9C) /**< New Data 2 */
-// #define M_CAN_REG_RXF0C_OFFSET             (0xA0) /**< Rx FIFO 0 Configuration */
-// #define M_CAN_REG_RXF0S_OFFSET             (0xA4) /**< Rx FIFO 0 Status */
-// #define M_CAN_REG_RXF0A_OFFSET             (0xA8) /**< Rx FIFO 0 Acknowledge */
-// #define M_CAN_REG_RXBC_OFFSET              (0xAC) /**< Rx Buffer Configuration */
-// #define M_CAN_REG_RXF1C_OFFSET             (0xB0) /**< Rx FIFO 1 Configuration */
-// #define M_CAN_REG_RXF1S_OFFSET             (0xB4) /**< Rx FIFO 1 Status */
-// #define M_CAN_REG_RXF1A_OFFSET             (0xB8) /**< Rx FIFO 1 Acknowledge */
-// #define M_CAN_REG_RXESC_OFFSET             (0xBC) /**< Rx Buffer / FIFO Element Size Configuration */
-// #define M_CAN_REG_TXBC_OFFSET              (0xC0) /**< Tx Buffer Configuration */
-// #define M_CAN_REG_TXFQS_OFFSET             (0xC4) /**< Tx FIFO / Queue Status */
-// #define M_CAN_REG_TXESC_OFFSET             (0xC8) /**< Tx Buffer Element Size Configuration */
-// #define M_CAN_REG_TXBRP_OFFSET             (0xCC) /**< Tx Buffer Request Pending */
-// #define M_CAN_REG_TXBAR_OFFSET             (0xD0) /**< Tx Buffer Add Request */
-// #define M_CAN_REG_TXBCR_OFFSET             (0xD4) /**< Tx Buffer Cancellation Request */
-// #define M_CAN_REG_TXBTO_OFFSET             (0xD8) /**< Tx Buffer Transmission Occurred */
-// #define M_CAN_REG_TXBCF_OFFSET             (0xDC) /**< Tx Buffer Cancellation Finished */
-// #define M_CAN_REG_TXBTIE_OFFSET            (0xE0) /**< Tx Buffer Transmission Interrupt Enable */
-// #define M_CAN_REG_TXBCIE_OFFSET            (0xE4) /**< Tx Buffer Cancellation Finished Interrupt Enable */
-// #define M_CAN_REG_TXEFC_OFFSET             (0xF0) /**< Tx Event FIFO Configuration */
-// #define M_CAN_REG_TXEFS_OFFSET             (0xF4) /**< Tx Event FIFO Status */
-// #define M_CAN_REG_TXEFA_OFFSET             (0xF8) /**< Tx Event FIFO Acknowledge */
-
 
 #define M_CAN_TS_COUNTER_BITS   16 // mcan_users_manual_v330.pdf p. 14, 60001507E.pdf is wrong
 
@@ -98,6 +50,7 @@
 #define M_CAN_DTBT_TSEG1_MAX         0x20
 #define M_CAN_DTBT_TSEG2_MIN         0x01
 #define M_CAN_DTBT_TSEG2_MAX         0x10
+#define M_CAN_TDCR_TDCO_MAX          0x7f
 
 static inline void m_can_init_begin(Can *can)
 {

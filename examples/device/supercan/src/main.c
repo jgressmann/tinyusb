@@ -247,7 +247,10 @@ static void can_configure(struct can *c)
 	can->DBTP.reg = CAN_DBTP_DBRP(c->dtbt_brp-1)
 			| CAN_DBTP_DTSEG1(c->dtbt_tseg1-1)
 			| CAN_DBTP_DTSEG2(c->dtbt_tseg2-1)
-			| CAN_DBTP_DSJW(c->dtbt_sjw-1);
+			| CAN_DBTP_DSJW(c->dtbt_sjw-1)
+			| CAN_DBTP_TDC;
+
+	can->TDCR.bit.TDCO = tu_min8((1 + c->dtbt_tseg1 + c->dtbt_tseg2) / 2, M_CAN_TDCR_TDCO_MAX);
 
 	// tx fifo
 	can->TXBC.reg = CAN_TXBC_TBSA((uint32_t) c->tx_fifo) | CAN_TXBC_TFQS(CAN_TX_FIFO_SIZE);
@@ -278,6 +281,9 @@ static void can_configure(struct can *c)
 	if ((c->features & SC_FEATURE_FLAG_TXR) == SC_FEATURE_FLAG_TXR) {
 		can->IE.reg |= CAN_IE_TEFNE; 	// new message in tx event fifo
 	}
+
+	// clear interrupts
+	// can->IR = can->IR;
 
 	m_can_conf_end(can);
 }
@@ -404,30 +410,6 @@ static inline void cans_disengage(void)
 	}
 }
 
-static void cans_reset(void)
-{
-	// disable CAN units, reset configuration & status
-	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
-		struct can *can = &cans.can[i];
-		can_set_state1(can->m_can, can->interrupt_id, false);
-
-		can->enabled = false;
-		can->features = 0;
-		can->status_flags = 0;
-		can->rx_lost = 0;
-		can->tx_dropped = 0;
-		can->desync = false;
-		can->mode = 0;
-		can->nm_bitrate_bps = 0;
-		can->nmbt_brp = 0;
-		can->nmbt_sjw = 0;
-		can->nmbt_tseg1 = 0;
-		can->dtbt_brp = 0;
-		can->dtbt_sjw = 0;
-		can->dtbt_tseg1 = 0;
-		can->dtbt_tseg2 = 0;
-	}
-}
 
 static inline uint8_t dlc_to_len(uint8_t dlc)
 {
@@ -508,12 +490,17 @@ enum {
 
 
 
-#define USB_TRAFFIC_LED LED_ORANGE1
+#define USB_TRAFFIC_LED LED_DEBUG
 #define USB_TRAFFIC_BURST_DURATION_MS 8
 #define USB_TRAFFIC_DO_LED led_burst(USB_TRAFFIC_LED, USB_TRAFFIC_BURST_DURATION_MS)
 #define POWER_LED LED_RED1
-#define CAN0_LED LED_GREEN1
-#define CAN1_LED LED_GREEN2
+#define CAN0_TRAFFIC_LED LED_ORANGE1
+#define CAN1_TRAFFIC_LED LED_ORANGE2
+#define LED_CAN0_STATUS_GREEN LED_GREEN1
+#define LED_CAN0_STATUS_RED LED_RED1
+#define LED_CAN1_STATUS_GREEN LED_GREEN2
+#define LED_CAN1_STATUS_RED LED_RED2
+
 
 static void led_init(void)
 {
@@ -696,6 +683,38 @@ static struct usb {
 	uint8_t port;
 	bool mounted;
 } usb;
+
+
+static void cans_reset(void)
+{
+	// disable CAN units, reset configuration & status
+	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
+		struct can *can = &cans.can[i];
+		can_set_state1(can->m_can, can->interrupt_id, false);
+
+		can->enabled = false;
+		can->features = 0;
+		can->status_flags = 0;
+		can->rx_lost = 0;
+		can->tx_dropped = 0;
+		can->desync = false;
+		can->mode = 0;
+		can->nm_bitrate_bps = 0;
+		can->nmbt_brp = 0;
+		can->nmbt_sjw = 0;
+		can->nmbt_tseg1 = 0;
+		can->dtbt_brp = 0;
+		can->dtbt_sjw = 0;
+		can->dtbt_tseg1 = 0;
+		can->dtbt_tseg2 = 0;
+	}
+
+	// clear pending tx buffers
+	for (size_t i = 0; i < TU_ARRAY_SIZE(usb.can); ++i) {
+		struct usb_can *can = &usb.can[i];
+		can->tx_offsets[can->tx_bank] = 0;
+	}
+}
 
 static inline bool sc_cmd_bulk_in_ep_ready(uint8_t index)
 {
