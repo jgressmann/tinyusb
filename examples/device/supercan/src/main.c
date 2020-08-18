@@ -134,6 +134,7 @@ struct can {
 	uint16_t features;
 	uint16_t rx_lost;
 	uint16_t tx_dropped;
+	volatile uint8_t psr_bottom_half;
 	volatile uint8_t status_flags;
 	uint8_t led_status_green;
 	uint8_t led_status_red;
@@ -276,6 +277,8 @@ static void can_configure(struct can *c)
 		| CAN_IE_EPE    // error passive
 		| CAN_IE_RF0NE  // new message in rx fifo0
 		| CAN_IE_RF0LE  // message lost b/c fifo0 was full
+		| CAN_IE_PEAE   // proto error in arbitration phase
+		| CAN_IE_PEDE   // proto error in data phase
 		;
 
 	if ((c->features & SC_FEATURE_FLAG_TXR) == SC_FEATURE_FLAG_TXR) {
@@ -313,6 +316,35 @@ static void can_init_module(void)
 	NVIC_SetPriority(CAN1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 }
 
+static inline char const *const m_can_psr_act_str(uint8_t act)
+{
+	switch (act) {
+	case CAN_PSR_ACT_SYNC_Val:
+		return "sync";
+	case CAN_PSR_ACT_IDLE_Val:
+		return "idle";
+	case CAN_PSR_ACT_RX_Val:
+		return "rx";
+	default:
+		return "tx";
+	}
+}
+
+static inline uint16_t can_map_m_can_ec(uint8_t lec, uint16_t previous)
+{
+	switch (lec) {
+	case 0x0: return 0;
+	case 0x1: return SC_CAN_STATUS_FLAG_ERROR_STUFF;
+	case 0x2: return SC_CAN_STATUS_FLAG_ERROR_FORM;
+	case 0x3: return SC_CAN_STATUS_FLAG_ERROR_ACK;
+	case 0x4: return SC_CAN_STATUS_FLAG_ERROR_BIT1;
+	case 0x5: return SC_CAN_STATUS_FLAG_ERROR_BIT0;
+	case 0x6: return SC_CAN_STATUS_FLAG_ERROR_CRC;
+	case 0x7: return 0xff0 & previous;
+	default: return 0xffff;
+	}
+}
+
 static void can_int(uint8_t index)
 {
 	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
@@ -347,6 +379,32 @@ static void can_int(uint8_t index)
 	if (ir.bit.RF0L) {
 		LOG("CAN%u msg lost\n", index);
 		curr_status |= SC_CAN_STATUS_FLAG_RX_FULL;
+	}
+
+	if (ir.reg & (CAN_IR_PEA | CAN_IR_PED)) {
+		CAN_PSR_Type psr = can->m_can->PSR;
+
+		uint16_t previous = can->status_flags;
+		uint8_t alec = psr.bit.LEC;
+		uint8_t dlec = psr.bit.DLEC;
+
+		curr_status |= can_map_m_can_ec(alec, previous);
+		curr_status |= can_map_m_can_ec(dlec, previous);
+
+		LOG("CAN%u proto error during %s lec=%02x dlec=%02x\n", index, m_can_psr_act_str(psr.bit.ACT), alec, dlec);
+
+		// switch (psr.bit.ARC) {
+		// case CAN_PSR_ACT_RX_Val:
+		// 	if (psr.bit.RFDF) {
+		// 		curr_status |= SC_CAN_STATUS_FLAG_ERROR_FDF;
+		// 		if (psr.bit.RBRS) {
+		// 			curr_status |= can_map_m_can_ec(psr.bit.dlec);
+		// 		}
+		// 	}
+		// 	break;
+		// }
+
+
 	}
 
 	bool notify = can->status_flags != curr_status;
@@ -1825,12 +1883,12 @@ start:
 				msg->timestamp_us = us;
 				msg->rx_lost = can->rx_lost;
 				msg->tx_dropped = can->tx_dropped;
-				msg->flags = can->status_flags;
+				msg->status_flags = can->status_flags;
 				if (can->tx_dropped) {
-					msg->flags |= SC_CAN_STATUS_FLAG_TX_FULL;
+					msg->status_flags |= SC_CAN_STATUS_FLAG_TX_FULL;
 				}
 				if (can->desync) {
-					msg->flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;
+					msg->status_flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;
 				}
 				msg->tx_errors = ecr.bit.TEC;
 				msg->rx_errors = ecr.bit.REC;
