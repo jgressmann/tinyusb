@@ -71,12 +71,12 @@ extern "C" {
 #define SC_FEATURE_FLAG_USER_OFFSET     0x1000 ///< Custom feature flags
 
 
-#define SC_CAN_FLAG_EXT         0x01 ///< Extended (29 bit id) frame
-#define SC_CAN_FLAG_RTR         0x02 ///< Remote request frame
-#define SC_CAN_FLAG_FDF         0x04 ///< CAN-FD frame
-#define SC_CAN_FLAG_BRS         0x08 ///< CAN-FD bitrate switching (set zero to transmit at arbitration rate)
-#define SC_CAN_FLAG_ESI         0x10 ///< Set to 1 to transmit with active error state
-#define SC_CAN_FLAG_DRP         0x20 ///< CAN frame was dropped due to full tx fifo (only received if TXR feature active)
+#define SC_CAN_FRAME_FLAG_EXT         0x01 ///< Extended (29 bit id) frame
+#define SC_CAN_FRAME_FLAG_RTR         0x02 ///< Remote request frame
+#define SC_CAN_FRAME_FLAG_FDF         0x04 ///< CAN-FD frame
+#define SC_CAN_FRAME_FLAG_BRS         0x08 ///< CAN-FD bitrate switching (set zero to transmit at arbitration rate)
+#define SC_CAN_FRAME_FLAG_ESI         0x10 ///< Set to 1 to transmit with active error state
+#define SC_CAN_FRAME_FLAG_DRP         0x20 ///< CAN frame was dropped due to full tx fifo (only received if TXR feature active)
 
 #define SC_CAN_STATUS_ERROR_ACTIVE          0x0
 #define SC_CAN_STATUS_ERROR_WARNING         0x1
@@ -98,14 +98,9 @@ extern "C" {
 #define SC_CAN_STATE_TX         0x3 ///< Node is operating as transmitter.
 
 
-#define SC_CAN_STATUS_FLAG_BUS_OFF          0x0001
-#define SC_CAN_STATUS_FLAG_ERROR_WARNING    0x0002
-#define SC_CAN_STATUS_FLAG_ERROR_PASSIVE    0x0004
-#define SC_CAN_STATUS_FLAG_ERROR_FDF        0x0400 ///< Error occurred during transmission of CAN-FD frame
-#define SC_CAN_STATUS_FLAG_ERROR_DTP        0x0800 ///< Error occurred during the data phase of a CAN-FD frame
-#define SC_CAN_STATUS_FLAG_RX_FULL          0x1000 ///< rx queue is full, CAN -> USB messages were lost
-#define SC_CAN_STATUS_FLAG_TX_FULL          0x2000 ///< tx queue is full, USB -> CAN messages were lost
-#define SC_CAN_STATUS_FLAG_TXR_DESYNC       0x4000 ///< no USB buffer space to queue TXR message
+
+
+#define SC_CAN_STATUS_FLAG_TXR_DESYNC       0x1 ///< no USB buffer space to queue TXR message
 
 
 /**
@@ -242,14 +237,15 @@ struct sc_msg_can_status {
     uint8_t channel;
     uint8_t bus_status;
     uint32_t timestamp_us;
-    uint16_t rx_lost;       ///< messages CAN -> USB lost since last time due to full rx fifo
-    uint16_t tx_dropped;    ///< messages USB-> CAN dropped since last time due of full tx fifo
+    uint16_t rx_lost;           ///< messages CAN -> USB lost since last time due to full rx fifo
+    uint16_t tx_dropped;        ///< messages USB-> CAN dropped since last time due of full tx fifo
     uint8_t arbt_phase_error;
     uint8_t data_phase_error;
-    uint8_t node_state_error;
-    uint16_t flags;  ///< CAN bus status flags
-    uint8_t rx_errors;      ///< CAN rx error counter
-    uint8_t tx_errors;      ///< CAN tx error counter
+    uint8_t node_state;
+    uint8_t flags;              ///< CAN bus status flags
+    uint8_t rx_errors;          ///< CAN rx error counter
+    uint8_t tx_errors;          ///< CAN tx error counter
+    uint8_t unused[2];
 } SC_PACKED;
 
 struct sc_msg_can_rx {
