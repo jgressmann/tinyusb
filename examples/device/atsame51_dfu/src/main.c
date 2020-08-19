@@ -356,7 +356,6 @@ int main(void)
 		LOG(NAME " setting %u [s] watchdog timer\n", timeout);
 		WDT->CONFIG.bit.PER = per;
 		WDT->CTRLA.bit.ENABLE = 1;
-		// while (!WDT->SYNCBUSY.bit.ENABLE);
 
 		board_uart_write(NAME " gl hf, starting ", -1);
 		board_uart_write(app_hdr->app_name, -1);

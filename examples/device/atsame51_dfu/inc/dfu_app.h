@@ -118,5 +118,13 @@ int dfu_app_hdr_validate(struct dfu_app_hdr const *hdr);
  */
 static inline void dfu_app_watchdog_disable(void)
 {
-	WDT->CTRLA.bit.ENABLE = 0;
+	/* Don't write into clear without the watchdog being active else a system reset ensues. */
+	if (WDT->CTRLA.bit.ENABLE) {
+		/* Without this AND without LOG=2 (=> TU_LOG2), the watchdog will never be cleared.
+		 * Any takers as to why?
+	 	*/
+		WDT->CLEAR.reg = 0xa5;
+		while (WDT->SYNCBUSY.bit.CLEAR);
+		WDT->CTRLA.bit.ENABLE = 0;
+	}
 }

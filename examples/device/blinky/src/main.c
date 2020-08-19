@@ -243,8 +243,9 @@ int main(void)
 	led_set(POWER_LED, 1);
 	led_blink(BLINK_LED, 500);
 
+#if SUPERDFU_APP
 	dfu_app_watchdog_disable();
-
+#endif
 	while (1) {
 		tud_task();
 		led_task();
