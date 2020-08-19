@@ -561,10 +561,7 @@ enum {
 #define POWER_LED LED_RED1
 #define CAN0_TRAFFIC_LED LED_ORANGE1
 #define CAN1_TRAFFIC_LED LED_ORANGE2
-#define LED_CAN0_STATUS_GREEN LED_GREEN1
-#define LED_CAN0_STATUS_RED LED_RED1
-#define LED_CAN1_STATUS_GREEN LED_GREEN2
-#define LED_CAN1_STATUS_RED LED_RED2
+
 
 
 static void led_init(void)
@@ -1432,14 +1429,15 @@ int main(void)
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
 
-
+#if HWREV >= 3
 	cans.can[0].led_status_green = LED_CAN0_STATUS_GREEN;
 	cans.can[0].led_status_red = LED_CAN0_STATUS_RED;
-	cans.can[0].led_traffic = CAN0_TRAFFIC_LED;
-	cans.can[0].task = xTaskCreateStatic(&can_task, "can0", TU_ARRAY_SIZE(can_task_stack[0]), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, can_task_stack[0], &can_task_mem[0]);
 	cans.can[1].led_status_green = LED_CAN1_STATUS_GREEN;
 	cans.can[1].led_status_red = LED_CAN1_STATUS_RED;
+#endif
+	cans.can[0].led_traffic = CAN0_TRAFFIC_LED;
 	cans.can[1].led_traffic = CAN1_TRAFFIC_LED;
+	cans.can[0].task = xTaskCreateStatic(&can_task, "can0", TU_ARRAY_SIZE(can_task_stack[0]), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, can_task_stack[0], &can_task_mem[0]);
 	cans.can[1].task = xTaskCreateStatic(&can_task, "can1", TU_ARRAY_SIZE(can_task_stack[1]), (void*)(uintptr_t)1, configMAX_PRIORITIES-1, can_task_stack[1], &can_task_mem[1]);
 
 	led_blink(0, 2000);
