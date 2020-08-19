@@ -71,24 +71,28 @@ uint8_t const * tud_descriptor_device_cb(void)
 //--------------------------------------------------------------------+
 #if CFG_TUD_DFU_RT
 #	define DFU_DESC_LEN TUD_DFU_RT_DESC_LEN
+#	define DFU_INTERFACE_COUNT 1
 #else
 #	define DFU_DESC_LEN 0
+#	define DFU_INTERFACE_COUNT 0
 #endif
 
 #if HWREV == 1
 #	define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + (9+4*7) + DFU_DESC_LEN)
 #	define DFU_STR_INDEX 5
 #	define DFU_INTERFACE_INDEX 1
+#	define INTERFACE_COUNT (1 + DFU_INTERFACE_COUNT)
 #else
 #	define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 2*(9+4*7) + DFU_DESC_LEN)
 #	define DFU_STR_INDEX 6
 #	define DFU_INTERFACE_INDEX 2
+#	define INTERFACE_COUNT (2 + DFU_INTERFACE_COUNT)
 #endif
 
 static uint8_t const desc_configuration[] =
 {
 	// Config number, interface count, string index, total length, attribute, power in mA
-	TUD_CONFIG_DESCRIPTOR(1, 3, 0, CONFIG_TOTAL_LEN, 0, 200),
+	TUD_CONFIG_DESCRIPTOR(1, INTERFACE_COUNT, 0, CONFIG_TOTAL_LEN, 0, 200),
 
 	9, TUSB_DESC_INTERFACE, 0, 0, 4, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 4,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_CMD0_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
@@ -150,11 +154,16 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 	return desc_configuration;
 }
 
+#if CFG_TUD_DFU_RT
+#	define DFU_MS_OS_20_DESC_LEN (0x08+0x14)
+#else
+#	define DFU_MS_OS_20_DESC_LEN 0
+#endif
 
 #if HWREV == 1
-#	define MS_OS_20_DESC_LEN (0x0A+0x08 + 2*(0x08+0x14) + 0x84)
+#	define MS_OS_20_DESC_LEN (0x0A+0x08 + (0x08+0x14+0x84) + DFU_MS_OS_20_DESC_LEN)
 #else
-#	define MS_OS_20_DESC_LEN (0x0A+0x08 + 3*(0x08+0x14) + 2*0x84)
+#	define MS_OS_20_DESC_LEN (0x0A+0x08 + 2 * (0x08+0x14+0x84) + DFU_MS_OS_20_DESC_LEN)
 #endif
 uint8_t const desc_ms_os_20[] =
 {
@@ -202,13 +211,14 @@ uint8_t const desc_ms_os_20[] =
 	'8', 0x00, '6', 0x00, '6', 0x00, '0', 0x00, '-', 0x00, 'A', 0x00, 'E', 0x00, '5', 0x00, '0', 0x00, 'C', 0x00,
 	'B', 0x00, '3', 0x00, '1', 0x00, '4', 0x00, '9', 0x00, 'C', 0x00, '9', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00,
 #endif
+#if CFG_TUD_DFU_RT
 	// Function Subset header: length, type, first interface, reserved, subset length
 	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), DFU_INTERFACE_INDEX, 0, U16_TO_U8S_LE(0x08 + 0x14),
 
 	// MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
 	U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
-
+#endif
 };
 
 
