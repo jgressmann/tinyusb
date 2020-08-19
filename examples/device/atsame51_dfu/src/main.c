@@ -41,6 +41,7 @@
 #include <dfu_debug.h>
 
 
+static void led_task(void);
 
 #if TU_BIG_ENDIAN == TU_BYTE_ORDER
 static inline uint16_t le16_to_cpu(uint16_t value) { return __builtin_bswap16(value); }
@@ -70,82 +71,6 @@ static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(va
 #define unlikely(x) __builtin_expect(!!(x),0)
 #endif
 
-#define SUPERDFU_LEDS 0
-#if SUPERDFU_LEDS
-struct led {
-#if SUPERDFU_DEBUG > 0
-	const char* name;
-#endif
-	uint16_t time_ms;
-	uint16_t left;
-	uint8_t blink;
-	uint8_t pin;
-};
-
-#if SUPERDFU_DEBUG
-#define LED_STATIC_INITIALIZER(name, pin) \
-	{ name, 0, 0, 0, pin }
-#else
-#define LED_STATIC_INITIALIZER(name, pin) \
-	{ 0, 0, 0, pin }
-#endif
-
-static struct led leds[] = {
-	LED_STATIC_INITIALIZER("debug", PIN_PA02),
-	LED_STATIC_INITIALIZER("red1", PIN_PB14),
-	LED_STATIC_INITIALIZER("orange1", PIN_PB15),
-	LED_STATIC_INITIALIZER("green1", PIN_PA12),
-	LED_STATIC_INITIALIZER("red2", PIN_PA13),
-	LED_STATIC_INITIALIZER("orange2", PIN_PA14),
-	LED_STATIC_INITIALIZER("green2", PIN_PA15),
-};
-
-enum {
-	LED_DEBUG,
-	LED_RED1,
-	LED_ORANGE1,
-	LED_GREEN1,
-	LED_RED2,
-	LED_ORANGE2,
-	LED_GREEN2
-};
-
-#define USB_TRAFFIC_LED LED_ORANGE1
-#define USB_TRAFFIC_BURST_DURATION_MS 8
-#define USB_TRAFFIC_DO_LED led_burst(USB_TRAFFIC_LED, USB_TRAFFIC_BURST_DURATION_MS)
-
-
-static void led_init(void);
-static void led_task(void);
-static inline void led_set(uint8_t index, bool on)
-{
-	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
-	leds[index].time_ms = 0;
-	gpio_set_pin_level(leds[index].pin, on);
-}
-
-static inline void led_toggle(uint8_t index)
-{
-	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
-	leds[index].time_ms = 0;
-	gpio_toggle_pin_level(leds[index].pin);
-}
-
-static inline void led_blink(uint8_t index, uint16_t delay_ms)
-{
-	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
-	leds[index].time_ms = delay_ms;
-	leds[index].blink = 1;
-}
-
-static inline void led_burst(uint8_t index, uint16_t duration_ms)
-{
-	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
-	leds[index].time_ms = duration_ms;
-	leds[index].blink = 0;
-	gpio_set_pin_level(leds[index].pin, 1);
-}
-#endif
 
 
 #define NVM_BOOTLOADER_BLOCKS (MCU_BOOTLOADER_SIZE / MCU_NVM_BLOCK_SIZE)
@@ -331,7 +256,7 @@ static inline void watchdog_timeout(uint8_t seconds_in, uint8_t* wdt_reg, uint8_
 
 #define SUPERDFU_VERSION_MAJOR 0
 #define SUPERDFU_VERSION_MINOR 2
-#define SUPERDFU_VERSION_PATCH 0
+#define SUPERDFU_VERSION_PATCH 1
 #define STR2(x) #x
 #define STR(x) STR2(x)
 #define NAME "SuperDFU"
@@ -444,18 +369,10 @@ int main(void)
 
 	board_uart_write("SuperDFU v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " running\n", -1);
 
-#if SUPERDFU_LEDS
-	led_init();
-	led_blink(0, 2000);
-	led_set(LED_RED1, 1);
-#endif
-
 	tusb_init();
 
 	while (1) {
-#if SUPERDFU_LEDS
 		led_task();
-#endif
 		tud_task();
 	}
 
@@ -470,18 +387,12 @@ int main(void)
 void tud_mount_cb(void)
 {
 	LOG("mounted\n");
-#if SUPERDFU_LEDS
-	led_blink(0, 250);
-#endif
 }
 
 // Invoked when device is unmounted
 void tud_umount_cb(void)
 {
 	LOG("unmounted\n");
-#if SUPERDFU_LEDS
-	led_blink(0, 1000);
-#endif
 }
 
 // Invoked when usb bus is suspended
@@ -491,18 +402,12 @@ void tud_suspend_cb(bool remote_wakeup_en)
 {
 	(void) remote_wakeup_en;
 	LOG("suspend\n");
-#if SUPERDFU_LEDS
-	led_blink(0, 500);
-#endif
 }
 
 // Invoked when usb bus is resumed
 void tud_resume_cb(void)
 {
 	LOG("resume\n");
-#if SUPERDFU_LEDS
-	led_blink(0, 250);
-#endif
 }
 
 #if SUPERDFU_DEBUG
@@ -887,53 +792,16 @@ bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
 }
 #endif
 
-#if SUPERDFU_LEDS
-//--------------------------------------------------------------------+
-// LED TASK
-//--------------------------------------------------------------------+
-static void led_init(void)
-{
-	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
-	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA12; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA13; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA14; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
-}
-
 static void led_task(void)
 {
-	static uint32_t last_ms = 0;
+	static uint32_t last_millis = 0;
+	static bool led_state = false;
+
 	uint32_t now = board_millis();
-	uint32_t elapsed = now - last_ms;
-	last_ms = now;
-
-	if (elapsed) {
-		for (size_t i = 0; i < TU_ARRAY_SIZE(leds); ++i) {
-			uint16_t t = leds[i].time_ms;
-			if (!t) {
-				continue;
-			}
-
-			if (leds[i].blink) {
-				if (elapsed >= leds[i].left) {
-					// LOG("led %s (%u) toggle\n", leds[i].name, i);
-					gpio_toggle_pin_level(leds[i].pin);
-					leds[i].left = t - (elapsed - leds[i].left);
-				} else {
-					leds[i].left -= elapsed;
-				}
-			} else {
-				// burst
-				if (leds[i].left) {
-					uint16_t sub = tu_min16(elapsed, leds[i].left);
-					leds[i].left -= sub;
-					if (!leds[i].left) {
-						gpio_set_pin_level(leds[i].pin, 0);
-					}
-				}
-			}
-		}
+	uint32_t millis_elapsed = now - last_millis;
+	if (millis_elapsed >= 100) {
+		last_millis = now;
+		led_state = !led_state;
+		board_led_write(led_state);
 	}
 }
-#endif
