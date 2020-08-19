@@ -369,11 +369,14 @@ static void can_int(uint8_t index)
 	if (ir.bit.BO) {
 		LOG("CAN%u bus off\n", index);
 		// bus_status = SC_CAN_STATUS_BUS_OFF;
+		notify = true;
 	} else if (ir.bit.EP) {
 		LOG("CAN%u error passive\n", index);
 		// bus_status = SC_CAN_STATUS_ERROR_PASSIVE;
+		notify = true;
 	} else if (ir.bit.EW) {
 		LOG("CAN%u error warning\n", index);
+		notify = true;
 		// bus_status = SC_CAN_STATUS_ERROR_WARNING;
 	}
 
