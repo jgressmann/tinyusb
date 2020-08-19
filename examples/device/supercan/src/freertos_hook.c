@@ -41,10 +41,13 @@ void vApplicationMallocFailedHook(void)
 void vApplicationStackOverflowHook(TaskHandle_t pxTask, signed char *pcTaskName)
 {
 	(void) pxTask;
-	(void) pcTaskName;
 
 	taskDISABLE_INTERRUPTS();
-	board_uart_write(pcTaskName, -1);
+	if (pcTaskName) {
+		board_uart_write(pcTaskName, -1);
+	} else {
+		board_uart_write("stack overflow", -1);
+	}
 	TU_ASSERT(false, );
 }
 
