@@ -262,7 +262,8 @@ static void can_configure(struct can *c)
 	//	REG_CAN0_TXBC |= CAN_TXBC_TFQM; // reset default
 	can->TXESC.reg = CAN_TXESC_TBDS_DATA64;
 
-	//can->TXEFC.reg = CAN_TXEFC_EFSA((uint32_t) c->tx_event_fifo) | CAN_TXEFC_EFS(CAN_TX_FIFO_SIZE);
+	// tx event fifo
+	can->TXEFC.reg = CAN_TXEFC_EFSA((uint32_t) c->tx_event_fifo) | CAN_TXEFC_EFS(CAN_TX_FIFO_SIZE);
 
 
 	// rx fifo0
@@ -405,6 +406,11 @@ static void can_int(uint8_t index)
 	}
 
 	if (ir.bit.RF0N) {
+		notify = true;
+	}
+
+	if (ir.bit.TEFN) {
+		// LOG("CAN%u new tx event fifo entry\n", index);
 		notify = true;
 	}
 
