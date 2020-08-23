@@ -225,10 +225,9 @@ static void can_configure(struct can *c)
 	can->CCCR.bit.BRSE = 1;
 	can->CCCR.bit.PXHD = (c->features & SC_FEATURE_FLAG_EHD) == SC_FEATURE_FLAG_EHD;
 
-	LOG("MON=%u TEST=%u ASM=%u PXHD=%u FDOE=%u BRSE=%u txr=%u\n",
+	LOG("MON=%u TEST=%u ASM=%u PXHD=%u FDOE=%u BRSE=%u\n",
 		can->CCCR.bit.MON, can->CCCR.bit.TEST, can->CCCR.bit.ASM,
-		can->CCCR.bit.PXHD, can->CCCR.bit.FDOE, can->CCCR.bit.BRSE,
-		(c->features & SC_FEATURE_FLAG_TXR) == SC_FEATURE_FLAG_TXR
+		can->CCCR.bit.PXHD, can->CCCR.bit.FDOE, can->CCCR.bit.BRSE
 	);
 
 	LOG("nominal brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
@@ -1343,6 +1342,7 @@ send_txr:
 					| (((tmsg->flags & SC_CAN_FRAME_FLAG_RTR) == SC_CAN_FRAME_FLAG_RTR) << CAN_TXBE_0_RTR_Pos)
 					| (((tmsg->flags & SC_CAN_FRAME_FLAG_EXT) == SC_CAN_FRAME_FLAG_EXT) << CAN_TXBE_0_XTD_Pos)
 					;
+
 
 
 				if (tmsg->flags & SC_CAN_FRAME_FLAG_EXT) {
