@@ -243,7 +243,7 @@ static void can_configure(struct can *c)
 		((c->dtbt_tseg1) * 1000) / (c->dtbt_tseg1 + c->dtbt_tseg2)
 	);
 
-	can->TSCC.reg = CAN_TSCC_TCP(0) | CAN_TSCC_TSS(1);
+	can->TSCC.reg = CAN_TSCC_TCP(0) | CAN_TSCC_TSS(1); // time stamp counter in CAN bittime
 	can->TOCC.reg = CAN_TOCC_TOP(0xffff) | CAN_TOCC_TOS(0); // Timeout Counter disabled, Reset-default
 	can->NBTP.reg = CAN_NBTP_NSJW(c->nmbt_sjw-1)
 			| CAN_NBTP_NBRP(c->nmbt_brp-1)
@@ -255,11 +255,12 @@ static void can_configure(struct can *c)
 			| CAN_DBTP_DSJW(c->dtbt_sjw-1)
 			| CAN_DBTP_TDC;
 
+	// transmitter delay compensation offset
 	can->TDCR.bit.TDCO = tu_min8((1 + c->dtbt_tseg1 + c->dtbt_tseg2) / 2, M_CAN_TDCR_TDCO_MAX);
 
 	// tx fifo
 	can->TXBC.reg = CAN_TXBC_TBSA((uint32_t) c->tx_fifo) | CAN_TXBC_TFQS(CAN_TX_FIFO_SIZE);
-	//	REG_CAN0_TXBC |= CAN_TXBC_TFQM; // reset default
+
 	can->TXESC.reg = CAN_TXESC_TBDS_DATA64;
 
 	// tx event fifo
@@ -2069,6 +2070,7 @@ static void can_task(void *param)
 						sc_can_bulk_in_submit(index);
 						continue;
 					} else {
+						LOG("txr desync\n");
 						can->desync = true;
 					}
 				}
