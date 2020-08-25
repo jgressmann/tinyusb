@@ -238,14 +238,15 @@ struct sc_msg_can_status {
     uint8_t bus_status;
     uint32_t timestamp_us;
     uint16_t rx_lost;           ///< messages CAN -> USB lost since last time due to full rx fifo
-    uint16_t tx_dropped;        ///< messages USB-> CAN dropped since last time due of full tx fifo
+    uint16_t tx_dropped;        ///< messages USB -> CAN dropped since last time due of full tx fifo
     uint8_t arbt_phase_error;
     uint8_t data_phase_error;
     uint8_t node_state;
     uint8_t flags;              ///< CAN bus status flags
     uint8_t rx_errors;          ///< CAN rx error counter
     uint8_t tx_errors;          ///< CAN tx error counter
-    uint8_t unused[2];
+    uint8_t tx_fifo_size;
+    uint8_t rx_fifo_size;
 } SC_PACKED;
 
 struct sc_msg_can_rx {

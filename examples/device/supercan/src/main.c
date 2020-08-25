@@ -117,10 +117,11 @@ struct can {
 	CFG_TUSB_MEM_ALIGN struct can_tx_event_fifo_element tx_event_fifo[CAN_TX_FIFO_SIZE];
 	CFG_TUSB_MEM_ALIGN struct can_rx_fifo_element rx_fifo[CAN_RX_FIFO_SIZE];
 	uint16_t message_marker_map[CAN_TX_FIFO_SIZE];
+	volatile uint16_t rx_ts_high[CAN_RX_FIFO_SIZE];
+	volatile uint16_t tx_ts_high[CAN_TX_FIFO_SIZE];
 	TaskHandle_t task;
 	Can *m_can;
 	IRQn_Type interrupt_id;
-	volatile uint32_t ts_high;
 	uint32_t nm_bitrate_bps;
 	uint16_t nmbt_brp;
 	uint16_t nmbt_tseg1;
@@ -131,15 +132,13 @@ struct can {
 	uint8_t dtbt_tseg1;
 	uint8_t dtbt_tseg2;
 	uint8_t mode;
-	uint16_t features;
+	volatile CAN_PSR_Type int_psr;
 	volatile uint16_t rx_lost;
+	uint16_t features;
 	uint16_t tx_dropped;
-	volatile CAN_PSR_Type psr;
-	// volatile uint8_t bus_status;
-	// volatile uint8_t arbt_phase_error;
-	// volatile uint8_t data_phase_error;
-	// volatile uint8_t node_state_error;
-	// volatile uint8_t status_flags;
+	volatile uint16_t int_ts_high;
+	uint8_t int_tx_put_index;
+	uint8_t int_rx_put_index;
 	uint8_t led_status_green;
 	uint8_t led_status_red;
 	uint8_t led_traffic;
@@ -163,7 +162,7 @@ static inline void can_init_pins(void)
 		PORT_WRCONFIG_PINMASK(0x00c0) | // PA22/23
 		PORT_WRCONFIG_WRPINCFG |
 		PORT_WRCONFIG_WRPMUX |
-		PORT_WRCONFIG_PMUX(8) |         // I, CAN0, DS60001507E-page 32, 910
+		PORT_WRCONFIG_PMUX(8) |         // I, CAN0, DS60001507E page 32, 910
 		PORT_WRCONFIG_PMUXEN;
 
 	// CAN1 port
@@ -287,7 +286,6 @@ static void can_configure(struct can *c)
 	 	| CAN_IE_TEFNE  // new message in tx event fifo
 		;
 
-
 	m_can_conf_end(can);
 }
 
@@ -352,20 +350,16 @@ static void can_int(uint8_t index)
 
 	// LOG("IE=%08lx IR=%08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
 	bool notify = false;
+	uint16_t ts_high = can->int_ts_high;
 
 	CAN_IR_Type ir = can->m_can->IR;
 	if (ir.bit.TSW) {
-		uint32_t ts_high = __sync_add_and_fetch(&can->ts_high, 1u << M_CAN_TS_COUNTER_BITS);
-		(void)ts_high;
+		++ts_high;
+		can->int_ts_high = ts_high;
+		// always notify here to enable the host to keep track of CAN bus time
 		notify = true;
 		// LOG("CAN%u ts_high=%08lx\n", index, ts_high);
 	}
-
-	// uint8_t bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
-	// uint8_t node_state_error = 0;
-	// uint8_t arbt_phase_error = 0;
-	// uint8_t data_phase_error = 0;
-	// uint8_t status_flags = 0;
 
 	if (ir.bit.BO) {
 		LOG("CAN%u bus off\n", index);
@@ -391,9 +385,9 @@ static void can_int(uint8_t index)
 		CAN_PSR_BO
 		);
 
-	if (psr.reg != can->psr.reg) {
+	if (psr.reg != can->int_psr.reg) {
 		notify = true;
-		can->psr = psr;
+		can->int_psr = psr;
 	}
 	// node_state_error = psr.bit.ACT; // WARN do NOT change SC_CAN_STATE_SYNC etc.
 	// arbt_phase_error = can_map_m_can_ec(psr.bit.LEC, can->arbt_phase_error);
@@ -406,28 +400,17 @@ static void can_int(uint8_t index)
 	}
 
 	if (ir.bit.RF0N) {
+		can->rx_ts_high[can->int_rx_put_index] = ts_high;
+		can->int_rx_put_index = (can->int_rx_put_index + 1) & (CAN_RX_FIFO_SIZE-1);
 		notify = true;
 	}
 
 	if (ir.bit.TEFN) {
 		// LOG("CAN%u new tx event fifo entry\n", index);
+		can->tx_ts_high[can->int_tx_put_index] = ts_high;
+		can->int_tx_put_index = (can->int_tx_put_index + 1) & (CAN_TX_FIFO_SIZE-1);
 		notify = true;
 	}
-
-	// bool notify = can->bus_status != bus_status
-	// 	|| can->node_state_error != node_state_error
-	// 	|| can->arbt_phase_error != arbt_phase_error
-	// 	|| can->data_phase_error != data_phase_error
-	// 	|| can->status_flags != status_flags
-	// 	;
-
-	// can->bus_status = bus_status;
-	// can->node_state_error = node_state_error;
-	// can->arbt_phase_error = arbt_phase_error;
-	// can->data_phase_error = data_phase_error;
-	// can->status_flags = status_flags;
-
-	// notify |= ir.bit.RF0N;
 
 	// clear all interrupts
 	can->m_can->IR = ir;
@@ -456,7 +439,7 @@ static inline void can_set_state1(Can *can, IRQn_Type interrupt_id, bool enabled
 {
 	if (enabled) {
 		// clear any old interrupts
-		// can->IR = can->IR;
+		can->IR = can->IR;
 		// disable initialization
 		m_can_init_end(can);
 		// enable interrupt
@@ -467,24 +450,6 @@ static inline void can_set_state1(Can *can, IRQn_Type interrupt_id, bool enabled
 	}
 }
 
-static inline void cans_engage(void)
-{
-	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
-		struct can *can = &cans.can[i];
-		can_set_state1(can->m_can, can->interrupt_id, can->enabled);
-	}
-}
-
-static inline void cans_disengage(void)
-{
-	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
-		struct can *can = &cans.can[i];
-		// can->desync = false;
-		can_set_state1(can->m_can, can->interrupt_id, false);
-	}
-}
-
-
 static inline uint8_t dlc_to_len(uint8_t dlc)
 {
 	static const uint8_t map[16] = {
@@ -493,7 +458,7 @@ static inline uint8_t dlc_to_len(uint8_t dlc)
 	return map[dlc & 0xf];
 }
 
-static inline uint32_t can_time_to_us(struct can const *can, uint32_t can_time)
+static inline uint32_t can_bittime_to_us(struct can const *can, uint32_t can_time)
 {
 	uint64_t r = can_time;
 	r *= can->nm_bitrate_bps;
@@ -790,7 +755,6 @@ static void cans_reset(void)
 
 		can->enabled = false;
 		can->features = 0;
-		can->psr.reg = 0;
 		can->rx_lost = 0;
 		can->tx_dropped = 0;
 		can->desync = false;
@@ -803,7 +767,10 @@ static void cans_reset(void)
 		can->dtbt_sjw = 0;
 		can->dtbt_tseg1 = 0;
 		can->dtbt_tseg2 = 0;
-		can->ts_high = 0;
+		can->int_ts_high = 0;
+		can->int_tx_put_index = 0;
+		can->int_rx_put_index = 0;
+		can->int_psr.reg = 0;
 	}
 
 	// clear pending tx buffers
@@ -1317,8 +1284,8 @@ send_txr:
 					rep->len = bytes;
 					rep->channel = tmsg->channel;
 					rep->track_id = tmsg->track_id;
-					uint32_t ts = can->ts_high | can->m_can->TSCV.bit.TSC;
-					rep->timestamp_us = can_time_to_us(can, ts);
+					uint32_t ts = can->int_ts_high | can->m_can->TSCV.bit.TSC;
+					rep->timestamp_us = can_bittime_to_us(can, ts);
 					rep->flags = SC_CAN_FRAME_FLAG_DRP;
 				} else {
 					if (sc_can_bulk_in_ep_ready(index)) {
@@ -1901,8 +1868,6 @@ static void can_task(void *param)
 
 		led_burst(can->led_traffic, 8);
 
-		NVIC_DisableIRQ(can->interrupt_id);
-
 		for (bool done = false; !done; ) {
 			done = true;
 			uint8_t *out_beg;
@@ -1918,18 +1883,21 @@ static void can_task(void *param)
 				// place status messages
 				done = false;
 
-				uint32_t ts = can->ts_high | can->m_can->TSCV.bit.TSC;
-				uint32_t us = can_time_to_us(can, ts);
+				uint16_t rx_lost = __sync_fetch_and_and(&can->rx_lost, 0);
+				uint16_t tx_dropped = can->tx_dropped;
+				can->tx_dropped = 0;
+				uint32_t ts = can->int_ts_high | can->m_can->TSCV.bit.TSC;
+				uint32_t us = can_bittime_to_us(can, ts);
 				CAN_ECR_Type ecr = can->m_can->ECR;
-				CAN_PSR_Type psr = can->psr;
+				CAN_PSR_Type psr = can->int_psr;
 
 				struct sc_msg_can_status *msg = (struct sc_msg_can_status *)out_ptr;
 				msg->len = sizeof(*msg);
 				msg->id = SC_MSG_CAN_STATUS;
 				msg->channel = index;
 				msg->timestamp_us = us;
-				msg->rx_lost = can->rx_lost;
-				msg->tx_dropped = can->tx_dropped;
+				msg->rx_lost = rx_lost;
+				msg->tx_dropped = tx_dropped;
 				msg->flags = 0;
 				if (can->desync) {
 					msg->flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;
@@ -1953,16 +1921,16 @@ static void can_task(void *param)
 					canled_set_status(can, CANLED_STATUS_ERROR);
 				}
 
-				previous_bus_status = msg->bus_status;
-
 				msg->node_state = psr.bit.ACT;
 				msg->arbt_phase_error = can_map_m_can_ec(psr.bit.LEC, previous_arbt_error);
 				msg->data_phase_error = can_map_m_can_ec(psr.bit.DLEC, previous_data_error);
 				msg->tx_errors = ecr.bit.TEC;
 				msg->rx_errors = ecr.bit.REC;
+				msg->tx_fifo_size = CAN_TX_FIFO_SIZE - can->m_can->TXFQS.bit.TFFL;
+				msg->rx_fifo_size = can->m_can->RXF0S.bit.F0FL;
 
-				can->rx_lost = 0;
-				can->tx_dropped = 0;
+				// safe current state for next iteration
+				previous_bus_status = msg->bus_status;
 				previous_arbt_error = msg->arbt_phase_error;
 				previous_data_error = msg->data_phase_error;
 
@@ -2002,8 +1970,8 @@ static void can_task(void *param)
 					msg->can_id = id;
 
 					// LOG("CAN%u ts hi=%08lx lo=%04x\n", index, can->ts_high, r1.bit.RXTS);
-					uint32_t ts = can->ts_high | r1.bit.RXTS;
-					msg->timestamp_us = can_time_to_us(can, ts);
+					uint32_t ts = ((uint32_t)can->rx_ts_high[get_index] << M_CAN_TS_COUNTER_BITS) | r1.bit.RXTS;
+					msg->timestamp_us = can_bittime_to_us(can, ts);
 
 					if (r1.bit.FDF) {
 						msg->flags |= SC_CAN_FRAME_FLAG_FDF;
@@ -2049,8 +2017,8 @@ static void can_task(void *param)
 					msg->len = bytes;
 					msg->channel = index;
 					msg->track_id = can->message_marker_map[marker_index];
-					uint32_t ts = can->ts_high | t1.bit.TXTS;
-					msg->timestamp_us = can_time_to_us(can, ts);
+					uint32_t ts = ((uint32_t)can->tx_ts_high[get_index] << M_CAN_TS_COUNTER_BITS) | t1.bit.TXTS;
+					msg->timestamp_us = can_bittime_to_us(can, ts);
 					msg->flags = 0;
 					if (t0.bit.ESI) {
 						msg->flags |= SC_CAN_FRAME_FLAG_ESI;
@@ -2086,7 +2054,5 @@ static void can_task(void *param)
 			// LOG("usb tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
 			sc_can_bulk_in_submit(index);
 		}
-
-		NVIC_EnableIRQ(can->interrupt_id);
 	}
 }
