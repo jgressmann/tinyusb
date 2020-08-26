@@ -1850,7 +1850,8 @@ static void can_task(void *param)
 				uint16_t rx_lost = __sync_fetch_and_and(&can->rx_lost, 0);
 				uint16_t tx_dropped = can->tx_dropped;
 				can->tx_dropped = 0;
-				uint32_t ts = can->int_ts_high | can->m_can->TSCV.bit.TSC;
+				uint32_t ts = ((uint32_t)can->int_ts_high << M_CAN_TS_COUNTER_BITS) | can->m_can->TSCV.bit.TSC;
+				// LOG("status ts %lu\n", ts);
 				uint32_t us = can_bittime_to_us(can, ts);
 				CAN_ECR_Type ecr = can->m_can->ECR;
 				CAN_PSR_Type psr = can->int_psr;
@@ -2017,9 +2018,6 @@ static void can_task(void *param)
 
 				can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(get_index);
 			}
-
-			// TU_ASSERT(out_ptr <= out_end, );
-			// usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 		}
 
 		if (usb_can->tx_offsets[usb_can->tx_bank] > 0 && sc_can_bulk_in_ep_ready(index)) {
