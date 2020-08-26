@@ -959,7 +959,7 @@ send_dev_info:
 					sc_cmd_bulk_in_submit(index);
 					goto send_dev_info;
 				} else {
-					// ouch
+					LOG("no space for device info reply\n");
 				}
 			}
 		} break;
@@ -1012,7 +1012,7 @@ send_can_info:
 					sc_cmd_bulk_in_submit(index);
 					goto send_can_info;
 				} else {
-					// ouch
+					LOG("no space for can info reply\n");
 				}
 			}
 		} break;
@@ -1074,7 +1074,7 @@ send_bt_response:
 					sc_cmd_bulk_in_submit(index);
 					goto send_bt_response;
 				} else {
-					// ouch
+					LOG("no space for error reply\n");
 				}
 			}
 		} break;
@@ -1116,7 +1116,7 @@ send_mode_response:
 					sc_cmd_bulk_in_submit(index);
 					goto send_mode_response;
 				} else {
-					// ouch
+					LOG("no space for error reply\n");
 				}
 			}
 		} break;
@@ -1154,7 +1154,7 @@ send_features_response:
 					sc_cmd_bulk_in_submit(index);
 					goto send_features_response;
 				} else {
-					// ouch
+					LOG("no space for error reply\n");
 				}
 			}
 		} break;
@@ -1206,7 +1206,7 @@ send_bus_response:
 					sc_cmd_bulk_in_submit(index);
 					goto send_bus_response;
 				} else {
-					// ouch
+					LOG("no space for error reply\n");
 				}
 			}
 		} break;
