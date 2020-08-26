@@ -111,7 +111,6 @@ extern "C" {
 #define SC_MODE_RESTRICTED      0x02 ///< Restricted mode
 #define SC_MODE_EXT_LOOPBACK    0x03 ///< External loopback mode
 #define SC_MODE_FLAG_FDF        0x80 ///< Enables CAN-FD frame format
-// #define SC_MODE_FLAG_BRS        0x80 ///< Enables transmitting CAN-FD frames with bitrate switching
 
 #define SC_MODE_MASK            0x7f ///< Mask of mode
 
