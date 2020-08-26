@@ -1178,6 +1178,9 @@ send_features_response:
 				LOG("ch%u enabled=%u\n", index, can->enabled);
 				if (can->enabled) {
 					can_configure(can);
+				} else {
+					// clear any pending messages
+					usb_can->tx_offsets[usb_can->tx_bank] = 0;
 				}
 
 				can_set_state1(can->m_can, can->interrupt_id, can->enabled);
