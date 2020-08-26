@@ -857,6 +857,7 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes);
 static void sc_cmd_bulk_in(uint8_t index);
 static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes);
 static void sc_can_bulk_in(uint8_t index);
+static void sc_cmd_place_error_reply(uint8_t index, int8_t error);
 
 static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 {
@@ -1018,197 +1019,112 @@ send_can_info:
 		} break;
 		case SC_MSG_BITTIMING: {
 			LOG("ch%u SC_MSG_BITTIMING\n", index);
+			int8_t error = SC_CAN_ERROR_NONE;
 			struct sc_msg_bittiming const *tmsg = (struct sc_msg_bittiming const *)msg;
 			if (unlikely(msg->len < sizeof(*tmsg))) {
 				LOG("ch%u ERROR: msg too short\n", index);
-				continue;
-			}
-
-			// if (unlikely(tmsg->channel != index)) {
-			// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
-			// 	continue;
-			// }
-
-			uint16_t nmbt_brp, nmbt_tseg1;
-			uint8_t nmbt_sjw, nmbt_tseg2, dtbt_brp, dtbt_sjw, dtbt_tseg1, dtbt_tseg2;
-
-			nmbt_brp = tmsg->nmbt_brp;
-			nmbt_tseg1 = tmsg->nmbt_tseg1;
-			nmbt_sjw = tmsg->nmbt_sjw;
-			nmbt_tseg2 = tmsg->nmbt_tseg2;
-			dtbt_brp = tmsg->dtbt_brp;
-			dtbt_sjw = tmsg->dtbt_sjw;
-			dtbt_tseg1 = tmsg->dtbt_tseg1;
-			dtbt_tseg2 = tmsg->dtbt_tseg2;
-
-			// clamp
-			can->nmbt_brp = tu_max16(M_CAN_NMBT_BRP_MIN, tu_min16(nmbt_brp, M_CAN_NMBT_BRP_MAX));
-			can->nmbt_tseg1 = tu_max16(M_CAN_NMBT_TSEG1_MIN, tu_min16(nmbt_tseg1, M_CAN_NMBT_TSEG1_MAX));
-			can->nmbt_sjw = tu_max8(M_CAN_NMBT_SJW_MIN, tu_min8(nmbt_sjw, M_CAN_NMBT_SJW_MAX));
-			can->nmbt_tseg2 = tu_max8(M_CAN_NMBT_TSEG2_MIN, tu_min8(nmbt_tseg2, M_CAN_NMBT_TSEG2_MAX));
-			can->dtbt_brp = tu_max8(M_CAN_DTBT_BRP_MIN, tu_min8(dtbt_brp, M_CAN_DTBT_BRP_MAX));
-			can->dtbt_sjw = tu_max8(M_CAN_DTBT_SJW_MIN, tu_min8(dtbt_sjw, M_CAN_DTBT_SJW_MAX));
-			can->dtbt_tseg1 = tu_max8(M_CAN_DTBT_TSEG1_MIN, tu_min8(dtbt_tseg1, M_CAN_DTBT_TSEG1_MAX));
-			can->dtbt_tseg2 = tu_max8(M_CAN_DTBT_TSEG2_MIN, tu_min8(dtbt_tseg2, M_CAN_DTBT_TSEG2_MAX));
-
-			// set nominal bitrate for timestamp calculation
-			can->nm_bitrate_bps = CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (1 + can->nmbt_tseg1 + can->nmbt_tseg2));
-
-			uint8_t bytes = sizeof(struct sc_msg_error);
-
-			uint8_t *out_ptr;
-			uint8_t *out_end;
-
-send_bt_response:
-			out_ptr = usb_cmd->tx_buffers[usb_cmd->tx_bank] + usb_cmd->tx_offsets[usb_cmd->tx_bank];
-			out_end = usb_cmd->tx_buffers[usb_cmd->tx_bank] + CMD_BUFFER_SIZE;
-			if (out_end - out_ptr >= bytes) {
-				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
-				struct sc_msg_error *rep = (struct sc_msg_error *)out_ptr;
-				rep->id = SC_MSG_ERROR;
-				rep->len = sizeof(*rep);
-				rep->channel = 0;
-				rep->error = SC_ERROR_NONE;
+				error = SC_ERROR_SHORT;
 			} else {
-				if (sc_cmd_bulk_in_ep_ready(index)) {
-					sc_cmd_bulk_in_submit(index);
-					goto send_bt_response;
-				} else {
-					LOG("no space for error reply\n");
-				}
+
+				// if (unlikely(tmsg->channel != index)) {
+				// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
+				// 	continue;
+				// }
+
+				uint16_t nmbt_brp, nmbt_tseg1;
+				uint8_t nmbt_sjw, nmbt_tseg2, dtbt_brp, dtbt_sjw, dtbt_tseg1, dtbt_tseg2;
+
+				nmbt_brp = tmsg->nmbt_brp;
+				nmbt_tseg1 = tmsg->nmbt_tseg1;
+				nmbt_sjw = tmsg->nmbt_sjw;
+				nmbt_tseg2 = tmsg->nmbt_tseg2;
+				dtbt_brp = tmsg->dtbt_brp;
+				dtbt_sjw = tmsg->dtbt_sjw;
+				dtbt_tseg1 = tmsg->dtbt_tseg1;
+				dtbt_tseg2 = tmsg->dtbt_tseg2;
+
+				// clamp
+				can->nmbt_brp = tu_max16(M_CAN_NMBT_BRP_MIN, tu_min16(nmbt_brp, M_CAN_NMBT_BRP_MAX));
+				can->nmbt_tseg1 = tu_max16(M_CAN_NMBT_TSEG1_MIN, tu_min16(nmbt_tseg1, M_CAN_NMBT_TSEG1_MAX));
+				can->nmbt_sjw = tu_max8(M_CAN_NMBT_SJW_MIN, tu_min8(nmbt_sjw, M_CAN_NMBT_SJW_MAX));
+				can->nmbt_tseg2 = tu_max8(M_CAN_NMBT_TSEG2_MIN, tu_min8(nmbt_tseg2, M_CAN_NMBT_TSEG2_MAX));
+				can->dtbt_brp = tu_max8(M_CAN_DTBT_BRP_MIN, tu_min8(dtbt_brp, M_CAN_DTBT_BRP_MAX));
+				can->dtbt_sjw = tu_max8(M_CAN_DTBT_SJW_MIN, tu_min8(dtbt_sjw, M_CAN_DTBT_SJW_MAX));
+				can->dtbt_tseg1 = tu_max8(M_CAN_DTBT_TSEG1_MIN, tu_min8(dtbt_tseg1, M_CAN_DTBT_TSEG1_MAX));
+				can->dtbt_tseg2 = tu_max8(M_CAN_DTBT_TSEG2_MIN, tu_min8(dtbt_tseg2, M_CAN_DTBT_TSEG2_MAX));
+
+				// set nominal bitrate for timestamp calculation
+				can->nm_bitrate_bps = CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (1 + can->nmbt_tseg1 + can->nmbt_tseg2));
 			}
+
+			sc_cmd_place_error_reply(index, error);
 		} break;
-		// case SC_MSG_RESET: {
-		// 	LOG("ch%u SC_MSG_RESET\n", index);
-		// 	// NVIC_SystemReset();
-		// } break;
 		case SC_MSG_MODE: {
 			LOG("ch%u SC_MSG_MODE\n", index);
 			struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
+			int8_t error = SC_ERROR_NONE;
 			if (unlikely(msg->len < sizeof(*tmsg))) {
 				LOG("ch%u ERROR: msg too short\n", index);
-				continue;
-			}
-
-			// if (unlikely(tmsg->channel != index)) {
-			// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
-			// 	continue;
-			// }
-
-			can->mode = tmsg->args[0];
-
-			uint8_t bytes = sizeof(struct sc_msg_error);
-			uint8_t *out_ptr;
-			uint8_t *out_end;
-
-send_mode_response:
-			out_ptr = usb_cmd->tx_buffers[usb_cmd->tx_bank] + usb_cmd->tx_offsets[usb_cmd->tx_bank];
-			out_end = usb_cmd->tx_buffers[usb_cmd->tx_bank] + CMD_BUFFER_SIZE;
-			if (out_end - out_ptr >= bytes) {
-				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
-				struct sc_msg_error *rep = (struct sc_msg_error *)out_ptr;
-				rep->id = SC_MSG_ERROR;
-				rep->len = sizeof(*rep);
-				rep->channel = 0;
-				rep->error = SC_ERROR_NONE;
+				error = SC_ERROR_SHORT;
 			} else {
-				if (sc_cmd_bulk_in_ep_ready(index)) {
-					sc_cmd_bulk_in_submit(index);
-					goto send_mode_response;
-				} else {
-					LOG("no space for error reply\n");
-				}
+				// if (unlikely(tmsg->channel != index)) {
+				// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
+				// 	continue;
+				// }
+
+				can->mode = tmsg->args[0];
 			}
+			sc_cmd_place_error_reply(index, error);
 		} break;
 		case SC_MSG_FEATURES: {
 			LOG("ch%u SC_MSG_FEATURES\n", index);
 			struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
+			int8_t error = SC_ERROR_NONE;
 			if (unlikely(msg->len < sizeof(*tmsg))) {
 				LOG("ch%u ERROR: msg too short\n", index);
-				continue;
-			}
-
-			// if (unlikely(tmsg->channel != index)) {
-			// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
-			// 	continue;
-			// }
-
-			can->features = tmsg->args[0];
-
-			uint8_t bytes = sizeof(struct sc_msg_error);
-			uint8_t *out_ptr;
-			uint8_t *out_end;
-
-send_features_response:
-			out_ptr = usb_cmd->tx_buffers[usb_cmd->tx_bank] + usb_cmd->tx_offsets[usb_cmd->tx_bank];
-			out_end = usb_cmd->tx_buffers[usb_cmd->tx_bank] + CMD_BUFFER_SIZE;
-			if (out_end - out_ptr >= bytes) {
-				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
-				struct sc_msg_error *rep = (struct sc_msg_error *)out_ptr;
-				rep->id = SC_MSG_ERROR;
-				rep->len = sizeof(*rep);
-				rep->channel = 0;
-				rep->error = SC_ERROR_NONE;
+				error = SC_ERROR_SHORT;
 			} else {
-				if (sc_cmd_bulk_in_ep_ready(index)) {
-					sc_cmd_bulk_in_submit(index);
-					goto send_features_response;
-				} else {
-					LOG("no space for error reply\n");
-				}
+				// if (unlikely(tmsg->channel != index)) {
+				// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
+				// 	continue;
+				// }
+
+				can->features = tmsg->args[0];
 			}
+
+			sc_cmd_place_error_reply(index, error);
 		} break;
 		case SC_MSG_BUS: {
 			LOG("ch%u SC_MSG_BUS\n", index);
 			struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
-
+			int8_t error = SC_ERROR_NONE;
 			if (unlikely(msg->len < sizeof(*tmsg))) {
 				LOG("ERROR: msg too short\n");
-				continue;
-			}
-
-			// if (unlikely(tmsg->channel != index)) {
-			// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
-			// 	continue;
-			// }
-
-			bool was_enabled = can->enabled;
-			can->enabled = tmsg->args[0] != 0;
-			if (was_enabled != can->enabled) {
-				LOG("ch%u enabled=%u\n", index, can->enabled);
-				if (can->enabled) {
-					can_configure(can);
-				} else {
-					// clear any pending messages
-					usb_can->tx_offsets[usb_can->tx_bank] = 0;
-				}
-
-				can_set_state1(can->m_can, can->interrupt_id, can->enabled);
-				canled_set_status(can, can->enabled ? CANLED_STATUS_ENABLED_BUS_ON : CANLED_STATUS_ENABLED_BUS_OFF);
-			}
-
-			uint8_t bytes = sizeof(struct sc_msg_error);
-			uint8_t *out_ptr;
-			uint8_t *out_end;
-
-send_bus_response:
-			out_ptr = usb_cmd->tx_buffers[usb_cmd->tx_bank] + usb_cmd->tx_offsets[usb_cmd->tx_bank];
-			out_end = usb_cmd->tx_buffers[usb_cmd->tx_bank] + CMD_BUFFER_SIZE;
-			if (out_end - out_ptr >= bytes) {
-				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
-				struct sc_msg_error *rep = (struct sc_msg_error *)out_ptr;
-				rep->id = SC_MSG_ERROR;
-				rep->len = sizeof(*rep);
-				rep->channel = 0;
-				rep->error = SC_ERROR_NONE;
+				error = SC_ERROR_SHORT;
 			} else {
-				if (sc_cmd_bulk_in_ep_ready(index)) {
-					sc_cmd_bulk_in_submit(index);
-					goto send_bus_response;
-				} else {
-					LOG("no space for error reply\n");
+
+				// if (unlikely(tmsg->channel != index)) {
+				// 	LOG("ERROR: ch%u mismatch %u\n", index, tmsg->channel);
+				// 	continue;
+				// }
+
+				bool was_enabled = can->enabled;
+				can->enabled = tmsg->args[0] != 0;
+				if (was_enabled != can->enabled) {
+					LOG("ch%u enabled=%u\n", index, can->enabled);
+					if (can->enabled) {
+						can_configure(can);
+					} else {
+						// clear any pending messages
+						usb_can->tx_offsets[usb_can->tx_bank] = 0;
+					}
+
+					can_set_state1(can->m_can, can->interrupt_id, can->enabled);
+					canled_set_status(can, can->enabled ? CANLED_STATUS_ENABLED_BUS_ON : CANLED_STATUS_ENABLED_BUS_OFF);
 				}
 			}
+
+			sc_cmd_place_error_reply(index, error);
 		} break;
 		default:
 			TU_LOG2_MEM(msg, msg->len, 2);
@@ -1391,6 +1307,37 @@ static void sc_can_bulk_in(uint8_t index)
 		sc_can_bulk_in_submit(index, __func__);
 	}
 }
+
+static void sc_cmd_place_error_reply(uint8_t index, int8_t error)
+{
+	TU_ASSERT(index < TU_ARRAY_SIZE(usb.cmd), );
+
+	struct usb_cmd *usb_cmd = &usb.cmd[index];
+	uint8_t bytes = sizeof(struct sc_msg_error);
+	uint8_t *out_ptr;
+	uint8_t *out_end;
+
+send:
+	out_ptr = usb_cmd->tx_buffers[usb_cmd->tx_bank] + usb_cmd->tx_offsets[usb_cmd->tx_bank];
+	out_end = usb_cmd->tx_buffers[usb_cmd->tx_bank] + CMD_BUFFER_SIZE;
+	if (out_end - out_ptr >= bytes) {
+		usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
+		struct sc_msg_error *rep = (struct sc_msg_error *)out_ptr;
+		rep->id = SC_MSG_ERROR;
+		rep->len = sizeof(*rep);
+		rep->channel = 0;
+		rep->error = error;
+	} else {
+		if (sc_cmd_bulk_in_ep_ready(index)) {
+			sc_cmd_bulk_in_submit(index);
+			goto send;
+		} else {
+			LOG("ch%u: no space for error reply\n", index);
+		}
+	}
+}
+
+
 
 int main(void)
 {

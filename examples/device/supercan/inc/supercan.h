@@ -120,8 +120,10 @@ extern "C" {
  */
 #define SC_ERROR_UNKNOWN       -1 ///< Unknown error
 #define SC_ERROR_NONE           0 ///< No error
-#define SC_ERROR_PARAM          1 ///< Requested feature / setting not supported
-#define SC_ERROR_MODE           2 ///< Request cannot be processed in current device mode
+#define SC_ERROR_SHORT          1 ///< Message too short
+#define SC_ERROR_PARAM          2 ///< Requested feature / setting not supported
+#define SC_ERROR_MODE           3 ///< Request cannot be processed in current device mode
+
 
 struct sc_msg_header {
     uint8_t id;
