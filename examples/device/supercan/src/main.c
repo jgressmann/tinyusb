@@ -119,7 +119,9 @@ struct can {
 	uint16_t message_marker_map[CAN_TX_FIFO_SIZE];
 	volatile uint16_t rx_ts_high[CAN_RX_FIFO_SIZE];
 	volatile uint16_t tx_ts_high[CAN_TX_FIFO_SIZE];
-	TaskHandle_t task;
+	StackType_t stack_mem[configMINIMAL_STACK_SIZE];
+	StaticTask_t task_mem;
+	TaskHandle_t task_handle;
 	Can *m_can;
 	IRQn_Type interrupt_id;
 	uint32_t nm_bitrate_bps;
@@ -136,7 +138,8 @@ struct can {
 	volatile uint16_t rx_lost;
 	uint16_t features;
 	uint16_t tx_dropped;
-	volatile uint16_t int_ts_high;
+	uint16_t int_ts_high;
+	volatile uint32_t int_ts;
 	uint8_t int_tx_put_index;
 	uint8_t int_rx_put_index;
 	uint8_t led_status_green;
@@ -394,7 +397,7 @@ static void can_int(uint8_t index)
 	// data_phase_error = can_map_m_can_ec(psr.bit.DLEC, can->data_phase_error);
 
 	if (ir.bit.RF0L) {
-		LOG("CAN%u msg lost\n", index);
+		// LOG("CAN%u msg lost\n", index);
 		__sync_add_and_fetch(&can->rx_lost, 1);
 		notify = true;
 	}
@@ -415,13 +418,18 @@ static void can_int(uint8_t index)
 	// clear all interrupts
 	can->m_can->IR = ir;
 
+	// update last non-interrupted timestamp
+	can->int_ts = ((uint32_t)ts_high << M_CAN_TS_COUNTER_BITS) | can->m_can->TSCV.bit.TSC;
+
 	if (notify) {
 		// LOG("CAN%u notify\n", index);
 		/* Do NOT call portYIELD_FROM_ISR(...)!
 		 *
 		 * It might not return to the task that was interrupted.
 		 */
-		vTaskNotifyGiveFromISR(can->task, NULL);
+		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+		vTaskNotifyGiveFromISR(can->task_handle, &xHigherPriorityTaskWoken);
+		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 	}
 }
 
@@ -481,9 +489,6 @@ static StaticTask_t usb_device_stack_mem;
 
 static StackType_t led_task_stack[configMINIMAL_STACK_SIZE];
 static StaticTask_t led_task_mem;
-
-static StackType_t can_task_stack[2][configMINIMAL_STACK_SIZE];
-static StaticTask_t can_task_mem[2];
 
 
 static void tusb_device_task(void* param);
@@ -724,6 +729,8 @@ static void dfu_timer_expired(TimerHandle_t t)
 struct usb_can {
 	CFG_TUSB_MEM_ALIGN uint8_t tx_buffers[2][MSG_BUFFER_SIZE];
 	CFG_TUSB_MEM_ALIGN uint8_t rx_buffers[2][MSG_BUFFER_SIZE];
+	StaticSemaphore_t mutex_mem;
+	SemaphoreHandle_t mutex_handle;
 	uint16_t tx_offsets[2];
 	uint8_t tx_bank;
 	uint8_t rx_bank;
@@ -747,15 +754,38 @@ static struct usb {
 	bool mounted;
 } usb;
 
+static inline void can_off(uint8_t index)
+{
+	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
+	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can), );
+
+	struct can *can = &cans.can[index];
+	struct usb_can *usb_can = &usb.can[index];
+
+	// go bus off
+	can_set_state1(can->m_can, can->interrupt_id, false);
+	can->enabled = false;
+
+	// clear tx buffers
+	xSemaphoreTake(usb_can->mutex_handle, ~0);
+	for (size_t j = 0; j < TU_ARRAY_SIZE(usb_can->tx_offsets); ++j) {
+		usb_can->tx_offsets[j] = 0;
+		memset(usb_can->tx_buffers[j], 0, sizeof(usb_can->tx_buffers[j]));
+	}
+	xSemaphoreGive(usb_can->mutex_handle);
+}
 
 static void cans_reset(void)
 {
 	// disable CAN units, reset configuration & status
 	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
-		struct can *can = &cans.can[i];
-		can_set_state1(can->m_can, can->interrupt_id, false);
+		can_off((uint8_t)i);
+	}
 
-		can->enabled = false;
+	// disable CAN units, reset configuration & status
+	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
+		struct can *can = &cans.can[i];
+
 		can->features = 0;
 		can->rx_lost = 0;
 		can->tx_dropped = 0;
@@ -775,11 +805,13 @@ static void cans_reset(void)
 		can->int_psr.reg = 0;
 	}
 
-	// clear pending tx buffers
-	for (size_t i = 0; i < TU_ARRAY_SIZE(usb.can); ++i) {
-		struct usb_can *can = &usb.can[i];
-		can->tx_offsets[can->tx_bank] = 0;
-	}
+	// // clear pending tx buffers
+	// for (size_t i = 0; i < TU_ARRAY_SIZE(usb.can); ++i) {
+	// 	struct usb_can *can = &usb.can[i];
+	// 	for (size_t j = 0; j < TU_ARRAY_SIZE(can->tx_offsets); ++j) {
+	// 		can->tx_offsets[j] = 0;
+	// 	}
+	// }
 }
 
 static inline bool sc_cmd_bulk_in_ep_ready(uint8_t index)
@@ -814,6 +846,12 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 	TU_ASSERT(can->tx_offsets[can->tx_bank] <= MSG_BUFFER_SIZE, );
 
 #if SUPERCAN_DEBUG
+	if (can->tx_offsets[can->tx_bank] > MSG_BUFFER_SIZE) {
+		LOG("%s: msg buffer size %u out of bounds\n", func, can->tx_offsets[can->tx_bank]);
+		can->tx_offsets[can->tx_bank] = 0;
+		return;
+	}
+
 	uint8_t const *sptr = can->tx_buffers[can->tx_bank];
 	uint8_t const *eptr = sptr + can->tx_offsets[can->tx_bank];
 	uint8_t const *ptr = sptr;
@@ -903,6 +941,11 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 			// reset
 			cans_reset();
 			cans_led_status_set(CANLED_STATUS_ENABLED_BUS_OFF);
+
+			// transmit empty buffers (clear whatever was in there before)
+			for (size_t i = 0; i < TU_ARRAY_SIZE(usb.can); ++i) {
+				(void)dcd_edpt_xfer(usb.port, 0x80 | usb_can->pipe, usb_can->tx_buffers[usb_can->tx_bank], usb_can->tx_offsets[usb_can->tx_bank]);
+			}
 
 			// reset tx buffer
 			uint8_t len = sizeof(struct sc_msg_hello);
@@ -1114,13 +1157,12 @@ send_can_info:
 					LOG("ch%u enabled=%u\n", index, can->enabled);
 					if (can->enabled) {
 						can_configure(can);
+						can_set_state1(can->m_can, can->interrupt_id, can->enabled);
+						canled_set_status(can, CANLED_STATUS_ENABLED_BUS_ON);
 					} else {
-						// clear any pending messages
-						usb_can->tx_offsets[usb_can->tx_bank] = 0;
+						can_off(index);
+						canled_set_status(can, CANLED_STATUS_ENABLED_BUS_OFF);
 					}
-
-					can_set_state1(can->m_can, can->interrupt_id, can->enabled);
-					canled_set_status(can, can->enabled ? CANLED_STATUS_ENABLED_BUS_ON : CANLED_STATUS_ENABLED_BUS_OFF);
 				}
 			}
 
@@ -1159,6 +1201,7 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 	usb_can->rx_bank = !usb_can->rx_bank;
 	(void)dcd_edpt_xfer(usb.port, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE);
 
+	xSemaphoreTake(usb_can->mutex_handle, ~0);
 
 	// process messages
 	while (in_ptr + SC_MSG_HEADER_LEN <= in_end) {
@@ -1217,7 +1260,7 @@ send_txr:
 					rep->len = bytes;
 					rep->channel = tmsg->channel;
 					rep->track_id = tmsg->track_id;
-					uint32_t ts = can->int_ts_high | can->m_can->TSCV.bit.TSC;
+					uint32_t ts = __sync_fetch_and_or(&can->int_ts, 0);
 					rep->timestamp_us = can_bittime_to_us(can, ts);
 					rep->flags = SC_CAN_FRAME_FLAG_DRP;
 				} else {
@@ -1276,6 +1319,8 @@ send_txr:
 		// LOG("usb tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
 		sc_can_bulk_in_submit(index, __func__);
 	}
+
+	xSemaphoreGive(usb_can->mutex_handle);
 }
 
 static void sc_cmd_bulk_in(uint8_t index)
@@ -1300,12 +1345,16 @@ static void sc_can_bulk_in(uint8_t index)
 
 	struct usb_can *usb_can = &usb.can[index];
 
+	xSemaphoreTake(usb_can->mutex_handle, ~0);
+
 	usb_can->tx_offsets[!usb_can->tx_bank] = 0;
 
 	if (usb_can->tx_offsets[usb_can->tx_bank]) {
 		// LOG("usb msg tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
 		sc_can_bulk_in_submit(index, __func__);
 	}
+
+	xSemaphoreGive(usb_can->mutex_handle);
 }
 
 static void sc_cmd_place_error_reply(uint8_t index, int8_t error)
@@ -1378,8 +1427,10 @@ int main(void)
 #endif
 	cans.can[0].led_traffic = CAN0_TRAFFIC_LED;
 	cans.can[1].led_traffic = CAN1_TRAFFIC_LED;
-	cans.can[0].task = xTaskCreateStatic(&can_task, "can0", TU_ARRAY_SIZE(can_task_stack[0]), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, can_task_stack[0], &can_task_mem[0]);
-	cans.can[1].task = xTaskCreateStatic(&can_task, "can1", TU_ARRAY_SIZE(can_task_stack[1]), (void*)(uintptr_t)1, configMAX_PRIORITIES-1, can_task_stack[1], &can_task_mem[1]);
+	usb.can[0].mutex_handle = xSemaphoreCreateMutexStatic(&usb.can[0].mutex_mem);
+	usb.can[1].mutex_handle = xSemaphoreCreateMutexStatic(&usb.can[1].mutex_mem);
+	cans.can[0].task_handle = xTaskCreateStatic(&can_task, "can0", TU_ARRAY_SIZE(cans.can[0].stack_mem), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, cans.can[0].stack_mem, &cans.can[0].task_mem);
+	cans.can[1].task_handle = xTaskCreateStatic(&can_task, "can1", TU_ARRAY_SIZE(cans.can[1].stack_mem), (void*)(uintptr_t)1, configMAX_PRIORITIES-1, cans.can[1].stack_mem, &cans.can[1].task_mem);
 
 	led_blink(0, 2000);
 	led_set(POWER_LED, 1);
@@ -1468,12 +1519,20 @@ void tud_custom_init_cb(void)
 void tud_custom_reset_cb(uint8_t rhport)
 {
 	LOG("port %u reset\n", rhport);
-	memset(&usb, 0, sizeof(usb));
+	usb.mounted = false;
 	usb.port = rhport;
 	usb.cmd[0].pipe = SC_M1_EP_CMD0_BULK_OUT;
+	usb.cmd[0].tx_offsets[0] = 0;
+	usb.cmd[0].tx_offsets[1] = 0;
 	usb.cmd[1].pipe = SC_M1_EP_CMD1_BULK_OUT;
+	usb.cmd[1].tx_offsets[0] = 0;
+	usb.cmd[1].tx_offsets[1] = 0;
 	usb.can[0].pipe = SC_M1_EP_MSG0_BULK_OUT;
+	usb.can[0].tx_offsets[0] = 0;
+	usb.can[0].tx_offsets[1] = 0;
 	usb.can[1].pipe = SC_M1_EP_MSG1_BULK_OUT;
+	usb.can[1].tx_offsets[0] = 0;
+	usb.can[1].tx_offsets[1] = 0;
 }
 
 bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t* p_length)
@@ -1520,13 +1579,13 @@ bool tud_custom_xfer_cb(
 	xfer_result_t event,
 	uint32_t xferred_bytes)
 {
-	USB_TRAFFIC_DO_LED;
-
 	(void)event; // always success
 
 	if (unlikely(rhport != usb.port)) {
 		return false;
 	}
+
+	USB_TRAFFIC_DO_LED;
 
 	switch (ep_addr) {
 	case SC_M1_EP_CMD0_BULK_OUT:
@@ -1614,6 +1673,8 @@ bool tud_vendor_control_request_cb(uint8_t rhport, tusb_control_request_t const 
 	if (unlikely(rhport != usb.port)) {
 		return false;
 	}
+
+	USB_TRAFFIC_DO_LED;
 
 	LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
 		request->bmRequestType,
@@ -1832,6 +1893,8 @@ static void can_task(void *param)
 
 		led_burst(can->led_traffic, 8);
 
+		xSemaphoreTake(usb_can->mutex_handle, ~0);
+
 		for (bool done = false; !done; ) {
 			done = true;
 			uint8_t *out_beg;
@@ -1850,7 +1913,7 @@ static void can_task(void *param)
 				uint16_t rx_lost = __sync_fetch_and_and(&can->rx_lost, 0);
 				uint16_t tx_dropped = can->tx_dropped;
 				can->tx_dropped = 0;
-				uint32_t ts = ((uint32_t)can->int_ts_high << M_CAN_TS_COUNTER_BITS) | can->m_can->TSCV.bit.TSC;
+				uint32_t ts = __sync_or_and_fetch(&can->int_ts, 0);
 				// LOG("status ts %lu\n", ts);
 				uint32_t us = can_bittime_to_us(can, ts);
 				CAN_ECR_Type ecr = can->m_can->ECR;
@@ -2024,5 +2087,7 @@ static void can_task(void *param)
 			// LOG("usb tx %u bytes\n", usb.tx_offsets[usb.tx_bank]);
 			sc_can_bulk_in_submit(index, __func__);
 		}
+
+		xSemaphoreGive(usb_can->mutex_handle);
 	}
 }
