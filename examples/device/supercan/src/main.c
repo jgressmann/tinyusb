@@ -457,6 +457,17 @@ static inline void can_set_state1(Can *can, IRQn_Type interrupt_id, bool enabled
 	} else {
 		NVIC_DisableIRQ(interrupt_id);
 		m_can_init_begin(can);
+		// // clear tx fifo
+		// uint8_t prev = can->TXBC.bit.TFQS;
+		// can->TXBC.bit.TFQS = 0;
+		// can->TXBC.bit.TFQS = prev;
+		TU_ASSERT(can->TXFQS.bit.TFFL == CAN_TX_FIFO_SIZE, );
+		// // clear rx fifo
+		// // m_can_rx0_clear(can);
+		// prev = can->RXF0C.bit.F0S;
+		// can->RXF0C.bit.F0S = 0;
+		// can->RXF0C.bit.F0S = prev;
+		TU_ASSERT(can->RXF0S.bit.F0FL == 0, );
 	}
 }
 
