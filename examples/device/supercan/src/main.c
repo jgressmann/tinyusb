@@ -116,7 +116,6 @@ struct can {
 	CFG_TUSB_MEM_ALIGN struct can_tx_fifo_element tx_fifo[CAN_TX_FIFO_SIZE];
 	CFG_TUSB_MEM_ALIGN struct can_tx_event_fifo_element tx_event_fifo[CAN_TX_FIFO_SIZE];
 	CFG_TUSB_MEM_ALIGN struct can_rx_fifo_element rx_fifo[CAN_RX_FIFO_SIZE];
-	uint16_t message_marker_map[CAN_TX_FIFO_SIZE];
 	volatile uint16_t rx_ts_high[CAN_RX_FIFO_SIZE];
 	volatile uint16_t tx_ts_high[CAN_TX_FIFO_SIZE];
 	StackType_t stack_mem[configMINIMAL_STACK_SIZE];
@@ -680,7 +679,7 @@ static inline void cans_led_status_set(int status)
 
 #define MAJOR 0
 #define MINOR 2
-#define PATCH 0
+#define PATCH 1
 
 
 #if SUPERDFU_APP
@@ -766,34 +765,39 @@ static inline void can_off(uint8_t index)
 	xSemaphoreGive(usb_can->mutex_handle);
 }
 
-static void cans_reset(void)
+static inline void can_reset(uint8_t index)
 {
-	// disable CAN units, reset configuration & status
-	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
-		can_off((uint8_t)i);
-	}
+	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
+	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can), );
 
 	// disable CAN units, reset configuration & status
-	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
-		struct can *can = &cans.can[i];
+	can_off(index);
 
-		can->features = 0;
-		can->rx_lost = 0;
-		can->tx_dropped = 0;
-		can->desync = false;
-		can->mode = 0;
-		can->nm_bitrate_bps = 0;
-		can->nmbt_brp = 0;
-		can->nmbt_sjw = 0;
-		can->nmbt_tseg1 = 0;
-		can->dtbt_brp = 0;
-		can->dtbt_sjw = 0;
-		can->dtbt_tseg1 = 0;
-		can->dtbt_tseg2 = 0;
-		can->int_ts_high = 0;
-		can->int_tx_put_index = 0;
-		can->int_rx_put_index = 0;
-		can->int_psr.reg = 0;
+	struct can *can = &cans.can[index];
+
+	can->features = 0;
+	can->rx_lost = 0;
+	can->tx_dropped = 0;
+	can->desync = false;
+	can->mode = 0;
+	can->nm_bitrate_bps = 0;
+	can->nmbt_brp = 0;
+	can->nmbt_sjw = 0;
+	can->nmbt_tseg1 = 0;
+	can->dtbt_brp = 0;
+	can->dtbt_sjw = 0;
+	can->dtbt_tseg1 = 0;
+	can->dtbt_tseg2 = 0;
+	can->int_ts_high = 0;
+	can->int_tx_put_index = 0;
+	can->int_rx_put_index = 0;
+	can->int_psr.reg = 0;
+}
+
+static inline void cans_reset(void)
+{
+	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
+		can_reset((uint8_t)i);
 	}
 }
 
@@ -922,13 +926,11 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 			LOG("ch%u SC_MSG_HELLO_DEVICE\n", index);
 
 			// reset
-			cans_reset();
-			cans_led_status_set(CANLED_STATUS_ENABLED_BUS_OFF);
+			can_reset(index);
+			canled_set_status(can, CANLED_STATUS_ENABLED_BUS_OFF);
 
 			// transmit empty buffers (clear whatever was in there before)
-			for (size_t i = 0; i < TU_ARRAY_SIZE(usb.can); ++i) {
-				(void)dcd_edpt_xfer(usb.port, 0x80 | usb_can->pipe, usb_can->tx_buffers[usb_can->tx_bank], usb_can->tx_offsets[usb_can->tx_bank]);
-			}
+			(void)dcd_edpt_xfer(usb.port, 0x80 | usb_can->pipe, usb_can->tx_buffers[usb_can->tx_bank], usb_can->tx_offsets[usb_can->tx_bank]);
 
 			// reset tx buffer
 			uint8_t len = sizeof(struct sc_msg_hello);
@@ -943,7 +945,6 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 			rep->byte_order = SC_BYTE_ORDER_LE;
 #endif
 			rep->cmd_buffer_size = cpu_to_be16(CMD_BUFFER_SIZE);
-			rep->msg_buffer_size = cpu_to_be16(MSG_BUFFER_SIZE);
 
 			// don't process any more messages
 			in_ptr = in_end;
@@ -952,7 +953,7 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 		} break;
 		case SC_MSG_DEVICE_INFO: {
 			LOG("ch%u SC_MSG_DEVICE_INFO\n", index);
-			uint8_t bytes = sizeof(struct sc_msg_dev_info) + sizeof(struct sc_chan_info);
+			uint8_t bytes = sizeof(struct sc_msg_dev_info);
 
 			uint8_t *out_ptr;
 			uint8_t *out_end;
@@ -992,7 +993,7 @@ send_dev_info:
 		} break;
 		case SC_MSG_CAN_INFO: {
 			LOG("ch%u SC_MSG_CAN_INFO\n", index);
-			uint8_t bytes = sizeof(struct sc_msg_can_info) + sizeof(struct sc_chan_info);
+			uint8_t bytes = sizeof(struct sc_msg_can_info);
 
 			uint8_t *out_ptr;
 			uint8_t *out_end;
@@ -1005,15 +1006,12 @@ send_can_info:
 				struct sc_msg_can_info *rep = (struct sc_msg_can_info *)out_ptr;
 				rep->id = SC_MSG_CAN_INFO;
 				rep->len = bytes;
-				rep->chan_count = 1;
 				rep->features = SC_FEATURE_FLAG_FDF | SC_FEATURE_FLAG_EHD
 					| SC_FEATURE_FLAG_TXR | SC_FEATURE_FLAG_MON_MODE
 					| SC_FEATURE_FLAG_RES_MODE | SC_FEATURE_FLAG_EXT_LOOP_MODE;
 				rep->can_clk_hz = CAN_CLK_HZ;
 				rep->nmbt_brp_min = M_CAN_NMBT_BRP_MIN;
 				rep->nmbt_brp_max = M_CAN_NMBT_BRP_MAX;
-				rep->nmbt_tq_min = M_CAN_NMBT_TQ_MIN;
-				rep->nmbt_tq_max = M_CAN_NMBT_TQ_MAX;
 				rep->nmbt_sjw_max = M_CAN_NMBT_SJW_MAX;
 				rep->nmbt_tseg1_min = M_CAN_NMBT_TSEG1_MIN;
 				rep->nmbt_tseg1_max = M_CAN_NMBT_TSEG1_MAX;
@@ -1021,8 +1019,6 @@ send_can_info:
 				rep->nmbt_tseg2_max = M_CAN_NMBT_TSEG2_MAX;
 				rep->dtbt_brp_min = M_CAN_DTBT_BRP_MIN;
 				rep->dtbt_brp_max = M_CAN_DTBT_BRP_MAX;
-				rep->dtbt_tq_min = M_CAN_DTBT_TQ_MIN;
-				rep->dtbt_tq_max = M_CAN_DTBT_TQ_MAX;
 				rep->dtbt_sjw_max = M_CAN_DTBT_SJW_MAX;
 				rep->dtbt_tseg1_min = M_CAN_DTBT_TSEG1_MIN;
 				rep->dtbt_tseg1_max = M_CAN_DTBT_TSEG1_MAX;
@@ -1030,8 +1026,7 @@ send_can_info:
 				rep->dtbt_tseg2_max = M_CAN_DTBT_TSEG2_MAX;
 				rep->tx_fifo_size = CAN_TX_FIFO_SIZE;
 				rep->rx_fifo_size = CAN_RX_FIFO_SIZE;
-				rep->chan_info[0].cmd_epp = usb_cmd->pipe;
-				rep->chan_info[0].msg_epp = usb_can->pipe;
+				rep->msg_buffer_size = MSG_BUFFER_SIZE;
 			} else {
 				if (sc_cmd_bulk_in_ep_ready(index)) {
 					sc_cmd_bulk_in_submit(index);
@@ -1210,7 +1205,6 @@ send_txr:
 					struct sc_msg_can_txr *rep = (struct sc_msg_can_txr *)out_ptr;
 					rep->id = SC_MSG_CAN_TXR;
 					rep->len = bytes;
-					rep->channel = tmsg->channel;
 					rep->track_id = tmsg->track_id;
 					uint32_t ts = __sync_fetch_and_or(&can->int_ts, 0);
 					rep->timestamp_us = can_bittime_to_us(can, ts);
@@ -1226,11 +1220,7 @@ send_txr:
 				}
 			} else {
 				uint32_t id = tmsg->can_id;
-				uint16_t tid = tmsg->track_id;
-
 				uint8_t put_index = can->m_can->TXFQS.bit.TFQPI;
-				uint8_t marker_index = can->tx_fifo[put_index].T1.bit.MM;
-				can->message_marker_map[marker_index] = tid; // save message marker
 
 				CAN_TXBE_0_Type t0;
 				t0.reg = (((tmsg->flags & SC_CAN_FRAME_FLAG_ESI) == SC_CAN_FRAME_FLAG_ESI) << CAN_TXBE_0_ESI_Pos)
@@ -1250,6 +1240,7 @@ send_txr:
 				can->tx_fifo[put_index].T1.bit.DLC = tmsg->dlc;
 				can->tx_fifo[put_index].T1.bit.FDF = (tmsg->flags & SC_CAN_FRAME_FLAG_FDF) == SC_CAN_FRAME_FLAG_FDF;
 				can->tx_fifo[put_index].T1.bit.BRS = (tmsg->flags & SC_CAN_FRAME_FLAG_BRS) == SC_CAN_FRAME_FLAG_BRS;
+				can->tx_fifo[put_index].T1.bit.MM = tmsg->track_id;
 
 				if (!(tmsg->flags & SC_CAN_FRAME_FLAG_RTR)) {
 					if (can_frame_len) {
@@ -1323,7 +1314,6 @@ send:
 		struct sc_msg_error *rep = (struct sc_msg_error *)out_ptr;
 		rep->id = SC_MSG_ERROR;
 		rep->len = sizeof(*rep);
-		rep->channel = 0;
 		rep->error = error;
 	} else {
 		if (sc_cmd_bulk_in_ep_ready(index)) {
@@ -1866,7 +1856,6 @@ static void can_task(void *param)
 				struct sc_msg_can_status *msg = (struct sc_msg_can_status *)out_ptr;
 				msg->id = SC_MSG_CAN_STATUS;
 				msg->len = sizeof(*msg);
-				msg->channel = index;
 				msg->timestamp_us = us;
 				msg->rx_lost = rx_lost;
 				msg->tx_dropped = tx_dropped;
@@ -1908,7 +1897,6 @@ static void can_task(void *param)
 
 				out_ptr += msg->len;
 
-				// store offset in case of restart
 				TU_ASSERT(out_ptr <= out_end, );
 				usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 			}
@@ -1935,7 +1923,6 @@ static void can_task(void *param)
 
 					msg->id = SC_MSG_CAN_RX;
 					msg->len = bytes;
-					msg->channel = index;
 					msg->dlc = r1.bit.DLC;
 					msg->flags = 0;
 					uint32_t id = r0.bit.ID;
@@ -1962,7 +1949,6 @@ static void can_task(void *param)
 						memcpy(msg->data, can->rx_fifo[get_index].data, can_frame_len);
 					}
 
-					// store offset in case of restart
 					TU_ASSERT(out_ptr <= out_end, );
 					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 				} else {
@@ -1988,12 +1974,9 @@ static void can_task(void *param)
 					struct sc_msg_can_txr *msg = (struct sc_msg_can_txr *)out_ptr;
 					out_ptr += bytes;
 
-					uint8_t marker_index = t1.bit.MM;
-
 					msg->id = SC_MSG_CAN_TXR;
 					msg->len = bytes;
-					msg->channel = index;
-					msg->track_id = can->message_marker_map[marker_index];
+					msg->track_id = t1.bit.MM;
 					uint32_t ts = ((uint32_t)can->tx_ts_high[get_index] << M_CAN_TS_COUNTER_BITS) | t1.bit.TXTS;
 					msg->timestamp_us = can_bittime_to_us(can, ts);
 					msg->flags = 0;
@@ -2009,7 +1992,6 @@ static void can_task(void *param)
 						msg->flags |= SC_CAN_FRAME_FLAG_BRS;
 					}
 
-					// store offset in case of restart
 					TU_ASSERT(out_ptr <= out_end, );
 					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 				} else {
@@ -2017,7 +1999,7 @@ static void can_task(void *param)
 						sc_can_bulk_in_submit(index, __func__);
 						continue;
 					} else {
-						// LOG("txr desync\n");
+						// LOG("ch%u no space for txr\n");
 						// can->desync = true;
 						break;
 					}
