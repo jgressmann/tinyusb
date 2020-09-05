@@ -111,6 +111,17 @@ struct can_rx_fifo_element {
 };
 
 
+enum {
+	CAN_FEAT_PERM = SC_FEATURE_FLAG_TXR,
+	CAN_FEAT_CONF = SC_FEATURE_FLAG_FDF |
+					SC_FEATURE_FLAG_EHD |
+					// not yet implemented
+					// SC_FEATURE_FLAG_DAR |
+					SC_FEATURE_FLAG_MON_MODE |
+					SC_FEATURE_FLAG_RES_MODE |
+					SC_FEATURE_FLAG_EXT_LOOP_MODE,
+};
+
 
 struct can {
 	CFG_TUSB_MEM_ALIGN struct can_tx_fifo_element tx_fifo[CAN_TX_FIFO_SIZE];
@@ -132,7 +143,6 @@ struct can {
 	uint8_t dtbt_sjw;
 	uint8_t dtbt_tseg1;
 	uint8_t dtbt_tseg2;
-	uint8_t mode;
 	volatile CAN_PSR_Type int_psr;
 	volatile uint16_t rx_lost;
 	uint16_t features;
@@ -184,64 +194,69 @@ static inline void can_init_clock(void) // controller and hardware specific setu
 	GCLK->PCHCTRL[CAN1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0 -> 120MHz
 }
 
+static inline void can_log_nominal_bittiming(struct can *c)
+{
+	LOG("nominal brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
+		c->nmbt_brp, c->nmbt_sjw, c->nmbt_tseg1, c->nmbt_tseg2,
+		CAN_CLK_HZ / ((uint32_t)c->nmbt_brp * (1 + c->nmbt_tseg1 + c->nmbt_tseg2)),
+		((c->nmbt_tseg1) * 1000) / (c->nmbt_tseg1 + c->nmbt_tseg2)
+	);
+}
+
+static inline void can_log_data_bittiming(struct can *c)
+{
+	LOG("data brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
+		c->dtbt_brp, c->dtbt_sjw, c->dtbt_tseg1, c->dtbt_tseg2,
+		CAN_CLK_HZ / ((uint32_t)c->dtbt_brp * (1 + c->dtbt_tseg1 + c->dtbt_tseg2)),
+		((c->dtbt_tseg1) * 1000) / (c->dtbt_tseg1 + c->dtbt_tseg2)
+	);
+}
+
 static void can_configure(struct can *c)
 {
 	Can *can = c->m_can;
 
 	m_can_conf_begin(can);
 
-	can->CCCR.bit.TXP = 1;  // Enable Transmit Pause
-	can->CCCR.bit.EFBI = 1; // Enable Edge Filtering
-	can->CCCR.bit.DAR = 0; // Automatic retransmission enabled
+	can->CCCR.bit.TXP = 1;  // enable tx pause
+	can->CCCR.bit.EFBI = 1; // enable edge filtering
+	can->CCCR.bit.BRSE = 1; // enable CAN-FD bitrate switching (only effective on CAN-FD mode if configured)
 
-	uint8_t mode = SC_MODE_MASK & c->mode;
-	switch (mode) {
-	case SC_MODE_NORMAL:
-		can->CCCR.bit.MON = 0;
-		can->CCCR.bit.TEST = 0;
-		can->CCCR.bit.ASM = 0;
-		break;
-	case SC_MODE_MONITORING:
+	if (c->features & SC_FEATURE_FLAG_MON_MODE) {
 		can->CCCR.bit.MON = 1;
 		can->CCCR.bit.TEST = 0;
 		can->CCCR.bit.ASM = 0;
-		break;
-	case SC_MODE_RESTRICTED:
+		can->TEST.bit.LBCK = 0;
+	} else if (c->features & SC_FEATURE_FLAG_RES_MODE) {
 		can->CCCR.bit.MON = 0;
 		can->CCCR.bit.TEST = 0;
 		can->CCCR.bit.ASM = 1;
-		break;
-	case SC_MODE_EXT_LOOPBACK:
+		can->TEST.bit.LBCK = 0;
+	} else if (c->features & SC_FEATURE_FLAG_EXT_LOOP_MODE) {
 		can->CCCR.bit.MON = 0;
 		can->CCCR.bit.TEST = 1;
 		can->CCCR.bit.ASM = 0;
 		can->TEST.bit.LBCK = 1;
-		break;
-	default:
-		LOG("mode %u not implemented\n", mode);
-		break;
+	} else {
+		can->CCCR.bit.MON = 0;
+		can->CCCR.bit.TEST = 0;
+		can->CCCR.bit.ASM = 0;
+		can->TEST.bit.LBCK = 0;
 	}
 
-	can->CCCR.bit.FDOE = (c->mode & SC_MODE_FLAG_FDF) == SC_MODE_FLAG_FDF;
-	can->CCCR.bit.BRSE = 1;
+	can->CCCR.bit.FDOE = (c->features & SC_FEATURE_FLAG_FDF) == SC_FEATURE_FLAG_FDF;
 	can->CCCR.bit.PXHD = (c->features & SC_FEATURE_FLAG_EHD) == SC_FEATURE_FLAG_EHD;
+	can->CCCR.bit.DAR = (c->features & SC_FEATURE_FLAG_DAR) == SC_FEATURE_FLAG_DAR; // disable automatic retransmission
 
-	LOG("MON=%u TEST=%u ASM=%u PXHD=%u FDOE=%u BRSE=%u\n",
+	LOG("MON=%u TEST=%u ASM=%u PXHD=%u FDOE=%u BRSE=%u DAR=%u\n",
 		can->CCCR.bit.MON, can->CCCR.bit.TEST, can->CCCR.bit.ASM,
-		can->CCCR.bit.PXHD, can->CCCR.bit.FDOE, can->CCCR.bit.BRSE
+		can->CCCR.bit.PXHD, can->CCCR.bit.FDOE, can->CCCR.bit.BRSE,
+		can->CCCR.bit.DAR
 	);
 
-	LOG("nominal brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
-		c->nmbt_brp, c->nmbt_sjw, c->nmbt_tseg1, c->nmbt_tseg2,
-		CAN_CLK_HZ / ((uint32_t)c->nmbt_brp * (1 + c->nmbt_tseg1 + c->nmbt_tseg2)),
-		((c->nmbt_tseg1) * 1000) / (c->nmbt_tseg1 + c->nmbt_tseg2)
-	);
 
-	LOG("data brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
-		c->dtbt_brp, c->dtbt_sjw, c->dtbt_tseg1, c->dtbt_tseg2,
-		CAN_CLK_HZ / ((uint32_t)c->dtbt_brp * (1 + c->dtbt_tseg1 + c->dtbt_tseg2)),
-		((c->dtbt_tseg1) * 1000) / (c->dtbt_tseg1 + c->dtbt_tseg2)
-	);
+	can_log_nominal_bittiming(c);
+	can_log_data_bittiming(c);
 
 	can->TSCC.reg = CAN_TSCC_TCP(0) | CAN_TSCC_TSS(1); // time stamp counter in CAN bittime
 	can->TOCC.reg = CAN_TOCC_TOP(0xffff) | CAN_TOCC_TOS(0); // Timeout Counter disabled, Reset-default
@@ -303,9 +318,9 @@ static void can_init_module(void)
 
 	for (size_t j = 0; j < TU_ARRAY_SIZE(cans.can); ++j) {
 		struct can *can = &cans.can[j];
+		can->features = CAN_FEAT_PERM;
 		for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can[0].tx_fifo); ++i) {
 			can->tx_fifo[i].T1.bit.EFC = 1; // store tx events
-			can->tx_fifo[i].T1.bit.MM = i; 	// direct mapping of message markers
 		}
 	}
 
@@ -476,7 +491,7 @@ static inline uint32_t can_bittime_to_us(struct can const *can, uint32_t can_tim
 	return r;
 }
 
-// static task for usbd
+
 // Increase stack size when debug log is enabled
 #if CFG_TUSB_DEBUG
 	#define USBD_STACK_SIZE (3*configMINIMAL_STACK_SIZE)
@@ -679,7 +694,7 @@ static inline void cans_led_status_set(int status)
 
 #define MAJOR 0
 #define MINOR 2
-#define PATCH 1
+#define PATCH 2
 
 
 #if SUPERDFU_APP
@@ -775,11 +790,10 @@ static inline void can_reset(uint8_t index)
 
 	struct can *can = &cans.can[index];
 
-	can->features = 0;
+	can->features = CAN_FEAT_PERM;
 	can->rx_lost = 0;
 	can->tx_dropped = 0;
 	can->desync = false;
-	can->mode = 0;
 	can->nm_bitrate_bps = 0;
 	can->nmbt_brp = 0;
 	can->nmbt_sjw = 0;
@@ -966,6 +980,8 @@ send_dev_info:
 				struct sc_msg_dev_info *rep = (struct sc_msg_dev_info *)out_ptr;
 				rep->id = SC_MSG_DEVICE_INFO;
 				rep->len = bytes;
+				rep->feat_perm = CAN_FEAT_PERM;
+				rep->feat_conf = CAN_FEAT_CONF;
 				rep->fw_ver_major = MAJOR;
 				rep->fw_ver_minor = MINOR;
 				rep->fw_ver_patch = PATCH;
@@ -1006,9 +1022,6 @@ send_can_info:
 				struct sc_msg_can_info *rep = (struct sc_msg_can_info *)out_ptr;
 				rep->id = SC_MSG_CAN_INFO;
 				rep->len = bytes;
-				rep->features = SC_FEATURE_FLAG_FDF | SC_FEATURE_FLAG_EHD
-					| SC_FEATURE_FLAG_TXR | SC_FEATURE_FLAG_MON_MODE
-					| SC_FEATURE_FLAG_RES_MODE | SC_FEATURE_FLAG_EXT_LOOP_MODE;
 				rep->can_clk_hz = CAN_CLK_HZ;
 				rep->nmbt_brp_min = M_CAN_NMBT_BRP_MIN;
 				rep->nmbt_brp_max = M_CAN_NMBT_BRP_MAX;
@@ -1036,65 +1049,73 @@ send_can_info:
 				}
 			}
 		} break;
-		case SC_MSG_BITTIMING: {
-			LOG("ch%u SC_MSG_BITTIMING\n", index);
+		case SC_MSG_NM_BITTIMING: {
+			LOG("ch%u SC_MSG_NM_BITTIMING\n", index);
 			int8_t error = SC_CAN_ERROR_NONE;
 			struct sc_msg_bittiming const *tmsg = (struct sc_msg_bittiming const *)msg;
 			if (unlikely(msg->len < sizeof(*tmsg))) {
 				LOG("ch%u ERROR: msg too short\n", index);
 				error = SC_ERROR_SHORT;
 			} else {
-				uint16_t nmbt_brp, nmbt_tseg1;
-				uint8_t nmbt_sjw, nmbt_tseg2, dtbt_brp, dtbt_sjw, dtbt_tseg1, dtbt_tseg2;
-
-				nmbt_brp = tmsg->nmbt_brp;
-				nmbt_tseg1 = tmsg->nmbt_tseg1;
-				nmbt_sjw = tmsg->nmbt_sjw;
-				nmbt_tseg2 = tmsg->nmbt_tseg2;
-				dtbt_brp = tmsg->dtbt_brp;
-				dtbt_sjw = tmsg->dtbt_sjw;
-				dtbt_tseg1 = tmsg->dtbt_tseg1;
-				dtbt_tseg2 = tmsg->dtbt_tseg2;
-
 				// clamp
-				can->nmbt_brp = tu_max16(M_CAN_NMBT_BRP_MIN, tu_min16(nmbt_brp, M_CAN_NMBT_BRP_MAX));
-				can->nmbt_tseg1 = tu_max16(M_CAN_NMBT_TSEG1_MIN, tu_min16(nmbt_tseg1, M_CAN_NMBT_TSEG1_MAX));
-				can->nmbt_sjw = tu_max8(M_CAN_NMBT_SJW_MIN, tu_min8(nmbt_sjw, M_CAN_NMBT_SJW_MAX));
-				can->nmbt_tseg2 = tu_max8(M_CAN_NMBT_TSEG2_MIN, tu_min8(nmbt_tseg2, M_CAN_NMBT_TSEG2_MAX));
-				can->dtbt_brp = tu_max8(M_CAN_DTBT_BRP_MIN, tu_min8(dtbt_brp, M_CAN_DTBT_BRP_MAX));
-				can->dtbt_sjw = tu_max8(M_CAN_DTBT_SJW_MIN, tu_min8(dtbt_sjw, M_CAN_DTBT_SJW_MAX));
-				can->dtbt_tseg1 = tu_max8(M_CAN_DTBT_TSEG1_MIN, tu_min8(dtbt_tseg1, M_CAN_DTBT_TSEG1_MAX));
-				can->dtbt_tseg2 = tu_max8(M_CAN_DTBT_TSEG2_MIN, tu_min8(dtbt_tseg2, M_CAN_DTBT_TSEG2_MAX));
+				can->nmbt_brp = tu_max16(M_CAN_NMBT_BRP_MIN, tu_min16(tmsg->brp, M_CAN_NMBT_BRP_MAX));
+				can->nmbt_sjw = tu_max8(M_CAN_NMBT_SJW_MIN, tu_min8(tmsg->sjw, M_CAN_NMBT_SJW_MAX));
+				can->nmbt_tseg1 = tu_max16(M_CAN_NMBT_TSEG1_MIN, tu_min16(tmsg->tseg1, M_CAN_NMBT_TSEG1_MAX));
+				can->nmbt_tseg2 = tu_max8(M_CAN_NMBT_TSEG2_MIN, tu_min8(tmsg->tseg2, M_CAN_NMBT_TSEG2_MAX));
 
 				// set nominal bitrate for timestamp calculation
 				can->nm_bitrate_bps = CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (1 + can->nmbt_tseg1 + can->nmbt_tseg2));
+				can_log_nominal_bittiming(can);
 			}
 
 			sc_cmd_place_error_reply(index, error);
 		} break;
-		case SC_MSG_MODE: {
-			LOG("ch%u SC_MSG_MODE\n", index);
-			struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
-			int8_t error = SC_ERROR_NONE;
+		case SC_MSG_DT_BITTIMING: {
+			LOG("ch%u SC_MSG_DT_BITTIMING\n", index);
+			int8_t error = SC_CAN_ERROR_NONE;
+			struct sc_msg_bittiming const *tmsg = (struct sc_msg_bittiming const *)msg;
 			if (unlikely(msg->len < sizeof(*tmsg))) {
 				LOG("ch%u ERROR: msg too short\n", index);
 				error = SC_ERROR_SHORT;
 			} else {
-				can->mode = tmsg->args[0];
+				// clamp
+				can->dtbt_brp = tu_max16(M_CAN_DTBT_BRP_MIN, tu_min16(tmsg->brp, M_CAN_DTBT_BRP_MAX));
+				can->dtbt_sjw = tu_max8(M_CAN_DTBT_SJW_MIN, tu_min8(tmsg->sjw, M_CAN_DTBT_SJW_MAX));
+				can->dtbt_tseg1 = tu_max16(M_CAN_DTBT_TSEG1_MIN, tu_min16(tmsg->tseg1, M_CAN_DTBT_TSEG1_MAX));
+				can->dtbt_tseg2 = tu_max8(M_CAN_DTBT_TSEG2_MIN, tu_min8(tmsg->tseg2, M_CAN_DTBT_TSEG2_MAX));
+				can_log_data_bittiming(can);
 			}
+
 			sc_cmd_place_error_reply(index, error);
 		} break;
 		case SC_MSG_FEATURES: {
 			LOG("ch%u SC_MSG_FEATURES\n", index);
-			struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
+			struct sc_msg_features const *tmsg = (struct sc_msg_features const *)msg;
 			int8_t error = SC_ERROR_NONE;
 			if (unlikely(msg->len < sizeof(*tmsg))) {
 				LOG("ch%u ERROR: msg too short\n", index);
 				error = SC_ERROR_SHORT;
 			} else {
-				can->features = tmsg->args[0];
+				switch (tmsg->op) {
+				case SC_FEAT_OP_CLEAR:
+					can->features = CAN_FEAT_PERM;
+					LOG("ch%u CLEAR features to %#x\n", index, can->features);
+					break;
+				case SC_FEAT_OP_OR: {
+					uint32_t mode_bits = tmsg->arg & (SC_FEATURE_FLAG_MON_MODE | SC_FEATURE_FLAG_RES_MODE | SC_FEATURE_FLAG_EXT_LOOP_MODE);
+					if (__builtin_popcount(mode_bits) > 1) {
+						error = SC_ERROR_PARAM;
+						LOG("ch%u ERROR: attempt to activate more than one mode %08lx\n", index, mode_bits);
+					} else if (tmsg->arg & ~(CAN_FEAT_PERM | CAN_FEAT_CONF)) {
+						error = SC_ERROR_UNSUPPORTED;
+						LOG("ch%u ERROR: unsupported features %08lx\n", index, tmsg->arg);
+					} else {
+						can->features |= tmsg->arg;
+						LOG("ch%u OR features to %#x\n", index, can->features);
+					}
+				} break;
+				}
 			}
-
 			sc_cmd_place_error_reply(index, error);
 		} break;
 		case SC_MSG_BUS: {
@@ -1106,7 +1127,7 @@ send_can_info:
 				error = SC_ERROR_SHORT;
 			} else {
 				bool was_enabled = can->enabled;
-				can->enabled = tmsg->args[0] != 0;
+				can->enabled = tmsg->arg != 0;
 				if (was_enabled != can->enabled) {
 					LOG("ch%u enabled=%u\n", index, can->enabled);
 					if (can->enabled) {
@@ -1124,6 +1145,7 @@ send_can_info:
 		} break;
 		default:
 			TU_LOG2_MEM(msg, msg->len, 2);
+			sc_cmd_place_error_reply(index, SC_ERROR_UNSUPPORTED);
 			break;
 		}
 	}
