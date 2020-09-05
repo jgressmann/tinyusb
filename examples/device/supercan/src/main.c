@@ -196,6 +196,8 @@ static inline void can_init_clock(void) // controller and hardware specific setu
 
 static inline void can_log_nominal_bittiming(struct can *c)
 {
+	(void)c;
+
 	LOG("nominal brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
 		c->nmbt_brp, c->nmbt_sjw, c->nmbt_tseg1, c->nmbt_tseg2,
 		CAN_CLK_HZ / ((uint32_t)c->nmbt_brp * (1 + c->nmbt_tseg1 + c->nmbt_tseg2)),
@@ -205,6 +207,8 @@ static inline void can_log_nominal_bittiming(struct can *c)
 
 static inline void can_log_data_bittiming(struct can *c)
 {
+	(void)c;
+
 	LOG("data brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
 		c->dtbt_brp, c->dtbt_sjw, c->dtbt_tseg1, c->dtbt_tseg2,
 		CAN_CLK_HZ / ((uint32_t)c->dtbt_brp * (1 + c->dtbt_tseg1 + c->dtbt_tseg2)),
@@ -845,6 +849,7 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 	struct usb_can *can = &usb.can[index];
 	TU_ASSERT(can->tx_offsets[can->tx_bank] > 0, );
 	TU_ASSERT(can->tx_offsets[can->tx_bank] <= MSG_BUFFER_SIZE, );
+	(void)func;
 
 #if SUPERCAN_DEBUG
 	if (can->tx_offsets[can->tx_bank] > MSG_BUFFER_SIZE) {
