@@ -990,8 +990,12 @@ send_dev_info:
 				rep->fw_ver_major = MAJOR;
 				rep->fw_ver_minor = MINOR;
 				rep->fw_ver_patch = PATCH;
-				rep->name_len = tu_min8(sizeof(BOARD_NAME " " SC_NAME)-1, sizeof(rep->name_bytes));
-				memcpy(rep->name_bytes, BOARD_NAME " " SC_NAME, rep->name_len);
+				static const char dev_name[] = BOARD_NAME " " SC_NAME " chX";
+				rep->name_len = tu_min8(sizeof(dev_name)-1, sizeof(rep->name_bytes));
+				memcpy(rep->name_bytes, dev_name, rep->name_len);
+				if (rep->name_len <= TU_ARRAY_SIZE(rep->name_bytes)) {
+					rep->name_bytes[rep->name_len-1] = '0' + index;
+				}
 				rep->sn_len = 16;
 				static_assert(sizeof(rep->sn_bytes) >= 16, "expect at least 16 of buffer for serial number");
 				uint32_t serial[4];
