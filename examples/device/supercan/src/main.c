@@ -149,19 +149,20 @@ struct can {
 	Can *m_can;
 	IRQn_Type interrupt_id;
 	uint32_t nm_bitrate_bps;
+	volatile uint32_t int_ts;
+	uint32_t int_prev_psr_reg;
 	uint16_t nmbt_brp;
 	uint16_t nmbt_tseg1;
+	volatile uint16_t rx_lost;
+	uint16_t features;
+	uint16_t tx_dropped;
+	uint16_t int_ts_high;
 	uint8_t nmbt_sjw;
 	uint8_t nmbt_tseg2;
 	uint8_t dtbt_brp;
 	uint8_t dtbt_sjw;
 	uint8_t dtbt_tseg1;
 	uint8_t dtbt_tseg2;
-	volatile uint16_t rx_lost;
-	uint16_t features;
-	uint16_t tx_dropped;
-	uint16_t int_ts_high;
-	volatile uint32_t int_ts;
 	volatile uint8_t int_comm_flags;
 	uint8_t int_tx_put_index;
 	uint8_t int_rx_put_index;
@@ -317,8 +318,8 @@ static void can_configure(struct can *c)
 		| CAN_IE_EPE    // error passive
 		| CAN_IE_RF0NE  // new message in rx fifo0
 		| CAN_IE_RF0LE  // message lost b/c fifo0 was full
-		// | CAN_IE_PEAE   // proto error in arbitration phase
-		// | CAN_IE_PEDE   // proto error in data phase
+		| CAN_IE_PEAE   // proto error in arbitration phase
+		| CAN_IE_PEDE   // proto error in data phase
 	 	| CAN_IE_TEFNE  // new message in tx event fifo
 		;
 
@@ -381,10 +382,12 @@ static inline uint8_t can_map_m_can_ec(uint8_t lec, uint8_t previous)
 
 static void can_int(uint8_t index)
 {
+
 	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
 	struct can *can = &cans.can[index];
 
-	// NVIC_DisableIRQ(can->interrupt_id);
+	NVIC_DisableIRQ(can->interrupt_id);
+
 
 	// LOG("IE=%08lx IR=%08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
 	bool notify = false;
@@ -423,53 +426,68 @@ static void can_int(uint8_t index)
 		};
 
 		if (unlikely(pdTRUE != xQueueSendFromISR(can->queue_handle, &msg, NULL))) {
-			LOG("CAN%u task queue full\n");
 			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
+			LOG("CAN%u queue full\n", index);
 		}
 	}
 
-	CAN_PSR_Type psr = can->m_can->PSR; // always read, sets NC
-	// if (current_bus_state > SC_CAN_STATUS_ERROR_PASSIVE) {
-	if (1) {
-		unsigned is_tx_error = psr.bit.ACT == CAN_PSR_ACT_TX_Val;
-		unsigned is_rx_tx_error = psr.bit.ACT == CAN_PSR_ACT_RX_Val || is_tx_error;
-		if (psr.bit.LEC != CAN_PSR_LEC_NONE_Val &&
-			psr.bit.LEC != CAN_PSR_LEC_NC_Val &&
-			is_rx_tx_error) {
+	CAN_PSR_Type current_psr = can->m_can->PSR; // always read, sets NC
+	CAN_PSR_Type prev_psr;
+	prev_psr.reg = can->int_prev_psr_reg;
 
-			notify = true;
-			struct can_queue_item msg = {
-				.type = CAN_QUEUE_ITEM_TYPE_BUS_ERROR,
-				.tx = is_tx_error,
-				.data_part = 0,
-				.payload = can_map_m_can_ec(psr.bit.LEC, 0),
-			};
+	if (CAN_PSR_LEC_NC_Val == current_psr.bit.LEC) {
+		current_psr.bit.LEC = prev_psr.bit.LEC;
+	}
+	if (CAN_PSR_DLEC_NC_Val == current_psr.bit.DLEC) {
+		current_psr.bit.DLEC = prev_psr.bit.DLEC;
+	}
 
-			if (unlikely(pdTRUE != xQueueSendFromISR(can->queue_handle, &msg, NULL))) {
-				__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
-			} else {
-				// LOG("CAN%u LEC %1x\n", index, psr.bit.LEC);
-			}
+	bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
+	bool is_rx_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_RX_Val || is_tx_error;
+	if (current_psr.bit.LEC != prev_psr.bit.LEC &&
+		current_psr.bit.LEC != CAN_PSR_LEC_NONE_Val &&
+		current_psr.bit.LEC != CAN_PSR_LEC_NC_Val &&
+		is_rx_tx_error) {
+		can->int_prev_psr_reg = current_psr.reg;
+		notify = true;
+		struct can_queue_item msg = {
+			.type = CAN_QUEUE_ITEM_TYPE_BUS_ERROR,
+			.tx = is_tx_error,
+			.data_part = 0,
+			.payload = can_map_m_can_ec(current_psr.bit.LEC, 0),
+		};
+
+		if (unlikely(pdTRUE != xQueueSendFromISR(can->queue_handle, &msg, NULL))) {
+			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
+			LOG("CAN%u queue full\n", index);
+		} else {
+			LOG("CAN%u LEC %1x\n", index, current_psr.bit.LEC);
 		}
+	} else {
+		// LOG("CAN%u LEC %1x\n", index, current_psr.bit.LEC);
+	}
 
-		if (psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val &&
-			psr.bit.DLEC != CAN_PSR_DLEC_NC_Val &&
-			is_rx_tx_error) {
+	if (current_psr.bit.DLEC != prev_psr.bit.DLEC &&
+		current_psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val &&
+		current_psr.bit.DLEC != CAN_PSR_DLEC_NC_Val &&
+		is_rx_tx_error) {
+		can->int_prev_psr_reg = current_psr.reg;
+		notify = true;
+		struct can_queue_item msg = {
+			.type = CAN_QUEUE_ITEM_TYPE_BUS_ERROR,
+			.tx = is_tx_error,
+			.data_part = 1,
+			.payload = can_map_m_can_ec(current_psr.bit.DLEC, 0),
+		};
 
-			notify = true;
-			struct can_queue_item msg = {
-				.type = CAN_QUEUE_ITEM_TYPE_BUS_ERROR,
-				.tx = is_tx_error,
-				.data_part = 1,
-				.payload = can_map_m_can_ec(psr.bit.DLEC, 0),
-			};
-
-			if (unlikely(pdTRUE != xQueueSendFromISR(can->queue_handle, &msg, NULL))) {
-				__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
-			} else {
-				// LOG("CAN%u DLEC %1x\n", index, psr.bit.DLEC);
-			}
+		if (unlikely(pdTRUE != xQueueSendFromISR(can->queue_handle, &msg, NULL))) {
+			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
+			LOG("CAN%u queue full\n", index);
+		} else {
+			LOG("CAN%u DLEC %1x\n", index, current_psr.bit.DLEC);
 		}
+	} else {
+		// LOG("CAN%u DLEC %1x\n", index, current_psr.bit.DLEC);
 	}
 
 	if (ir.bit.RF0L) {
@@ -491,9 +509,6 @@ static void can_int(uint8_t index)
 		notify = true;
 	}
 
-	// clear all interrupts
-	can->m_can->IR = ir;
-
 	// update last non-interrupted timestamp
 	can->int_ts = ((uint32_t)ts_high << M_CAN_TS_COUNTER_BITS) | can->m_can->TSCV.bit.TSC;
 
@@ -504,7 +519,10 @@ static void can_int(uint8_t index)
 		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 	}
 
-	// NVIC_EnableIRQ(can->interrupt_id);
+	// clear all interrupts
+	can->m_can->IR = ir;
+
+	NVIC_EnableIRQ(can->interrupt_id);
 }
 
 void CAN0_Handler(void)
@@ -861,6 +879,7 @@ static inline void can_off(uint8_t index)
 	can->int_rx_put_index = 0;
 	can->int_prev_bus_state = 0;
 	can->int_comm_flags = 0;
+	can->int_prev_psr_reg = 0;
 
 	// clear tx buffers
 	xSemaphoreTake(usb_can->mutex_handle, ~0);
@@ -935,8 +954,9 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 	(void)func;
 
 #if SUPERCAN_DEBUG
+	LOG("ch%u %s: send %u bytes\n", index, func, can->tx_offsets[can->tx_bank]);
 	if (can->tx_offsets[can->tx_bank] > MSG_BUFFER_SIZE) {
-		LOG("%s: msg buffer size %u out of bounds\n", func, can->tx_offsets[can->tx_bank]);
+		LOG("ch%u %s: msg buffer size %u out of bounds\n", index, func, can->tx_offsets[can->tx_bank]);
 		can->tx_offsets[can->tx_bank] = 0;
 		return;
 	}
@@ -951,7 +971,7 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 		}
 
 		if (ptr + hdr->len > eptr) {
-			LOG("%s: msg offset %u out of bounds\n", func, ptr - sptr);
+			LOG("ch%u %s: msg offset %u out of bounds\n", index, func, ptr - sptr);
 			can->tx_offsets[can->tx_bank] = 0;
 			return;
 		}
@@ -968,7 +988,7 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 		case SC_MSG_CAN_ERROR:
 			break;
 		default:
-			LOG("%s msg offset %u non-device msg id %#02x\n", func, ptr - sptr, hdr->id);
+			LOG("ch%u %s msg offset %u non-device msg id %#02x\n", index, func, ptr - sptr, hdr->id);
 			can->tx_offsets[can->tx_bank] = 0;
 			return;
 		}
@@ -979,6 +999,7 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 
 	(void)dcd_edpt_xfer(usb.port, 0x80 | can->pipe, can->tx_buffers[can->tx_bank], can->tx_offsets[can->tx_bank]);
 	can->tx_bank = !can->tx_bank;
+	TU_ASSERT(!can->tx_offsets[can->tx_bank], );
 }
 
 static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes);
@@ -1973,6 +1994,7 @@ static void can_task(void *param)
 
 			out_beg = usb_can->tx_buffers[usb_can->tx_bank];
 			out_end = out_beg + MSG_BUFFER_SIZE;
+			TU_ASSERT(usb_can->tx_offsets[usb_can->tx_bank] <= MSG_BUFFER_SIZE, );
 			out_ptr = out_beg + usb_can->tx_offsets[usb_can->tx_bank];
 			TU_ASSERT(out_ptr <= out_end, );
 
@@ -2017,8 +2039,7 @@ static void can_task(void *param)
 						sc_can_bulk_in_submit(index, __func__);
 						continue;
 					} else {
-						// LOG("ch%u dropped CAN bus error msg\n", index);
-						// break;
+						break;
 					}
 				}
 			}
@@ -2067,7 +2088,7 @@ static void can_task(void *param)
 					}
 				} break;
 				default:
-					LOG("ch%u unhandled CAN queue message type %#02x\n", index, queue_item.type);
+					LOG("ch%u unhandled message type %#02x\n", index, queue_item.type);
 					break;
 				}
 			}
@@ -2123,6 +2144,8 @@ static void can_task(void *param)
 
 					TU_ASSERT(out_ptr <= out_end, );
 					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
+
+					can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(get_index);
 				} else {
 					if (sc_can_bulk_in_ep_ready(index)) {
 						done = false;
@@ -2132,22 +2155,22 @@ static void can_task(void *param)
 						break;
 					}
 				}
-
-				can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(get_index);
 			}
 
 			if (m_can_tx_event_fifo_avail(can->m_can)) {
 				done = false;
 				current_activity = 1;
-				uint8_t get_index = can->m_can->TXEFS.bit.EFGI;
 				uint8_t bytes = sizeof(struct sc_msg_can_txr);
-				CAN_TXEFE_0_Type t0 = can->tx_event_fifo[get_index].T0;
-				CAN_TXEFE_1_Type t1 = can->tx_event_fifo[get_index].T1;
+
 
 				if (out_end - out_ptr >= bytes) {
 					done = false;
 					struct sc_msg_can_txr *msg = (struct sc_msg_can_txr *)out_ptr;
 					out_ptr += bytes;
+
+					uint8_t get_index = can->m_can->TXEFS.bit.EFGI;
+					CAN_TXEFE_0_Type t0 = can->tx_event_fifo[get_index].T0;
+					CAN_TXEFE_1_Type t1 = can->tx_event_fifo[get_index].T1;
 
 					msg->id = SC_MSG_CAN_TXR;
 					msg->len = bytes;
@@ -2169,6 +2192,8 @@ static void can_task(void *param)
 
 					TU_ASSERT(out_ptr <= out_end, );
 					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
+
+					can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(get_index);
 				} else {
 					if (sc_can_bulk_in_ep_ready(index)) {
 						done = false;
@@ -2180,8 +2205,6 @@ static void can_task(void *param)
 						break;
 					}
 				}
-
-				can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(get_index);
 			}
 		}
 
