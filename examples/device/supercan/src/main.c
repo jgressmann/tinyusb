@@ -120,6 +120,17 @@ enum {
 					SC_FEATURE_FLAG_MON_MODE |
 					SC_FEATURE_FLAG_RES_MODE |
 					SC_FEATURE_FLAG_EXT_LOOP_MODE,
+
+	CAN_QUEUE_SIZE = CAN_RX_FIFO_SIZE,
+	CAN_QUEUE_ITEM_TYPE_BUS_STATUS = 0,
+	CAN_QUEUE_ITEM_TYPE_BUS_ERROR = 1,
+};
+
+struct can_queue_item {
+	uint8_t type : 1;
+	uint8_t tx : 1;
+	uint8_t data_part : 1;
+	uint8_t payload : 5;
 };
 
 
@@ -132,6 +143,9 @@ struct can {
 	StackType_t stack_mem[configMINIMAL_STACK_SIZE];
 	StaticTask_t task_mem;
 	TaskHandle_t task_handle;
+	uint8_t queue_storage[CAN_QUEUE_SIZE];
+	StaticQueue_t queue_mem;
+	QueueHandle_t queue_handle;
 	Can *m_can;
 	IRQn_Type interrupt_id;
 	uint32_t nm_bitrate_bps;
@@ -143,14 +157,15 @@ struct can {
 	uint8_t dtbt_sjw;
 	uint8_t dtbt_tseg1;
 	uint8_t dtbt_tseg2;
-	volatile CAN_PSR_Type int_psr;
 	volatile uint16_t rx_lost;
 	uint16_t features;
 	uint16_t tx_dropped;
 	uint16_t int_ts_high;
 	volatile uint32_t int_ts;
+	volatile uint8_t int_comm_flags;
 	uint8_t int_tx_put_index;
 	uint8_t int_rx_put_index;
+	uint8_t int_prev_bus_state;
 	uint8_t led_status_green;
 	uint8_t led_status_red;
 	uint8_t led_traffic;
@@ -302,8 +317,8 @@ static void can_configure(struct can *c)
 		| CAN_IE_EPE    // error passive
 		| CAN_IE_RF0NE  // new message in rx fifo0
 		| CAN_IE_RF0LE  // message lost b/c fifo0 was full
-		| CAN_IE_PEAE   // proto error in arbitration phase
-		| CAN_IE_PEDE   // proto error in data phase
+		// | CAN_IE_PEAE   // proto error in arbitration phase
+		// | CAN_IE_PEDE   // proto error in data phase
 	 	| CAN_IE_TEFNE  // new message in tx event fifo
 		;
 
@@ -369,8 +384,11 @@ static void can_int(uint8_t index)
 	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
 	struct can *can = &cans.can[index];
 
+	// NVIC_DisableIRQ(can->interrupt_id);
+
 	// LOG("IE=%08lx IR=%08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
 	bool notify = false;
+	uint8_t current_bus_state = 0;
 	uint16_t ts_high = can->int_ts_high;
 
 	CAN_IR_Type ir = can->m_can->IR;
@@ -384,34 +402,80 @@ static void can_int(uint8_t index)
 
 	if (ir.bit.BO) {
 		LOG("CAN%u bus off\n", index);
-		notify = true;
+		current_bus_state = SC_CAN_STATUS_BUS_OFF;
 	} else if (ir.bit.EP) {
 		LOG("CAN%u error passive\n", index);
-		notify = true;
+		current_bus_state = SC_CAN_STATUS_ERROR_PASSIVE;
 	} else if (ir.bit.EW) {
 		LOG("CAN%u error warning\n", index);
-		notify = true;
+		current_bus_state = SC_CAN_STATUS_ERROR_WARNING;
+	} else if (can->int_prev_bus_state != SC_CAN_STATUS_ERROR_ACTIVE) {
+		current_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
+		LOG("CAN%u error active\n", index);
 	}
 
-	CAN_PSR_Type psr = can->m_can->PSR;
-	psr.reg &= (
-		CAN_PSR_ACT_Msk |
-		CAN_PSR_LEC_Msk |
-		CAN_PSR_DLEC_Msk |
-		CAN_PSR_EP |
-		CAN_PSR_EW |
-		CAN_PSR_BO
-		);
-
-	if (psr.reg != can->int_psr.reg) {
+	if (unlikely(can->int_prev_bus_state != current_bus_state)) {
+		can->int_prev_bus_state = current_bus_state;
 		notify = true;
-		can->int_psr = psr;
+		struct can_queue_item msg = {
+			.type = CAN_QUEUE_ITEM_TYPE_BUS_STATUS,
+			.payload = current_bus_state,
+		};
+
+		if (unlikely(pdTRUE != xQueueSendFromISR(can->queue_handle, &msg, NULL))) {
+			LOG("CAN%u task queue full\n");
+			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
+		}
+	}
+
+	CAN_PSR_Type psr = can->m_can->PSR; // always read, sets NC
+	// if (current_bus_state > SC_CAN_STATUS_ERROR_PASSIVE) {
+	if (1) {
+		unsigned is_tx_error = psr.bit.ACT == CAN_PSR_ACT_TX_Val;
+		unsigned is_rx_tx_error = psr.bit.ACT == CAN_PSR_ACT_RX_Val || is_tx_error;
+		if (psr.bit.LEC != CAN_PSR_LEC_NONE_Val &&
+			psr.bit.LEC != CAN_PSR_LEC_NC_Val &&
+			is_rx_tx_error) {
+
+			notify = true;
+			struct can_queue_item msg = {
+				.type = CAN_QUEUE_ITEM_TYPE_BUS_ERROR,
+				.tx = is_tx_error,
+				.data_part = 0,
+				.payload = can_map_m_can_ec(psr.bit.LEC, 0),
+			};
+
+			if (unlikely(pdTRUE != xQueueSendFromISR(can->queue_handle, &msg, NULL))) {
+				__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
+			} else {
+				// LOG("CAN%u LEC %1x\n", index, psr.bit.LEC);
+			}
+		}
+
+		if (psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val &&
+			psr.bit.DLEC != CAN_PSR_DLEC_NC_Val &&
+			is_rx_tx_error) {
+
+			notify = true;
+			struct can_queue_item msg = {
+				.type = CAN_QUEUE_ITEM_TYPE_BUS_ERROR,
+				.tx = is_tx_error,
+				.data_part = 1,
+				.payload = can_map_m_can_ec(psr.bit.DLEC, 0),
+			};
+
+			if (unlikely(pdTRUE != xQueueSendFromISR(can->queue_handle, &msg, NULL))) {
+				__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
+			} else {
+				// LOG("CAN%u DLEC %1x\n", index, psr.bit.DLEC);
+			}
+		}
 	}
 
 	if (ir.bit.RF0L) {
 		// LOG("CAN%u msg lost\n", index);
 		__sync_add_and_fetch(&can->rx_lost, 1);
-		notify = true;
+		// notify = true;
 	}
 
 	if (ir.bit.RF0N) {
@@ -439,6 +503,8 @@ static void can_int(uint8_t index)
 		vTaskNotifyGiveFromISR(can->task_handle, &xHigherPriorityTaskWoken);
 		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 	}
+
+	// NVIC_EnableIRQ(can->interrupt_id);
 }
 
 void CAN0_Handler(void)
@@ -657,14 +723,17 @@ static inline void led_burst(uint8_t index, uint16_t duration_ms)
 enum {
 	CANLED_STATUS_DISABLED,
 	CANLED_STATUS_ENABLED_BUS_OFF,
-	CANLED_STATUS_ENABLED_BUS_ON,
-	CANLED_STATUS_ERROR,
+	CANLED_STATUS_ENABLED_BUS_ON_PASSIVE,
+	CANLED_STATUS_ENABLED_BUS_ON_ACTIVE,
+	CANLED_STATUS_ERROR_ACTIVE,
+	CANLED_STATUS_ERROR_PASSIVE,
 };
 
 static inline void canled_set_status(struct can *can, int status)
 {
 #if HWREV >= 3
-	const uint16_t BLINK_DELAY_MS = 500;
+	const uint16_t BLINK_DELAY_PASSIVE_MS = 512;
+	const uint16_t BLINK_DELAY_ACTIVE_MS = 128;
 	switch (status) {
 	case CANLED_STATUS_DISABLED:
 		led_set(can->led_status_green, 0);
@@ -674,13 +743,21 @@ static inline void canled_set_status(struct can *can, int status)
 		led_set(can->led_status_green, 1);
 		led_set(can->led_status_red, 0);
 		break;
-	case CANLED_STATUS_ENABLED_BUS_ON:
-		led_blink(can->led_status_green, BLINK_DELAY_MS);
+	case CANLED_STATUS_ENABLED_BUS_ON_PASSIVE:
+		led_blink(can->led_status_green, BLINK_DELAY_PASSIVE_MS);
 		led_set(can->led_status_red, 0);
 		break;
-	case CANLED_STATUS_ERROR:
+	case CANLED_STATUS_ENABLED_BUS_ON_ACTIVE:
+		led_blink(can->led_status_green, BLINK_DELAY_ACTIVE_MS);
+		led_set(can->led_status_red, 0);
+		break;
+	case CANLED_STATUS_ERROR_PASSIVE:
 		led_set(can->led_status_green, 0);
-		led_blink(can->led_status_red, BLINK_DELAY_MS);
+		led_blink(can->led_status_red, BLINK_DELAY_PASSIVE_MS);
+		break;
+	case CANLED_STATUS_ERROR_ACTIVE:
+		led_set(can->led_status_green, 0);
+		led_blink(can->led_status_red, BLINK_DELAY_ACTIVE_MS);
 		break;
 	}
 #else
@@ -773,7 +850,17 @@ static inline void can_off(uint8_t index)
 
 	// go bus off
 	can_set_state1(can->m_can, can->interrupt_id, false);
+
+	// reset can bus state
 	can->enabled = false;
+	can->rx_lost = 0;
+	can->tx_dropped = 0;
+	can->desync = false;
+	can->int_ts_high = 0;
+	can->int_tx_put_index = 0;
+	can->int_rx_put_index = 0;
+	can->int_prev_bus_state = 0;
+	can->int_comm_flags = 0;
 
 	// clear tx buffers
 	xSemaphoreTake(usb_can->mutex_handle, ~0);
@@ -782,6 +869,9 @@ static inline void can_off(uint8_t index)
 		memset(usb_can->tx_buffers[j], 0, sizeof(usb_can->tx_buffers[j]));
 	}
 	xSemaphoreGive(usb_can->mutex_handle);
+
+	// clear interrupt handler queue
+	xQueueReset(can->queue_handle);
 }
 
 static inline void can_reset(uint8_t index)
@@ -795,9 +885,6 @@ static inline void can_reset(uint8_t index)
 	struct can *can = &cans.can[index];
 
 	can->features = CAN_FEAT_PERM;
-	can->rx_lost = 0;
-	can->tx_dropped = 0;
-	can->desync = false;
 	can->nm_bitrate_bps = 0;
 	can->nmbt_brp = 0;
 	can->nmbt_sjw = 0;
@@ -806,10 +893,6 @@ static inline void can_reset(uint8_t index)
 	can->dtbt_sjw = 0;
 	can->dtbt_tseg1 = 0;
 	can->dtbt_tseg2 = 0;
-	can->int_ts_high = 0;
-	can->int_tx_put_index = 0;
-	can->int_rx_put_index = 0;
-	can->int_psr.reg = 0;
 }
 
 static inline void cans_reset(void)
@@ -882,6 +965,7 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 		case SC_MSG_CAN_STATUS:
 		case SC_MSG_CAN_RX:
 		case SC_MSG_CAN_TXR:
+		case SC_MSG_CAN_ERROR:
 			break;
 		default:
 			LOG("%s msg offset %u non-device msg id %#02x\n", func, ptr - sptr, hdr->id);
@@ -1142,7 +1226,7 @@ send_can_info:
 					if (can->enabled) {
 						can_configure(can);
 						can_set_state1(can->m_can, can->interrupt_id, can->enabled);
-						canled_set_status(can, CANLED_STATUS_ENABLED_BUS_ON);
+						canled_set_status(can, CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
 					} else {
 						can_off(index);
 						canled_set_status(can, CANLED_STATUS_ENABLED_BUS_OFF);
@@ -1294,6 +1378,9 @@ send_txr:
 	}
 
 	xSemaphoreGive(usb_can->mutex_handle);
+
+	// // notify CAN task on bus-off we don't get bittime ticks
+	// vTaskNotifyGiveFromISR(can->task_handle, NULL);
 }
 
 static void sc_cmd_bulk_in(uint8_t index)
@@ -1399,6 +1486,10 @@ int main(void)
 #endif
 	cans.can[0].led_traffic = CAN0_TRAFFIC_LED;
 	cans.can[1].led_traffic = CAN1_TRAFFIC_LED;
+	cans.can[0].queue_handle = xQueueCreateStatic(CAN_QUEUE_SIZE, sizeof(cans.can[0].queue_storage) / CAN_QUEUE_SIZE, cans.can[0].queue_storage, &cans.can[0].queue_mem);
+	cans.can[1].queue_handle = xQueueCreateStatic(CAN_QUEUE_SIZE, sizeof(cans.can[1].queue_storage) / CAN_QUEUE_SIZE, cans.can[0].queue_storage, &cans.can[1].queue_mem);
+
+
 	cans.can[0].task_handle = xTaskCreateStatic(&can_task, "can0", TU_ARRAY_SIZE(cans.can[0].stack_mem), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, cans.can[0].stack_mem, &cans.can[0].task_mem);
 	cans.can[1].task_handle = xTaskCreateStatic(&can_task, "can1", TU_ARRAY_SIZE(cans.can[1].stack_mem), (void*)(uintptr_t)1, configMAX_PRIORITIES-1, cans.can[1].stack_mem, &cans.can[1].task_mem);
 
@@ -1555,6 +1646,8 @@ bool tud_custom_xfer_cb(
 
 	USB_TRAFFIC_DO_LED;
 
+
+
 	switch (ep_addr) {
 	case SC_M1_EP_CMD0_BULK_OUT:
 		sc_cmd_bulk_out(0, xferred_bytes);
@@ -1570,6 +1663,7 @@ bool tud_custom_xfer_cb(
 		break;
 	case SC_M1_EP_MSG0_BULK_OUT:
 		sc_can_bulk_out(0, xferred_bytes);
+
 		break;
 	case SC_M1_EP_MSG1_BULK_OUT:
 		sc_can_bulk_out(1, xferred_bytes);
@@ -1839,9 +1933,14 @@ static void can_task(void *param)
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
 
-	uint8_t previous_arbt_error = 0;
-	uint8_t previous_data_error = 0;
 	uint8_t previous_bus_status = 0;
+	uint8_t current_bus_status = 0;
+	uint8_t previous_activity = 0;
+	uint8_t current_activity = 0;
+	uint8_t send_can_status = 0;
+	struct can_queue_item queue_item;
+
+
 
 	while (42) {
 		// LOG("CAN%u task wait\n", index);
@@ -1853,10 +1952,16 @@ static void can_task(void *param)
 		}
 
 		if (unlikely(!can->enabled)) {
+			current_bus_status = 0;
+			current_bus_status = 0;
+			previous_activity = 0;
+			current_activity = 0;
 			continue;
 		}
 
 		led_burst(can->led_traffic, 8);
+		current_activity = 0;
+		send_can_status = 1;
 
 		xSemaphoreTake(usb_can->mutex_handle, ~0);
 
@@ -1871,69 +1976,104 @@ static void can_task(void *param)
 			out_ptr = out_beg + usb_can->tx_offsets[usb_can->tx_bank];
 			TU_ASSERT(out_ptr <= out_end, );
 
-			if (out_ptr == out_beg) {
-				// place status messages
-				done = false;
+			if (send_can_status) {
+				uint8_t bytes = sizeof(struct sc_msg_can_status);
+				if (out_end - out_ptr >= bytes) {
+					done = false;
+					send_can_status = 0;
+					struct sc_msg_can_status *msg = (struct sc_msg_can_status *)out_ptr;
+					out_ptr += bytes;
 
-				uint16_t rx_lost = __sync_fetch_and_and(&can->rx_lost, 0);
-				uint16_t tx_dropped = can->tx_dropped;
-				can->tx_dropped = 0;
-				uint32_t ts = __sync_or_and_fetch(&can->int_ts, 0);
-				// LOG("status ts %lu\n", ts);
-				uint32_t us = can_bittime_to_us(can, ts);
-				CAN_ECR_Type ecr = can->m_can->ECR;
-				CAN_PSR_Type psr = can->int_psr;
+					uint16_t rx_lost = __sync_fetch_and_and(&can->rx_lost, 0);
+					uint16_t tx_dropped = can->tx_dropped;
+					can->tx_dropped = 0;
+					uint32_t ts = __sync_or_and_fetch(&can->int_ts, 0);
+					// LOG("status ts %lu\n", ts);
+					uint32_t us = can_bittime_to_us(can, ts);
+					CAN_ECR_Type ecr = can->m_can->ECR;
 
-				struct sc_msg_can_status *msg = (struct sc_msg_can_status *)out_ptr;
-				msg->id = SC_MSG_CAN_STATUS;
-				msg->len = sizeof(*msg);
-				msg->timestamp_us = us;
-				msg->rx_lost = rx_lost;
-				msg->tx_dropped = tx_dropped;
-				msg->flags = 0;
-				if (can->desync) {
-					msg->flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;
-				}
 
-				if (psr.bit.BO) {
-					msg->bus_status = SC_CAN_STATUS_BUS_OFF;
-				} else if (psr.bit.EP) {
-					msg->bus_status = SC_CAN_STATUS_ERROR_PASSIVE;
-				} else if (psr.bit.EW) {
-					msg->bus_status = SC_CAN_STATUS_ERROR_WARNING;
+					msg->id = SC_MSG_CAN_STATUS;
+					msg->len = sizeof(*msg);
+					msg->timestamp_us = us;
+					msg->rx_lost = rx_lost;
+					msg->tx_dropped = tx_dropped;
+					msg->flags = __sync_or_and_fetch(&can->int_comm_flags, 0);
+					if (can->desync) {
+						msg->flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;
+					}
+
+					msg->bus_status = current_bus_status;
+					msg->tx_errors = ecr.bit.TEC;
+					msg->rx_errors = ecr.bit.REC;
+					msg->tx_fifo_size = CAN_TX_FIFO_SIZE - can->m_can->TXFQS.bit.TFFL;
+					msg->rx_fifo_size = can->m_can->RXF0S.bit.F0FL;
+
+					TU_ASSERT(out_ptr <= out_end, );
+					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 				} else {
-					msg->bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
+					if (sc_can_bulk_in_ep_ready(index)) {
+						done = false;
+						sc_can_bulk_in_submit(index, __func__);
+						continue;
+					} else {
+						// LOG("ch%u dropped CAN bus error msg\n", index);
+						// break;
+					}
 				}
+			}
 
-				if (previous_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE &&
-					msg->bus_status < SC_CAN_STATUS_ERROR_PASSIVE) {
-					canled_set_status(can, CANLED_STATUS_ENABLED_BUS_ON);
-				} else if (previous_bus_status < SC_CAN_STATUS_ERROR_PASSIVE &&
-					msg->bus_status >= SC_CAN_STATUS_ERROR_PASSIVE) {
-					canled_set_status(can, CANLED_STATUS_ERROR);
+			if (pdTRUE == xQueueReceive(can->queue_handle, &queue_item, 0)) {
+				done = false;
+				current_activity = 1;
+
+				switch (queue_item.type) {
+				case CAN_QUEUE_ITEM_TYPE_BUS_STATUS: {
+					current_bus_status = queue_item.payload;
+					LOG("ch%u bus status %#x\n", index, current_bus_status);
+					send_can_status = 1;
+				} break;
+				case CAN_QUEUE_ITEM_TYPE_BUS_ERROR: {
+					uint8_t bytes = sizeof(struct sc_msg_can_error);
+					if (out_end - out_ptr >= bytes) {
+						struct sc_msg_can_error *msg = (struct sc_msg_can_error *)out_ptr;
+						out_ptr += bytes;
+
+						uint32_t ts = __sync_or_and_fetch(&can->int_ts, 0);
+						uint32_t us = can_bittime_to_us(can, ts);
+
+						msg->id = SC_MSG_CAN_ERROR;
+						msg->len = sizeof(*msg);
+						msg->timestamp_us = us;
+						msg->error = queue_item.payload;
+						msg->flags = 0;
+						if (queue_item.tx) {
+							msg->flags |= SC_CAN_ERROR_FLAG_RXTX_TX;
+						}
+						if (queue_item.data_part) {
+							msg->flags |= SC_CAN_ERROR_FLAG_NMDT_DT;
+						}
+
+						TU_ASSERT(out_ptr <= out_end, );
+						usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
+					} else {
+						if (sc_can_bulk_in_ep_ready(index)) {
+							sc_can_bulk_in_submit(index, __func__);
+							continue;
+						} else {
+							// LOG("ch%u dropped CAN bus error msg\n", index);
+							// break;
+						}
+					}
+				} break;
+				default:
+					LOG("ch%u unhandled CAN queue message type %#02x\n", index, queue_item.type);
+					break;
 				}
-
-				msg->node_state = psr.bit.ACT;
-				msg->arbt_phase_error = can_map_m_can_ec(psr.bit.LEC, previous_arbt_error);
-				msg->data_phase_error = can_map_m_can_ec(psr.bit.DLEC, previous_data_error);
-				msg->tx_errors = ecr.bit.TEC;
-				msg->rx_errors = ecr.bit.REC;
-				msg->tx_fifo_size = CAN_TX_FIFO_SIZE - can->m_can->TXFQS.bit.TFFL;
-				msg->rx_fifo_size = can->m_can->RXF0S.bit.F0FL;
-
-				// save current state for next iteration
-				previous_bus_status = msg->bus_status;
-				previous_arbt_error = msg->arbt_phase_error;
-				previous_data_error = msg->data_phase_error;
-
-				out_ptr += msg->len;
-
-				TU_ASSERT(out_ptr <= out_end, );
-				usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 			}
 
 			if (m_can_rx0_msg_fifo_avail(can->m_can)) {
-				done = false;
+				current_activity = 1;
 				uint8_t get_index = can->m_can->RXF0S.bit.F0GI;
 				uint8_t bytes = sizeof(struct sc_msg_can_rx);
 				CAN_RXF0E_0_Type r0 = can->rx_fifo[get_index].R0;
@@ -1949,6 +2089,7 @@ static void can_task(void *param)
 				}
 
 				if (out_end - out_ptr >= bytes) {
+					done = false;
 					struct sc_msg_can_rx *msg = (struct sc_msg_can_rx *)out_ptr;
 					out_ptr += bytes;
 
@@ -1984,6 +2125,7 @@ static void can_task(void *param)
 					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 				} else {
 					if (sc_can_bulk_in_ep_ready(index)) {
+						done = false;
 						sc_can_bulk_in_submit(index, __func__);
 						continue;
 					} else {
@@ -1996,12 +2138,14 @@ static void can_task(void *param)
 
 			if (m_can_tx_event_fifo_avail(can->m_can)) {
 				done = false;
+				current_activity = 1;
 				uint8_t get_index = can->m_can->TXEFS.bit.EFGI;
 				uint8_t bytes = sizeof(struct sc_msg_can_txr);
 				CAN_TXEFE_0_Type t0 = can->tx_event_fifo[get_index].T0;
 				CAN_TXEFE_1_Type t1 = can->tx_event_fifo[get_index].T1;
 
 				if (out_end - out_ptr >= bytes) {
+					done = false;
 					struct sc_msg_can_txr *msg = (struct sc_msg_can_txr *)out_ptr;
 					out_ptr += bytes;
 
@@ -2027,6 +2171,7 @@ static void can_task(void *param)
 					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 				} else {
 					if (sc_can_bulk_in_ep_ready(index)) {
+						done = false;
 						sc_can_bulk_in_submit(index, __func__);
 						continue;
 					} else {
@@ -2043,6 +2188,28 @@ static void can_task(void *param)
 		if (usb_can->tx_offsets[usb_can->tx_bank] > 0 && sc_can_bulk_in_ep_ready(index)) {
 			sc_can_bulk_in_submit(index, __func__);
 		}
+
+		bool led_change = current_activity != previous_activity;
+		if (!led_change) {
+			if (previous_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE &&
+				current_bus_status < SC_CAN_STATUS_ERROR_PASSIVE) {
+				led_change = true;
+			} else if (previous_bus_status < SC_CAN_STATUS_ERROR_PASSIVE &&
+				current_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE) {
+				led_change = true;
+			}
+		}
+
+		if (led_change) {
+			if (current_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE) {
+				canled_set_status(can, current_activity ? CANLED_STATUS_ERROR_ACTIVE : CANLED_STATUS_ERROR_PASSIVE);
+			} else {
+				canled_set_status(can, current_activity ? CANLED_STATUS_ENABLED_BUS_ON_ACTIVE : CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
+			}
+		}
+
+		previous_activity = current_activity;
+		previous_bus_status = current_bus_status;
 
 		xSemaphoreGive(usb_can->mutex_handle);
 	}

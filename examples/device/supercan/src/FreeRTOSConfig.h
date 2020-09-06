@@ -54,6 +54,7 @@
 #endif
 
 extern uint32_t SystemCoreClock;
+extern int board_uart_write(void const * buf, int len);
 
 
 /* Cortex M23/M33 port configuration. */
@@ -138,6 +139,19 @@ extern uint32_t SystemCoreClock;
     } while(0)
 #else
   #define configASSERT( x )
+#endif
+
+#undef configASSERT
+#if SUPERCAN_DEBUG
+#define configASSERT(x) \
+  do { \
+    if (__builtin_expect(!(x), 0)) { \
+      board_uart_write("ASSERTION FAILED: " #x "\n", -1); \
+      while (1); \
+    } \
+  } while (0)
+#else
+# define configASSERT(x)
 #endif
 
 /* FreeRTOS hooks to NVIC vectors */
