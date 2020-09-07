@@ -383,7 +383,7 @@ static inline uint8_t can_map_m_can_ec(uint8_t lec, uint8_t previous)
 static void can_int(uint8_t index)
 {
 
-	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
+	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 	struct can *can = &cans.can[index];
 
 	NVIC_DisableIRQ(can->interrupt_id);
@@ -540,26 +540,17 @@ void CAN1_Handler(void)
 static inline void can_set_state1(Can *can, IRQn_Type interrupt_id, bool enabled)
 {
 	if (enabled) {
-		// clear any old interrupts
-		can->IR = can->IR;
-		// disable initialization
-		m_can_init_end(can);
 		// enable interrupt
 		NVIC_EnableIRQ(interrupt_id);
+		// disable initialization
+		m_can_init_end(can);
+
 	} else {
-		NVIC_DisableIRQ(interrupt_id);
 		m_can_init_begin(can);
-		// // clear tx fifo
-		// uint8_t prev = can->TXBC.bit.TFQS;
-		// can->TXBC.bit.TFQS = 0;
-		// can->TXBC.bit.TFQS = prev;
-		TU_ASSERT(can->TXFQS.bit.TFFL == CAN_TX_FIFO_SIZE, );
-		// // clear rx fifo
-		// // m_can_rx0_clear(can);
-		// prev = can->RXF0C.bit.F0S;
-		// can->RXF0C.bit.F0S = 0;
-		// can->RXF0C.bit.F0S = prev;
-		TU_ASSERT(can->RXF0S.bit.F0FL == 0, );
+		NVIC_DisableIRQ(interrupt_id);
+		// clear any old interrupts
+		can->IR = can->IR;
+		// TXFQS, RXF0S are reset when CCCR.CCE is set (read as 0), DS60001507E-page 1207
 	}
 }
 
@@ -709,7 +700,7 @@ static void led_init(void)
 static void led_init(void);
 static inline void led_set(uint8_t index, bool on)
 {
-	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
+	SC_ASSERT(index < TU_ARRAY_SIZE(leds));
 	leds[index].time_ms = 0;
 	leds[index].blink = 0;
 	gpio_set_pin_level(leds[index].pin, on);
@@ -717,7 +708,7 @@ static inline void led_set(uint8_t index, bool on)
 
 static inline void led_toggle(uint8_t index)
 {
-	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
+	SC_ASSERT(index < TU_ARRAY_SIZE(leds));
 	leds[index].time_ms = 0;
 	leds[index].blink = 0;
 	gpio_toggle_pin_level(leds[index].pin);
@@ -725,14 +716,14 @@ static inline void led_toggle(uint8_t index)
 
 static inline void led_blink(uint8_t index, uint16_t delay_ms)
 {
-	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
+	SC_ASSERT(index < TU_ARRAY_SIZE(leds));
 	leds[index].time_ms = delay_ms;
 	leds[index].blink = 1;
 }
 
 static inline void led_burst(uint8_t index, uint16_t duration_ms)
 {
-	TU_ASSERT(index < TU_ARRAY_SIZE(leds), );
+	SC_ASSERT(index < TU_ARRAY_SIZE(leds));
 	leds[index].time_ms = duration_ms;
 	leds[index].blink = 0;
 	gpio_set_pin_level(leds[index].pin, 1);
@@ -860,8 +851,8 @@ static struct usb {
 
 static inline void can_off(uint8_t index)
 {
-	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
-	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can), );
+	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
@@ -895,8 +886,8 @@ static inline void can_off(uint8_t index)
 
 static inline void can_reset(uint8_t index)
 {
-	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
-	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can), );
+	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 
 	// disable CAN units, reset configuration & status
 	can_off(index);
@@ -923,40 +914,47 @@ static inline void cans_reset(void)
 
 static inline bool sc_cmd_bulk_in_ep_ready(uint8_t index)
 {
-	TU_ASSERT(index < TU_ARRAY_SIZE(usb.cmd));
+	SC_ASSERT(index < TU_ARRAY_SIZE(usb.cmd));
 	struct usb_cmd *cmd = &usb.cmd[index];
 	return 0 == cmd->tx_offsets[!cmd->tx_bank];
 }
 
 static inline void sc_cmd_bulk_in_submit(uint8_t index)
 {
-	TU_ASSERT(sc_cmd_bulk_in_ep_ready(index), );
+	SC_ASSERT(sc_cmd_bulk_in_ep_ready(index));
 	struct usb_cmd *cmd = &usb.cmd[index];
-	TU_ASSERT(cmd->tx_offsets[cmd->tx_bank] > 0, );
-	TU_ASSERT(cmd->tx_offsets[cmd->tx_bank] <= CMD_BUFFER_SIZE, );
+	SC_ASSERT(cmd->tx_offsets[cmd->tx_bank] > 0);
+	SC_ASSERT(cmd->tx_offsets[cmd->tx_bank] <= CMD_BUFFER_SIZE);
 	(void)dcd_edpt_xfer(usb.port, 0x80 | cmd->pipe, cmd->tx_buffers[cmd->tx_bank], cmd->tx_offsets[cmd->tx_bank]);
 	cmd->tx_bank = !cmd->tx_bank;
 }
 
 static inline bool sc_can_bulk_in_ep_ready(uint8_t index)
 {
-	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 	struct usb_can *can = &usb.can[index];
 	return 0 == can->tx_offsets[!can->tx_bank];
 }
 
 static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 {
-	TU_ASSERT(sc_can_bulk_in_ep_ready(index), );
+	SC_ASSERT(sc_can_bulk_in_ep_ready(index));
 	struct usb_can *can = &usb.can[index];
-	TU_ASSERT(can->tx_offsets[can->tx_bank] > 0, );
-	TU_ASSERT(can->tx_offsets[can->tx_bank] <= MSG_BUFFER_SIZE, );
+	SC_ASSERT(can->tx_bank < 2);
+	SC_ASSERT(can->tx_offsets[can->tx_bank] > 0);
+	SC_ASSERT(can->tx_offsets[can->tx_bank] <= MSG_BUFFER_SIZE);
 	(void)func;
 
 #if SUPERCAN_DEBUG
-	LOG("ch%u %s: send %u bytes\n", index, func, can->tx_offsets[can->tx_bank]);
+	// LOG("ch%u %s: send %u bytes\n", index, func, can->tx_offsets[can->tx_bank]);
 	if (can->tx_offsets[can->tx_bank] > MSG_BUFFER_SIZE) {
 		LOG("ch%u %s: msg buffer size %u out of bounds\n", index, func, can->tx_offsets[can->tx_bank]);
+		can->tx_offsets[can->tx_bank] = 0;
+		return;
+	}
+
+	if (can->tx_offsets[can->tx_bank] & 3) {
+		LOG("ch%u %s: msg buffer size %u not multiple of 4\n", index, func, can->tx_offsets[can->tx_bank]);
 		can->tx_offsets[can->tx_bank] = 0;
 		return;
 	}
@@ -999,7 +997,8 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 
 	(void)dcd_edpt_xfer(usb.port, 0x80 | can->pipe, can->tx_buffers[can->tx_bank], can->tx_offsets[can->tx_bank]);
 	can->tx_bank = !can->tx_bank;
-	TU_ASSERT(!can->tx_offsets[can->tx_bank], );
+	SC_ASSERT(!can->tx_offsets[can->tx_bank]);
+	// memset(can->tx_buffers[can->tx_bank], 0, MSG_BUFFER_SIZE);
 }
 
 static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes);
@@ -1010,9 +1009,9 @@ static void sc_cmd_place_error_reply(uint8_t index, int8_t error);
 
 static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 {
-	TU_ASSERT(index < TU_ARRAY_SIZE(usb.cmd), );
-	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can), );
-	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
+	SC_ASSERT(index < TU_ARRAY_SIZE(usb.cmd));
+	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 
 	struct can *can = &cans.can[index];
 	struct usb_cmd *usb_cmd = &usb.cmd[index];
@@ -1271,8 +1270,8 @@ send_can_info:
 
 static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 {
-	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can), );
-	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
+	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
@@ -1408,7 +1407,7 @@ static void sc_cmd_bulk_in(uint8_t index)
 {
 	LOG("< cmd%u IN token\n", index);
 
-	TU_ASSERT(index < TU_ARRAY_SIZE(usb.cmd), );
+	SC_ASSERT(index < TU_ARRAY_SIZE(usb.cmd));
 
 	struct usb_cmd *usb_cmd = &usb.cmd[index];
 
@@ -1421,7 +1420,7 @@ static void sc_cmd_bulk_in(uint8_t index)
 
 static void sc_can_bulk_in(uint8_t index)
 {
-	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can), );
+	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 
 	struct usb_can *usb_can = &usb.can[index];
 
@@ -1438,7 +1437,7 @@ static void sc_can_bulk_in(uint8_t index)
 
 static void sc_cmd_place_error_reply(uint8_t index, int8_t error)
 {
-	TU_ASSERT(index < TU_ARRAY_SIZE(usb.cmd), );
+	SC_ASSERT(index < TU_ARRAY_SIZE(usb.cmd));
 
 	struct usb_cmd *usb_cmd = &usb.cmd[index];
 	uint8_t bytes = sizeof(struct sc_msg_error);
@@ -1517,9 +1516,17 @@ int main(void)
 	led_blink(0, 2000);
 	led_set(POWER_LED, 1);
 
+
+
 #if SUPERDFU_APP
 	dfu_app_watchdog_disable();
 #endif
+
+	{
+		// REMOVE ME
+		uint8_t *ptr = usb.can[0].tx_buffers[0];
+		SC_ASSERT(ptr + MSG_BUFFER_SIZE == usb.can[0].tx_buffers[1]);
+	}
 
 	vTaskStartScheduler();
 	NVIC_SystemReset();
@@ -1642,11 +1649,14 @@ bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf,
 	for (uint8_t i = 0; i < eps; ++i) {
 		tusb_desc_endpoint_t const *ep_desc = (tusb_desc_endpoint_t const *)(ptr + i * 7);
 		LOG("! ep %02x open\n", ep_desc->bEndpointAddress);
-		TU_ASSERT(dcd_edpt_open(rhport, ep_desc));
+		bool success = dcd_edpt_open(rhport, ep_desc);
+		SC_ASSERT(success);
 	}
 
-	TU_ASSERT(dcd_edpt_xfer(rhport, usb_cmd->pipe, usb_cmd->rx_buffers[usb_cmd->rx_bank], CMD_BUFFER_SIZE));
-	TU_ASSERT(dcd_edpt_xfer(rhport, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE));
+	bool success_cmd = dcd_edpt_xfer(rhport, usb_cmd->pipe, usb_cmd->rx_buffers[usb_cmd->rx_bank], CMD_BUFFER_SIZE);
+	bool success_can = dcd_edpt_xfer(rhport, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE);
+	SC_ASSERT(success_cmd);
+	SC_ASSERT(success_can);
 
 	*p_length = 9+eps*7;
 
@@ -1946,8 +1956,8 @@ static void led_task(void *param)
 static void can_task(void *param)
 {
 	const uint8_t index = (uint8_t)(uintptr_t)param;
-	TU_ASSERT(index < TU_ARRAY_SIZE(cans.can), );
-	TU_ASSERT(index < TU_ARRAY_SIZE(usb.can), );
+	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 
 	LOG("CAN%u task start\n", index);
 
@@ -1994,9 +2004,9 @@ static void can_task(void *param)
 
 			out_beg = usb_can->tx_buffers[usb_can->tx_bank];
 			out_end = out_beg + MSG_BUFFER_SIZE;
-			TU_ASSERT(usb_can->tx_offsets[usb_can->tx_bank] <= MSG_BUFFER_SIZE, );
+			SC_ASSERT(usb_can->tx_offsets[usb_can->tx_bank] <= MSG_BUFFER_SIZE);
 			out_ptr = out_beg + usb_can->tx_offsets[usb_can->tx_bank];
-			TU_ASSERT(out_ptr <= out_end, );
+			SC_ASSERT(out_ptr <= out_end);
 
 			if (send_can_status) {
 				uint8_t bytes = sizeof(struct sc_msg_can_status);
@@ -2031,7 +2041,7 @@ static void can_task(void *param)
 					msg->tx_fifo_size = CAN_TX_FIFO_SIZE - can->m_can->TXFQS.bit.TFFL;
 					msg->rx_fifo_size = can->m_can->RXF0S.bit.F0FL;
 
-					TU_ASSERT(out_ptr <= out_end, );
+					SC_ASSERT(out_ptr <= out_end);
 					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 				} else {
 					if (sc_can_bulk_in_ep_ready(index)) {
@@ -2075,7 +2085,7 @@ static void can_task(void *param)
 							msg->flags |= SC_CAN_ERROR_FLAG_NMDT_DT;
 						}
 
-						TU_ASSERT(out_ptr <= out_end, );
+						SC_ASSERT(out_ptr <= out_end);
 						usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 					} else {
 						if (sc_can_bulk_in_ep_ready(index)) {
@@ -2142,7 +2152,7 @@ static void can_task(void *param)
 						memcpy(msg->data, can->rx_fifo[get_index].data, can_frame_len);
 					}
 
-					TU_ASSERT(out_ptr <= out_end, );
+					SC_ASSERT(out_ptr <= out_end);
 					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 
 					can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(get_index);
@@ -2190,7 +2200,7 @@ static void can_task(void *param)
 						msg->flags |= SC_CAN_FRAME_FLAG_BRS;
 					}
 
-					TU_ASSERT(out_ptr <= out_end, );
+					SC_ASSERT(out_ptr <= out_end);
 					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 
 					can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(get_index);

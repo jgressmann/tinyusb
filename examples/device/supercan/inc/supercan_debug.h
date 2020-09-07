@@ -45,3 +45,12 @@ extern char supercan_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
 #else
 #	define LOG(...)
 #endif
+
+#define SC_ASSERT(x) \
+	do { \
+		if (__builtin_expect(!(x), 0)) { \
+			board_uart_write("ASSERTION FAILED: " #x "\n", -1); \
+			while (1); \
+		} \
+	} while (0)
+
