@@ -1955,6 +1955,8 @@ static void led_task(void *param)
 //--------------------------------------------------------------------+
 static void can_task(void *param)
 {
+	const unsigned BUS_ACTIVITY_TIMEOUT_MS = 256;
+
 	const uint8_t index = (uint8_t)(uintptr_t)param;
 	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
@@ -1966,9 +1968,9 @@ static void can_task(void *param)
 
 	uint8_t previous_bus_status = 0;
 	uint8_t current_bus_status = 0;
-	uint8_t previous_activity = 0;
-	uint8_t current_activity = 0;
-	uint8_t send_can_status = 0;
+	TickType_t bus_activity_tc = 0;
+	bool had_bus_activity = false;
+	bool send_can_status = 0;
 	struct can_queue_item queue_item;
 
 
@@ -1985,13 +1987,12 @@ static void can_task(void *param)
 		if (unlikely(!can->enabled)) {
 			current_bus_status = 0;
 			current_bus_status = 0;
-			previous_activity = 0;
-			current_activity = 0;
+			bus_activity_tc = xTaskGetTickCount() - pdMS_TO_TICKS(BUS_ACTIVITY_TIMEOUT_MS);
+			had_bus_activity = false;
 			continue;
 		}
 
 		led_burst(can->led_traffic, 8);
-		current_activity = 0;
 		send_can_status = 1;
 
 		xSemaphoreTake(usb_can->mutex_handle, ~0);
@@ -2056,7 +2057,7 @@ static void can_task(void *param)
 
 			if (pdTRUE == xQueueReceive(can->queue_handle, &queue_item, 0)) {
 				done = false;
-				current_activity = 1;
+				bus_activity_tc = xTaskGetTickCount();
 
 				switch (queue_item.type) {
 				case CAN_QUEUE_ITEM_TYPE_BUS_STATUS: {
@@ -2104,7 +2105,7 @@ static void can_task(void *param)
 			}
 
 			if (m_can_rx0_msg_fifo_avail(can->m_can)) {
-				current_activity = 1;
+				bus_activity_tc = xTaskGetTickCount();
 				uint8_t get_index = can->m_can->RXF0S.bit.F0GI;
 				uint8_t bytes = sizeof(struct sc_msg_can_rx);
 				CAN_RXF0E_0_Type r0 = can->rx_fifo[get_index].R0;
@@ -2169,7 +2170,7 @@ static void can_task(void *param)
 
 			if (m_can_tx_event_fifo_avail(can->m_can)) {
 				done = false;
-				current_activity = 1;
+				bus_activity_tc = xTaskGetTickCount();
 				uint8_t bytes = sizeof(struct sc_msg_can_txr);
 
 
@@ -2222,7 +2223,8 @@ static void can_task(void *param)
 			sc_can_bulk_in_submit(index, __func__);
 		}
 
-		bool led_change = current_activity != previous_activity;
+		const bool has_bus_activity = xTaskGetTickCount() - bus_activity_tc < pdMS_TO_TICKS(BUS_ACTIVITY_TIMEOUT_MS);
+		bool led_change = has_bus_activity != had_bus_activity;
 		if (!led_change) {
 			if (previous_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE &&
 				current_bus_status < SC_CAN_STATUS_ERROR_PASSIVE) {
@@ -2235,13 +2237,13 @@ static void can_task(void *param)
 
 		if (led_change) {
 			if (current_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE) {
-				canled_set_status(can, current_activity ? CANLED_STATUS_ERROR_ACTIVE : CANLED_STATUS_ERROR_PASSIVE);
+				canled_set_status(can, has_bus_activity ? CANLED_STATUS_ERROR_ACTIVE : CANLED_STATUS_ERROR_PASSIVE);
 			} else {
-				canled_set_status(can, current_activity ? CANLED_STATUS_ENABLED_BUS_ON_ACTIVE : CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
+				canled_set_status(can, has_bus_activity ? CANLED_STATUS_ENABLED_BUS_ON_ACTIVE : CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
 			}
 		}
 
-		previous_activity = current_activity;
+		had_bus_activity = has_bus_activity;
 		previous_bus_status = current_bus_status;
 
 		xSemaphoreGive(usb_can->mutex_handle);
