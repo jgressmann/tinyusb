@@ -1,8 +1,11 @@
+VID=0x1d50
+PID=0x5035
+BOARD=d5035-01
+
 include ../../../tools/top.mk
 include ../../make.mk
 
 FREERTOS_SRC = lib/FreeRTOS/FreeRTOS/Source
-CFLAGS += -Wno-error
 
 INC += \
 	inc \
@@ -13,10 +16,14 @@ INC += \
 	$(TOP)/$(FREERTOS_SRC)/portable/GCC/$(FREERTOS_PORT) \
 	$(TOP)/examples/device/atsame51_dfu/inc \
 
+
+CFLAGS += -Wno-error
+CFLAGS += -DVID=$(VID) -DPID=$(PID)
+
 ifdef SUPERCAN_DEBUG
-	CFLAGS += -DSUPERCAN_DEBUG=$(SUPERCAN_DEBUG)
+  CFLAGS += -DSUPERCAN_DEBUG=$(SUPERCAN_DEBUG)
 else
-	CFLAGS += -DSUPERCAN_DEBUG=0
+  CFLAGS += -DSUPERCAN_DEBUG=0
 endif
 
 # Example source

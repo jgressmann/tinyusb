@@ -8,10 +8,22 @@ INC += \
 	$(TOP)/hw \
 	$(TOP)/src/device
 
-ifdef SUPERDFU_DEBUG
-	CFLAGS += -DSUPERDFU_DEBUG=$(SUPERDFU_DEBUG)
+ifdef VID
+  CFLAGS += -DVID=$(VID)
 else
-	CFLAGS += -DSUPERDFU_DEBUG=0
+  $(error VID is not set)
+endif
+
+ifdef PID
+  CFLAGS += -DPID=$(PID)
+else
+  $(error PID is not set)
+endif
+
+ifdef SUPERDFU_DEBUG
+  CFLAGS += -DSUPERDFU_DEBUG=$(SUPERDFU_DEBUG)
+else
+  CFLAGS += -DSUPERDFU_DEBUG=0
 endif
 
 # Example source
