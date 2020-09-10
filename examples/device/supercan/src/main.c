@@ -639,7 +639,7 @@ enum {
 
 
 
-static void led_init(void)
+static inline void led_init(void)
 {
 	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
 	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
@@ -683,7 +683,7 @@ enum {
 #define CAN1_TRAFFIC_LED LED_DEBUG_2
 
 
-static void led_init(void)
+static inline void led_init(void)
 {
 	PORT->Group[0].DIRSET.reg = PORT_PA18 | PORT_PA19;
 	PORT->Group[1].DIRSET.reg =
@@ -697,7 +697,7 @@ static void led_init(void)
 #endif // HWREV > 1
 
 
-static void led_init(void);
+
 static inline void led_set(uint8_t index, bool on)
 {
 	SC_ASSERT(index < TU_ARRAY_SIZE(leds));
