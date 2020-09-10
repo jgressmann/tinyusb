@@ -445,7 +445,7 @@ static void can_int(uint8_t index)
 	bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
 	bool is_rx_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_RX_Val || is_tx_error;
 	if (current_psr.bit.LEC != prev_psr.bit.LEC &&
-		current_psr.bit.LEC != CAN_PSR_LEC_NONE_Val &&
+		// current_psr.bit.LEC != CAN_PSR_LEC_NONE_Val &&
 		current_psr.bit.LEC != CAN_PSR_LEC_NC_Val &&
 		is_rx_tx_error) {
 		can->int_prev_psr_reg = current_psr.reg;
@@ -461,14 +461,14 @@ static void can_int(uint8_t index)
 			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
 			LOG("CAN%u queue full\n", index);
 		} else {
-			LOG("CAN%u LEC %1x\n", index, current_psr.bit.LEC);
+			// LOG("CAN%u LEC %1x\n", index, current_psr.bit.LEC);
 		}
 	} else {
 		// LOG("CAN%u LEC %1x\n", index, current_psr.bit.LEC);
 	}
 
 	if (current_psr.bit.DLEC != prev_psr.bit.DLEC &&
-		current_psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val &&
+		// current_psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val &&
 		current_psr.bit.DLEC != CAN_PSR_DLEC_NC_Val &&
 		is_rx_tx_error) {
 		can->int_prev_psr_reg = current_psr.reg;
@@ -484,7 +484,7 @@ static void can_int(uint8_t index)
 			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
 			LOG("CAN%u queue full\n", index);
 		} else {
-			LOG("CAN%u DLEC %1x\n", index, current_psr.bit.DLEC);
+			// LOG("CAN%u DLEC %1x\n", index, current_psr.bit.DLEC);
 		}
 	} else {
 		// LOG("CAN%u DLEC %1x\n", index, current_psr.bit.DLEC);
@@ -1970,6 +1970,8 @@ static void can_task(void *param)
 	uint8_t current_bus_status = 0;
 	TickType_t bus_activity_tc = 0;
 	bool had_bus_activity = false;
+	bool has_bus_error = false;
+	bool had_bus_error = false;
 	bool send_can_status = 0;
 	struct can_queue_item queue_item;
 
@@ -1986,9 +1988,10 @@ static void can_task(void *param)
 
 		if (unlikely(!can->enabled)) {
 			current_bus_status = 0;
-			current_bus_status = 0;
 			bus_activity_tc = xTaskGetTickCount() - pdMS_TO_TICKS(BUS_ACTIVITY_TIMEOUT_MS);
 			had_bus_activity = false;
+			has_bus_error = false;
+			had_bus_error = false;
 			continue;
 		}
 
@@ -2066,6 +2069,7 @@ static void can_task(void *param)
 					send_can_status = 1;
 				} break;
 				case CAN_QUEUE_ITEM_TYPE_BUS_ERROR: {
+					has_bus_error = SC_CAN_ERROR_NONE != queue_item.payload;
 					uint8_t bytes = sizeof(struct sc_msg_can_error);
 					if (out_end - out_ptr >= bytes) {
 						struct sc_msg_can_error *msg = (struct sc_msg_can_error *)out_ptr;
@@ -2224,7 +2228,9 @@ static void can_task(void *param)
 		}
 
 		const bool has_bus_activity = xTaskGetTickCount() - bus_activity_tc < pdMS_TO_TICKS(BUS_ACTIVITY_TIMEOUT_MS);
-		bool led_change = has_bus_activity != had_bus_activity;
+		bool led_change =
+			has_bus_activity != had_bus_activity ||
+			has_bus_error != had_bus_error;
 		if (!led_change) {
 			if (previous_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE &&
 				current_bus_status < SC_CAN_STATUS_ERROR_PASSIVE) {
@@ -2236,7 +2242,7 @@ static void can_task(void *param)
 		}
 
 		if (led_change) {
-			if (current_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE) {
+			if (has_bus_error || current_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE) {
 				canled_set_status(can, has_bus_activity ? CANLED_STATUS_ERROR_ACTIVE : CANLED_STATUS_ERROR_PASSIVE);
 			} else {
 				canled_set_status(can, has_bus_activity ? CANLED_STATUS_ENABLED_BUS_ON_ACTIVE : CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
@@ -2244,6 +2250,7 @@ static void can_task(void *param)
 		}
 
 		had_bus_activity = has_bus_activity;
+		had_bus_error = has_bus_error;
 		previous_bus_status = current_bus_status;
 
 		xSemaphoreGive(usb_can->mutex_handle);
