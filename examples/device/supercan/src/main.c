@@ -784,7 +784,7 @@ static inline void cans_led_status_set(int status)
 
 #define MAJOR 0
 #define MINOR 2
-#define PATCH 2
+#define PATCH 3
 
 
 #if SUPERDFU_APP
