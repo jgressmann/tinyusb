@@ -43,10 +43,8 @@
   #define CFG_TUSB_MCU  OPT_MCU_NRF5X
 #endif
 
-#if CFG_TUSB_MCU == OPT_MCU_LPC43XX || CFG_TUSB_MCU == OPT_MCU_LPC18XX || CFG_TUSB_MCU == OPT_MCU_MIMXRT10XX
+#ifndef CFG_TUSB_RHPORT0_MODE
 #define CFG_TUSB_RHPORT0_MODE    (OPT_MODE_DEVICE | OPT_MODE_HIGH_SPEED)
-#else
-#define CFG_TUSB_RHPORT0_MODE    OPT_MODE_DEVICE
 #endif
 
 #define CFG_TUSB_OS              OPT_OS_NONE
@@ -99,7 +97,7 @@
 //------------- HID -------------//
 
 // Should be sufficient to hold ID (if any) + Data
-#define CFG_TUD_HID_BUFSIZE      16
+#define CFG_TUD_HID_EP_BUFSIZE    16
 
 #ifdef __cplusplus
  }

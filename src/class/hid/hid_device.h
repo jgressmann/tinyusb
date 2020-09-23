@@ -39,8 +39,14 @@
 // Class Driver Default Configure & Validation
 //--------------------------------------------------------------------+
 
-#ifndef CFG_TUD_HID_BUFSIZE
-#define CFG_TUD_HID_BUFSIZE     16
+#if !defined(CFG_TUD_HID_EP_BUFSIZE) & defined(CFG_TUD_HID_BUFSIZE)
+  // TODO warn user to use new name later on
+  // #warning CFG_TUD_HID_BUFSIZE is renamed to CFG_TUD_HID_EP_BUFSIZE, please update to use the new name
+  #define CFG_TUD_HID_EP_BUFSIZE  CFG_TUD_HID_BUFSIZE
+#endif
+
+#ifndef CFG_TUD_HID_EP_BUFSIZE
+  #define CFG_TUD_HID_EP_BUFSIZE     16
 #endif
 
 //--------------------------------------------------------------------+
@@ -258,7 +264,7 @@ TU_ATTR_WEAK bool tud_hid_set_idle_cb(uint8_t idle_rate);
     HID_LOGICAL_MAX  ( 1                                      ) ,\
     HID_REPORT_COUNT ( 16                                     ) ,\
     HID_REPORT_SIZE  ( 1                                      ) ,\
-    HID_INPUT        ( HID_DATA | HID_ARRAY | HID_ABSOLUTE    ) ,\
+    HID_INPUT        ( HID_DATA | HID_VARIABLE | HID_ABSOLUTE ) ,\
     /* X, Y, Z, Rz (min -127, max 127 ) */ \
     HID_USAGE_PAGE   ( HID_USAGE_PAGE_DESKTOP                 ) ,\
     HID_LOGICAL_MIN  ( 0x81                                   ) ,\
