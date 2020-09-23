@@ -1,4 +1,4 @@
-/*
+/* 
  * The MIT License (MIT)
  *
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
@@ -933,6 +933,7 @@ static bool process_get_descriptor(uint8_t rhport, tusb_control_request_t const 
 
     case TUSB_DESC_DEVICE_QUALIFIER:
       TU_LOG2(" Device Qualifier\r\n");
+
       // Host sends this request to ask why our device with USB BCD from 2.0
       // but is running at Full/Low Speed. If not highspeed capable stall this request,
       // otherwise return the descriptor that could work in highspeed mode
@@ -1221,9 +1222,9 @@ bool usbd_edpt_stalled(uint8_t rhport, uint8_t ep_addr)
 
 /**
  * usbd_edpt_close will disable an endpoint.
- *
+ * 
  * In progress transfers on this EP may be delivered after this call.
- *
+ * 
  */
 void usbd_edpt_close(uint8_t rhport, uint8_t ep_addr)
 {
