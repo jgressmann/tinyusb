@@ -24,8 +24,19 @@
  */
 
 #include <supercan_debug.h>
+#include <leds.h>
+#include <FreeRTOS.h>
 
 #if SUPERCAN_DEBUG && !CFG_TUSB_DEBUG
-char supercan_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
+char sc_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
 #endif
 
+__attribute__((noreturn)) extern void sc_assert_failed(char const * const msg)
+{
+	taskDISABLE_INTERRUPTS();
+	board_uart_write(msg, -1);
+	for (unsigned i = 0; i < LED_COUNT; ++i) {
+		led_set(i, 1);
+	}
+	while (1);
+}
