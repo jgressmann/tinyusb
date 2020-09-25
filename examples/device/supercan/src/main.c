@@ -1711,7 +1711,7 @@ void dfu_rtd_reset(uint8_t rhport)
 	(void) rhport;
 
 	if (DFU_STATE_APP_DETACH == dfu.status.bState) {
-		LOG("Detected USB reset while detach timer is running");
+		LOG("Detected USB reset while detach timer is running\n");
 		dfu_request_dfu(1);
 		NVIC_SystemReset();
 	}
