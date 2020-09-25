@@ -28,15 +28,8 @@
 //--------------------------------------------------------------------+
 #include "FreeRTOS.h"
 #include "task.h"
-#include "common/tusb_common.h"
 #include <bsp/board.h>
-
-
-void vApplicationMallocFailedHook(void)
-{
-	taskDISABLE_INTERRUPTS();
-	TU_ASSERT(false, );
-}
+#include "supercan_debug.h"
 
 void vApplicationStackOverflowHook(TaskHandle_t pxTask, signed char *pcTaskName)
 {
@@ -48,7 +41,7 @@ void vApplicationStackOverflowHook(TaskHandle_t pxTask, signed char *pcTaskName)
 	} else {
 		board_uart_write("stack overflow", -1);
 	}
-	TU_ASSERT(false, );
+	(false);
 }
 
 /* configSUPPORT_STATIC_ALLOCATION is set to 1, so the application must provide an
