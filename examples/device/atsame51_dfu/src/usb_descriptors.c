@@ -75,8 +75,7 @@ static uint8_t const desc_configuration[] =
 	// Config number, interface count, string index, total length, attribute, power in mA
 	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0, 100),
 
-	// DFU_PROTOCOL_DFU (as per USB DFU 1.1 spec will prevent dfu-util and dfu-tool from finding the device.
-	9, TUSB_DESC_INTERFACE, 0, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_RT, 4, \
+	9, TUSB_DESC_INTERFACE, 0, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_DFU, 4, \
   	/* Function */
 #if 0
 	DFU attributes
@@ -106,7 +105,7 @@ Bit 0: download capable
 		(0<<3) | (1<<2) | (0<<1) | (1<<0) /*attrs*/,
 		U16_TO_U8S_LE(DFU_USB_TIMEOUT_MS) /* timeout [ms]*/,
 		U16_TO_U8S_LE(MCU_NVM_PAGE_SIZE)/* xfer size*/,
-		U16_TO_U8S_LE(0x0101)/*bcdVersion*/
+		U16_TO_U8S_LE(0x0110)/*bcdVersion*/
 };
 
 
