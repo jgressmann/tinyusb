@@ -256,7 +256,7 @@ static inline void watchdog_timeout(uint8_t seconds_in, uint8_t* wdt_reg, uint8_
 
 #define SUPERDFU_VERSION_MAJOR 0
 #define SUPERDFU_VERSION_MINOR 2
-#define SUPERDFU_VERSION_PATCH 1
+#define SUPERDFU_VERSION_PATCH 2
 #define STR2(x) #x
 #define STR(x) STR2(x)
 #define NAME "SuperDFU"
@@ -367,6 +367,9 @@ int main(void)
 	}
 
 	board_uart_write("SuperDFU v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " running\n", -1);
+
+	// set app stable counter
+	dfu_hdr_ptr()->counter = 0;
 
 	tusb_init();
 
