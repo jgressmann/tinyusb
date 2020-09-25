@@ -31,6 +31,7 @@
 #include <bsp/board.h>
 #include "supercan_debug.h"
 
+
 void vApplicationStackOverflowHook(TaskHandle_t pxTask, signed char *pcTaskName)
 {
 	(void) pxTask;
@@ -41,7 +42,7 @@ void vApplicationStackOverflowHook(TaskHandle_t pxTask, signed char *pcTaskName)
 	} else {
 		board_uart_write("stack overflow", -1);
 	}
-	(false);
+	SC_ASSERT(false && "stack overflow");
 }
 
 /* configSUPPORT_STATIC_ALLOCATION is set to 1, so the application must provide an
