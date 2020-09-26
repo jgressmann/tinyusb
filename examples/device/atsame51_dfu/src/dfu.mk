@@ -23,7 +23,9 @@ flash-dfu: $(BUILD)/$(BOARD)-firmware.superdfu.hex
 
 $(BUILD)/$(BOARD)-firmware.dfu: $(BUILD)/$(BOARD)-firmware.superdfu.bin
 	@echo CREATE $@
-	dfu-tool convert dfu $^ $@
+	#dfu-tool convert dfu $^ $@
+	cp $^ $@
+	dfu-suffix -a $@
 
 # depend on dfu and hex so we can have both in one build
 dfu: $(BUILD)/$(BOARD)-firmware.dfu $(BUILD)/$(BOARD)-firmware.superdfu.hex
