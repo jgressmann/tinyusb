@@ -31,4 +31,5 @@ $(BUILD)/$(BOARD)-firmware.dfu: $(BUILD)/$(BOARD)-firmware.superdfu.bin
 dfu: $(BUILD)/$(BOARD)-firmware.dfu $(BUILD)/$(BOARD)-firmware.superdfu.hex
 
 dfu-upload: $(BUILD)/$(BOARD)-firmware.dfu
-	sudo dfu-tool write $(BUILD)/$(BOARD)-firmware.dfu
+	#sudo dfu-tool write $(BUILD)/$(BOARD)-firmware.dfu
+	sudo dfu-util -R -D $(BUILD)/$(BOARD)-firmware.dfu
