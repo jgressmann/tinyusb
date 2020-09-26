@@ -1,5 +1,3 @@
-VID=0x1d50
-PID=0x5035
 BOARD=d5035-01
 
 include ../../../tools/top.mk
@@ -18,7 +16,6 @@ INC += \
 
 
 CFLAGS += -Wno-error
-CFLAGS += -DVID=$(VID) -DPID=$(PID)
 
 ifdef SUPERCAN_DEBUG
   CFLAGS += -DSUPERCAN_DEBUG=$(SUPERCAN_DEBUG)
@@ -43,3 +40,4 @@ LDFLAGS += -Wl,--undefined=vTaskSwitchContext
 
 include ../../rules.mk
 include $(TOP)/examples/device/atsame51_dfu/src/dfu.mk
+

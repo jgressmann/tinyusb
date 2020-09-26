@@ -660,7 +660,7 @@ static inline void cans_led_status_set(int status)
 
 #define MAJOR 0
 #define MINOR 2
-#define PATCH 3
+#define PATCH 4
 
 
 #if SUPERDFU_APP
@@ -689,6 +689,9 @@ static void dfu_timer_expired(TimerHandle_t t);
 static void dfu_timer_expired(TimerHandle_t t)
 {
 	(void)t;
+
+	LOG("DFU detach timeer expired\n");
+
 	dfu.status.bState = DFU_STATE_APP_IDLE;
 }
 
@@ -1645,14 +1648,6 @@ bool tud_vendor_control_request_cb(uint8_t rhport, tusb_control_request_t const 
 
 	USB_TRAFFIC_DO_LED;
 
-	LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
-		request->bmRequestType,
-		recipient_str(request->bmRequestType_bit.recipient),
-		type_str(request->bmRequestType_bit.type),
-		dir_str(request->bmRequestType_bit.direction),
-		request->bRequest, request->wValue, request->wIndex,
-		request->wLength);
-
 	switch (request->bRequest) {
 	case VENDOR_REQUEST_MICROSOFT:
 		if (request->wIndex == 7) {
@@ -1664,6 +1659,13 @@ bool tud_vendor_control_request_cb(uint8_t rhport, tusb_control_request_t const 
 		}
 		break;
 	default:
+		LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
+			request->bmRequestType,
+			recipient_str(request->bmRequestType_bit.recipient),
+			type_str(request->bmRequestType_bit.type),
+			dir_str(request->bmRequestType_bit.direction),
+			request->bRequest, request->wValue, request->wIndex,
+			request->wLength);
 		break;
 	}
 
@@ -1709,11 +1711,14 @@ void dfu_rtd_init(void)
 void dfu_rtd_reset(uint8_t rhport)
 {
 	(void) rhport;
+	LOG("dfu_rtd_reset\n");
 
 	if (DFU_STATE_APP_DETACH == dfu.status.bState) {
-		LOG("Detected USB reset while detach timer is running\n");
+		LOG("Detected USB reset while DFU detach timer is running\n");
 		dfu_request_dfu(1);
 		NVIC_SystemReset();
+	} else {
+		dfu.status.bState = DFU_STATE_APP_IDLE;
 	}
 }
 
@@ -1748,16 +1753,10 @@ bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * req
 bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * request)
 {
 	// Handle class request only
-	TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
-	TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
+	// TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
+	// TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
 
-	LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
-		request->bmRequestType,
-		recipient_str(request->bmRequestType_bit.recipient),
-		type_str(request->bmRequestType_bit.type),
-		dir_str(request->bmRequestType_bit.direction),
-		request->bRequest, request->wValue, request->wIndex,
-		request->wLength);
+
 
 
 	switch (request->bRequest) {
@@ -1770,9 +1769,24 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 		} else {
 			dfu.status.bState = DFU_STATE_APP_DETACH;
 			xTimerStart(dfu.timer_handle, 0);
+			/*
+			 * This is wrong. DFU 1.1. specification wants us to wait for USB reset.
+			 * However, without these lines, the device can't be updated on Windows using
+			 * dfu-util. Updating from Linux works either way. All hail compatibility (sigh).
+			 */
+			dfu_request_dfu(1);
+			NVIC_SystemReset();
 		}
-		// return false; // stall pipe to trigger reset
 		return tud_control_xfer(rhport, request, NULL, 0);
+	default:
+		LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
+			request->bmRequestType,
+			recipient_str(request->bmRequestType_bit.recipient),
+			type_str(request->bmRequestType_bit.type),
+			dir_str(request->bmRequestType_bit.direction),
+			request->bRequest, request->wValue, request->wIndex,
+			request->wLength);
+		break;
 	}
 
 	return false;

@@ -38,17 +38,14 @@ static const tusb_desc_device_t device = {
 	.bDescriptorType    = TUSB_DESC_DEVICE,
 	.bcdUSB             = 0x0210,
 
-	// .bDeviceClass       = TUSB_CLASS_MISC,
-	// .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
-	// .bDeviceProtocol    = MISC_PROTOCOL_IAD,
 	.bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
 	.bDeviceSubClass    = TUSB_CLASS_UNSPECIFIED,
 	.bDeviceProtocol    = TUSB_CLASS_UNSPECIFIED,
 
 	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
-	.idVendor           = VID,
-	.idProduct          = PID,
+	.idVendor           = 0x1d50,
+	.idProduct          = 0x5035,
 	.bcdDevice          = HWREV << 8,
 
 	.iManufacturer      = 0x01,
