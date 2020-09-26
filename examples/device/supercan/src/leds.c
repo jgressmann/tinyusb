@@ -13,6 +13,9 @@
 StackType_t led_task_stack[LED_STACK_SIZE];
 StaticTask_t led_task_mem;
 
+static StaticSemaphore_t mutex_mem;
+static SemaphoreHandle_t mutex_handle;
+
 
 struct led {
 	volatile uint16_t time_ms;
@@ -37,6 +40,8 @@ static struct led leds[] = {
 
 extern void led_init(void)
 {
+	mutex_handle = xSemaphoreCreateMutexStatic(&mutex_mem);
+
 	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
 	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
 	PORT->Group[0].DIRSET.reg = PORT_PA12; /* Debug-LED */
@@ -59,8 +64,7 @@ static struct led leds[] = {
 #endif
 };
 
-static StaticSemaphore_t mutex_mem;
-SemaphoreHandle_t mutex_handle;
+
 
 
 extern void led_init(void)
