@@ -149,7 +149,7 @@ struct can {
 	QueueHandle_t queue_handle;
 	Can *m_can;
 	IRQn_Type interrupt_id;
-	uint32_t nm_bitrate_bps;
+	uint32_t nm_bittime_us;
 	volatile uint32_t int_ts;
 	uint32_t int_prev_psr_reg;
 	uint16_t nmbt_brp;
@@ -565,10 +565,7 @@ static inline uint8_t dlc_to_len(uint8_t dlc)
 
 static inline uint32_t can_bittime_to_us(struct can const *can, uint32_t can_time)
 {
-	uint64_t r = can_time;
-	r *= can->nm_bitrate_bps;
-	r /= 1000000;
-	return r;
+	return can->nm_bittime_us * can_time;
 }
 
 
@@ -774,7 +771,7 @@ static inline void can_reset(uint8_t index)
 	struct can *can = &cans.can[index];
 
 	can->features = CAN_FEAT_PERM;
-	can->nm_bitrate_bps = 0;
+	can->nm_bittime_us = 0;
 	can->nmbt_brp = 0;
 	can->nmbt_sjw = 0;
 	can->nmbt_tseg1 = 0;
@@ -1055,8 +1052,8 @@ send_can_info:
 				can->nmbt_tseg1 = tu_max16(M_CAN_NMBT_TSEG1_MIN, tu_min16(tmsg->tseg1, M_CAN_NMBT_TSEG1_MAX));
 				can->nmbt_tseg2 = tu_max8(M_CAN_NMBT_TSEG2_MIN, tu_min8(tmsg->tseg2, M_CAN_NMBT_TSEG2_MAX));
 
-				// set nominal bitrate for timestamp calculation
-				can->nm_bitrate_bps = CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (1 + can->nmbt_tseg1 + can->nmbt_tseg2));
+				// set nominal bittime for timestamp calculation
+				can->nm_bittime_us = UINT32_C(1000000) / (CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (1 + can->nmbt_tseg1 + can->nmbt_tseg2)));
 				can_log_nominal_bittiming(can);
 			}
 
@@ -1997,6 +1994,8 @@ static void can_task(void *param)
 					// LOG("CAN%u ts hi=%08lx lo=%04x\n", index, can->ts_high, r1.bit.RXTS);
 					uint32_t ts = ((uint32_t)can->rx_ts_high[get_index] << M_CAN_TS_COUNTER_BITS) | r1.bit.RXTS;
 					msg->timestamp_us = can_bittime_to_us(can, ts);
+
+					// LOG("ch%u rx ts %lu\n", index, msg->timestamp_us);
 
 					if (r1.bit.FDF) {
 						msg->flags |= SC_CAN_FRAME_FLAG_FDF;
