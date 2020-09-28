@@ -42,6 +42,11 @@ bool tusb_init(void)
   // skip if already initialized
   if (_initialized) return true;
 
+  return tusb_init_force();
+}
+
+bool tusb_init_force(void)
+{
 #if TUSB_OPT_HOST_ENABLED
   TU_ASSERT( usbh_init() ); // init host stack
 #endif
@@ -83,6 +88,7 @@ static void dump_str_line(uint8_t const* buf, uint16_t count)
 // print offet or not (handfy for dumping large memory)
 void tu_print_mem(void const *buf, uint16_t count, uint8_t indent)
 {
+  return;
   uint8_t const size = 1; // fixed 1 byte for now
 
   if ( !buf || !count )

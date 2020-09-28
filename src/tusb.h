@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License (MIT)
  *
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
@@ -106,6 +106,9 @@
 
 // Initialize device/host stack
 bool tusb_init(void);
+
+// Initialize device/host stack (forced)
+bool tusb_init_force(void);
 
 // Check if stack is initialized
 bool tusb_inited(void);
