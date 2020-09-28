@@ -445,8 +445,9 @@ static void can_int(uint8_t index)
 
 	bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
 	bool is_rx_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_RX_Val || is_tx_error;
+	bool had_nm_error = prev_psr.bit.LEC != CAN_PSR_LEC_NONE_Val && prev_psr.bit.LEC != CAN_PSR_LEC_NC_Val;
 	if (current_psr.bit.LEC != prev_psr.bit.LEC &&
-		// current_psr.bit.LEC != CAN_PSR_LEC_NONE_Val &&
+		current_psr.bit.LEC != CAN_PSR_LEC_NONE_Val &&
 		current_psr.bit.LEC != CAN_PSR_LEC_NC_Val &&
 		is_rx_tx_error) {
 		can->int_prev_psr_reg = current_psr.reg;
@@ -468,8 +469,9 @@ static void can_int(uint8_t index)
 		// LOG("CAN%u LEC %1x\n", index, current_psr.bit.LEC);
 	}
 
+	bool had_dt_error = prev_psr.bit.DLEC != CAN_PSR_LEC_NONE_Val && prev_psr.bit.DLEC != CAN_PSR_LEC_NC_Val;
 	if (current_psr.bit.DLEC != prev_psr.bit.DLEC &&
-		// current_psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val &&
+		current_psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val &&
 		current_psr.bit.DLEC != CAN_PSR_DLEC_NC_Val &&
 		is_rx_tx_error) {
 		can->int_prev_psr_reg = current_psr.reg;
@@ -489,6 +491,25 @@ static void can_int(uint8_t index)
 		}
 	} else {
 		// LOG("CAN%u DLEC %1x\n", index, current_psr.bit.DLEC);
+	}
+
+	if ((had_nm_error || had_dt_error) &&
+		(current_psr.bit.LEC == CAN_PSR_DLEC_NONE_Val && current_psr.bit.DLEC == CAN_PSR_DLEC_NONE_Val)) {
+		can->int_prev_psr_reg = current_psr.reg;
+		notify = true;
+		struct can_queue_item msg = {
+			.type = CAN_QUEUE_ITEM_TYPE_BUS_ERROR,
+			.tx = 0,
+			.data_part = 0,
+			.payload = SC_CAN_ERROR_NONE,
+		};
+
+		if (unlikely(pdTRUE != xQueueSendFromISR(can->queue_handle, &msg, NULL))) {
+			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
+			LOG("CAN%u queue full\n", index);
+		} else {
+			// LOG("CAN%u good\n", index);
+		}
 	}
 
 	if (ir.bit.RF0L) {
