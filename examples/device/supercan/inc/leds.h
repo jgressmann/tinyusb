@@ -39,7 +39,7 @@ extern void led_task(void *param);
 
 #if HWREV == 1
 enum {
-	LED_DEBUG,
+	LED_DEBUG_DEFAULT,
 	LED_RED1,
 	LED_ORANGE1,
 	LED_GREEN1,
