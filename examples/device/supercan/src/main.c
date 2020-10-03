@@ -141,7 +141,7 @@ struct can {
 	CFG_TUSB_MEM_ALIGN struct can_rx_fifo_element rx_fifo[CAN_RX_FIFO_SIZE];
 	volatile uint16_t rx_ts_high[CAN_RX_FIFO_SIZE];
 	volatile uint16_t tx_ts_high[CAN_TX_FIFO_SIZE];
-	StackType_t stack_mem[configMINIMAL_STACK_SIZE];
+	StackType_t stack_mem[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t task_mem;
 	TaskHandle_t task_handle;
 	uint8_t queue_storage[CAN_QUEUE_SIZE];
@@ -644,18 +644,8 @@ static inline uint32_t can_bittime_to_us(struct can const *can, uint32_t can_tim
 	return can->nm_bittime_us * can_time;
 }
 
-
-// Increase stack size when debug log is enabled
-#if CFG_TUSB_DEBUG
-	#define USBD_STACK_SIZE (3*configMINIMAL_STACK_SIZE)
-#else
-	#define USBD_STACK_SIZE (3*configMINIMAL_STACK_SIZE/2)
-#endif
-
-static StackType_t usb_device_stack[USBD_STACK_SIZE];
+static StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
 static StaticTask_t usb_device_stack_mem;
-
-
 
 static void tusb_device_task(void* param);
 static void can_task(void* param);
@@ -732,7 +722,7 @@ static inline void cans_led_status_set(int status)
 
 #define MAJOR 0
 #define MINOR 2
-#define PATCH 5
+#define PATCH 6
 
 
 #if SUPERDFU_APP

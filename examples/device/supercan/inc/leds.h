@@ -29,7 +29,7 @@
 #include <task.h>
 #include <stdbool.h>
 
-#define LED_STACK_SIZE configMINIMAL_STACK_SIZE
+#define LED_STACK_SIZE configMINIMAL_SECURE_STACK_SIZE
 
 extern StackType_t led_task_stack[LED_STACK_SIZE];
 extern StaticTask_t led_task_mem;

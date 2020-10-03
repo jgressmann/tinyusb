@@ -38,7 +38,9 @@ void vApplicationStackOverflowHook(TaskHandle_t pxTask, signed char *pcTaskName)
 
 	taskDISABLE_INTERRUPTS();
 	if (pcTaskName) {
+		board_uart_write("task ", -1);
 		board_uart_write(pcTaskName, -1);
+		board_uart_write("\n", -1);
 	} else {
 		board_uart_write("stack overflow", -1);
 	}

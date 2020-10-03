@@ -55,7 +55,7 @@
 
 extern uint32_t SystemCoreClock;
 extern int board_uart_write(void const * buf, int len);
-
+__attribute__((noreturn)) extern void sc_assert_failed(char const * const msg);
 
 /* Cortex M23/M33 port configuration. */
 #define configENABLE_MPU								        0
@@ -64,7 +64,7 @@ extern int board_uart_write(void const * buf, int len);
 #define configMINIMAL_SECURE_STACK_SIZE					( 1024 )
 
 #define configUSE_PREEMPTION                    1
-#define configUSE_PORT_OPTIMISED_TASK_SELECTION 0
+#define configUSE_PORT_OPTIMISED_TASK_SELECTION 1
 #define configCPU_CLOCK_HZ                      SystemCoreClock
 #define configTICK_RATE_HZ                      ( 10000 )
 #define configMAX_PRIORITIES                    ( 5 )
@@ -76,7 +76,7 @@ extern int board_uart_write(void const * buf, int len);
 #define configUSE_MUTEXES                       1
 #define configUSE_RECURSIVE_MUTEXES             1
 #define configUSE_COUNTING_SEMAPHORES           1
-#define configQUEUE_REGISTRY_SIZE               2
+#define configQUEUE_REGISTRY_SIZE               4
 #define configUSE_QUEUE_SETS                    0
 #define configUSE_TIME_SLICING                  0
 #define configUSE_NEWLIB_REENTRANT              0
@@ -146,8 +146,7 @@ extern int board_uart_write(void const * buf, int len);
 #define configASSERT(x) \
   do { \
     if (__builtin_expect(!(x), 0)) { \
-      board_uart_write("ASSERTION FAILED: " #x "\n", -1); \
-      while (1); \
+      sc_assert_failed("FreeRTOS ASSERT FAILED: " #x "\n"); \
     } \
   } while (0)
 #else
