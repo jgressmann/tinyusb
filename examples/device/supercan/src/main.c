@@ -165,8 +165,6 @@ struct can {
 	uint8_t dtbt_tseg1;
 	uint8_t dtbt_tseg2;
 	volatile uint8_t int_comm_flags;
-	uint8_t int_tx_put_index;
-	uint8_t int_rx_put_index;
 	uint8_t int_prev_bus_state;
 	uint8_t led_status_green;
 	uint8_t led_status_red;
@@ -322,7 +320,10 @@ static void can_configure(struct can *c)
 		| CAN_IE_PEAE   // proto error in arbitration phase
 		| CAN_IE_PEDE   // proto error in data phase
 	 	| CAN_IE_TEFNE  // new message in tx event fifo
-		;
+		| CAN_IE_MRAFE  // message RAM access failure
+		| CAN_IE_BEUE   // bit error uncorrected, sets CCCR.INIT
+		| CAN_IE_BECE   // bit error corrected
+	;
 
 	m_can_conf_end(can);
 }
@@ -384,19 +385,19 @@ static inline uint8_t can_map_m_can_ec(uint8_t lec, uint8_t previous)
 static void can_int(uint8_t index)
 {
 
-	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+	// SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 	struct can *can = &cans.can[index];
-
-	NVIC_DisableIRQ(can->interrupt_id);
 
 
 	// LOG("IE=%08lx IR=%08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
 	bool notify = false;
+	bool ts_wrap = false;
 	uint8_t current_bus_state = 0;
 	uint16_t ts_high = can->int_ts_high;
 
 	CAN_IR_Type ir = can->m_can->IR;
 	if (ir.bit.TSW) {
+		ts_wrap = true;
 		++ts_high;
 		can->int_ts_high = ts_high;
 		// always notify here to enable the host to keep track of CAN bus time
@@ -404,18 +405,94 @@ static void can_int(uint8_t index)
 		// LOG("CAN%u ts_high=%08lx\n", index, ts_high);
 	}
 
-	if (ir.bit.BO) {
-		LOG("CAN%u bus off\n", index);
+	if (ir.bit.RF0N) {
+		// F0PI is incremented prior to interrupt call
+		// LOG("rx pi %u\n", can->m_can->RXF0S.bit.F0PI);
+		// NOTE: modulo (%) does _not_ work here, resulting value is >= CAN_RX_FIFO_SIZE
+		uint8_t pi = (can->m_can->RXF0S.bit.F0PI - 1) & (CAN_RX_FIFO_SIZE - 1);
+		// SC_ISR_ASSERT(pi < CAN_RX_FIFO_SIZE);
+		if (unlikely(ts_wrap)) {
+			uint16_t ts_low = can->rx_fifo[pi].R1.bit.RXTS;
+			uint16_t dec = ts_low >= UINT16_MAX / 2;
+			if (dec) {
+				LOG("rx dec hi for %u\n", ts_low);
+			}
+			can->tx_ts_high[pi] = ts_high - dec;
+		} else {
+			can->rx_ts_high[pi] = ts_high;
+		}
+		notify = true;
+	}
+
+	if (ir.bit.TEFN) {
+		// LOG("CAN%u new tx event fifo entry\n", index);
+		// EFPI is incremented prior to interrupt call
+		// LOG("tx pi %u\n", can->m_can->TXEFS.bit.EFPI);
+		// NOTE: modulo (%) does _not_ work here, resulting value is >= CAN_TX_FIFO_SIZE
+		uint8_t pi = (can->m_can->TXEFS.bit.EFPI - 1) & (CAN_TX_FIFO_SIZE - 1);
+		// SC_ISR_ASSERT(pi < CAN_TX_FIFO_SIZE);
+		if (unlikely(ts_wrap)) {
+			uint16_t ts_low = can->tx_event_fifo[pi].T1.bit.TXTS;
+			uint16_t dec = ts_low >= UINT16_MAX / 2;
+			if (dec) {
+				LOG("tx dec hi for %u\n", ts_low);
+			}
+			can->tx_ts_high[pi] = ts_high - dec;
+		} else {
+			can->tx_ts_high[pi] = ts_high;
+		}
+		notify = true;
+	}
+
+	if (unlikely(ir.bit.MRAF)) {
+		LOG("CAN%u MRAF\n", index);
+		SC_ISR_ASSERT(false && "MRAF");
+	}
+
+	if (unlikely(ir.bit.BEU)) {
+		LOG("CAN%u BEU\n", index);
+		SC_ISR_ASSERT(false && "BEU");
+	}
+
+	if (unlikely(ir.bit.BEC)) {
+		LOG("CAN%u BEC\n", index);
+	}
+
+	CAN_PSR_Type current_psr = can->m_can->PSR; // always read, sets NC
+	CAN_PSR_Type prev_psr;
+	prev_psr.reg = can->int_prev_psr_reg;
+
+	// update NC (no change) from last value (which might also be NC)
+	if (CAN_PSR_LEC_NC_Val == current_psr.bit.LEC) {
+		current_psr.bit.LEC = prev_psr.bit.LEC;
+	}
+	if (CAN_PSR_DLEC_NC_Val == current_psr.bit.DLEC) {
+		current_psr.bit.DLEC = prev_psr.bit.DLEC;
+	}
+
+	// store updated psr reg
+	can->int_prev_psr_reg = current_psr.reg;
+
+	if (current_psr.bit.BO) {
 		current_bus_state = SC_CAN_STATUS_BUS_OFF;
-	} else if (ir.bit.EP) {
-		LOG("CAN%u error passive\n", index);
+		if (!prev_psr.bit.BO) {
+			LOG("CAN%u bus off\n", index);
+		}
+	} else if (current_psr.bit.EP) {
 		current_bus_state = SC_CAN_STATUS_ERROR_PASSIVE;
-	} else if (ir.bit.EW) {
-		LOG("CAN%u error warning\n", index);
+		if (!prev_psr.bit.EP) {
+			LOG("CAN%u error passive\n", index);
+		}
+	} else if (current_psr.bit.EW) {
 		current_bus_state = SC_CAN_STATUS_ERROR_WARNING;
-	} else if (can->int_prev_bus_state != SC_CAN_STATUS_ERROR_ACTIVE) {
+		if (!prev_psr.bit.EW) {
+			LOG("CAN%u error warning\n", index);
+		}
+	} else {
 		current_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
-		LOG("CAN%u error active\n", index);
+	 	if (can->int_prev_bus_state != SC_CAN_STATUS_ERROR_ACTIVE) {
+			LOG("CAN%u error active\n", index);
+		}
 	}
 
 	if (unlikely(can->int_prev_bus_state != current_bus_state)) {
@@ -432,16 +509,7 @@ static void can_int(uint8_t index)
 		}
 	}
 
-	CAN_PSR_Type current_psr = can->m_can->PSR; // always read, sets NC
-	CAN_PSR_Type prev_psr;
-	prev_psr.reg = can->int_prev_psr_reg;
 
-	if (CAN_PSR_LEC_NC_Val == current_psr.bit.LEC) {
-		current_psr.bit.LEC = prev_psr.bit.LEC;
-	}
-	if (CAN_PSR_DLEC_NC_Val == current_psr.bit.DLEC) {
-		current_psr.bit.DLEC = prev_psr.bit.DLEC;
-	}
 
 	bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
 	bool is_rx_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_RX_Val || is_tx_error;
@@ -450,7 +518,7 @@ static void can_int(uint8_t index)
 		current_psr.bit.LEC != CAN_PSR_LEC_NONE_Val &&
 		current_psr.bit.LEC != CAN_PSR_LEC_NC_Val &&
 		is_rx_tx_error) {
-		can->int_prev_psr_reg = current_psr.reg;
+
 		notify = true;
 		struct can_queue_item msg = {
 			.type = CAN_QUEUE_ITEM_TYPE_BUS_ERROR,
@@ -474,7 +542,7 @@ static void can_int(uint8_t index)
 		current_psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val &&
 		current_psr.bit.DLEC != CAN_PSR_DLEC_NC_Val &&
 		is_rx_tx_error) {
-		can->int_prev_psr_reg = current_psr.reg;
+
 		notify = true;
 		struct can_queue_item msg = {
 			.type = CAN_QUEUE_ITEM_TYPE_BUS_ERROR,
@@ -495,7 +563,7 @@ static void can_int(uint8_t index)
 
 	if ((had_nm_error || had_dt_error) &&
 		(current_psr.bit.LEC == CAN_PSR_DLEC_NONE_Val && current_psr.bit.DLEC == CAN_PSR_DLEC_NONE_Val)) {
-		can->int_prev_psr_reg = current_psr.reg;
+
 		notify = true;
 		struct can_queue_item msg = {
 			.type = CAN_QUEUE_ITEM_TYPE_BUS_ERROR,
@@ -518,21 +586,13 @@ static void can_int(uint8_t index)
 		// notify = true;
 	}
 
-	if (ir.bit.RF0N) {
-		can->rx_ts_high[can->int_rx_put_index] = ts_high;
-		can->int_rx_put_index = (can->int_rx_put_index + 1) & (CAN_RX_FIFO_SIZE-1);
-		notify = true;
-	}
 
-	if (ir.bit.TEFN) {
-		// LOG("CAN%u new tx event fifo entry\n", index);
-		can->tx_ts_high[can->int_tx_put_index] = ts_high;
-		can->int_tx_put_index = (can->int_tx_put_index + 1) & (CAN_TX_FIFO_SIZE-1);
-		notify = true;
-	}
 
 	// update last non-interrupted timestamp
 	can->int_ts = ((uint32_t)ts_high << M_CAN_TS_COUNTER_BITS) | can->m_can->TSCV.bit.TSC;
+
+	// clear all interrupts
+	can->m_can->IR = ir;
 
 	if (notify) {
 		// LOG("CAN%u notify\n", index);
@@ -540,11 +600,6 @@ static void can_int(uint8_t index)
 		vTaskNotifyGiveFromISR(can->task_handle, &xHigherPriorityTaskWoken);
 		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 	}
-
-	// clear all interrupts
-	can->m_can->IR = ir;
-
-	NVIC_EnableIRQ(can->interrupt_id);
 }
 
 void CAN0_Handler(void)
@@ -608,7 +663,7 @@ static void can_task(void* param);
 
 #if HWREV == 1
 #define USB_TRAFFIC_LED LED_DEBUG
-#define USB_TRAFFIC_DO_LED led_burst(LED_RED2, 8)
+#define USB_TRAFFIC_DO_LED led_burst(LED_ORANGE1, 8)
 #define POWER_LED LED_RED1
 #define CAN0_TRAFFIC_LED LED_GREEN1
 #define CAN1_TRAFFIC_LED LED_GREEN2
@@ -762,8 +817,6 @@ static inline void can_off(uint8_t index)
 	can->tx_dropped = 0;
 	can->desync = false;
 	can->int_ts_high = 0;
-	can->int_tx_put_index = 0;
-	can->int_rx_put_index = 0;
 	can->int_prev_bus_state = 0;
 	can->int_comm_flags = 0;
 	can->int_prev_psr_reg = 0;
@@ -1418,11 +1471,6 @@ int main(void)
 	dfu_app_watchdog_disable();
 #endif
 
-	{
-		// REMOVE ME
-		uint8_t *ptr = usb.can[0].tx_buffers[0];
-		SC_ASSERT(ptr + MSG_BUFFER_SIZE == usb.can[0].tx_buffers[1]);
-	}
 
 	vTaskStartScheduler();
 	NVIC_SystemReset();
