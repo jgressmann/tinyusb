@@ -56,10 +56,9 @@ extern char sc_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
 #define SC_ISR_ASSERT(x) \
 	do { \
 		if (__builtin_expect(!(x), 0)) { \
-			sc_isr_assert_failed("ISR ASSERT FAILED: " #x "\n"); \
+			sc_assert_failed("ISR ASSERT FAILED: " #x "\n"); \
 		} \
 	} while (0)
 
 
 __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg);
-__attribute__((noreturn)) extern void sc_isr_assert_failed(char const * const msg);

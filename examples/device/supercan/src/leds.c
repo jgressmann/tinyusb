@@ -122,11 +122,10 @@ extern void led_burst(uint8_t index, uint16_t duration_ms)
 	xSemaphoreGive(mutex_handle);
 }
 
-
-extern void led_on(void)
+extern void leds_on_unsafe(void)
 {
 	for (unsigned i = 0; i < LED_COUNT; ++i) {
-		led_set(i, 1);
+		gpio_set_pin_level(leds[i].pin, 1);
 	}
 }
 

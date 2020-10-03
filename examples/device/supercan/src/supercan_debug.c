@@ -27,6 +27,10 @@
 #include <leds.h>
 #include <FreeRTOS.h>
 
+#ifndef ARRAY_SIZE
+#	define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
+#endif
+
 #if SUPERCAN_DEBUG && !CFG_TUSB_DEBUG
 char sc_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
 #endif
@@ -35,13 +39,6 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg)
 {
 	taskDISABLE_INTERRUPTS();
 	board_uart_write(msg, -1);
-	led_on();
-	while (1);
-}
-
-__attribute__((noreturn)) extern void sc_isr_assert_failed(char const * const msg)
-{
-	board_uart_write(msg, -1);
-	led_on();
+	leds_on_unsafe();
 	while (1);
 }
