@@ -35,8 +35,13 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg)
 {
 	taskDISABLE_INTERRUPTS();
 	board_uart_write(msg, -1);
-	for (unsigned i = 0; i < LED_COUNT; ++i) {
-		led_set(i, 1);
-	}
+	led_on();
+	while (1);
+}
+
+__attribute__((noreturn)) extern void sc_isr_assert_failed(char const * const msg)
+{
+	board_uart_write(msg, -1);
+	led_on();
 	while (1);
 }

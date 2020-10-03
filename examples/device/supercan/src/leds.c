@@ -123,7 +123,12 @@ extern void led_burst(uint8_t index, uint16_t duration_ms)
 }
 
 
-
+extern void led_on(void)
+{
+	for (unsigned i = 0; i < LED_COUNT; ++i) {
+		led_set(i, 1);
+	}
+}
 
 //--------------------------------------------------------------------+
 // LED TASK

@@ -71,3 +71,5 @@ extern void led_set(uint8_t index, bool on);
 extern void led_toggle(uint8_t index);
 extern void led_blink(uint8_t index, uint16_t delay_ms);
 extern void led_burst(uint8_t index, uint16_t duration_ms);
+extern void led_on(void);
+
