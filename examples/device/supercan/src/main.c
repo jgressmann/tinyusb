@@ -139,8 +139,8 @@ struct can {
 	CFG_TUSB_MEM_ALIGN struct can_tx_fifo_element tx_fifo[CAN_TX_FIFO_SIZE];
 	CFG_TUSB_MEM_ALIGN struct can_tx_event_fifo_element tx_event_fifo[CAN_TX_FIFO_SIZE];
 	CFG_TUSB_MEM_ALIGN struct can_rx_fifo_element rx_fifo[CAN_RX_FIFO_SIZE];
-	volatile uint16_t rx_ts_high[CAN_RX_FIFO_SIZE];
-	volatile uint16_t tx_ts_high[CAN_TX_FIFO_SIZE];
+	volatile uint32_t rx_ts_high[CAN_RX_FIFO_SIZE];
+	volatile uint32_t tx_ts_high[CAN_TX_FIFO_SIZE];
 	StackType_t stack_mem[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t task_mem;
 	TaskHandle_t task_handle;
@@ -165,7 +165,10 @@ struct can {
 	uint8_t dtbt_tseg1;
 	uint8_t dtbt_tseg2;
 	volatile uint8_t int_comm_flags;
+	uint16_t int_tsc_last;
 	uint8_t int_prev_bus_state;
+	uint8_t int_rx_put_index_last;
+	uint8_t int_tx_put_index_last;
 	uint8_t led_status_green;
 	uint8_t led_status_red;
 	uint8_t led_traffic;
@@ -387,60 +390,51 @@ static void can_int(uint8_t index)
 
 	// SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 	struct can *can = &cans.can[index];
+	//uint8_t i = 0;
 
 
 	// LOG("IE=%08lx IR=%08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
 	bool notify = false;
-	bool ts_wrap = false;
 	uint8_t current_bus_state = 0;
 	uint16_t ts_high = can->int_ts_high;
+	uint16_t tscv = can->m_can->TSCV.bit.TSC;
 
-	CAN_IR_Type ir = can->m_can->IR;
-	if (ir.bit.TSW) {
-		ts_wrap = true;
+
+	if (tscv < can->int_tsc_last) {
 		++ts_high;
 		can->int_ts_high = ts_high;
-		// always notify here to enable the host to keep track of CAN bus time
-		notify = true;
 		// LOG("CAN%u ts_high=%08lx\n", index, ts_high);
 	}
 
+	can->int_tsc_last = tscv;
+
+	// update last non-interrupted timestamp
+	can->int_ts = ((uint32_t)ts_high << M_CAN_TS_COUNTER_BITS) | tscv;
+
+
+	CAN_IR_Type ir = can->m_can->IR;
+	if (ir.bit.TSW) {
+		// always notify here to enable the host to keep track of CAN bus time
+		notify = true;
+	}
+
 	if (ir.bit.RF0N) {
-		// F0PI is incremented prior to interrupt call
-		// LOG("rx pi %u\n", can->m_can->RXF0S.bit.F0PI);
-		// NOTE: modulo (%) does _not_ work here, resulting value is >= CAN_RX_FIFO_SIZE
-		uint8_t pi = (can->m_can->RXF0S.bit.F0PI - 1) & (CAN_RX_FIFO_SIZE - 1);
-		// SC_ISR_ASSERT(pi < CAN_RX_FIFO_SIZE);
-		if (unlikely(ts_wrap)) {
-			uint16_t ts_low = can->rx_fifo[pi].R1.bit.RXTS;
-			uint16_t dec = ts_low >= UINT16_MAX / 2;
-			if (dec) {
-				LOG("rx dec hi for %u\n", ts_low);
-			}
-			can->tx_ts_high[pi] = ts_high - dec;
-		} else {
-			can->rx_ts_high[pi] = ts_high;
-		}
+		/* F0PI is incremented prior to interrupt call
+		 *
+		 * This interrupt can be late in the sense that F0PI will already
+		 * have incremted again by the time this code runs. Conversely,
+		 * we cannot rely on this interrupt to track the high part of the
+		 * receive timestamp.
+		 *
+		 * Timestamp tracking now happens in the CAN task which does its own
+		 * tracking of the high part.
+		 */
+
 		notify = true;
 	}
 
 	if (ir.bit.TEFN) {
-		// LOG("CAN%u new tx event fifo entry\n", index);
-		// EFPI is incremented prior to interrupt call
-		// LOG("tx pi %u\n", can->m_can->TXEFS.bit.EFPI);
-		// NOTE: modulo (%) does _not_ work here, resulting value is >= CAN_TX_FIFO_SIZE
-		uint8_t pi = (can->m_can->TXEFS.bit.EFPI - 1) & (CAN_TX_FIFO_SIZE - 1);
-		// SC_ISR_ASSERT(pi < CAN_TX_FIFO_SIZE);
-		if (unlikely(ts_wrap)) {
-			uint16_t ts_low = can->tx_event_fifo[pi].T1.bit.TXTS;
-			uint16_t dec = ts_low >= UINT16_MAX / 2;
-			if (dec) {
-				LOG("tx dec hi for %u\n", ts_low);
-			}
-			can->tx_ts_high[pi] = ts_high - dec;
-		} else {
-			can->tx_ts_high[pi] = ts_high;
-		}
+		/* see comment for ir.bit.RF0N */
 		notify = true;
 	}
 
@@ -588,8 +582,7 @@ static void can_int(uint8_t index)
 
 
 
-	// update last non-interrupted timestamp
-	can->int_ts = ((uint32_t)ts_high << M_CAN_TS_COUNTER_BITS) | can->m_can->TSCV.bit.TSC;
+
 
 	// clear all interrupts
 	can->m_can->IR = ir;
@@ -792,8 +785,8 @@ static struct usb {
 
 static inline void can_off(uint8_t index)
 {
-	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
-	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
@@ -810,6 +803,18 @@ static inline void can_off(uint8_t index)
 	can->int_prev_bus_state = 0;
 	can->int_comm_flags = 0;
 	can->int_prev_psr_reg = 0;
+	can->int_tsc_last = 0;
+	can->int_rx_put_index_last = 0;
+	can->int_tx_put_index_last = 0;
+	// memset((void*)can->rx_ts_high, 0, sizeof(can->rx_ts_high));
+	// memset((void*)can->tx_ts_high, 0, sizeof(can->tx_ts_high));
+	// for (size_t i = 0; i < TU_ARRAY_SIZE(can->rx_fifo); ++i) {
+	// 	can->rx_fifo[i].R1.bit.RXTS = 0;
+	// }
+
+	// for (size_t i = 0; i < TU_ARRAY_SIZE(can->tx_fifo); ++i) {
+	// 	can->tx_fifo[i].T1.bit.TXTS = 0;
+	// }
 
 	// clear tx buffers
 	xSemaphoreTake(usb_can->mutex_handle, ~0);
@@ -821,12 +826,15 @@ static inline void can_off(uint8_t index)
 
 	// clear interrupt handler queue
 	xQueueReset(can->queue_handle);
+
+	// notify task to make sure its knows
+	xTaskNotifyGive(can->task_handle);
 }
 
 static inline void can_reset(uint8_t index)
 {
-	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
-	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 
 	// disable CAN units, reset configuration & status
 	can_off(index);
@@ -853,35 +861,35 @@ static inline void cans_reset(void)
 
 static inline bool sc_cmd_bulk_in_ep_ready(uint8_t index)
 {
-	SC_ASSERT(index < TU_ARRAY_SIZE(usb.cmd));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.cmd));
 	struct usb_cmd *cmd = &usb.cmd[index];
 	return 0 == cmd->tx_offsets[!cmd->tx_bank];
 }
 
 static inline void sc_cmd_bulk_in_submit(uint8_t index)
 {
-	SC_ASSERT(sc_cmd_bulk_in_ep_ready(index));
+	SC_DEBUG_ASSERT(sc_cmd_bulk_in_ep_ready(index));
 	struct usb_cmd *cmd = &usb.cmd[index];
-	SC_ASSERT(cmd->tx_offsets[cmd->tx_bank] > 0);
-	SC_ASSERT(cmd->tx_offsets[cmd->tx_bank] <= CMD_BUFFER_SIZE);
+	SC_DEBUG_ASSERT(cmd->tx_offsets[cmd->tx_bank] > 0);
+	SC_DEBUG_ASSERT(cmd->tx_offsets[cmd->tx_bank] <= CMD_BUFFER_SIZE);
 	(void)dcd_edpt_xfer(usb.port, 0x80 | cmd->pipe, cmd->tx_buffers[cmd->tx_bank], cmd->tx_offsets[cmd->tx_bank]);
 	cmd->tx_bank = !cmd->tx_bank;
 }
 
 static inline bool sc_can_bulk_in_ep_ready(uint8_t index)
 {
-	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 	struct usb_can *can = &usb.can[index];
 	return 0 == can->tx_offsets[!can->tx_bank];
 }
 
-static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
+static void sc_can_bulk_in_submit(uint8_t index, char const *func)
 {
-	SC_ASSERT(sc_can_bulk_in_ep_ready(index));
+	SC_DEBUG_ASSERT(sc_can_bulk_in_ep_ready(index));
 	struct usb_can *can = &usb.can[index];
-	SC_ASSERT(can->tx_bank < 2);
-	SC_ASSERT(can->tx_offsets[can->tx_bank] > 0);
-	SC_ASSERT(can->tx_offsets[can->tx_bank] <= MSG_BUFFER_SIZE);
+	SC_DEBUG_ASSERT(can->tx_bank < 2);
+	SC_DEBUG_ASSERT(can->tx_offsets[can->tx_bank] > 0);
+	SC_DEBUG_ASSERT(can->tx_offsets[can->tx_bank] <= MSG_BUFFER_SIZE);
 	(void)func;
 
 #if SUPERCAN_DEBUG
@@ -936,7 +944,7 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 
 	(void)dcd_edpt_xfer(usb.port, 0x80 | can->pipe, can->tx_buffers[can->tx_bank], can->tx_offsets[can->tx_bank]);
 	can->tx_bank = !can->tx_bank;
-	SC_ASSERT(!can->tx_offsets[can->tx_bank]);
+	SC_DEBUG_ASSERT(!can->tx_offsets[can->tx_bank]);
 	// memset(can->tx_buffers[can->tx_bank], 0, MSG_BUFFER_SIZE);
 }
 
@@ -948,9 +956,9 @@ static void sc_cmd_place_error_reply(uint8_t index, int8_t error);
 
 static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 {
-	SC_ASSERT(index < TU_ARRAY_SIZE(usb.cmd));
-	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
-	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.cmd));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 
 	struct can *can = &cans.can[index];
 	struct usb_cmd *usb_cmd = &usb.cmd[index];
@@ -1209,8 +1217,8 @@ send_can_info:
 
 static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 {
-	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
-	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
@@ -1344,9 +1352,9 @@ send_txr:
 
 static void sc_cmd_bulk_in(uint8_t index)
 {
-	LOG("< cmd%u IN token\n", index);
+	// LOG("< cmd%u IN token\n", index);
 
-	SC_ASSERT(index < TU_ARRAY_SIZE(usb.cmd));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.cmd));
 
 	struct usb_cmd *usb_cmd = &usb.cmd[index];
 
@@ -1359,7 +1367,7 @@ static void sc_cmd_bulk_in(uint8_t index)
 
 static void sc_can_bulk_in(uint8_t index)
 {
-	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 
 	struct usb_can *usb_can = &usb.can[index];
 
@@ -1376,7 +1384,7 @@ static void sc_can_bulk_in(uint8_t index)
 
 static void sc_cmd_place_error_reply(uint8_t index, int8_t error)
 {
-	SC_ASSERT(index < TU_ARRAY_SIZE(usb.cmd));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.cmd));
 
 	struct usb_cmd *usb_cmd = &usb.cmd[index];
 	uint8_t bytes = sizeof(struct sc_msg_error);
@@ -1628,7 +1636,6 @@ bool tud_custom_xfer_cb(
 		break;
 	case SC_M1_EP_MSG0_BULK_OUT:
 		sc_can_bulk_out(0, xferred_bytes);
-
 		break;
 	case SC_M1_EP_MSG1_BULK_OUT:
 		sc_can_bulk_out(1, xferred_bytes);
@@ -1857,6 +1864,9 @@ bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
 }
 #endif
 
+#define LATCH_STATE_UNLATCHED  0
+#define LATCH_STATE_LATCHED    1
+
 
 //--------------------------------------------------------------------+
 // CAN TASK
@@ -1874,6 +1884,8 @@ static void can_task(void *param)
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
 
+	uint32_t rx_ts_last = 0;
+	uint32_t tx_ts_last = 0;
 	uint8_t previous_bus_status = 0;
 	uint8_t current_bus_status = 0;
 	TickType_t bus_activity_tc = 0;
@@ -1882,7 +1894,14 @@ static void can_task(void *param)
 	bool had_bus_error = false;
 	bool send_can_status = 0;
 	struct can_queue_item queue_item;
-
+	uint16_t tscv_high = 0;
+	uint16_t tscv_low = 0;
+	uint16_t rx_high = 0;
+	uint16_t rx_low = 0;
+	uint8_t rx_latch_state = LATCH_STATE_UNLATCHED;
+	uint16_t tx_high = 0;
+	uint16_t tx_low = 0;
+	uint8_t tx_latch_state = LATCH_STATE_UNLATCHED;
 
 
 	while (42) {
@@ -1900,6 +1919,16 @@ static void can_task(void *param)
 			had_bus_activity = false;
 			has_bus_error = false;
 			had_bus_error = false;
+			rx_ts_last = 0;
+			tx_ts_last = 0;
+			tscv_high = 0;
+			tscv_low = 0;
+			rx_high = 0;
+			rx_low = 0;
+			rx_latch_state = LATCH_STATE_UNLATCHED;
+			tx_high = 0;
+			tx_low = 0;
+			tx_latch_state = LATCH_STATE_UNLATCHED;
 			continue;
 		}
 
@@ -1910,6 +1939,36 @@ static void can_task(void *param)
 
 		for (bool done = false; !done; ) {
 			done = true;
+
+			// timestamp
+			uint16_t tscv = can->m_can->TSCV.bit.TSC;
+
+			if (tscv < tscv_low) {
+				++tscv_high;
+				// LOG("ch%u ts_high=%08lx\n", index, tscv_high);
+			}
+
+			tscv_low = tscv;
+
+			if (LATCH_STATE_LATCHED == rx_latch_state) {
+				uint16_t diff = tscv_high - rx_high;
+				if (diff && diff < UINT16_MAX / 2) {
+					rx_latch_state = LATCH_STATE_UNLATCHED;
+					LOG("ch%u rx ts unlatch\n", index);
+				}
+			}
+
+			if (LATCH_STATE_LATCHED == tx_latch_state) {
+				uint16_t diff = tscv_high - tx_high;
+				if (diff && diff < UINT16_MAX / 2) {
+					tx_latch_state = LATCH_STATE_UNLATCHED;
+					LOG("ch%u tx ts unlatch\n", index);
+				}
+			}
+
+			// loop
+
+
 			uint8_t *out_beg;
 			uint8_t *out_end;
 			uint8_t *out_ptr;
@@ -1919,6 +1978,8 @@ static void can_task(void *param)
 			SC_ASSERT(usb_can->tx_offsets[usb_can->tx_bank] <= MSG_BUFFER_SIZE);
 			out_ptr = out_beg + usb_can->tx_offsets[usb_can->tx_bank];
 			SC_ASSERT(out_ptr <= out_end);
+
+
 
 			if (send_can_status) {
 				uint8_t bytes = sizeof(struct sc_msg_can_status);
@@ -1931,7 +1992,8 @@ static void can_task(void *param)
 					uint16_t rx_lost = __sync_fetch_and_and(&can->rx_lost, 0);
 					uint16_t tx_dropped = can->tx_dropped;
 					can->tx_dropped = 0;
-					uint32_t ts = __sync_or_and_fetch(&can->int_ts, 0);
+					// uint32_t ts = __sync_or_and_fetch(&can->int_ts, 0);
+					uint32_t ts = ((uint32_t)tscv_high << M_CAN_TS_COUNTER_BITS) | tscv_low;
 					// LOG("status ts %lu\n", ts);
 					uint32_t us = can_bittime_to_us(can, ts);
 					CAN_ECR_Type ecr = can->m_can->ECR;
@@ -1983,7 +2045,8 @@ static void can_task(void *param)
 						struct sc_msg_can_error *msg = (struct sc_msg_can_error *)out_ptr;
 						out_ptr += bytes;
 
-						uint32_t ts = __sync_or_and_fetch(&can->int_ts, 0);
+						// uint32_t ts = __sync_or_and_fetch(&can->int_ts, 0);
+						uint32_t ts = (uint32_t)tscv_high << M_CAN_TS_COUNTER_BITS | tscv_low;
 						uint32_t us = can_bittime_to_us(can, ts);
 
 						msg->id = SC_MSG_CAN_ERROR;
@@ -2049,8 +2112,26 @@ static void can_task(void *param)
 					}
 					msg->can_id = id;
 
-					// LOG("CAN%u ts hi=%08lx lo=%04x\n", index, can->ts_high, r1.bit.RXTS);
-					uint32_t ts = ((uint32_t)can->rx_ts_high[get_index] << M_CAN_TS_COUNTER_BITS) | r1.bit.RXTS;
+					uint16_t msg_low = r1.bit.RXTS;
+					if (LATCH_STATE_UNLATCHED == rx_latch_state) {
+						rx_latch_state = LATCH_STATE_LATCHED;
+						rx_high = tscv_high;
+					} else {
+						if (msg_low < rx_low) {
+							++rx_high;
+							// LOG("ch%u rx_high=%x tscv_high=%x\n", index, rx_high, tscv_high);
+						}
+					}
+
+					rx_low = msg_low;
+
+					uint32_t ts = ((uint32_t)rx_high << M_CAN_TS_COUNTER_BITS) | msg_low;
+					if (ts < rx_ts_last) {
+						LOG("ch%u rx gi=%u ts=%lx prev=%lx\n", index, get_index, ts, rx_ts_last);
+					}
+					SC_ASSERT(ts >= rx_ts_last);
+					rx_ts_last = ts;
+
 					msg->timestamp_us = can_bittime_to_us(can, ts);
 
 					// LOG("ch%u rx ts %lu\n", index, msg->timestamp_us);
@@ -2100,7 +2181,25 @@ static void can_task(void *param)
 					msg->id = SC_MSG_CAN_TXR;
 					msg->len = bytes;
 					msg->track_id = t1.bit.MM;
-					uint32_t ts = ((uint32_t)can->tx_ts_high[get_index] << M_CAN_TS_COUNTER_BITS) | t1.bit.TXTS;
+					uint16_t msg_low = t1.bit.TXTS;
+					if (LATCH_STATE_UNLATCHED == tx_latch_state) {
+						tx_latch_state = LATCH_STATE_LATCHED;
+						tx_high = tscv_high;
+					} else {
+						if (msg_low < tx_low) {
+							++tx_high;
+							// LOG("ch%u tx_high=%x tscv_high=%x\n", index, tx_high, tscv_high);
+						}
+					}
+
+					tx_low = msg_low;
+
+					uint32_t ts = ((uint32_t)tx_high << M_CAN_TS_COUNTER_BITS) | msg_low;
+					// if (ts < tx_ts_last) {
+					// 	LOG("tx gi=%u ts=%lx prev=%lx\n", get_index, ts, tx_ts_last);
+					// }
+					SC_ASSERT(ts >= tx_ts_last);
+					tx_ts_last = ts;
 					msg->timestamp_us = can_bittime_to_us(can, ts);
 					msg->flags = 0;
 					if (t0.bit.ESI) {
