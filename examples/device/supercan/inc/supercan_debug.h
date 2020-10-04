@@ -42,8 +42,12 @@ extern char sc_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
 		board_uart_write(sc_log_buffer, chars); \
 	} while (0)
 #	endif
+
+#	define SC_DEBUG_ASSERT(x) SC_ASSERT(x)
+
 #else
 #	define LOG(...)
+#	define SC_DEBUG_ASSERT(...)
 #endif
 
 #define SC_ASSERT(x) \
