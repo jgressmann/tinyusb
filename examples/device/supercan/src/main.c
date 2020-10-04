@@ -139,8 +139,6 @@ struct can {
 	CFG_TUSB_MEM_ALIGN struct can_tx_fifo_element tx_fifo[CAN_TX_FIFO_SIZE];
 	CFG_TUSB_MEM_ALIGN struct can_tx_event_fifo_element tx_event_fifo[CAN_TX_FIFO_SIZE];
 	CFG_TUSB_MEM_ALIGN struct can_rx_fifo_element rx_fifo[CAN_RX_FIFO_SIZE];
-	volatile uint32_t rx_ts_high[CAN_RX_FIFO_SIZE];
-	volatile uint32_t tx_ts_high[CAN_TX_FIFO_SIZE];
 	StackType_t stack_mem[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t task_mem;
 	TaskHandle_t task_handle;
@@ -158,6 +156,7 @@ struct can {
 	uint16_t features;
 	uint16_t tx_dropped;
 	uint16_t int_ts_high;
+	uint16_t int_tsc_last;
 	uint8_t nmbt_sjw;
 	uint8_t nmbt_tseg2;
 	uint8_t dtbt_brp;
@@ -165,10 +164,7 @@ struct can {
 	uint8_t dtbt_tseg1;
 	uint8_t dtbt_tseg2;
 	volatile uint8_t int_comm_flags;
-	uint16_t int_tsc_last;
 	uint8_t int_prev_bus_state;
-	uint8_t int_rx_put_index_last;
-	uint8_t int_tx_put_index_last;
 	uint8_t led_status_green;
 	uint8_t led_status_red;
 	uint8_t led_traffic;
@@ -390,8 +386,6 @@ static void can_int(uint8_t index)
 
 	// SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 	struct can *can = &cans.can[index];
-	//uint8_t i = 0;
-
 
 	// LOG("IE=%08lx IR=%08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
 	bool notify = false;
@@ -579,10 +573,6 @@ static void can_int(uint8_t index)
 		__sync_add_and_fetch(&can->rx_lost, 1);
 		// notify = true;
 	}
-
-
-
-
 
 	// clear all interrupts
 	can->m_can->IR = ir;
@@ -804,17 +794,6 @@ static inline void can_off(uint8_t index)
 	can->int_comm_flags = 0;
 	can->int_prev_psr_reg = 0;
 	can->int_tsc_last = 0;
-	can->int_rx_put_index_last = 0;
-	can->int_tx_put_index_last = 0;
-	// memset((void*)can->rx_ts_high, 0, sizeof(can->rx_ts_high));
-	// memset((void*)can->tx_ts_high, 0, sizeof(can->tx_ts_high));
-	// for (size_t i = 0; i < TU_ARRAY_SIZE(can->rx_fifo); ++i) {
-	// 	can->rx_fifo[i].R1.bit.RXTS = 0;
-	// }
-
-	// for (size_t i = 0; i < TU_ARRAY_SIZE(can->tx_fifo); ++i) {
-	// 	can->tx_fifo[i].T1.bit.TXTS = 0;
-	// }
 
 	// clear tx buffers
 	xSemaphoreTake(usb_can->mutex_handle, ~0);
@@ -1954,7 +1933,7 @@ static void can_task(void *param)
 				uint16_t diff = tscv_high - rx_high;
 				if (diff && diff < UINT16_MAX / 2) {
 					rx_latch_state = LATCH_STATE_UNLATCHED;
-					LOG("ch%u rx ts unlatch\n", index);
+					// LOG("ch%u rx ts unlatch\n", index);
 				}
 			}
 
@@ -1962,7 +1941,7 @@ static void can_task(void *param)
 				uint16_t diff = tscv_high - tx_high;
 				if (diff && diff < UINT16_MAX / 2) {
 					tx_latch_state = LATCH_STATE_UNLATCHED;
-					LOG("ch%u tx ts unlatch\n", index);
+					// LOG("ch%u tx ts unlatch\n", index);
 				}
 			}
 
@@ -1992,7 +1971,6 @@ static void can_task(void *param)
 					uint16_t rx_lost = __sync_fetch_and_and(&can->rx_lost, 0);
 					uint16_t tx_dropped = can->tx_dropped;
 					can->tx_dropped = 0;
-					// uint32_t ts = __sync_or_and_fetch(&can->int_ts, 0);
 					uint32_t ts = ((uint32_t)tscv_high << M_CAN_TS_COUNTER_BITS) | tscv_low;
 					// LOG("status ts %lu\n", ts);
 					uint32_t us = can_bittime_to_us(can, ts);
