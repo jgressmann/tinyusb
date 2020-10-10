@@ -89,6 +89,10 @@ static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(va
 #define unlikely(x) __builtin_expect(!!(x),0)
 #endif
 
+#define TS_HI(ts) (((uint32_t)(ts))>>M_CAN_TS_COUNTER_BITS)
+#define TS_LO(ts) (((uint32_t)(ts)) & ((UINT32_C(1) << M_CAN_TS_COUNTER_BITS) - 1))
+
+
 #define CAN_TX_FIFO_SIZE 32
 #define CAN_RX_FIFO_SIZE 64
 #define CAN_ELEMENT_DATA_SIZE 64
@@ -705,7 +709,7 @@ static inline void cans_led_status_set(int status)
 
 #define MAJOR 0
 #define MINOR 2
-#define PATCH 6
+#define PATCH 7
 
 
 #if SUPERDFU_APP
@@ -2104,10 +2108,11 @@ static void can_task(void *param)
 					rx_low = msg_low;
 
 					uint32_t ts = ((uint32_t)rx_high << M_CAN_TS_COUNTER_BITS) | msg_low;
-					if (ts < rx_ts_last) {
+					bool rx_ts_ok = ts >= rx_ts_last || (TS_HI(rx_ts_last) == 0xffff && TS_HI(ts) == 0);
+					if (unlikely(!rx_ts_ok)) {
 						LOG("ch%u rx gi=%u ts=%lx prev=%lx\n", index, get_index, ts, rx_ts_last);
 					}
-					SC_ASSERT(ts >= rx_ts_last);
+					SC_ASSERT(rx_ts_ok);
 					rx_ts_last = ts;
 
 					msg->timestamp_us = can_bittime_to_us(can, ts);
@@ -2173,10 +2178,11 @@ static void can_task(void *param)
 					tx_low = msg_low;
 
 					uint32_t ts = ((uint32_t)tx_high << M_CAN_TS_COUNTER_BITS) | msg_low;
-					// if (ts < tx_ts_last) {
-					// 	LOG("tx gi=%u ts=%lx prev=%lx\n", get_index, ts, tx_ts_last);
-					// }
-					SC_ASSERT(ts >= tx_ts_last);
+					bool tx_ts_ok = ts >= tx_ts_last || (TS_HI(tx_ts_last) == 0xffff && TS_HI(ts) == 0);
+					if (unlikely(!tx_ts_ok)) {
+						LOG("tx gi=%u ts=%lx prev=%lx\n", get_index, ts, tx_ts_last);
+					}
+					SC_ASSERT(tx_ts_ok);
 					tx_ts_last = ts;
 					msg->timestamp_us = can_bittime_to_us(can, ts);
 					msg->flags = 0;
