@@ -2108,7 +2108,9 @@ static void can_task(void *param)
 					rx_low = msg_low;
 
 					uint32_t ts = ((uint32_t)rx_high << M_CAN_TS_COUNTER_BITS) | msg_low;
-					bool rx_ts_ok = ts >= rx_ts_last || (TS_HI(rx_ts_last) == 0xffff && TS_HI(ts) == 0);
+					//bool rx_ts_ok = ts >= rx_ts_last || (TS_HI(rx_ts_last) == 0xffff && TS_HI(ts) == 0);
+					uint32_t delta = ts - rx_ts_last;
+					bool rx_ts_ok = delta < 0x7FFFFFFF;
 					if (unlikely(!rx_ts_ok)) {
 						LOG("ch%u rx gi=%u ts=%lx prev=%lx\n", index, get_index, ts, rx_ts_last);
 					}
@@ -2178,12 +2180,15 @@ static void can_task(void *param)
 					tx_low = msg_low;
 
 					uint32_t ts = ((uint32_t)tx_high << M_CAN_TS_COUNTER_BITS) | msg_low;
-					bool tx_ts_ok = ts >= tx_ts_last || (TS_HI(tx_ts_last) == 0xffff && TS_HI(ts) == 0);
+					// bool tx_ts_ok = ts >= tx_ts_last || (TS_HI(tx_ts_last) == 0xffff && TS_HI(ts) == 0);
+					uint32_t delta = ts - tx_ts_last;
+					bool tx_ts_ok = delta < 0x7FFFFFFF;
 					if (unlikely(!tx_ts_ok)) {
 						LOG("tx gi=%u ts=%lx prev=%lx\n", get_index, ts, tx_ts_last);
 					}
 					SC_ASSERT(tx_ts_ok);
 					tx_ts_last = ts;
+
 					msg->timestamp_us = can_bittime_to_us(can, ts);
 					msg->flags = 0;
 					if (t0.bit.ESI) {
