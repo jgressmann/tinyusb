@@ -800,7 +800,7 @@ static inline void can_off(uint8_t index)
 	can->int_tsc_last = 0;
 
 	// clear tx buffers
-	xSemaphoreTake(usb_can->mutex_handle, ~0);
+	while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
 	for (size_t j = 0; j < TU_ARRAY_SIZE(usb_can->tx_offsets); ++j) {
 		usb_can->tx_offsets[j] = 0;
 		memset(usb_can->tx_buffers[j], 0, sizeof(usb_can->tx_buffers[j]));
@@ -1218,7 +1218,7 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 	usb_can->rx_bank = !usb_can->rx_bank;
 	(void)dcd_edpt_xfer(usb.port, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE);
 
-	xSemaphoreTake(usb_can->mutex_handle, ~0);
+	while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
 
 	// process messages
 	while (in_ptr + SC_MSG_HEADER_LEN <= in_end) {
@@ -1354,7 +1354,7 @@ static void sc_can_bulk_in(uint8_t index)
 
 	struct usb_can *usb_can = &usb.can[index];
 
-	xSemaphoreTake(usb_can->mutex_handle, ~0);
+	while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
 
 	usb_can->tx_offsets[!usb_can->tx_bank] = 0;
 
@@ -1889,7 +1889,7 @@ static void can_task(void *param)
 
 	while (42) {
 		// LOG("CAN%u task wait\n", index);
-		(void)ulTaskNotifyTake(pdFALSE, ~0);
+		(void)ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
 
 		// LOG("CAN%u task loop\n", index);
 		if (unlikely(!usb.mounted)) {
@@ -1918,7 +1918,7 @@ static void can_task(void *param)
 		led_burst(can->led_traffic, 8);
 		send_can_status = 1;
 
-		xSemaphoreTake(usb_can->mutex_handle, ~0);
+		while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
 
 		for (bool done = false; !done; ) {
 			done = true;
