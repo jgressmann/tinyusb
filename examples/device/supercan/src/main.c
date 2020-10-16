@@ -777,7 +777,7 @@ static struct usb {
 	bool mounted;
 } usb;
 
-static inline void can_off(uint8_t index)
+static inline void can_reset_state(uint8_t index)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
@@ -785,11 +785,6 @@ static inline void can_off(uint8_t index)
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
 
-	// go bus off
-	can_set_state1(can->m_can, can->interrupt_id, false);
-
-	// reset can bus state
-	can->enabled = false;
 	can->rx_lost = 0;
 	can->tx_dropped = 0;
 	can->desync = false;
@@ -809,9 +804,25 @@ static inline void can_off(uint8_t index)
 
 	// clear interrupt handler queue
 	xQueueReset(can->queue_handle);
+}
+
+static inline void can_off(uint8_t index)
+{
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+
+	struct can *can = &cans.can[index];
+
+	// go bus off
+	can_set_state1(can->m_can, can->interrupt_id, false);
+
+	// reset can bus state
+	can->enabled = false;
 
 	// notify task to make sure its knows
 	xTaskNotifyGive(can->task_handle);
+
+	can_reset_state(index);
 }
 
 static inline void can_reset(uint8_t index)
@@ -1174,9 +1185,11 @@ send_can_info:
 				if (was_enabled != can->enabled) {
 					LOG("ch%u enabled=%u\n", index, can->enabled);
 					if (can->enabled) {
+						can_reset_state(index); // necessar?
 						can_configure(can);
 						can_set_state1(can->m_can, can->interrupt_id, can->enabled);
 						canled_set_status(can, CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
+						SC_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
 					} else {
 						can_off(index);
 						canled_set_status(can, CANLED_STATUS_ENABLED_BUS_OFF);
@@ -1862,7 +1875,7 @@ static void can_task(void *param)
 	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 
-	LOG("CAN%u task start\n", index);
+	LOG("ch%u task start\n", index);
 
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
@@ -1912,6 +1925,7 @@ static void can_task(void *param)
 			tx_high = 0;
 			tx_low = 0;
 			tx_latch_state = LATCH_STATE_UNLATCHED;
+			LOG("ch%u state reset\n", index);
 			continue;
 		}
 
@@ -2096,8 +2110,10 @@ static void can_task(void *param)
 
 					uint16_t msg_low = r1.bit.RXTS;
 					if (LATCH_STATE_UNLATCHED == rx_latch_state) {
+						LOG("ch%u rx latch from hi=%x to hi=%x\n", index, rx_high, tscv_high);
 						rx_latch_state = LATCH_STATE_LATCHED;
 						rx_high = tscv_high;
+
 					} else {
 						if (msg_low < rx_low) {
 							++rx_high;
@@ -2118,6 +2134,9 @@ static void can_task(void *param)
 					rx_ts_last = ts;
 
 					msg->timestamp_us = can_bittime_to_us(can, ts);
+
+					 LOG("ch%u rx i=%u rx hi=%x lo=%x tscv hi=%x lo=%x\n", index, get_index, rx_high, rx_low, tscv_high, tscv_low);
+
 
 					// LOG("ch%u rx ts %lu\n", index, msg->timestamp_us);
 
