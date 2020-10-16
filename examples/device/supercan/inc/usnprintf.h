@@ -30,6 +30,10 @@
 extern "C" {
 #endif
 
+#ifdef __GNUC__
+#define restrict __restrict__
+#endif
+
 
 /* micro snprintf replacement
  *

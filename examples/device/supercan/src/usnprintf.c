@@ -35,6 +35,23 @@ static const char hex[16] = "0123456789abcdef";
 static const char HEX[16] = "0123456789ABCDEF";
 
 static
+inline
+void
+uprint_ulong_long_reverse_char(
+		char * restrict buffer,
+		size_t * restrict offset_ptr,
+		char const * restrict alphabet,
+		unsigned long long* restrict value,
+		unsigned base)
+{
+	unsigned long long a = *value / base;
+	unsigned digit = *value - a * base;
+	*value = a;
+	buffer[*offset_ptr] = alphabet[digit];
+	++*offset_ptr;
+}
+
+static
 void
 uprint_ulong_long_raw(
 		char * restrict buffer,
@@ -42,8 +59,11 @@ uprint_ulong_long_raw(
 		size_t end,
 		int flags,
 		unsigned base,
-		long long value)
+		unsigned long long value)
 {
+	size_t start_offset = *offset_ptr;
+	unsigned chars = 0;
+
 	char const *alphabet;
 	if (16 == base && (flags & FLAG_HEX_MASC)) {
 		alphabet = HEX;
@@ -51,21 +71,24 @@ uprint_ulong_long_raw(
 		alphabet = hex;
 	}
 
-	unsigned long long v = value;
-	unsigned long long x = base;
-	unsigned digits = 1;
-	while (x <= v) {
-		++digits;
-		x *= base;
+	if (*offset_ptr < end) { // zero case
+		uprint_ulong_long_reverse_char(buffer, offset_ptr, alphabet, &value, base);
+		++chars;
 	}
 
-	while (*offset_ptr < end && digits > 0) {
-		x /= base;
-		unsigned digit = v / x;
-		v -= x * digit;
-		buffer[*offset_ptr] = alphabet[digit];
-		++*offset_ptr;
-		--digits;
+	while (*offset_ptr < end && value) {
+		uprint_ulong_long_reverse_char(buffer, offset_ptr, alphabet, &value, base);
+		++chars;
+	}
+
+	if (chars > 1) {
+		size_t end_offset = *offset_ptr;
+		size_t count = (end_offset - start_offset) / 2;
+		for (size_t i = start_offset, j = end_offset - 1, k = 0; k < count; ++i, --j, ++k) {
+			char c = buffer[i];
+			buffer[i] = buffer[j];
+			buffer[j] = c;
+		}
 	}
 }
 
@@ -177,30 +200,10 @@ precision:
 					++int_size;
 					break;
 				case 't':
-					switch (sizeof(ptrdiff_t)) {
-					case sizeof(long long):
-						int_size = 2;
-						break;
-					case sizeof(long):
-						int_size = 1;
-						break;
-					default:
-						int_size = 0;
-						break;
-					}
+					int_size = sizeof(ptrdiff_t) / sizeof(int) - 1;
 					break;
 				case 'z':
-					switch (sizeof(size_t)) {
-					case sizeof(long long):
-						int_size = 2;
-						break;
-					case sizeof(long):
-						int_size = 1;
-						break;
-					default:
-						int_size = 0;
-						break;
-					}
+					int_size = sizeof(size_t) / sizeof(int) - 1;
 					break;
 				case 'c':
 					step = -1;
@@ -238,7 +241,7 @@ precision:
 						v = -v;
 					}
 
-					uprint_ulong_long_raw(buffer, &offset, end, 0, 10, v);
+					uprint_ulong_long_raw(buffer, &offset, end, 0, 10, (unsigned long long)v);
 				} break;
 				case 'u':
 				case 'x':
