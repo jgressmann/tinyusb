@@ -835,6 +835,7 @@ static inline void can_off(uint8_t index)
 
 	// notify task to make sure its knows
 	xTaskNotifyGive(can->usb_task_handle);
+	xTaskNotifyGive(can->ts_task_handle);
 
 	can_reset_state(index);
 }
@@ -1947,7 +1948,7 @@ static void can_usb_task(void *param)
 			// tx_high = 0;
 			// tx_low = 0;
 			// tx_latch_state = LATCH_STATE_UNLATCHED;
-			LOG("ch%u state reset\n", index);
+			LOG("ch%u usb state reset\n", index);
 			continue;
 		}
 
@@ -2157,7 +2158,6 @@ static void can_usb_task(void *param)
 						ts |= r1.bit.RXTS;
 
 						// mark as consumed prior to updating fifo fill level
-						//can->rx_ts_hi_state[get_index] = TS_HI_STATE_CONSUMED_VALUE;
 						// __atomic_store_n(&can->rx_ts_hi_state[get_index], TS_HI_STATE_CONSUMED_VALUE, __ATOMIC_RELEASE);
 						// __atomic_store_n(&can->rx_ts_hi_state[get_index], TS_HI_STATE_CLEAR_VALUE, __ATOMIC_RELEASE);
 
@@ -2360,6 +2360,7 @@ static void can_ts_task(void *param)
 	uint16_t tscv_hi = 0;
 	uint16_t tscv_lo = 0;
 	uint32_t sleep = MAX_DELAY;
+	bool was_enabled = false;
 
 	while (42) {
 		// timestamp
@@ -2367,13 +2368,16 @@ static void can_ts_task(void *param)
 
 		if (tscv < tscv_lo) {
 			++tscv_hi;
-			// LOG("ch%u ts_hi=%04x\n", index, tscv_hi);
+			// LOG("ch%u lo %u->%u ts_hi=%04x\n", index, tscv, tscv_lo, tscv_hi);
 		}
 
 		tscv_lo = tscv;
 
 		if (unlikely(!can->enabled)) {
-			// LOG("ch%u state reset\n", index);
+			if (was_enabled) {
+				LOG("ch%u ts state reset\n", index);
+			}
+
 			tscv_hi = 0;
 			tscv_lo = 0;
 			for (size_t i = 0; i < TU_ARRAY_SIZE(can->rx_ts_hi_state); ++i) {
@@ -2385,10 +2389,12 @@ static void can_ts_task(void *param)
 			}
 
 			sleep = MAX_DELAY;
+			was_enabled = false;
 
 			goto sleep;
 		}
 
+		was_enabled = true;
 
 		// LOG("ch%u enabled, loop\n", index);
 		unsigned stored = 0;
@@ -2404,9 +2410,16 @@ static void can_ts_task(void *param)
 			SC_DEBUG_ASSERT(get_index < CAN_RX_FIFO_SIZE);
 			uint32_t hi_state = __atomic_load_n(&can->rx_ts_hi_state[get_index], __ATOMIC_ACQUIRE);
 			// if (hi_state == TS_HI_STATE_CONSUMED_VALUE) {
-			// 	// can->rx_ts_hi_state[get_index] = TS_HI_STATE_CLEAR_VALUE;
+			// 	// // can->rx_ts_hi_state[get_index] = TS_HI_STATE_CLEAR_VALUE;
 			// 	LOG("ch%u ts rx gi=%u clear consumed\n", index, get_index);
-			// 	can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(get_index);
+			// 	// can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(get_index);
+			// 	sleep = MIN_DELAY;
+			// 	for (uint8_t j = i + 1; j < count; ++j) {
+			// 		uint8_t get_index = (gio + count - 1 - j) & (CAN_RX_FIFO_SIZE-1);
+			// 		__atomic_store_n(&can->rx_ts_hi_state[get_index], TS_HI_STATE_CLEAR_VALUE, __ATOMIC_RELEASE);
+			// 		LOG("ch%u ts rx gi=%u reset set\n", index, get_index);
+			// 	}
+			// 	break;
 			// }
 
 			if (hi_state & TS_HI_STATE_SET_MASK) {
