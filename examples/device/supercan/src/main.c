@@ -115,6 +115,13 @@ struct can_rx_fifo_element {
 	uint8_t data[CAN_ELEMENT_DATA_SIZE];
 };
 
+struct rx_frame {
+	CAN_RXF0E_0_Type R0;
+	CAN_RXF0E_1_Type R1;
+	uint16_t tscv_hi;
+	uint8_t data[CAN_ELEMENT_DATA_SIZE];
+};
+
 
 enum {
 	CAN_FEAT_PERM = SC_FEATURE_FLAG_TXR,
@@ -144,13 +151,14 @@ struct can {
 	CFG_TUSB_MEM_ALIGN struct can_tx_event_fifo_element tx_event_fifo[CAN_TX_FIFO_SIZE];
 	CFG_TUSB_MEM_ALIGN struct can_rx_fifo_element rx_fifo[CAN_RX_FIFO_SIZE];
 	volatile uint32_t tx_ts_hi_state[CAN_TX_FIFO_SIZE];
-	volatile uint32_t rx_ts_hi_state[CAN_RX_FIFO_SIZE];
+	// volatile uint32_t rx_ts_hi_state[CAN_RX_FIFO_SIZE];
+	struct rx_frame rx_frames[CAN_RX_FIFO_SIZE];
+	uint8_t rx_frame_index_queue_storage[CAN_RX_FIFO_SIZE];
+	StaticQueue_t rx_frame_index_queue_mem;
+	QueueHandle_t rx_frame_index_queue_handle;
 	StackType_t usb_task_stack_mem[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_task_mem;
 	TaskHandle_t usb_task_handle;
-	StackType_t ts_task_stack_mem[configMINIMAL_STACK_SIZE];
-	StaticTask_t ts_task_mem;
-	TaskHandle_t ts_task_handle;
 	uint8_t queue_storage[CAN_QUEUE_SIZE];
 	StaticQueue_t queue_mem;
 	QueueHandle_t queue_handle;
@@ -177,12 +185,19 @@ struct can {
 	uint8_t led_status_green;
 	uint8_t led_status_red;
 	uint8_t led_traffic;
+	uint16_t task_poll_tscv_hi;
+	uint16_t task_poll_tscv_lo;
+	volatile uint8_t rx_get_index;
+	volatile uint8_t rx_put_index;
 	bool enabled;
 	bool desync;
 };
 
 static struct {
 	struct can can[2];
+	StackType_t poll_task_stack_mem[configMINIMAL_STACK_SIZE];
+	StaticTask_t poll_task_mem;
+	TaskHandle_t poll_task_handle;
 } cans;
 
 
@@ -319,18 +334,20 @@ static void can_configure(struct can *c)
 
 	// wanted interrupts
 	can->IE.reg =
-		CAN_IE_TSWE     // time stamp counter wrap
+		// CAN_IE_TSWE     // time stamp counter wrap
+		0
 		| CAN_IE_BOE    // bus off
 		| CAN_IE_EWE    // error warning
 		| CAN_IE_EPE    // error passive
-		| CAN_IE_RF0NE  // new message in rx fifo0
+		// | CAN_IE_RF0NE  // new message in rx fifo0
 		| CAN_IE_RF0LE  // message lost b/c fifo0 was full
 		| CAN_IE_PEAE   // proto error in arbitration phase
 		| CAN_IE_PEDE   // proto error in data phase
-	 	| CAN_IE_TEFNE  // new message in tx event fifo
+	 	// | CAN_IE_TEFNE  // new message in tx event fifo
 		| CAN_IE_MRAFE  // message RAM access failure
 		| CAN_IE_BEUE   // bit error uncorrected, sets CCCR.INIT
 		| CAN_IE_BECE   // bit error corrected
+		// | CAN_IE_RF0WE
 	;
 
 	m_can_conf_end(can);
@@ -398,7 +415,7 @@ static void can_int(uint8_t index)
 
 	// LOG("IE=%08lx IR=%08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
 	bool notify_usb = false;
-	bool notify_ts = false;
+	// bool notify_ts = false;
 	uint8_t current_bus_state = 0;
 	uint16_t ts_high = can->int_ts_high;
 	uint16_t tscv = can->m_can->TSCV.bit.TSC;
@@ -434,12 +451,12 @@ static void can_int(uint8_t index)
 		 * tracking of the high part.
 		 */
 
-		notify_ts = true;
+		// notify_ts = true;
 	}
 
 	if (ir.bit.TEFN) {
 		/* see comment for ir.bit.RF0N */
-		notify_ts = true;
+		// notify_ts = true;
 	}
 
 	if (unlikely(ir.bit.MRAF)) {
@@ -587,12 +604,12 @@ static void can_int(uint8_t index)
 	// clear all interrupts
 	can->m_can->IR = ir;
 
-	if (notify_ts) {
-		// LOG("CAN%u notify\n", index);
-		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-		vTaskNotifyGiveFromISR(can->ts_task_handle, &xHigherPriorityTaskWoken);
-		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-	}
+	// if (notify_ts) {
+	// 	// LOG("CAN%u notify\n", index);
+	// 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+	// 	vTaskNotifyGiveFromISR(can->ts_task_handle, &xHigherPriorityTaskWoken);
+	// 	portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+	// }
 
 	if (notify_usb) {
 		// LOG("CAN%u notify\n", index);
@@ -649,7 +666,7 @@ static StaticTask_t usb_device_stack_mem;
 
 static void tusb_device_task(void* param);
 static void can_usb_task(void* param);
-static void can_ts_task(void* param);
+static void can_poll_task(void* param);
 
 
 #if HWREV == 1
@@ -835,7 +852,7 @@ static inline void can_off(uint8_t index)
 
 	// notify task to make sure its knows
 	xTaskNotifyGive(can->usb_task_handle);
-	xTaskNotifyGive(can->ts_task_handle);
+	// xTaskNotifyGive(can->ts_task_handle);
 
 	can_reset_state(index);
 }
@@ -1468,12 +1485,24 @@ int main(void)
 	cans.can[1].queue_handle = xQueueCreateStatic(CAN_QUEUE_SIZE, sizeof(cans.can[1].queue_storage) / CAN_QUEUE_SIZE, cans.can[0].queue_storage, &cans.can[1].queue_mem);
 
 
+	cans.can[0].rx_frame_index_queue_handle = xQueueCreateStatic(
+		TU_ARRAY_SIZE(cans.can[0].rx_frame_index_queue_storage),
+		sizeof(cans.can[0].rx_frame_index_queue_storage[0]),
+		 cans.can[0].rx_frame_index_queue_storage,
+		 &cans.can[0].rx_frame_index_queue_mem);
+	cans.can[1].rx_frame_index_queue_handle = xQueueCreateStatic(
+		TU_ARRAY_SIZE(cans.can[1].rx_frame_index_queue_storage),
+		sizeof(cans.can[1].rx_frame_index_queue_storage[0]),
+		 cans.can[1].rx_frame_index_queue_storage,
+		 &cans.can[1].rx_frame_index_queue_mem);
+
+
+
 	cans.can[0].usb_task_handle = xTaskCreateStatic(&can_usb_task, "usb_can0", TU_ARRAY_SIZE(cans.can[0].usb_task_stack_mem), (void*)(uintptr_t)0, configMAX_PRIORITIES-2, cans.can[0].usb_task_stack_mem, &cans.can[0].usb_task_mem);
 	cans.can[1].usb_task_handle = xTaskCreateStatic(&can_usb_task, "usb_can1", TU_ARRAY_SIZE(cans.can[1].usb_task_stack_mem), (void*)(uintptr_t)1, configMAX_PRIORITIES-2, cans.can[1].usb_task_stack_mem, &cans.can[1].usb_task_mem);
 
 	// ATTENTION: higher prio
-	cans.can[0].ts_task_handle = xTaskCreateStatic(&can_ts_task, "ts_can0", TU_ARRAY_SIZE(cans.can[0].ts_task_stack_mem), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, cans.can[0].ts_task_stack_mem, &cans.can[0].ts_task_mem);
-	cans.can[1].ts_task_handle = xTaskCreateStatic(&can_ts_task, "ts_can1", TU_ARRAY_SIZE(cans.can[1].ts_task_stack_mem), (void*)(uintptr_t)1, configMAX_PRIORITIES-1, cans.can[1].ts_task_stack_mem, &cans.can[1].ts_task_mem);
+	cans.poll_task_handle = xTaskCreateStatic(&can_poll_task, "can_poll", TU_ARRAY_SIZE(cans.poll_task_stack_mem), NULL, configMAX_PRIORITIES-1, cans.poll_task_stack_mem, &cans.poll_task_mem);
 
 
 	led_blink(0, 2000);
@@ -2098,128 +2127,103 @@ static void can_usb_task(void *param)
 				}
 			}
 
-			// static unsigned last_get_index;
 
-			if (m_can_rx0_msg_fifo_avail(can->m_can)) {
+
+			uint8_t rx_put_index = __atomic_load_n(&can->rx_put_index, __ATOMIC_ACQUIRE);
+			if (can->rx_get_index != rx_put_index) {
 				bus_activity_tc = xTaskGetTickCount();
-				uint8_t get_index = can->m_can->RXF0S.bit.F0GI;
-				uint32_t hi_state = __atomic_load_n(&can->rx_ts_hi_state[get_index], __ATOMIC_ACQUIRE);
-				if (hi_state & TS_HI_STATE_SET_MASK) {
-					uint8_t bytes = sizeof(struct sc_msg_can_rx);
-					CAN_RXF0E_0_Type r0 = can->rx_fifo[get_index].R0;
-					CAN_RXF0E_1_Type r1 = can->rx_fifo[get_index].R1;
-					uint8_t can_frame_len = dlc_to_len(r1.bit.DLC);
-					if (!r0.bit.RTR) {
-						bytes += can_frame_len;
-					}
+				// SC_DEBUG_ASSERT(rx_frame_index < CAN_RX_FIFO_SIZE);
 
-					// align to 4 bytes
-					if (bytes & 3) {
-						bytes += 4 - (bytes & 3);
-					}
+				// __atomic_thread_fence(__ATOMIC_ACQUIRE);
 
-					if (out_end - out_ptr >= bytes) {
-						done = false;
-						struct sc_msg_can_rx *msg = (struct sc_msg_can_rx *)out_ptr;
-						out_ptr += bytes;
-
-						msg->id = SC_MSG_CAN_RX;
-						msg->len = bytes;
-						msg->dlc = r1.bit.DLC;
-						msg->flags = 0;
-						uint32_t id = r0.bit.ID;
-						if (r0.bit.XTD) {
-							msg->flags |= SC_CAN_FRAME_FLAG_EXT;
-						} else {
-							id >>= 18;
-						}
-						msg->can_id = id;
-
-						// uint16_t msg_low = r1.bit.RXTS;
-						// if (LATCH_STATE_UNLATCHED == rx_latch_state) {
-						// 	LOG("ch%u rx latch from hi=%x to hi=%x\n", index, rx_high, tscv_high);
-						// 	rx_latch_state = LATCH_STATE_LATCHED;
-						// 	rx_high = tscv_high;
-
-						// } else {
-						// 	if (msg_low < rx_low) {
-						// 		++rx_high;
-						// 		// LOG("ch%u rx_high=%x tscv_high=%x\n", index, rx_high, tscv_high);
-						// 	}
-						// }
-
-						// rx_low = msg_low;
-
-						// uint32_t ts = ((uint32_t)rx_high << M_CAN_TS_COUNTER_BITS) | msg_low;
-
-
-						uint32_t ts = can->rx_ts_hi_state[get_index] & TS_HI_STATE_TS_MASK;
-						ts <<= M_CAN_TS_COUNTER_BITS;
-						ts |= r1.bit.RXTS;
-
-						// mark as consumed prior to updating fifo fill level
-						// __atomic_store_n(&can->rx_ts_hi_state[get_index], TS_HI_STATE_CONSUMED_VALUE, __ATOMIC_RELEASE);
-						// __atomic_store_n(&can->rx_ts_hi_state[get_index], TS_HI_STATE_CLEAR_VALUE, __ATOMIC_RELEASE);
-
-						//bool rx_ts_ok = ts >= rx_ts_last || (TS_HI(rx_ts_last) == 0xffff && TS_HI(ts) == 0);
-						uint32_t delta = ts - rx_ts_last;
-						bool rx_ts_ok = delta < 0x7FFFFFFF;
-						if (unlikely(!rx_ts_ok)) {
-							taskDISABLE_INTERRUPTS();
-							// m_can_init_begin(can);
-							LOG("ch%u rx gi=%u ts=%lx prev=%lx\n", index, get_index, ts, rx_ts_last);
-							for (unsigned i = 0; i < CAN_RX_FIFO_SIZE; ++i) {
-								LOG("ch%u rx gi=%u hi=%x lo=%x\n", index, i, can->rx_ts_hi_state[i], can->rx_fifo[i].R1.bit.RXTS);
-							}
-
-						}
-						SC_ASSERT(rx_ts_ok);
-						// LOG("ch%u rx gi=%u d=%lx\n", index, get_index, ts - rx_ts_last);
-						rx_ts_last = ts;
-
-						msg->timestamp_us = can_bittime_to_us(can, ts);
-
-						// LOG("ch%u rx i=%u rx hi=%x lo=%x tscv hi=%x lo=%x\n", index, get_index, rx_high, rx_low, tscv_high, tscv_low);
-						// LOG("ch%u rx i=%u rx=%lx\n", index, get_index, ts);
-
-
-						// LOG("ch%u rx ts %lu\n", index, msg->timestamp_us);
-
-						if (r1.bit.FDF) {
-							msg->flags |= SC_CAN_FRAME_FLAG_FDF;
-						}
-						if (r1.bit.BRS) {
-							msg->flags |= SC_CAN_FRAME_FLAG_BRS;
-						}
-						if (r0.bit.RTR) {
-							msg->flags |= SC_CAN_FRAME_FLAG_RTR;
-						} else {
-							memcpy(msg->data, can->rx_fifo[get_index].data, can_frame_len);
-						}
-
-						SC_ASSERT(out_ptr <= out_end);
-						usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
-
-						can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(get_index);
-
-						__atomic_store_n(&can->rx_ts_hi_state[get_index], TS_HI_STATE_CLEAR_VALUE, __ATOMIC_RELEASE);
-					} else {
-						if (sc_can_bulk_in_ep_ready(index)) {
-							done = false;
-							sc_can_bulk_in_submit(index, __func__);
-							continue;
-						} else {
-							break;
-						}
-					}
-				} else {
-					// if (last_get_index != get_index){
-					// 	last_get_index = get_index;
-					// 	// LOG("ch%u rx i=%u no ts\n", index, get_index);
-					// }
-
+				uint8_t get_index = can->rx_get_index;
+				uint8_t bytes = sizeof(struct sc_msg_can_rx);
+				CAN_RXF0E_0_Type r0 = can->rx_frames[get_index].R0;
+				CAN_RXF0E_1_Type r1 = can->rx_frames[get_index].R1;
+				uint8_t can_frame_len = dlc_to_len(r1.bit.DLC);
+				if (!r0.bit.RTR) {
+					bytes += can_frame_len;
 				}
 
+				// align to 4 bytes
+				if (bytes & 3) {
+					bytes += 4 - (bytes & 3);
+				}
+
+				if (out_end - out_ptr >= bytes) {
+					done = false;
+
+
+					struct sc_msg_can_rx *msg = (struct sc_msg_can_rx *)out_ptr;
+					out_ptr += bytes;
+
+					msg->id = SC_MSG_CAN_RX;
+					msg->len = bytes;
+					msg->dlc = r1.bit.DLC;
+					msg->flags = 0;
+					uint32_t id = r0.bit.ID;
+					if (r0.bit.XTD) {
+						msg->flags |= SC_CAN_FRAME_FLAG_EXT;
+					} else {
+						id >>= 18;
+					}
+					msg->can_id = id;
+
+
+					uint32_t ts = can->rx_frames[get_index].tscv_hi;
+					ts <<= M_CAN_TS_COUNTER_BITS;
+					ts |= r1.bit.RXTS;
+
+					uint32_t delta = ts - rx_ts_last;
+					bool rx_ts_ok = delta < 0x7FFFFFFF;
+					if (unlikely(!rx_ts_ok)) {
+						taskDISABLE_INTERRUPTS();
+						// m_can_init_begin(can);
+						LOG("ch%u rx gi=%u ts=%lx prev=%lx\n", index, get_index, ts, rx_ts_last);
+						for (unsigned i = 0; i < CAN_RX_FIFO_SIZE; ++i) {
+							LOG("ch%u rx gi=%u hi=%x lo=%x\n", index, i, can->rx_frames[get_index].tscv_hi, can->rx_frames[i].R1.bit.RXTS);
+						}
+
+					}
+					SC_ASSERT(rx_ts_ok);
+					// LOG("ch%u rx gi=%u d=%lx\n", index, get_index, ts - rx_ts_last);
+					rx_ts_last = ts;
+
+					msg->timestamp_us = can_bittime_to_us(can, ts);
+
+					// LOG("ch%u rx i=%u rx hi=%x lo=%x tscv hi=%x lo=%x\n", index, get_index, rx_high, rx_low, tscv_high, tscv_low);
+					// LOG("ch%u rx i=%u rx=%lx\n", index, get_index, ts);
+
+
+					// LOG("ch%u rx ts %lu\n", index, msg->timestamp_us);
+
+					if (r1.bit.FDF) {
+						msg->flags |= SC_CAN_FRAME_FLAG_FDF;
+					}
+					if (r1.bit.BRS) {
+						msg->flags |= SC_CAN_FRAME_FLAG_BRS;
+					}
+					if (r0.bit.RTR) {
+						msg->flags |= SC_CAN_FRAME_FLAG_RTR;
+					} else {
+						memcpy(msg->data, can->rx_frames[get_index].data, can_frame_len);
+					}
+
+					SC_ASSERT(out_ptr <= out_end);
+					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
+
+					// remove item from queue, signaling poll task
+					// (void)xQueueReceive(can->rx_frame_index_queue_handle, &rx_frame_index, 0);
+					__atomic_store_n(&can->rx_get_index, (can->rx_get_index+1) & (CAN_RX_FIFO_SIZE-1), __ATOMIC_RELEASE);
+				} else {
+					if (sc_can_bulk_in_ep_ready(index)) {
+						done = false;
+						sc_can_bulk_in_submit(index, __func__);
+						continue;
+					} else {
+						break;
+					}
+				}
 			}
 
 			if (m_can_tx_event_fifo_avail(can->m_can)) {
@@ -2343,168 +2347,119 @@ static void can_usb_task(void *param)
 	}
 }
 
-static void can_ts_task(void *param)
+static bool can_poll(uint8_t index)
 {
-	const uint32_t SAMPLE_INTERVAL_MS = (UINT32_C(1) << M_CAN_TS_COUNTER_BITS) /* @ 1MBit arb lap in us */ / 1000u /* us -> ms */ / 2u /* sample at double of change rate */;
-	const uint32_t MIN_DELAY = pdMS_TO_TICKS(1);
-	const uint32_t MAX_DELAY = pdMS_TO_TICKS(SAMPLE_INTERVAL_MS);
-
-
-	const uint8_t index = (uint8_t)(uintptr_t)param;
-	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
-	// SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
-
-	LOG("ch%u ts task start\n", index);
-
 	struct can *can = &cans.can[index];
-	uint16_t tscv_hi = 0;
-	uint16_t tscv_lo = 0;
-	uint32_t sleep = MAX_DELAY;
-	bool was_enabled = false;
 
-	while (42) {
-		// timestamp
-		uint16_t tscv = can->m_can->TSCV.bit.TSC;
+	// not initalized? happens on bus off as well
+	if (can->m_can->CCCR.bit.INIT) {
+		can->task_poll_tscv_lo = 0;
+		can->task_poll_tscv_hi = 0;
+		return false;
+	}
 
-		if (tscv < tscv_lo) {
-			++tscv_hi;
-			// LOG("ch%u lo %u->%u ts_hi=%04x\n", index, tscv, tscv_lo, tscv_hi);
-		}
+	uint16_t tscv = can->m_can->TSCV.bit.TSC;
 
-		tscv_lo = tscv;
+	if (tscv < can->task_poll_tscv_lo) {
+		++can->task_poll_tscv_hi;
+		// LOG("ch%u lo %u->%u ts_hi=%04x\n", index, tscv, tscv_lo, tscv_hi);
+	}
 
-		if (unlikely(!can->enabled)) {
-			if (was_enabled) {
-				LOG("ch%u ts state reset\n", index);
-			}
+	can->task_poll_tscv_lo = tscv;
 
-			tscv_hi = 0;
-			tscv_lo = 0;
-			for (size_t i = 0; i < TU_ARRAY_SIZE(can->rx_ts_hi_state); ++i) {
-				can->rx_ts_hi_state[i] = TS_HI_STATE_CLEAR_VALUE;
-			}
+	uint8_t count = 0;
 
-			for (size_t i = 0; i < TU_ARRAY_SIZE(can->tx_ts_hi_state); ++i) {
-				can->tx_ts_hi_state[i] = TS_HI_STATE_CLEAR_VALUE;
-			}
-
-			sleep = MAX_DELAY;
-			was_enabled = false;
-
-			goto sleep;
-		}
-
-		was_enabled = true;
-
-		// LOG("ch%u enabled, loop\n", index);
-		unsigned stored = 0;
-		uint8_t count = 0;
-
-		uint16_t rx_hi = tscv_hi;
-		uint16_t rx_prev_lo = tscv_lo;
-		count = can->m_can->RXF0S.bit.F0FL;
+	count = can->m_can->RXF0S.bit.F0FL;
+	if (count) {
+		// reverse loop reconstruct high timestamp
+		uint16_t rx_hi = can->task_poll_tscv_hi;
+		uint16_t rx_prev_lo = can->task_poll_tscv_lo;
+		uint8_t get_index;
+		uint16_t rx_his[CAN_RX_FIFO_SIZE];
 		for (uint8_t i = 0, gio = can->m_can->RXF0S.bit.F0GI; i < count; ++i) {
-			// reverse loop
-			uint8_t get_index = (gio + count - 1 - i) & (CAN_RX_FIFO_SIZE-1);
+			get_index = (gio + count - 1 - i) & (CAN_RX_FIFO_SIZE-1);
 			// LOG("ch%u ts rx count=%u gi=%u\n", index, count, get_index);
 			SC_DEBUG_ASSERT(get_index < CAN_RX_FIFO_SIZE);
-			uint32_t hi_state = __atomic_load_n(&can->rx_ts_hi_state[get_index], __ATOMIC_ACQUIRE);
-			// if (hi_state == TS_HI_STATE_CONSUMED_VALUE) {
-			// 	// // can->rx_ts_hi_state[get_index] = TS_HI_STATE_CLEAR_VALUE;
-			// 	LOG("ch%u ts rx gi=%u clear consumed\n", index, get_index);
-			// 	// can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(get_index);
-			// 	sleep = MIN_DELAY;
-			// 	for (uint8_t j = i + 1; j < count; ++j) {
-			// 		uint8_t get_index = (gio + count - 1 - j) & (CAN_RX_FIFO_SIZE-1);
-			// 		__atomic_store_n(&can->rx_ts_hi_state[get_index], TS_HI_STATE_CLEAR_VALUE, __ATOMIC_RELEASE);
-			// 		LOG("ch%u ts rx gi=%u reset set\n", index, get_index);
-			// 	}
-			// 	break;
-			// }
-
-			if (hi_state & TS_HI_STATE_SET_MASK) {
-				// LOG("ch%u ts gi=%u filled\n", index, get_index);
-				break; // filled
-			}
-
-			// LOG("ch%u ts gi=%u store\n", index, get_index);
 
 			uint16_t rx_lo = can->rx_fifo[get_index].R1.bit.RXTS;
 			if (rx_lo > rx_prev_lo) {
 				--rx_hi;
 			}
 
-			// store
-			__atomic_store_n(&can->rx_ts_hi_state[get_index], TS_HI_STATE_SET_MASK | rx_hi, __ATOMIC_RELEASE);
-			// can->rx_ts_hi_state[get_index] = TS_HI_STATE_SET_MASK | rx_hi;
+			rx_his[get_index] = rx_hi;
+
 			rx_prev_lo = rx_lo;
-			++stored;
-			// xTaskNotifyGive(can->usb_task_handle);
 		}
 
-		uint16_t tx_hi = tscv_hi;
-		uint16_t tx_prev_lo = tscv_lo;
-		// LOG("ch%u ts tx EFFL=%u\n", index, can->m_can->TXEFS.bit.EFFL);
-		count = can->m_can->TXEFS.bit.EFFL;
-		for (uint8_t i = 0, gio = can->m_can->TXEFS.bit.EFGI; i < count; ++i) {
-			// reverse loop
-			uint8_t get_index = (gio + count - 1 - i) & (CAN_TX_FIFO_SIZE-1);
-			// LOG("ch%u ts tx count=%u gi=%u\n", index, count, get_index);
-			SC_DEBUG_ASSERT(get_index < CAN_TX_FIFO_SIZE);
-			uint32_t hi_state = __atomic_load_n(&can->tx_ts_hi_state[get_index], __ATOMIC_ACQUIRE);
-			// if (hi_state == TS_HI_STATE_CONSUMED_VALUE) {
-			// 	// can->rx_ts_hi_state[get_index] = TS_HI_STATE_CLEAR_VALUE;
-			// 	LOG("ch%u ts gi=%u clear consumed\n", index, get_index);
-			// 	continue;
-			// }
+		// forward loop store frame and notify usb task
+		for (uint8_t i = 0, gio = can->m_can->RXF0S.bit.F0GI; i < count; ++i) {
+			get_index = (gio + i) & (CAN_RX_FIFO_SIZE-1);
+			SC_DEBUG_ASSERT(get_index < CAN_RX_FIFO_SIZE);
 
-			if (hi_state & TS_HI_STATE_SET_MASK) {
-				// LOG("ch%u ts tx gi=%u filled\n", index, get_index);
-				break; // filled
-			}
+			uint8_t target_put_index = (can->rx_put_index + 1)  & (CAN_RX_FIFO_SIZE-1);
+			if (unlikely(target_put_index == can->rx_get_index)) {
+				__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
+			} else {
+				can->rx_frames[target_put_index].R0 = can->rx_fifo[get_index].R0;
+				can->rx_frames[target_put_index].R1 = can->rx_fifo[get_index].R1;
+				can->rx_frames[target_put_index].tscv_hi = rx_his[get_index];
+				if (likely(!can->rx_frames[target_put_index].R0.bit.RTR)) {
+					uint8_t can_frame_len = dlc_to_len(can->rx_frames[target_put_index].R1.bit.DLC);
+					if (likely(can_frame_len)) {
+						memcpy(can->rx_frames[target_put_index].data, can->rx_fifo[get_index].data, can_frame_len);
+					}
+				}
 
-			// LOG("ch%u ts tx gi=%u store\n", index, get_index);
+				__atomic_store_n(&can->rx_put_index, target_put_index, __ATOMIC_RELEASE);
 
-			uint16_t tx_lo = can->tx_event_fifo[get_index].T1.bit.TXTS;
-			if (tx_lo > tx_prev_lo) {
-				--tx_hi;
-			}
-
-			// store
-			__atomic_store_n(&can->tx_ts_hi_state[get_index], TS_HI_STATE_SET_MASK | tx_hi, __ATOMIC_RELEASE);
-			// can->rx_ts_hi_state[get_index] = TS_HI_STATE_SET_MASK | rx_hi;
-			tx_prev_lo = tx_lo;
-			++stored;
-			// xTaskNotifyGive(can->usb_task_handle);
-		}
-
-		// for (unsigned i = 0; i < count; ++i) {
-		// 	xTaskNotifyGive(can->usb_task_handle);
-		// }
-
-		if (stored) {
-			// __sync_synchronize();
-			// LOG("ch%u notify can usb\n", index);
-			for (unsigned i = 0; i < stored; ++i) {
 				xTaskNotifyGive(can->usb_task_handle);
 			}
+
+			// can->rx_frames[get_index].R0 = can->rx_fifo[get_index].R0;
+			// can->rx_frames[get_index].R1 = can->rx_fifo[get_index].R1;
+			// if (likely(!can->rx_frames[get_index].R0.bit.RTR)) {
+			// 	uint8_t can_frame_len = dlc_to_len(can->rx_frames[get_index].R1.bit.DLC);
+			// 	if (likely(can_frame_len)) {
+			// 		memcpy(can->rx_frames[get_index].data, can->rx_fifo[get_index].data, can_frame_len);
+			// 	}
+			// }
+
+			// BaseType_t r = xQueueSendToBack(can->rx_frame_index_queue_handle, &get_index, 0);
+			// if (unlikely(pdTRUE != r)) {
+			// 	__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
+			// }
+
 			// xTaskNotifyGive(can->usb_task_handle);
-			sleep /= 2;
-			if (sleep < MIN_DELAY) {
-				sleep = MIN_DELAY;
-			}
-		} else {
-			// LOG("ch%u count=%u\n", index, can->m_can->RXF0S.bit.F0FL);
-			sleep *= 2;
-			if (sleep > MAX_DELAY) {
-				sleep = MAX_DELAY;
+		}
+
+		// remove frames from rx fifo
+		can->m_can->RXF0A.bit.F0AI = get_index;
+
+		// __atomic_thread_fence(__ATOMIC_RELEASE);
+
+		return true;
+	}
+
+
+	return false;
+}
+
+static void can_poll_task(void *param)
+{
+	(void)param;
+
+	LOG("can poll task start\n", index);
+
+	while (42) {
+		bool sleep = true;
+		for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
+			if (can_poll(i)) {
+				sleep = false;
 			}
 		}
 
-sleep:
-		// LOG("ch%u sleep %u [ms]\n", index, DELAY_MS);
-		// vTaskDelay(sleep);
-		(void)ulTaskNotifyTake(pdFALSE, sleep);
-		// vTaskDelay(pdMS_TO_TICKS(8));
+		if (sleep) {
+			vTaskDelay(pdMS_TO_TICKS(1));
+		}
 	}
 }
