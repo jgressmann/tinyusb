@@ -1979,6 +1979,14 @@ static void can_usb_task(void *param)
 					uint32_t us = can_bittime_to_us(can, ts);
 					CAN_ECR_Type ecr = can->m_can->ECR;
 
+					// if (ts >= rx_ts_last + 65536) {
+					// 	rx_ts_last = ts;
+					// }
+
+					// if (ts >= tx_ts_last + 65536) {
+					// 	tx_ts_last = ts;
+					// }
+
 
 					msg->id = SC_MSG_CAN_STATUS;
 					msg->len = sizeof(*msg);
@@ -2158,18 +2166,13 @@ static void can_usb_task(void *param)
 
 			uint8_t tx_put_index = __atomic_load_n(&can->tx_put_index, __ATOMIC_ACQUIRE);
 			if (can->tx_get_index != tx_put_index) {
-
 				bus_activity_tc = xTaskGetTickCount();
 				uint8_t get_index = can->tx_get_index;
-
-				unsigned count = tx_put_index - can->tx_get_index;
-				LOG("ch%u tx gi=%u count=%u\n", index, get_index, count);
-				continue;
-
-
+				SC_DEBUG_ASSERT(can->tx_get_index < CAN_TX_FIFO_SIZE);
 				uint8_t bytes = sizeof(struct sc_msg_can_txr);
 
 				if (out_end - out_ptr >= bytes) {
+					LOG("1\n");
 					done = false;
 					struct sc_msg_can_txr *msg = (struct sc_msg_can_txr *)out_ptr;
 					out_ptr += bytes;
@@ -2181,6 +2184,7 @@ static void can_usb_task(void *param)
 					msg->id = SC_MSG_CAN_TXR;
 					msg->len = bytes;
 					msg->track_id = t1.bit.MM;
+					SC_ASSERT(t1.bit.MM < CAN_TX_FIFO_SIZE);
 
 
 					uint32_t ts = can->tx_frames[get_index].tscv_hi;
@@ -2215,10 +2219,13 @@ static void can_usb_task(void *param)
 					SC_DEBUG_ASSERT(out_ptr <= out_end);
 					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 
+					LOG("2\n");
+
 					// can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(get_index);
 					__atomic_store_n(&can->tx_get_index, (can->tx_get_index+1) & (CAN_TX_FIFO_SIZE-1), __ATOMIC_RELEASE);
 					SC_ASSERT(can->tx_available < CAN_TX_FIFO_SIZE);
 					++can->tx_available;
+					LOG("3\n");
 				} else {
 					if (sc_can_bulk_in_ep_ready(index)) {
 						done = false;
@@ -2285,6 +2292,7 @@ static bool can_poll(uint8_t index)
 		ts |= tscv;
 		__atomic_store_n(&can->sync_tscv, ts, __ATOMIC_RELEASE);
 		// LOG("ch%u lo %u->%u ts_hi=%04x\n", index, tscv, tscv_lo, tscv_hi);
+		xTaskNotifyGive(can->usb_task_handle);
 	}
 
 	can->task_poll_tscv_lo = tscv;
@@ -2342,7 +2350,7 @@ static bool can_poll(uint8_t index)
 		}
 
 		// removes frames from rx fifo
-		can->m_can->RXF0A.bit.F0AI = get_index;
+		can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(get_index);
 	}
 
 	count = can->m_can->TXEFS.bit.EFFL;
@@ -2374,6 +2382,7 @@ static bool can_poll(uint8_t index)
 			SC_DEBUG_ASSERT(get_index < CAN_TX_FIFO_SIZE);
 
 			uint8_t target_put_index = (can->tx_put_index + 1)  & (CAN_TX_FIFO_SIZE-1);
+			SC_DEBUG_ASSERT(target_put_index < CAN_TX_FIFO_SIZE);
 			// if (unlikely(target_put_index == can->rx_get_index)) {
 			// 	__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
 			// } else {
@@ -2388,8 +2397,8 @@ static bool can_poll(uint8_t index)
 		}
 
 		// removes frames from tx fifo
-		can->m_can->TXEFA.bit.EFAI = get_index;
-		LOG("ch%u poll tx count=%u dobe\n", index, count);
+		can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(get_index);
+        LOG("ch%u poll tx count=%u done\n", index, count);
 	}
 
 
@@ -2401,6 +2410,10 @@ static void can_poll_task(void *param)
 	(void)param;
 
 	LOG("can poll task start\n", index);
+
+	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
+		__atomic_store_n(&cans.can[i].sync_tscv, 0, __ATOMIC_RELEASE);
+	}
 
 	while (42) {
 		bool sleep = true;
