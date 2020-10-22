@@ -66,7 +66,7 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg);
 #define configUSE_PREEMPTION                    1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 1
 #define configCPU_CLOCK_HZ                      SystemCoreClock
-#define configTICK_RATE_HZ                      ( 10000 )
+#define configTICK_RATE_HZ                      ( 1000 )
 #define configMAX_PRIORITIES                    ( 5 )
 #define configMINIMAL_STACK_SIZE                ( 128 )
 #define configTOTAL_HEAP_SIZE                   ( 0*1024 ) // dynamic is not used
