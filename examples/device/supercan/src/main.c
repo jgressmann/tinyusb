@@ -372,9 +372,16 @@ static void can_init_module(void)
 	for (size_t j = 0; j < TU_ARRAY_SIZE(cans.can); ++j) {
 		struct can *can = &cans.can[j];
 		can->features = CAN_FEAT_PERM;
+
+		for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can[0].rx_fifo); ++i) {
+			// can->rx_frames[i].tscv_hi = 0x8000-1;
+		}
+
 		for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can[0].tx_fifo); ++i) {
 			can->tx_fifo[i].T1.bit.EFC = 1; // store tx events
+			// can->tx_frames[i].tscv_hi = 0x8000-1;
 		}
+
 	}
 
 	m_can_init_begin(CAN0);
@@ -661,16 +668,17 @@ static void tusb_device_task(void* param);
 static void can_usb_task(void* param);
 static void can_poll_task(void* param);
 
+#define LED_BURST_DURATION_MS 8
 
 #if HWREV == 1
 #define USB_TRAFFIC_LED LED_DEBUG
-#define USB_TRAFFIC_DO_LED led_burst(LED_ORANGE1, 8)
+#define USB_TRAFFIC_DO_LED led_burst(LED_ORANGE1, LED_BURST_DURATION_MS)
 #define POWER_LED LED_RED1
 #define CAN0_TRAFFIC_LED LED_GREEN1
 #define CAN1_TRAFFIC_LED LED_GREEN2
 
 #else // HWREV > 1
-#define USB_TRAFFIC_DO_LED led_burst(LED_DEBUG_3, 8)
+#define USB_TRAFFIC_DO_LED led_burst(LED_DEBUG_3, LED_BURST_DURATION_MS)
 #define POWER_LED LED_DEBUG_0
 #define CAN0_TRAFFIC_LED LED_DEBUG_1
 #define CAN1_TRAFFIC_LED LED_DEBUG_2
@@ -816,7 +824,7 @@ static inline void can_reset_state(uint8_t index)
 	can->int_prev_bus_state = 0;
 	can->int_comm_flags = 0;
 	can->int_prev_psr_reg = 0;
-
+	__atomic_thread_fence(__ATOMIC_RELEASE); // rx_lost
 
 
 	// clear tx buffers
@@ -1245,7 +1253,7 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
-	led_burst(can->led_traffic, 8);
+	// led_burst(can->led_traffic, LED_BURST_DURATION_MS);
 
 
 	const uint8_t rx_bank = usb_can->rx_bank;
@@ -1947,7 +1955,7 @@ static void can_usb_task(void *param)
 			continue;
 		}
 
-		led_burst(can->led_traffic, 8);
+		led_burst(can->led_traffic, LED_BURST_DURATION_MS);
 		send_can_status = 1;
 
 		while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
@@ -1957,14 +1965,14 @@ static void can_usb_task(void *param)
 
 			// loop
 			{
-				uint32_t ts = __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE);
-				if ((ts >> 16) != (rx_ts_last >> 16)) {
-					rx_ts_last = 0;
-				}
+				// uint32_t ts = __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE);
+				// if (TS_HI(ts) - TS_HI(rx_ts_last) > 0x7FFFFFFF) {
+				// 	rx_ts_last = ts - 0x40000000;
+				// }
 
-				if ((ts >> 16) != (tx_ts_last >> 16)) {
-					tx_ts_last = 0;
-				}
+				// if (TS_HI(ts) - TS_HI(tx_ts_last) > 0x7FFFFFFF) {
+				// 	rx_ts_last = ts - 0x40000000;
+				// }
 			}
 
 
@@ -1995,14 +2003,6 @@ static void can_usb_task(void *param)
 					// LOG("status ts %lu\n", ts);
 					uint32_t us = can_bittime_to_us(can, ts);
 					CAN_ECR_Type ecr = can->m_can->ECR;
-
-					// if (ts >= rx_ts_last + 65536) {
-					// 	rx_ts_last = ts;
-					// }
-
-					// if (ts >= tx_ts_last + 65536) {
-					// 	tx_ts_last = ts;
-					// }
 
 
 					msg->id = SC_MSG_CAN_STATUS;
@@ -2135,7 +2135,7 @@ static void can_usb_task(void *param)
 					ts |= r1.bit.RXTS;
 
 					uint32_t delta = ts - rx_ts_last;
-					bool rx_ts_ok = delta <= 0x7FFFFFFF;
+					bool rx_ts_ok = delta <= 0x3FFFFFFF;
 					if (unlikely(!rx_ts_ok)) {
 						taskDISABLE_INTERRUPTS();
 						// m_can_init_begin(can);
@@ -2218,7 +2218,7 @@ static void can_usb_task(void *param)
 
 					// bool tx_ts_ok = ts >= tx_ts_last || (TS_HI(tx_ts_last) == 0xffff && TS_HI(ts) == 0);
 					uint32_t delta = ts - tx_ts_last;
-					bool tx_ts_ok = delta <= 0x7FFFFFFF;
+					bool tx_ts_ok = delta <= 0x3FFFFFFF;
 					if (unlikely(!tx_ts_ok)) {
 						taskDISABLE_INTERRUPTS();
 						// m_can_init_begin(can);
@@ -2309,6 +2309,11 @@ static bool can_poll(uint8_t index)
 	if (can->m_can->CCCR.bit.INIT) {
 		can->task_poll_tscv_lo = 0;
 		can->task_poll_tscv_hi = 0;
+		can->rx_get_index = 0;
+		can->rx_put_index = 0;
+		can->tx_get_index = 0;
+		can->tx_put_index = 0;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
 		return false;
 	}
 
@@ -2446,10 +2451,6 @@ static void can_poll_task(void *param)
 	(void)param;
 
 	LOG("can poll task start\n", index);
-
-	for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
-		__atomic_store_n(&cans.can[i].sync_tscv, 0, __ATOMIC_RELEASE);
-	}
 
 	while (42) {
 		bool sleep = true;
