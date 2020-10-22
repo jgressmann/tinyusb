@@ -2084,12 +2084,15 @@ static void can_usb_task(void *param)
 
 			uint8_t rx_put_index = __atomic_load_n(&can->rx_put_index, __ATOMIC_ACQUIRE);
 			if (can->rx_get_index != rx_put_index) {
-				bus_activity_tc = xTaskGetTickCount();
-				// SC_DEBUG_ASSERT(rx_frame_index < CAN_RX_FIFO_SIZE);
-
 				__atomic_thread_fence(__ATOMIC_ACQUIRE);
+				uint8_t rx_count = rx_put_index - can->rx_get_index;
+				if (unlikely(rx_count > CAN_RX_FIFO_SIZE)) {
+					LOG("ch%u rx count %u\n", index, rx_count);
+					SC_ASSERT(rx_put_index - can->rx_get_index <= CAN_RX_FIFO_SIZE);
+				}
 
-				uint8_t get_index = can->rx_get_index;
+				bus_activity_tc = xTaskGetTickCount();
+				uint8_t get_index = can->rx_get_index & (CAN_RX_FIFO_SIZE-1);
 				uint8_t bytes = sizeof(struct sc_msg_can_rx);
 				CAN_RXF0E_0_Type r0 = can->rx_frames[get_index].R0;
 				CAN_RXF0E_1_Type r1 = can->rx_frames[get_index].R1;
@@ -2165,7 +2168,7 @@ static void can_usb_task(void *param)
 					SC_DEBUG_ASSERT(out_ptr <= out_end);
 					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 
-					__atomic_store_n(&can->rx_get_index, (can->rx_get_index+1) & (CAN_RX_FIFO_SIZE-1), __ATOMIC_RELEASE);
+					__atomic_store_n(&can->rx_get_index, can->rx_get_index+1, __ATOMIC_RELEASE);
 				} else {
 					if (sc_can_bulk_in_ep_ready(index)) {
 						done = false;
@@ -2179,9 +2182,10 @@ static void can_usb_task(void *param)
 
 			uint8_t tx_put_index = __atomic_load_n(&can->tx_put_index, __ATOMIC_ACQUIRE);
 			if (can->tx_get_index != tx_put_index) {
+				SC_ASSERT(tx_put_index - can->tx_get_index <= CAN_TX_FIFO_SIZE);
+
 				bus_activity_tc = xTaskGetTickCount();
-				uint8_t get_index = can->tx_get_index;
-				SC_DEBUG_ASSERT(can->tx_get_index < CAN_TX_FIFO_SIZE);
+				uint8_t get_index = can->tx_get_index & (CAN_TX_FIFO_SIZE-1);
 				uint8_t bytes = sizeof(struct sc_msg_can_txr);
 
 				if (out_end - out_ptr >= bytes) {
@@ -2240,7 +2244,7 @@ static void can_usb_task(void *param)
 
 					// LOG("2\n");
 
-					__atomic_store_n(&can->tx_get_index, (can->tx_get_index+1) & (CAN_TX_FIFO_SIZE-1), __ATOMIC_RELEASE);
+					__atomic_store_n(&can->tx_get_index, can->tx_get_index+1, __ATOMIC_RELEASE);
 					SC_ASSERT(can->tx_available < CAN_TX_FIFO_SIZE);
 					++can->tx_available;
 					// LOG("3\n");
@@ -2330,7 +2334,6 @@ static bool can_poll(uint8_t index)
 		for (uint8_t i = 0, gio = can->m_can->RXF0S.bit.F0GI; i < count; ++i) {
 			get_index = (gio + count - 1 - i) & (CAN_RX_FIFO_SIZE-1);
 			// LOG("ch%u ts rx count=%u gi=%u\n", index, count, get_index);
-			SC_DEBUG_ASSERT(get_index < CAN_RX_FIFO_SIZE);
 
 			uint16_t rx_lo = can->rx_fifo[get_index].R1.bit.RXTS;
 			if (rx_lo > rx_prev_lo) {
@@ -2345,19 +2348,23 @@ static bool can_poll(uint8_t index)
 		// forward loop stores frames and notifies usb task
 		for (uint8_t i = 0, gio = can->m_can->RXF0S.bit.F0GI; i < count; ++i) {
 			get_index = (gio + i) & (CAN_RX_FIFO_SIZE-1);
-			SC_DEBUG_ASSERT(get_index < CAN_RX_FIFO_SIZE);
 
-			uint8_t target_put_index = (can->rx_put_index + 1)  & (CAN_RX_FIFO_SIZE-1);
-			if (unlikely(target_put_index == __atomic_load_n(&can->rx_get_index, __ATOMIC_ACQUIRE))) {
+			uint8_t rx_get_index = __atomic_load_n(&can->rx_get_index, __ATOMIC_ACQUIRE);
+			uint8_t used = can->rx_put_index - rx_get_index;
+			SC_ASSERT(used <= CAN_RX_FIFO_SIZE);
+
+			if (unlikely(used == CAN_RX_FIFO_SIZE)) {
 				__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
 			} else {
-				can->rx_frames[target_put_index].R0 = can->rx_fifo[get_index].R0;
-				can->rx_frames[target_put_index].R1 = can->rx_fifo[get_index].R1;
-				can->rx_frames[target_put_index].tscv_hi = tscv_his[get_index];
-				if (likely(!can->rx_frames[target_put_index].R0.bit.RTR)) {
-					uint8_t can_frame_len = dlc_to_len(can->rx_frames[target_put_index].R1.bit.DLC);
+				uint8_t target_put_index = can->rx_put_index + 1;
+				uint8_t put_index = target_put_index & (CAN_RX_FIFO_SIZE-1);
+				can->rx_frames[put_index].R0 = can->rx_fifo[get_index].R0;
+				can->rx_frames[put_index].R1 = can->rx_fifo[get_index].R1;
+				can->rx_frames[put_index].tscv_hi = tscv_his[get_index];
+				if (likely(!can->rx_frames[put_index].R0.bit.RTR)) {
+					uint8_t can_frame_len = dlc_to_len(can->rx_frames[put_index].R1.bit.DLC);
 					if (likely(can_frame_len)) {
-						memcpy(can->rx_frames[target_put_index].data, can->rx_fifo[get_index].data, can_frame_len);
+						memcpy(can->rx_frames[put_index].data, can->rx_fifo[get_index].data, can_frame_len);
 					}
 				}
 
@@ -2385,7 +2392,6 @@ static bool can_poll(uint8_t index)
 		for (uint8_t i = 0, gio = can->m_can->TXEFS.bit.EFGI; i < count; ++i) {
 			get_index = (gio + count - 1 - i) & (CAN_TX_FIFO_SIZE-1);
 			// LOG("ch%u poll tx count=%u gi=%u\n", index, count, get_index);
-			SC_DEBUG_ASSERT(get_index < CAN_TX_FIFO_SIZE);
 
 			uint16_t tx_lo = can->tx_event_fifo[get_index].T1.bit.TXTS;
 			if (tx_lo > tx_prev_lo) {
@@ -2400,16 +2406,15 @@ static bool can_poll(uint8_t index)
 		// forward loop stores frames and notifies usb task
 		for (uint8_t i = 0, gio = can->m_can->TXEFS.bit.EFGI; i < count; ++i) {
 			get_index = (gio + i) & (CAN_TX_FIFO_SIZE-1);
-			SC_DEBUG_ASSERT(get_index < CAN_TX_FIFO_SIZE);
 
-			uint8_t target_put_index = (can->tx_put_index + 1)  & (CAN_TX_FIFO_SIZE-1);
-			SC_DEBUG_ASSERT(target_put_index < CAN_TX_FIFO_SIZE);
+			uint8_t target_put_index = (can->tx_put_index + 1);
+			uint8_t put_index = target_put_index & (CAN_TX_FIFO_SIZE-1);
 			// if (unlikely(target_put_index == can->rx_get_index)) {
 			// 	__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
 			// } else {
-				can->tx_frames[target_put_index].T0 = can->tx_event_fifo[get_index].T0;
-				can->tx_frames[target_put_index].T1 = can->tx_event_fifo[get_index].T1;
-				can->tx_frames[target_put_index].tscv_hi = tscv_his[get_index];
+				can->tx_frames[put_index].T0 = can->tx_event_fifo[get_index].T0;
+				can->tx_frames[put_index].T1 = can->tx_event_fifo[get_index].T1;
+				can->tx_frames[put_index].tscv_hi = tscv_his[get_index];
 
 				//__atomic_store_n(&can->tx_put_index, target_put_index, __ATOMIC_RELEASE);
 				can->tx_put_index = target_put_index;
