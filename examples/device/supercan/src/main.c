@@ -179,6 +179,7 @@ struct can {
 	uint16_t tx_dropped;
 	uint16_t task_poll_tscv_hi;
 	uint16_t task_poll_tscv_lo;
+	uint16_t seq_no;
 	uint8_t nmbt_sjw;
 	uint8_t nmbt_tseg2;
 	uint8_t dtbt_brp;
@@ -824,8 +825,8 @@ static inline void can_reset_state(uint8_t index)
 	can->int_prev_bus_state = 0;
 	can->int_comm_flags = 0;
 	can->int_prev_psr_reg = 0;
+	can->seq_no = 0;
 	__atomic_thread_fence(__ATOMIC_RELEASE); // rx_lost
-
 
 	// clear tx buffers
 	while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
@@ -959,6 +960,7 @@ static void sc_can_bulk_in_submit(uint8_t index, char const *func)
 		case SC_MSG_CAN_RX:
 		case SC_MSG_CAN_TXR:
 		case SC_MSG_CAN_ERROR:
+		case SC_MSG_CAN_SEQ:
 			break;
 		default:
 			LOG("ch%u %s msg offset %u non-device msg id %#02x\n", index, func, ptr - sptr, hdr->id);
@@ -1986,7 +1988,18 @@ static void can_usb_task(void *param)
 			out_ptr = out_beg + usb_can->tx_offsets[usb_can->tx_bank];
 			SC_ASSERT(out_ptr <= out_end);
 
+			if (out_ptr == out_beg) {
+				uint8_t bytes = sizeof(struct sc_msg_can_seq);
+				struct sc_msg_can_seq *msg = (struct sc_msg_can_seq *)out_ptr;
+				out_ptr += bytes;
 
+				msg->id = SC_MSG_CAN_SEQ;
+				msg->len = sizeof(*msg);
+				msg->seq = ++can->seq_no;
+
+				SC_DEBUG_ASSERT(out_ptr <= out_end);
+				usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
+			}
 
 			if (send_can_status) {
 				uint8_t bytes = sizeof(struct sc_msg_can_status);
@@ -2021,7 +2034,7 @@ static void can_usb_task(void *param)
 					msg->tx_fifo_size = CAN_TX_FIFO_SIZE - can->m_can->TXFQS.bit.TFFL;
 					msg->rx_fifo_size = can->m_can->RXF0S.bit.F0FL;
 
-					SC_ASSERT(out_ptr <= out_end);
+					SC_DEBUG_ASSERT(out_ptr <= out_end);
 					usb_can->tx_offsets[usb_can->tx_bank] = out_ptr - out_beg;
 				} else {
 					if (sc_can_bulk_in_ep_ready(index)) {
