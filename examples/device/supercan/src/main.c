@@ -171,6 +171,7 @@ struct can {
 	uint32_t nm_bittime_us;
 	uint32_t int_prev_psr_reg;
 	uint32_t sync_tscv;
+	// uint32_t tx_slots_used;
 	uint16_t nmbt_brp;
 	uint16_t nmbt_tseg1;
 	uint16_t rx_lost;
@@ -190,10 +191,10 @@ struct can {
 	uint8_t led_status_red;
 	uint8_t led_traffic;
 	uint8_t tx_available;
-	uint8_t rx_get_index;
-	uint8_t rx_put_index;
-	uint8_t tx_get_index;
-	uint8_t tx_put_index;
+	uint8_t rx_get_index; // NOT an index, uses full range of type
+	uint8_t rx_put_index; // NOT an index, uses full range of type
+	uint8_t tx_get_index; // NOT an index, uses full range of type
+	uint8_t tx_put_index; // NOT an index, uses full range of type
 	bool enabled;
 	bool desync;
 };
@@ -1319,6 +1320,9 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 				can->tx_fifo[put_index].T1.bit.FDF = (tmsg->flags & SC_CAN_FRAME_FLAG_FDF) == SC_CAN_FRAME_FLAG_FDF;
 				can->tx_fifo[put_index].T1.bit.BRS = (tmsg->flags & SC_CAN_FRAME_FLAG_BRS) == SC_CAN_FRAME_FLAG_BRS;
 				can->tx_fifo[put_index].T1.bit.MM = tmsg->track_id;
+
+				// SC_ASSERT(!(can->tx_slots_used & (UINT32_C(1) << tmsg->track_id)));
+				// can->tx_slots_used |= UINT32_C(1) << tmsg->track_id;
 				// LOG("in MM %u\n", tmsg->track_id);
 
 				if (likely(!(tmsg->flags & SC_CAN_FRAME_FLAG_RTR))) {
@@ -2202,8 +2206,11 @@ static void can_usb_task(void *param)
 					msg->id = SC_MSG_CAN_TXR;
 					msg->len = bytes;
 					msg->track_id = t1.bit.MM;
-					SC_ASSERT(t1.bit.MM < CAN_TX_FIFO_SIZE);
+
 					// LOG("out MM %u\n", msg->track_id);
+					// SC_ASSERT(can->tx_slots_used & (UINT32_C(1) << msg->track_id));
+					// can->tx_slots_used &= ~(UINT32_C(1) << msg->track_id);
+
 
 					uint32_t ts = can->tx_frames[get_index].tscv_hi;
 					ts <<= M_CAN_TS_COUNTER_BITS;
@@ -2356,8 +2363,7 @@ static bool can_poll(uint8_t index)
 			if (unlikely(used == CAN_RX_FIFO_SIZE)) {
 				__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
 			} else {
-				uint8_t target_put_index = can->rx_put_index + 1;
-				uint8_t put_index = target_put_index & (CAN_RX_FIFO_SIZE-1);
+				uint8_t put_index = can->rx_put_index & (CAN_RX_FIFO_SIZE-1);
 				can->rx_frames[put_index].R0 = can->rx_fifo[get_index].R0;
 				can->rx_frames[put_index].R1 = can->rx_fifo[get_index].R1;
 				can->rx_frames[put_index].tscv_hi = tscv_his[get_index];
@@ -2368,7 +2374,7 @@ static bool can_poll(uint8_t index)
 					}
 				}
 
-				can->rx_put_index = target_put_index;
+				++can->rx_put_index;
 
 				xTaskNotifyGive(can->usb_task_handle);
 			}
@@ -2407,17 +2413,17 @@ static bool can_poll(uint8_t index)
 		for (uint8_t i = 0, gio = can->m_can->TXEFS.bit.EFGI; i < count; ++i) {
 			get_index = (gio + i) & (CAN_TX_FIFO_SIZE-1);
 
-			uint8_t target_put_index = (can->tx_put_index + 1);
-			uint8_t put_index = target_put_index & (CAN_TX_FIFO_SIZE-1);
+			uint8_t put_index = can->tx_put_index & (CAN_TX_FIFO_SIZE-1);
 			// if (unlikely(target_put_index == can->rx_get_index)) {
 			// 	__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
 			// } else {
 				can->tx_frames[put_index].T0 = can->tx_event_fifo[get_index].T0;
 				can->tx_frames[put_index].T1 = can->tx_event_fifo[get_index].T1;
 				can->tx_frames[put_index].tscv_hi = tscv_his[get_index];
+				// LOG("ch%u tx place MM %u @ index %u\n", index, can->tx_frames[put_index].T1.bit.MM, put_index);
 
 				//__atomic_store_n(&can->tx_put_index, target_put_index, __ATOMIC_RELEASE);
-				can->tx_put_index = target_put_index;
+				++can->tx_put_index;
 			// }
 
 			xTaskNotifyGive(can->usb_task_handle);
