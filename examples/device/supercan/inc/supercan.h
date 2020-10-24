@@ -93,6 +93,7 @@ extern "C" {
 #define SC_MSG_CAN_TXR          0x23    ///< Device -> Host. CAN frame transmission receipt.
 #define SC_MSG_CAN_ERROR        0x24    ///< Device -> Host. CAN frame error.
 #define SC_MSG_CAN_SEQ          0x25    ///< Device -> Host. CAN sequence number.
+#define SC_MSG_CAN_NOP          0x26    ///< Device -> Host. Used to fill URB to endpoint transfer size
 
 
 #define SC_MSG_USER_OFFSET      0x80    ///< Custom device messages
