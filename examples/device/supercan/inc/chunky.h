@@ -93,7 +93,7 @@ enum {
 #undef chunky_assert_chunk_size_fits_header
 };
 
-#define CHUNKY_WRITER CHUNKY_JOIN(CHUNKY_PREFIX, _writer)
+#define chunky_writer CHUNKY_JOIN(CHUNKY_PREFIX, _writer)
 typedef struct CHUNKY_WRITER {
     uint8_t *hdr;
     uint8_t *buf_ptr;
@@ -101,18 +101,18 @@ typedef struct CHUNKY_WRITER {
     CHUNKY_BUFFER_SIZE_TYPE buf_available;
     CHUNKY_CHUNK_SIZE_TYPE seq_no;
     CHUNKY_CHUNK_SIZE_TYPE len;
-} CHUNKY_WRITER;
+} chunky_writer;
 
 /******************************************************************************/
 
-#define CHUNKY_READER CHUNKY_JOIN(CHUNKY_PREFIX, _reader)
+#define chunky_reader CHUNKY_JOIN(CHUNKY_PREFIX, _reader)
 typedef struct CHUNKY_READER {
     CHUNKY_CHUNK_SIZE_TYPE seq_no;
-} CHUNKY_READER;
+} chunky_reader;
 
 
 #define chunky_reader_init CHUNKY_JOIN(CHUNKY_PREFIX, _reader_init)
-static inline void chunky_reader_init(CHUNKY_READER *t)
+static inline void chunky_reader_init(chunky_reader *t)
 {
     CHUNKY_ASSERT(t);
 
@@ -120,7 +120,7 @@ static inline void chunky_reader_init(CHUNKY_READER *t)
 }
 
 #define chunky_reader_set_seq_no CHUNKY_JOIN(CHUNKY_PREFIX, _reader_set_seq_no)
-static inline void chunky_reader_set_seq_no(CHUNKY_READER *t, CHUNKY_CHUNK_SIZE_TYPE value)
+static inline void chunky_reader_set_seq_no(chunky_reader *t, CHUNKY_CHUNK_SIZE_TYPE value)
 {
     CHUNKY_ASSERT(t);
 
@@ -130,7 +130,7 @@ static inline void chunky_reader_set_seq_no(CHUNKY_READER *t, CHUNKY_CHUNK_SIZE_
 
 #define chunky_reader_chunk_process CHUNKY_JOIN(CHUNKY_PREFIX, _reader_chunk_process)
 static inline int chunky_reader_chunk_process(
-        CHUNKY_READER *t,
+        chunky_reader *t,
         uint8_t * in_ptr,
         uint8_t ** out_ptr,
         CHUNKY_CHUNK_SIZE_TYPE * out_size)
@@ -163,7 +163,7 @@ static inline int chunky_reader_chunk_process(
 /******************************************************************************/
 
 #define chunky_writer_init CHUNKY_JOIN(CHUNKY_PREFIX, _writer_init)
-static inline void chunky_writer_init(CHUNKY_WRITER *t)
+static inline void chunky_writer_init(chunky_writer *t)
 {
     CHUNKY_ASSERT(t);
 
@@ -172,7 +172,7 @@ static inline void chunky_writer_init(CHUNKY_WRITER *t)
 }
 
 #define chunky_writer_set CHUNKY_JOIN(CHUNKY_PREFIX, _writer_set)
-static inline void chunky_writer_set(CHUNKY_WRITER *t, void* ptr, CHUNKY_BUFFER_SIZE_TYPE size)
+static inline void chunky_writer_set(chunky_writer *t, void* ptr, CHUNKY_BUFFER_SIZE_TYPE size)
 {
     CHUNKY_ASSERT(t);
     CHUNKY_ASSERT(ptr);
@@ -189,7 +189,7 @@ static inline void chunky_writer_set(CHUNKY_WRITER *t, void* ptr, CHUNKY_BUFFER_
 }
 
 #define chunky_writer_available CHUNKY_JOIN(CHUNKY_PREFIX, _writer_available)
-static inline CHUNKY_BUFFER_SIZE_TYPE chunky_writer_available(CHUNKY_WRITER const *t)
+static inline CHUNKY_BUFFER_SIZE_TYPE chunky_writer_available(chunky_writer const *t)
 {
     CHUNKY_ASSERT(t);
 
@@ -197,7 +197,7 @@ static inline CHUNKY_BUFFER_SIZE_TYPE chunky_writer_available(CHUNKY_WRITER cons
 }
 
 #define chunky_writer_available CHUNKY_JOIN(CHUNKY_PREFIX, _writer_available)
-static inline bool chunky_writer_any(CHUNKY_WRITER const *t)
+static inline bool chunky_writer_any(chunky_writer const *t)
 {
     CHUNKY_ASSERT(t);
     CHUNKY_ASSERT(t->buf_ptr);
@@ -211,7 +211,7 @@ static
 inline
 CHUNKY_BUFFER_SIZE_TYPE
 chunky_writer_write(
-        CHUNKY_WRITER *t,
+        chunky_writer *t,
         void const * _ptr,
         CHUNKY_CHUNK_SIZE_TYPE bytes)
 {
@@ -259,7 +259,7 @@ static
 inline
 void*
 chunky_writer_chunk_reserve(
-        CHUNKY_WRITER *t,
+        chunky_writer *t,
         CHUNKY_CHUNK_SIZE_TYPE bytes)
 {
     uint8_t *result = NULL;
@@ -294,7 +294,7 @@ chunky_writer_chunk_reserve(
 static
 inline
 CHUNKY_BUFFER_SIZE_TYPE
-chunky_writer_finalize(CHUNKY_WRITER *t)
+chunky_writer_finalize(chunky_writer *t)
 {
     CHUNKY_ASSERT(t);
     CHUNKY_ASSERT(t->buf_ptr);
@@ -310,6 +310,20 @@ chunky_writer_finalize(CHUNKY_WRITER *t)
 
     return t->hdr - t->buf_ptr;
 }
+
+
+#undef chunky_chunk_hdr
+#undef chunky_reader
+#undef chunky_reader_init
+#undef chunky_reader_set_seq_no
+#undef chunky_reader_chunk_process
+#undef chunky_writer
+#undef chunky_writer_init
+#undef chunky_writer_set
+#undef chunky_writer_available
+#undef chunky_writer_write
+#undef chunky_writer_chunk_reserve
+#undef chunky_writer_finalize
 
 
 
