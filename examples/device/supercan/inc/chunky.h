@@ -1,0 +1,319 @@
+/* The MIT License (MIT)
+ *
+ * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
+
+
+#include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define CHUNKY_JOIN2(x, y) x##y
+#define CHUNKY_JOIN(x, y) CHUNKY_JOIN2(x, y)
+
+
+#ifndef CHUNKY_CHUNK_SIZE
+#   error Define CHUNKY_CHUNK_SIZE
+#endif
+
+#ifndef CHUNKY_CHUNK_SIZE_TYPE
+#   define CHUNKY_CHUNK_SIZE_TYPE size_t
+#endif
+
+#ifndef CHUNKY_BUFFER_SIZE_TYPE
+#   define CHUNKY_BUFFER_SIZE_TYPE size_t
+#endif
+
+#ifndef CHUNKY_HEADER_PADDING
+#   define CHUNKY_HEADER_PADDING 0
+#endif
+
+#ifndef CHUNKY_PREFIX
+#   define CHUNKY_PREFIX chunky
+#endif
+
+#ifndef CHUNKY_ASSERT
+#   define CHUNKY_ASSERT assert
+#endif
+
+#ifndef CHUNKY_LIKELY
+#   define CHUNKY_LIKELY(x) x
+#endif
+
+#ifndef CHUNKY_UNLIKELY
+#   define CHUNKY_UNLIKELY(x) x
+#endif
+
+#ifndef CHUNKY_BYTESWAP
+#   define CHUNKY_BYTESWAP(x) x
+#endif
+
+enum {
+    CHUNKYE_NONE = 0,
+    CHUNKYE_SEQ = 1,    //< sequence violation
+};
+
+
+#define chunky_chunk_hdr CHUNKY_JOIN(CHUNKY_PREFIX, _chunk_hdr)
+typedef struct chunky_chunk_hdr {
+    CHUNKY_CHUNK_SIZE_TYPE seq_no;
+    CHUNKY_CHUNK_SIZE_TYPE len;
+#if CHUNKY_HEADER_PADDING > 0
+    uint8_t padding[CHUNKY_HEADER_PADDING];
+#endif
+} chunky_chunk_hdr;
+
+enum {
+#define chunky_assert_chunk_size_fits_header CHUNKY_JOIN(CHUNKY_PREFIX, _assert_chunk_size_fits_header)
+    chunky_assert_chunk_size_fits_header = sizeof(int[sizeof(struct chunky_chunk_hdr) <= CHUNKY_CHUNK_SIZE ? 1 : -1]),
+#undef chunky_assert_chunk_size_fits_header
+};
+
+#define CHUNKY_WRITER CHUNKY_JOIN(CHUNKY_PREFIX, _writer)
+typedef struct CHUNKY_WRITER {
+    uint8_t *hdr;
+    uint8_t *buf_ptr;
+    CHUNKY_BUFFER_SIZE_TYPE buf_capacity;
+    CHUNKY_BUFFER_SIZE_TYPE buf_available;
+    CHUNKY_CHUNK_SIZE_TYPE seq_no;
+    CHUNKY_CHUNK_SIZE_TYPE len;
+} CHUNKY_WRITER;
+
+/******************************************************************************/
+
+#define CHUNKY_READER CHUNKY_JOIN(CHUNKY_PREFIX, _reader)
+typedef struct CHUNKY_READER {
+    CHUNKY_CHUNK_SIZE_TYPE seq_no;
+} CHUNKY_READER;
+
+
+#define chunky_reader_init CHUNKY_JOIN(CHUNKY_PREFIX, _reader_init)
+static inline void chunky_reader_init(CHUNKY_READER *t)
+{
+    CHUNKY_ASSERT(t);
+
+    memset(t, 0, sizeof(*t));
+}
+
+#define chunky_reader_set_seq_no CHUNKY_JOIN(CHUNKY_PREFIX, _reader_set_seq_no)
+static inline void chunky_reader_set_seq_no(CHUNKY_READER *t, CHUNKY_CHUNK_SIZE_TYPE value)
+{
+    CHUNKY_ASSERT(t);
+
+    t->seq_no = value;
+}
+
+
+#define chunky_reader_chunk_process CHUNKY_JOIN(CHUNKY_PREFIX, _reader_chunk_process)
+static inline int chunky_reader_chunk_process(
+        CHUNKY_READER *t,
+        uint8_t * in_ptr,
+        uint8_t ** out_ptr,
+        CHUNKY_CHUNK_SIZE_TYPE * out_size)
+{
+    struct chunky_chunk_hdr const *hdr = NULL;
+    CHUNKY_CHUNK_SIZE_TYPE target_seq_no = 0;
+    CHUNKY_CHUNK_SIZE_TYPE buffer_seq_no = 0;
+
+    CHUNKY_ASSERT(t);
+    CHUNKY_ASSERT(in_ptr);
+    CHUNKY_ASSERT(out_ptr);
+    CHUNKY_ASSERT(out_size);
+
+    hdr = (struct chunky_chunk_hdr const *)in_ptr;
+    target_seq_no = t->seq_no + 1; // must be in size type
+    buffer_seq_no = CHUNKY_BYTESWAP(hdr->seq_no);
+    if (CHUNKY_UNLIKELY(target_seq_no != buffer_seq_no)) {
+        return CHUNKYE_SEQ;
+    }
+
+    t->seq_no = target_seq_no;
+
+    *out_ptr = in_ptr + sizeof(chunky_chunk_hdr);
+    *out_size = CHUNKY_BYTESWAP(hdr->len);
+
+    return CHUNKYE_NONE;
+}
+
+
+/******************************************************************************/
+
+#define chunky_writer_init CHUNKY_JOIN(CHUNKY_PREFIX, _writer_init)
+static inline void chunky_writer_init(CHUNKY_WRITER *t)
+{
+    CHUNKY_ASSERT(t);
+
+    memset(t, 0, sizeof(*t));
+    t->seq_no = 1;
+}
+
+#define chunky_writer_set CHUNKY_JOIN(CHUNKY_PREFIX, _writer_set)
+static inline void chunky_writer_set(CHUNKY_WRITER *t, void* ptr, CHUNKY_BUFFER_SIZE_TYPE size)
+{
+    CHUNKY_ASSERT(t);
+    CHUNKY_ASSERT(ptr);
+    CHUNKY_ASSERT(size);
+    CHUNKY_ASSERT((size % CHUNKY_CHUNK_SIZE) == 0);
+
+
+    t->buf_ptr = (uint8_t*)ptr;
+    t->buf_capacity = size;
+    t->buf_available = size / CHUNKY_CHUNK_SIZE;
+    t->buf_available *=  CHUNKY_CHUNK_SIZE - sizeof(struct chunky_chunk_hdr);
+    t->hdr = t->buf_ptr;
+    t->len = 0;
+}
+
+#define chunky_writer_available CHUNKY_JOIN(CHUNKY_PREFIX, _writer_available)
+static inline CHUNKY_BUFFER_SIZE_TYPE chunky_writer_available(CHUNKY_WRITER const *t)
+{
+    CHUNKY_ASSERT(t);
+
+    return t->buf_available;
+}
+
+#define chunky_writer_available CHUNKY_JOIN(CHUNKY_PREFIX, _writer_available)
+static inline bool chunky_writer_any(CHUNKY_WRITER const *t)
+{
+    CHUNKY_ASSERT(t);
+    CHUNKY_ASSERT(t->buf_ptr);
+
+    return t->hdr > t->buf_ptr || t->len;
+}
+
+
+#define chunky_writer_write CHUNKY_JOIN(CHUNKY_PREFIX, _writer_write)
+static
+inline
+CHUNKY_BUFFER_SIZE_TYPE
+chunky_writer_write(
+        CHUNKY_WRITER *t,
+        void const * _ptr,
+        CHUNKY_CHUNK_SIZE_TYPE bytes)
+{
+    uint8_t const *ptr = (uint8_t const *)_ptr;
+
+    CHUNKY_ASSERT(t);
+    CHUNKY_ASSERT(t->buf_ptr);
+    CHUNKY_ASSERT(ptr);
+    CHUNKY_ASSERT(bytes);
+
+    if (t->buf_available < bytes) {
+        bytes = t->buf_available;
+    }
+
+    t->buf_available -= bytes;
+
+    for (CHUNKY_CHUNK_SIZE_TYPE left = bytes; left; ) {
+
+        CHUNKY_CHUNK_SIZE_TYPE chunk_available = CHUNKY_CHUNK_SIZE - sizeof(struct chunky_chunk_hdr) - t->len;
+        CHUNKY_CHUNK_SIZE_TYPE bytes_to_copy = left;
+        if (CHUNKY_LIKELY(left > chunk_available)) {
+            bytes_to_copy = chunk_available;
+        }
+
+        memcpy(t->hdr + sizeof(struct chunky_chunk_hdr) + t->len, ptr, bytes_to_copy);
+        left -= bytes_to_copy;
+        ptr += bytes_to_copy;
+        t->len += bytes_to_copy;
+
+        if (CHUNKY_CHUNK_SIZE == sizeof(struct chunky_chunk_hdr) + t->len) {
+            struct chunky_chunk_hdr *hdr = (struct chunky_chunk_hdr *)t->hdr;
+            hdr->len = CHUNKY_BYTESWAP(t->len);
+            hdr->seq_no = CHUNKY_BYTESWAP(t->seq_no);
+            t->hdr += CHUNKY_CHUNK_SIZE;
+            t->len = 0;
+            ++t->seq_no;
+        }
+    }
+
+    return bytes;
+}
+
+#define chunky_writer_chunk_reserve CHUNKY_JOIN(CHUNKY_PREFIX, _writer_chunk_reserve)
+static
+inline
+void*
+chunky_writer_chunk_reserve(
+        CHUNKY_WRITER *t,
+        CHUNKY_CHUNK_SIZE_TYPE bytes)
+{
+    uint8_t *result = NULL;
+    CHUNKY_BUFFER_SIZE_TYPE offset = 0;
+
+    CHUNKY_ASSERT(t);
+    CHUNKY_ASSERT(t->buf_ptr);
+    CHUNKY_ASSERT(bytes);
+
+
+    offset = sizeof(struct chunky_chunk_hdr) + t->len;
+
+    if (offset + bytes <= CHUNKY_CHUNK_SIZE) {
+        t->buf_available -= bytes;
+        result = t->hdr + offset;
+        t->len += bytes;
+        if (offset + bytes == CHUNKY_CHUNK_SIZE) {
+            struct chunky_chunk_hdr *hdr = (struct chunky_chunk_hdr *)t->hdr;
+
+            hdr->len = CHUNKY_BYTESWAP(t->len);
+            hdr->seq_no = CHUNKY_BYTESWAP(t->seq_no);
+            t->hdr += CHUNKY_CHUNK_SIZE;
+            t->len = 0;
+            ++t->seq_no;
+        }
+    }
+
+    return result;
+}
+
+#define chunky_writer_finalize CHUNKY_JOIN(CHUNKY_PREFIX, _writer_finalize)
+static
+inline
+CHUNKY_BUFFER_SIZE_TYPE
+chunky_writer_finalize(CHUNKY_WRITER *t)
+{
+    CHUNKY_ASSERT(t);
+    CHUNKY_ASSERT(t->buf_ptr);
+
+    if (t->len) {
+        struct chunky_chunk_hdr *hdr = (struct chunky_chunk_hdr *)t->hdr;
+        hdr->len = CHUNKY_BYTESWAP(t->len);
+        hdr->seq_no = CHUNKY_BYTESWAP(t->seq_no);
+        t->len = 0;
+        ++t->seq_no;
+        t->hdr += CHUNKY_CHUNK_SIZE;
+    }
+
+    return t->hdr - t->buf_ptr;
+}
+
+
+
+#ifdef __cplusplus
+}
+#endif
+
