@@ -42,3 +42,42 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg)
 	leds_on_unsafe();
 	while (1);
 }
+
+extern void sc_dump_mem(void const * _ptr, size_t count)
+{
+	char buf[8];
+	int chars = 0;
+	uint8_t const *ptr = (uint8_t const *)_ptr;
+
+	for (size_t i = 0; i < count; i += 16) {
+		// usnprintf doesn't support width or fill
+		chars = usnprintf(buf, sizeof(buf), "%X", (unsigned)i);
+
+		for (int i = chars; i < 3; ++i) {
+			board_uart_write("0", 1);
+		}
+
+		board_uart_write(buf, chars);
+		board_uart_write(" ", 1);
+		board_uart_write(" ", 1);
+
+		size_t end = i + 16;
+		if (end > count) {
+			end = count;
+		}
+
+		for (size_t j = i; j < end; ++j) {
+			chars = usnprintf(buf, sizeof(buf), "%X", ptr[j]);
+
+			for (int i = chars; i < 2; ++i) {
+				board_uart_write("0", 1);
+			}
+
+			board_uart_write(buf, chars);
+			board_uart_write(" ", 1);
+		}
+
+		board_uart_write("\n", 1);
+	}
+}
+

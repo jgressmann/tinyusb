@@ -66,3 +66,4 @@ extern char sc_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
 
 
 __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg);
+extern void sc_dump_mem(void const * _ptr, size_t count);
