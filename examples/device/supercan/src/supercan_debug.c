@@ -53,7 +53,7 @@ extern void sc_dump_mem(void const * _ptr, size_t count)
 		// usnprintf doesn't support width or fill
 		chars = usnprintf(buf, sizeof(buf), "%X", (unsigned)i);
 
-		for (int i = chars; i < 3; ++i) {
+		for (int k = chars; k < 3; ++k) {
 			board_uart_write("0", 1);
 		}
 
@@ -69,7 +69,7 @@ extern void sc_dump_mem(void const * _ptr, size_t count)
 		for (size_t j = i; j < end; ++j) {
 			chars = usnprintf(buf, sizeof(buf), "%X", ptr[j]);
 
-			for (int i = chars; i < 2; ++i) {
+			for (int k = chars; k < 2; ++k) {
 				board_uart_write("0", 1);
 			}
 
