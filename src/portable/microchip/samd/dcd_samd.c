@@ -224,6 +224,19 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * desc_edpt)
   return true;
 }
 
+bool dcd_auto_zlp (uint8_t rhport, uint8_t ep_addr, bool enabled)
+{
+  (void) rhport;
+
+  uint8_t const epnum = tu_edpt_number(ep_addr);
+  uint8_t const dir   = tu_edpt_dir(ep_addr);
+
+  UsbDeviceDescBank* bank = &sram_registers[epnum][dir];
+  bank->PCKSIZE.bit.AUTO_ZLP = enabled;
+
+  return true;
+}
+
 bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t total_bytes)
 {
   (void) rhport;

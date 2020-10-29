@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License (MIT)
  *
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
@@ -132,6 +132,9 @@ void dcd_edpt_stall       (uint8_t rhport, uint8_t ep_addr);
 
 // clear stall, data toggle is also reset to DATA0
 void dcd_edpt_clear_stall (uint8_t rhport, uint8_t ep_addr);
+
+// Try to enable hw auto zlp
+bool dcd_auto_zlp (uint8_t rhport, uint8_t ep_addr, bool enabled);
 
 //--------------------------------------------------------------------+
 // Event API (Implemented by device stack)
