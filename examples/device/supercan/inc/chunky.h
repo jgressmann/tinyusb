@@ -35,11 +35,6 @@ extern "C" {
 #define CHUNKY_JOIN2(x, y) x##y
 #define CHUNKY_JOIN(x, y) CHUNKY_JOIN2(x, y)
 
-
-#ifndef CHUNKY_CHUNK_SIZE
-#   error Define CHUNKY_CHUNK_SIZE
-#endif
-
 #ifndef CHUNKY_CHUNK_SIZE_TYPE
 #   define CHUNKY_CHUNK_SIZE_TYPE size_t
 #endif
@@ -68,15 +63,27 @@ extern "C" {
 #   define CHUNKY_UNLIKELY(x) x
 #endif
 
-#ifndef CHUNKY_BYTESWAP
-#   define CHUNKY_BYTESWAP(x) x
-#endif
-
 enum {
     CHUNKYE_NONE = 0,
     CHUNKYE_SEQ = 1,    //< sequence violation
 };
 
+#ifdef CHUNKY_BYTESWAP
+#define chunky_byteswap CHUNKY_JOIN(CHUNKY_PREFIX, _byteswap)
+typedef CHUNKY_CHUNK_SIZE_TYPE (*chunky_byteswap)(void* ctx, CHUNKY_CHUNK_SIZE_TYPE value);
+
+#define chunky_no_swap CHUNKY_JOIN(CHUNKY_PREFIX, _no_swap)
+static inline CHUNKY_CHUNK_SIZE_TYPE chunky_no_swap(void* ctx, CHUNKY_CHUNK_SIZE_TYPE value)
+{
+    (void)ctx;
+    return value;
+}
+
+#define CHUNKY_BYTESWAP_CALL(x) t->byteswap(t->ctx, x)
+
+#else
+#define CHUNKY_BYTESWAP_CALL(x) x
+#endif
 
 #define chunky_chunk_hdr CHUNKY_JOIN(CHUNKY_PREFIX, _chunk_hdr)
 typedef struct chunky_chunk_hdr {
@@ -87,36 +94,48 @@ typedef struct chunky_chunk_hdr {
 #endif
 } chunky_chunk_hdr;
 
-enum {
-#define chunky_assert_chunk_size_fits_header CHUNKY_JOIN(CHUNKY_PREFIX, _assert_chunk_size_fits_header)
-    chunky_assert_chunk_size_fits_header = sizeof(int[sizeof(struct chunky_chunk_hdr) <= CHUNKY_CHUNK_SIZE ? 1 : -1]),
-#undef chunky_assert_chunk_size_fits_header
-};
-
 #define chunky_writer CHUNKY_JOIN(CHUNKY_PREFIX, _writer)
 typedef struct CHUNKY_WRITER {
+#ifdef CHUNKY_BYTESWAP
+    void* ctx;
+    chunky_byteswap byteswap;
+#endif
     uint8_t *hdr;
     uint8_t *buf_ptr;
     CHUNKY_BUFFER_SIZE_TYPE buf_capacity;
     CHUNKY_BUFFER_SIZE_TYPE buf_available;
     CHUNKY_CHUNK_SIZE_TYPE seq_no;
     CHUNKY_CHUNK_SIZE_TYPE len;
+    CHUNKY_CHUNK_SIZE_TYPE chunk_size;
 } chunky_writer;
 
 /******************************************************************************/
 
 #define chunky_reader CHUNKY_JOIN(CHUNKY_PREFIX, _reader)
 typedef struct CHUNKY_READER {
+#ifdef CHUNKY_BYTESWAP
+    void* ctx;
+    chunky_byteswap byteswap;
+#endif
     CHUNKY_CHUNK_SIZE_TYPE seq_no;
 } chunky_reader;
 
 
 #define chunky_reader_init CHUNKY_JOIN(CHUNKY_PREFIX, _reader_init)
-static inline void chunky_reader_init(chunky_reader *t)
+static inline void chunky_reader_init(
+        chunky_reader *t
+#ifdef CHUNKY_BYTESWAP
+        , void* ctx, chunky_byteswap byteswap
+#endif
+        )
 {
     CHUNKY_ASSERT(t);
 
     memset(t, 0, sizeof(*t));
+#ifdef CHUNKY_BYTESWAP
+    t->ctx = ctx;
+    t->byteswap = byteswap ? byteswap : &chunky_no_swap;
+#endif
 }
 
 #define chunky_reader_set_seq_no CHUNKY_JOIN(CHUNKY_PREFIX, _reader_set_seq_no)
@@ -146,7 +165,8 @@ static inline int chunky_reader_chunk_process(
 
     hdr = (struct chunky_chunk_hdr const *)in_ptr;
     target_seq_no = t->seq_no + 1; // must be in size type
-    buffer_seq_no = CHUNKY_BYTESWAP(hdr->seq_no);
+    buffer_seq_no = CHUNKY_BYTESWAP_CALL(hdr->seq_no);
+
     if (CHUNKY_UNLIKELY(target_seq_no != buffer_seq_no)) {
         return CHUNKYE_SEQ;
     }
@@ -154,36 +174,51 @@ static inline int chunky_reader_chunk_process(
     t->seq_no = target_seq_no;
 
     *out_ptr = in_ptr + sizeof(chunky_chunk_hdr);
-    *out_size = CHUNKY_BYTESWAP(hdr->len);
+    *out_size = CHUNKY_BYTESWAP_CALL(hdr->len);
 
     return CHUNKYE_NONE;
 }
 
-
 /******************************************************************************/
 
 #define chunky_writer_init CHUNKY_JOIN(CHUNKY_PREFIX, _writer_init)
-static inline void chunky_writer_init(chunky_writer *t)
+static inline void chunky_writer_init(
+        chunky_writer *t,
+        CHUNKY_CHUNK_SIZE_TYPE chunk_size
+#ifdef CHUNKY_BYTESWAP
+        ,void* ctx, chunky_byteswap byteswap
+#endif
+        )
 {
     CHUNKY_ASSERT(t);
+    CHUNKY_ASSERT(chunk_size >= sizeof(struct chunky_chunk_hdr));
 
     memset(t, 0, sizeof(*t));
     t->seq_no = 1;
+    t->chunk_size = chunk_size;
+#ifdef CHUNKY_BYTESWAP
+    t->ctx = ctx;
+    t->byteswap = byteswap ? byteswap : &chunky_no_swap;
+#endif
 }
 
 #define chunky_writer_set CHUNKY_JOIN(CHUNKY_PREFIX, _writer_set)
-static inline void chunky_writer_set(chunky_writer *t, void* ptr, CHUNKY_BUFFER_SIZE_TYPE size)
+static inline void chunky_writer_set(
+        chunky_writer *t,
+        void* ptr,
+        CHUNKY_BUFFER_SIZE_TYPE buffer_size)
 {
     CHUNKY_ASSERT(t);
     CHUNKY_ASSERT(ptr);
-    CHUNKY_ASSERT(size);
-    CHUNKY_ASSERT((size % CHUNKY_CHUNK_SIZE) == 0);
+    CHUNKY_ASSERT(buffer_size);
+    CHUNKY_ASSERT(buffer_size >= t->chunk_size);
+    CHUNKY_ASSERT((buffer_size % t->chunk_size) == 0);
 
 
     t->buf_ptr = (uint8_t*)ptr;
-    t->buf_capacity = size;
-    t->buf_available = size / CHUNKY_CHUNK_SIZE;
-    t->buf_available *=  CHUNKY_CHUNK_SIZE - sizeof(struct chunky_chunk_hdr);
+    t->buf_capacity = buffer_size;
+    t->buf_available = buffer_size / t->chunk_size;
+    t->buf_available *=  t->chunk_size - sizeof(struct chunky_chunk_hdr);
     t->hdr = t->buf_ptr;
     t->len = 0;
 }
@@ -230,7 +265,7 @@ chunky_writer_write(
 
     for (CHUNKY_CHUNK_SIZE_TYPE left = bytes; left; ) {
 
-        CHUNKY_CHUNK_SIZE_TYPE chunk_available = CHUNKY_CHUNK_SIZE - sizeof(struct chunky_chunk_hdr) - t->len;
+        CHUNKY_CHUNK_SIZE_TYPE chunk_available = t->chunk_size - sizeof(struct chunky_chunk_hdr) - t->len;
         CHUNKY_CHUNK_SIZE_TYPE bytes_to_copy = left;
         if (CHUNKY_LIKELY(left > chunk_available)) {
             bytes_to_copy = chunk_available;
@@ -241,11 +276,11 @@ chunky_writer_write(
         ptr += bytes_to_copy;
         t->len += bytes_to_copy;
 
-        if (CHUNKY_CHUNK_SIZE == sizeof(struct chunky_chunk_hdr) + t->len) {
+        if (t->chunk_size == sizeof(struct chunky_chunk_hdr) + t->len) {
             struct chunky_chunk_hdr *hdr = (struct chunky_chunk_hdr *)t->hdr;
-            hdr->len = CHUNKY_BYTESWAP(t->len);
-            hdr->seq_no = CHUNKY_BYTESWAP(t->seq_no);
-            t->hdr += CHUNKY_CHUNK_SIZE;
+            hdr->len = CHUNKY_BYTESWAP_CALL(t->len);
+            hdr->seq_no = CHUNKY_BYTESWAP_CALL(t->seq_no);
+            t->hdr += t->chunk_size;
             t->len = 0;
             ++t->seq_no;
         }
@@ -272,16 +307,16 @@ chunky_writer_chunk_reserve(
 
     offset = sizeof(struct chunky_chunk_hdr) + t->len;
 
-    if (offset + bytes <= CHUNKY_CHUNK_SIZE) {
+    if (offset + bytes <= t->chunk_size) {
         t->buf_available -= bytes;
         result = t->hdr + offset;
         t->len += bytes;
-        if (offset + bytes == CHUNKY_CHUNK_SIZE) {
+        if (offset + bytes == t->chunk_size) {
             struct chunky_chunk_hdr *hdr = (struct chunky_chunk_hdr *)t->hdr;
 
-            hdr->len = CHUNKY_BYTESWAP(t->len);
-            hdr->seq_no = CHUNKY_BYTESWAP(t->seq_no);
-            t->hdr += CHUNKY_CHUNK_SIZE;
+            hdr->len = CHUNKY_BYTESWAP_CALL(t->len);
+            hdr->seq_no = CHUNKY_BYTESWAP_CALL(t->seq_no);
+            t->hdr += t->chunk_size;
             t->len = 0;
             ++t->seq_no;
         }
@@ -301,17 +336,21 @@ chunky_writer_finalize(chunky_writer *t)
 
     if (t->len) {
         struct chunky_chunk_hdr *hdr = (struct chunky_chunk_hdr *)t->hdr;
-        hdr->len = CHUNKY_BYTESWAP(t->len);
-        hdr->seq_no = CHUNKY_BYTESWAP(t->seq_no);
+
+        hdr->len = CHUNKY_BYTESWAP_CALL(t->len);
+        hdr->seq_no = CHUNKY_BYTESWAP_CALL(t->seq_no);
         t->len = 0;
         ++t->seq_no;
-        t->hdr += CHUNKY_CHUNK_SIZE;
+        t->hdr += t->chunk_size;;
     }
 
     return t->hdr - t->buf_ptr;
 }
 
+#undef CHUNKY_BYTESWAP_CALL
 
+#undef chunky_byteswap
+#undef chunky_no_swap
 #undef chunky_chunk_hdr
 #undef chunky_reader
 #undef chunky_reader_init
