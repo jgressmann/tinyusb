@@ -853,6 +853,7 @@ static inline void can_reset_state(uint8_t index)
 
 	// clear tx buffers
 	while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
+
 	for (size_t j = 0; j < TU_ARRAY_SIZE(usb_can->tx_buffers); ++j) {
 		usb_can->tx_offsets[j] = 0;
 		memset(usb_can->tx_buffers[j], 0, sizeof(usb_can->tx_buffers[j]));
@@ -1369,9 +1370,13 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 	usb_can->rx_bank = !usb_can->rx_bank;
 	(void)dcd_edpt_xfer(usb.port, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE);
 
+	if (unlikely(!xferred_bytes)) {
+		return;
+	}
+
 	while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
 
-	LOG("ch%u: rx %u bytes %u\n", index, (unsigned)(in_end - in_beg), xferred_bytes);
+	// LOG("ch%u: bulk out %u bytes\n", index, (unsigned)(in_end - in_beg));
 
 	while (in_ptr + SC_M1_EP_SIZE <= in_end) {
 		uint8_t * data_ptr = NULL;
@@ -1418,7 +1423,7 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 			struct sc_msg_header const *msg = (struct sc_msg_header const *)ptr;
 			if (ptr + msg->len > eptr) {
 				uint16_t left = (uint16_t)(eptr - ptr);
-				LOG("ch%u %s save %u bytes\n", index, left);
+				// LOG("ch%u save %u bytes\n", index, left);
 				if (sptr == usb_can->rx_reassembly_buffer) {
 					memmove(usb_can->rx_reassembly_buffer, eptr - left, left);
 				} else {
@@ -1440,8 +1445,7 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 			switch (msg->id) {
 			case SC_MSG_CAN_TX: {
-				uint32_t txts = __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE);
-				LOG("SC_MSG_CAN_TX %lx\n", txts);
+				// LOG("SC_MSG_CAN_TX %lx\n", __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE));
 				struct sc_msg_can_tx const *tmsg = (struct sc_msg_can_tx const *)msg;
 				if (unlikely(msg->len < sizeof(*tmsg))) {
 					LOG("ch%u ERROR: msg too short\n", index);
@@ -1528,7 +1532,9 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 			} break;
 
 			default:
-				TU_LOG2_MEM(msg, msg->len, 2);
+#if defined(SUPERCAN_DEBUG) && SUPERCAN_DEBUG
+				sc_dump_mem(msg, msg->len);
+#endif
 				break;
 			}
 		}
@@ -1798,7 +1804,7 @@ bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf,
 	SC_ASSERT(success_cmd);
 	SC_ASSERT(success_can);
 
-	dcd_auto_zlp(rhport, usb_can->pipe | 0x80, true);
+	// dcd_auto_zlp(rhport, usb_can->pipe | 0x80, true);
 
 	*p_length = 9+eps*7;
 
