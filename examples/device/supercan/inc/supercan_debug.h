@@ -43,24 +43,31 @@ extern char sc_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
 	} while (0)
 #	endif
 
-#	define SC_DEBUG_ASSERT(x) SC_ASSERT(x)
+#	define SC_DEBUG_ASSERT SC_ASSERT
 
 #else
 #	define LOG(...)
 #	define SC_DEBUG_ASSERT(...)
 #endif
 
+#define SC_DEBUG_JOIN2(x, y) x##y
+#define SC_DEBUG_JOIN(x, y) SC_DEBUG_JOIN2(x, y)
+
+#define SC_DEBUG_STR2(x) #x
+#define SC_DEBUG_STR(x) SC_DEBUG_STR2(x)
+
+
 #define SC_ASSERT(x) \
 	do { \
 		if (__builtin_expect(!(x), 0)) { \
-			sc_assert_failed("ASSERT FAILED: " #x "\n"); \
+			sc_assert_failed("ASSERT FAILED: " #x " " __FILE__ ":" SC_DEBUG_STR(__LINE__) "\n"); \
 		} \
 	} while (0)
 
 #define SC_ISR_ASSERT(x) \
 	do { \
 		if (__builtin_expect(!(x), 0)) { \
-			sc_assert_failed("ISR ASSERT FAILED: " #x "\n"); \
+			sc_assert_failed("ISR ASSERT FAILED: " #x " " __FILE__ ":" SC_DEBUG_STR(__LINE__) "\n"); \
 		} \
 	} while (0)
 
