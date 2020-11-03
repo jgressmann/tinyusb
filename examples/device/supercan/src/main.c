@@ -1540,7 +1540,7 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 		}
 	}
 
-	if (usb_can->tx_offsets[usb_can->tx_bank] > 0 && sc_can_bulk_in_ep_ready(index)) {
+	if (sc_can_bulk_in_ep_ready(index) && chunky_writer_any(&usb_can->w)) {
 		sc_can_bulk_in_submit(index, __func__);
 	}
 
