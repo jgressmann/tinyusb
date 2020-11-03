@@ -1501,7 +1501,6 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 					struct sc_msg_can_txr render_buffer;
 					struct sc_msg_can_txr* rep = NULL;
 					++can->tx_dropped;
-					SC_DEBUG_ASSERT(false);
 	send_txr:
 					if (chunky_writer_available(&usb_can->w) >= sizeof(*rep)) {
 						rep = chunky_writer_chunk_reserve(&usb_can->w, sizeof(*rep));
@@ -1804,7 +1803,9 @@ bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf,
 	SC_ASSERT(success_cmd);
 	SC_ASSERT(success_can);
 
-	// dcd_auto_zlp(rhport, usb_can->pipe | 0x80, true);
+	// Required to immediately send URBs when buffer size > endpoint size
+	// and transfers are multiple of enpoint size.
+	dcd_auto_zlp(rhport, usb_can->pipe | 0x80, true);
 
 	*p_length = 9+eps*7;
 
