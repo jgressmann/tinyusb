@@ -231,7 +231,7 @@ static inline CHUNKY_BUFFER_SIZE_TYPE chunky_writer_available(chunky_writer cons
     return t->buf_available;
 }
 
-#define chunky_writer_available CHUNKY_JOIN(CHUNKY_PREFIX, _writer_available)
+#define chunky_writer_any CHUNKY_JOIN(CHUNKY_PREFIX, _writer_any)
 static inline bool chunky_writer_any(chunky_writer const *t)
 {
     CHUNKY_ASSERT(t);
@@ -360,6 +360,7 @@ chunky_writer_finalize(chunky_writer *t)
 #undef chunky_writer_init
 #undef chunky_writer_set
 #undef chunky_writer_available
+#undef chunky_writer_any
 #undef chunky_writer_write
 #undef chunky_writer_chunk_reserve
 #undef chunky_writer_finalize
