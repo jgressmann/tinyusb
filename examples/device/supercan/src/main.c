@@ -197,7 +197,6 @@ struct can {
 	uint16_t tx_dropped;
 	uint16_t task_poll_tscv_hi;
 	uint16_t task_poll_tscv_lo;
-	uint16_t seq_no;
 	uint8_t nmbt_sjw;
 	uint8_t nmbt_tseg2;
 	uint8_t dtbt_brp;
@@ -848,7 +847,6 @@ static inline void can_reset_state(uint8_t index)
 	can->int_prev_bus_state = 0;
 	can->int_comm_flags = 0;
 	can->int_prev_psr_reg = 0;
-	can->seq_no = 0;
 	__atomic_thread_fence(__ATOMIC_RELEASE); // rx_lost
 
 	// clear tx buffers
