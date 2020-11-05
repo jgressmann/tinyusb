@@ -2489,6 +2489,7 @@ static bool can_poll(uint8_t index)
 		can->rx_put_index = 0;
 		can->tx_get_index = 0;
 		can->tx_put_index = 0;
+		can->sync_tscv = 0;
 		__atomic_thread_fence(__ATOMIC_RELEASE);
 		return false;
 	}
