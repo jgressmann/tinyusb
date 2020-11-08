@@ -106,6 +106,9 @@ static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(va
 #undef CHUNKY_LIKELY
 #undef CHUNKY_UNLIKELY
 
+#define CMD_BUFFER_SIZE 64
+#define MSG_BUFFER_SIZE 512
+
 #define TS_LO_MASK ((UINT32_C(1) << M_CAN_TS_COUNTER_BITS) - 1)
 #define TS_HI(ts) ((((uint32_t)(ts)) >> (32 - M_CAN_TS_COUNTER_BITS)) & TS_LO_MASK)
 #define TS_LO(ts) (((uint32_t)(ts)) & TS_LO_MASK)
@@ -151,13 +154,13 @@ struct tx_frame {
 
 enum {
 	CAN_FEAT_PERM = SC_FEATURE_FLAG_TXR,
-	CAN_FEAT_CONF = SC_FEATURE_FLAG_FDF |
-					SC_FEATURE_FLAG_EHD |
+	CAN_FEAT_CONF = (MSG_BUFFER_SIZE >= 128 ? SC_FEATURE_FLAG_FDF : 0)
+					| SC_FEATURE_FLAG_EHD
 					// not yet implemented
-					// SC_FEATURE_FLAG_DAR |
-					SC_FEATURE_FLAG_MON_MODE |
-					SC_FEATURE_FLAG_RES_MODE |
-					SC_FEATURE_FLAG_EXT_LOOP_MODE,
+					// | SC_FEATURE_FLAG_DAR
+					| SC_FEATURE_FLAG_MON_MODE
+					| SC_FEATURE_FLAG_RES_MODE
+					| SC_FEATURE_FLAG_EXT_LOOP_MODE,
 
 	CAN_QUEUE_SIZE = CAN_RX_FIFO_SIZE,
 	CAN_QUEUE_ITEM_TYPE_BUS_STATUS = 0,
@@ -538,7 +541,7 @@ static void can_int(uint8_t index)
 
 		if (unlikely(pdTRUE != xQueueSendFromISR(can->queue_handle, &msg, NULL))) {
 			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
-			LOG("CAN%u queue full\n", index);
+			// LOG("CAN%u queue full\n", index);
 		}
 	}
 
@@ -562,7 +565,7 @@ static void can_int(uint8_t index)
 
 		if (unlikely(pdTRUE != xQueueSendFromISR(can->queue_handle, &msg, NULL))) {
 			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
-			LOG("CAN%u queue full\n", index);
+			// LOG("CAN%u queue full\n", index);
 		} else {
 			// LOG("CAN%u LEC %1x\n", index, current_psr.bit.LEC);
 		}
@@ -586,7 +589,7 @@ static void can_int(uint8_t index)
 
 		if (unlikely(pdTRUE != xQueueSendFromISR(can->queue_handle, &msg, NULL))) {
 			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
-			LOG("CAN%u queue full\n", index);
+			// LOG("CAN%u queue full\n", index);
 		} else {
 			// LOG("CAN%u DLEC %1x\n", index, current_psr.bit.DLEC);
 		}
@@ -607,7 +610,7 @@ static void can_int(uint8_t index)
 
 		if (unlikely(pdTRUE != xQueueSendFromISR(can->queue_handle, &msg, NULL))) {
 			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
-			LOG("CAN%u queue full\n", index);
+			// LOG("CAN%u queue full\n", index);
 		} else {
 			// LOG("CAN%u good\n", index);
 		}
@@ -796,8 +799,7 @@ static void dfu_timer_expired(TimerHandle_t t)
 
 #endif
 
-#define CMD_BUFFER_SIZE 64
-#define MSG_BUFFER_SIZE 512
+
 
 
 struct usb_can {
@@ -1803,7 +1805,9 @@ bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf,
 
 	// Required to immediately send URBs when buffer size > endpoint size
 	// and transfers are multiple of enpoint size.
-	dcd_auto_zlp(rhport, usb_can->pipe | 0x80, true);
+	if (MSG_BUFFER_SIZE > SC_M1_EP_SIZE) {
+		dcd_auto_zlp(rhport, usb_can->pipe | 0x80, true);
+	}
 
 	*p_length = 9+eps*7;
 
@@ -2097,7 +2101,7 @@ static void can_usb_task(void *param)
 	bool had_bus_error = false;
 	bool send_can_status = 0;
 	struct can_queue_item queue_item;
-	uint8_t render_buffer[sizeof(struct sc_msg_can_rx) + 64];
+	uint8_t render_buffer[96];
 
 
 
@@ -2273,9 +2277,9 @@ static void can_usb_task(void *param)
 					bytes += can_frame_len;
 				}
 
-				// align to 4 bytes
-				if (bytes & 3) {
-					bytes += 4 - (bytes & 3);
+				// align
+				if (bytes & (SC_MSG_CAN_LEN_MULTIPLE-1)) {
+					bytes += SC_MSG_CAN_LEN_MULTIPLE - (bytes & (SC_MSG_CAN_LEN_MULTIPLE-1));
 				}
 
 				if (chunky_writer_available(&usb_can->w) >= bytes) {
