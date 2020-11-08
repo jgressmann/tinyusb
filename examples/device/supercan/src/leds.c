@@ -10,21 +10,41 @@
 #	define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
 #endif
 
+#ifndef likely
+#	define likely(x) __builtin_expect(!!(x),1)
+#endif
+
+#ifndef unlikely
+#	define unlikely(x) __builtin_expect(!!(x),0)
+#endif
+
 StackType_t led_task_stack[LED_STACK_SIZE];
 StaticTask_t led_task_mem;
 
-static StaticSemaphore_t mutex_mem;
-static SemaphoreHandle_t mutex_handle;
+enum {
+	LED_CMD_NO_CHANGE = 0,
+	LED_CMD_OFF,
+	LED_CMD_ON,
+	LED_CMD_BLINK,
+	LED_CMD_TOGGLE,
+	LED_CMD_BURST,
+};
 
+typedef union {
+	struct {
+		uint16_t cmd : 3;
+		uint16_t millis : 13;
+	} bit;
+	uint16_t reg;
+} led_cmd_t;
 
 struct led {
-	volatile uint16_t time_ms;
-	volatile uint8_t blink;
+	uint16_t cmd;
 	uint8_t pin;
 };
 
 #define LED_STATIC_INITIALIZER(name, pin) \
-	{ 0, 0, pin }
+	{ 0, pin }
 
 
 #if HWREV == 1
@@ -40,8 +60,6 @@ static struct led leds[] = {
 
 extern void led_init(void)
 {
-	mutex_handle = xSemaphoreCreateMutexStatic(&mutex_mem);
-
 	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
 	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
 	PORT->Group[0].DIRSET.reg = PORT_PA12; /* Debug-LED */
@@ -69,8 +87,6 @@ static struct led leds[] = {
 
 extern void led_init(void)
 {
-	mutex_handle = xSemaphoreCreateMutexStatic(&mutex_mem);
-
 	PORT->Group[0].DIRSET.reg = PORT_PA18 | PORT_PA19;
 	PORT->Group[1].DIRSET.reg =
 		PORT_PB16 | PORT_PB17
@@ -85,41 +101,42 @@ extern void led_init(void)
 
 extern void led_set(uint8_t index, bool on)
 {
-	SC_ASSERT(index < ARRAY_SIZE(leds));
-	while (pdTRUE != xSemaphoreTake(mutex_handle, ~0));
-	leds[index].time_ms = 0;
-	leds[index].blink = 0;
-	gpio_set_pin_level(leds[index].pin, on);
-	xSemaphoreGive(mutex_handle);
+	SC_DEBUG_ASSERT(index < ARRAY_SIZE(leds));
+
+	led_cmd_t s;
+	s.bit.cmd = on ? LED_CMD_ON : LED_CMD_OFF;
+	__atomic_store_n(&leds[index].cmd, s.reg, __ATOMIC_RELEASE);
 }
+
 
 extern void led_toggle(uint8_t index)
 {
-	SC_ASSERT(index < ARRAY_SIZE(leds));
-	while (pdTRUE != xSemaphoreTake(mutex_handle, ~0));
-	leds[index].time_ms = 0;
-	leds[index].blink = 0;
-	gpio_toggle_pin_level(leds[index].pin);
-	xSemaphoreGive(mutex_handle);
+	SC_DEBUG_ASSERT(index < ARRAY_SIZE(leds));
+
+	led_cmd_t s;
+	s.bit.cmd = LED_CMD_TOGGLE;
+	__atomic_store_n(&leds[index].cmd, s.reg, __ATOMIC_RELEASE);
 }
 
 extern void led_blink(uint8_t index, uint16_t delay_ms)
 {
-	SC_ASSERT(index < ARRAY_SIZE(leds));
-	while (pdTRUE != xSemaphoreTake(mutex_handle, ~0));
-	leds[index].time_ms = delay_ms;
-	leds[index].blink = 1;
-	xSemaphoreGive(mutex_handle);
+	SC_DEBUG_ASSERT(index < ARRAY_SIZE(leds));
+
+	led_cmd_t s;
+	s.bit.cmd = LED_CMD_BLINK;
+	s.bit.millis = delay_ms;
+	__atomic_store_n(&leds[index].cmd, s.reg, __ATOMIC_RELEASE);
+
 }
 
 extern void led_burst(uint8_t index, uint16_t duration_ms)
 {
-	SC_ASSERT(index < ARRAY_SIZE(leds));
-	while (pdTRUE != xSemaphoreTake(mutex_handle, ~0));
-	leds[index].time_ms = duration_ms;
-	leds[index].blink = 0;
-	gpio_set_pin_level(leds[index].pin, 1);
-	xSemaphoreGive(mutex_handle);
+	SC_DEBUG_ASSERT(index < ARRAY_SIZE(leds));
+
+	led_cmd_t s;
+	s.bit.cmd = LED_CMD_BURST;
+	s.bit.millis = duration_ms;
+	__atomic_store_n(&leds[index].cmd, s.reg, __ATOMIC_RELEASE);
 }
 
 extern void leds_on_unsafe(void)
@@ -129,41 +146,107 @@ extern void leds_on_unsafe(void)
 	}
 }
 
-//--------------------------------------------------------------------+
-// LED TASK
-//--------------------------------------------------------------------+
 extern void led_task(void *param)
 {
 	(void) param;
 
-	uint16_t left[ARRAY_SIZE(leds)];
-	memset(&left, 0, sizeof(left));
 	const uint8_t TICK_MS = 8;
+	uint8_t cmd[ARRAY_SIZE(leds)];
+	uint8_t state[ARRAY_SIZE(leds)];
+	uint16_t interval[ARRAY_SIZE(leds)];
+	uint16_t left[ARRAY_SIZE(leds)];
+
+	memset(&cmd, 0, sizeof(cmd));
+	memset(&state, 0, sizeof(state));
+	memset(&interval, 0, sizeof(interval));
+	memset(&left, 0, sizeof(left));
+
 
 	while (42) {
-		while (pdTRUE != xSemaphoreTake(mutex_handle, ~0));
-		for (uint8_t i = 0; i < ARRAY_SIZE(leds); ++i) {
-			uint16_t t = leds[i].time_ms;
-			if (t) {
-				if (leds[i].blink) {
-					if (0 == left[i]) {
-						// LOG("led %s (%u) toggle\n", leds[i].name, i);
-						gpio_toggle_pin_level(leds[i].pin);
-						left[i] = t / TICK_MS;
-					} else {
-						--left[i];
+		for (size_t i = 0; i < ARRAY_SIZE(leds); ++i) {
+			led_cmd_t c = (led_cmd_t)__atomic_load_n(&leds[i].cmd, __ATOMIC_ACQUIRE);
+
+			if (unlikely(LED_CMD_NO_CHANGE != c.bit.cmd)) {
+				led_cmd_t x = c; // use a copy so that later can handle the command
+				do {
+					__atomic_compare_exchange_n(
+						&leds[i].cmd,
+						&x,
+						0, /* new value */
+						true, /* strong */
+						__ATOMIC_ACQ_REL,
+						__ATOMIC_ACQUIRE);
+				} while (LED_CMD_NO_CHANGE != x.bit.cmd);
+			}
+
+			if (unlikely(LED_CMD_NO_CHANGE != c.bit.cmd)) {
+				if (c.bit.cmd == cmd[i]) {
+					// more of the same
+					switch (c.bit.cmd) {
+					case LED_CMD_BLINK:
+						interval[i] = c.bit.millis;
+						if (c.bit.millis < left[i]) {
+							left[i] = c.bit.millis;
+						}
+						break;
+					case LED_CMD_BURST:
+						// LOG("%u burst %u millis\n", i, c.bit.millis);
+						left[i] = c.bit.millis;
+						break;
 					}
 				} else {
-					// burst
-					t -= tu_min16(t, TICK_MS);
-					leds[i].time_ms = t;
-					if (!t) {
-						gpio_set_pin_level(leds[i].pin, 0);
+					switch (c.bit.cmd) {
+					case LED_CMD_OFF:
+						// LOG("%u off\n", i);
+						state[i] = 0;
+						break;
+					case LED_CMD_ON:
+						// LOG("%u on\n", i);
+						state[i] = 1;
+						break;
+					case LED_CMD_BLINK:
+						// LOG("%u blink %u millis\n", i, c.bit.millis);
+						interval[i] = c.bit.millis;
+						left[i] = c.bit.millis;
+						break;
+					case LED_CMD_TOGGLE:
+						// LOG("%u toggle\n", i);
+						state[i] = !state[i];
+						// prevent further toggles
+						cmd[i] = state[i] ? LED_CMD_ON : LED_CMD_OFF;
+						break;
+					case LED_CMD_BURST:
+						// LOG("%u burst %u millis\n", i, c.bit.millis);
+						left[i] = c.bit.millis;
+						break;
 					}
+
+					cmd[i] = c.bit.cmd;
 				}
 			}
+
+			switch (cmd[i]) {
+			case LED_CMD_BLINK:
+				if (left[i] >= TICK_MS) {
+					left[i] -= TICK_MS;
+				} else {
+					left[i] = interval[i];
+					state[i] = !state[i];
+				}
+				break;
+			case LED_CMD_BURST:
+				if (left[i] >= TICK_MS) {
+					left[i] -= TICK_MS;
+					state[i] = 1;
+				} else {
+					state[i] = 0;
+					cmd[i] = LED_CMD_OFF;
+				}
+				break;
+			}
+
+			gpio_set_pin_level(leds[i].pin, state[i]);
 		}
-		xSemaphoreGive(mutex_handle);
 
 		vTaskDelay(pdMS_TO_TICKS(TICK_MS));
 	}
