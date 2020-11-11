@@ -2502,15 +2502,15 @@ static bool can_poll(uint8_t index)
 
 	if (tscv < can->task_poll_tscv_lo) {
 		++can->task_poll_tscv_hi;
-		uint32_t ts = can->task_poll_tscv_hi;
-		ts <<= M_CAN_TS_COUNTER_BITS;
-		ts |= tscv;
-		__atomic_store_n(&can->sync_tscv, ts, __ATOMIC_RELEASE);
 		// LOG("ch%u lo %u->%u ts_hi=%04x\n", index, tscv, tscv_lo, tscv_hi);
 		xTaskNotifyGive(can->usb_task_handle);
 	}
 
 	can->task_poll_tscv_lo = tscv;
+
+	// store sync timestamp
+	can->sync_tscv = (((uint32_t)can->task_poll_tscv_hi) << M_CAN_TS_COUNTER_BITS) | tscv;
+
 
 	bool more = false;
 	uint16_t tscv_his[CAN_RX_FIFO_SIZE];
@@ -2569,8 +2569,7 @@ static bool can_poll(uint8_t index)
 		// removes frames from rx fifo
 		can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(get_index);
 
-		// Because this task runs at a higher priority, it is ok to do this last
-		__atomic_thread_fence(__ATOMIC_RELEASE);
+
 	}
 
 	count = can->m_can->TXEFS.bit.EFFL;
@@ -2618,11 +2617,10 @@ static bool can_poll(uint8_t index)
 		// removes frames from tx fifo
 		can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(get_index);
         // LOG("ch%u poll tx count=%u done\n", index, count);
-
-		// Because this task runs at a higher priority, it is ok to do this last
-		__atomic_thread_fence(__ATOMIC_RELEASE);
 	}
 
+	// Because this task runs at a higher priority, it is ok to do this last
+	__atomic_thread_fence(__ATOMIC_RELEASE);
 
 	return more;
 }
