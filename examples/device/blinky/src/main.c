@@ -230,7 +230,9 @@ int main(void)
 		dfu_app_hdr.app_version_minor,
 		dfu_app_hdr.app_version_patch);
 
+#if SUPERDFU_APP
 	dfu_request_dfu(0); // no bootloader request
+#endif
 
 	dfu_status.bStatus = DFU_ERROR_OK;
 	dfu_status.bwPollTimeout = 100; // ms
@@ -302,7 +304,7 @@ void tud_resume_cb(void)
 }
 
 
-#if CFG_TUD_DFU_RT_CUSTOM
+#if CFG_TUD_DFU_RT
 
 static inline const char* recipient_str(tusb_request_recipient_t r)
 {
