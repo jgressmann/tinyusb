@@ -1323,7 +1323,7 @@ send_can_info:
 				if (was_enabled != can->enabled) {
 					LOG("ch%u enabled=%u\n", index, can->enabled);
 					if (can->enabled) {
-						can_reset_state(index); // necessar?
+						can_reset_state(index); // necessary?
 						can_configure(can);
 						can_set_state1(can->m_can, can->interrupt_id, can->enabled);
 						canled_set_status(can, CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
@@ -1331,6 +1331,8 @@ send_can_info:
 					} else {
 						can_off(index);
 						canled_set_status(can, CANLED_STATUS_ENABLED_BUS_OFF);
+						// notify, so that last rx/tx timestamps can get reset
+						xSemaphoreGive(usb_can->mutex_handle);
 					}
 				}
 			}
