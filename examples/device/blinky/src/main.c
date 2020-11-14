@@ -42,34 +42,6 @@
 #include <dfu_app.h>
 
 
-#if TU_BIG_ENDIAN == TU_BYTE_ORDER
-static inline uint16_t le16_to_cpu(uint16_t value) { return __builtin_bswap16(value); }
-static inline uint32_t le32_to_cpu(uint32_t value) { return __builtin_bswap32(value); }
-static inline uint16_t cpu_to_le16(uint16_t value) { return __builtin_bswap16(value); }
-static inline uint32_t cpu_to_le32(uint32_t value) { return __builtin_bswap32(value); }
-static inline uint16_t be16_to_cpu(uint16_t value) { return value; }
-static inline uint32_t be32_to_cpu(uint32_t value) { return value; }
-static inline uint16_t cpu_to_be16(uint16_t value) { return value; }
-static inline uint32_t cpu_to_be32(uint32_t value) { return value; }
-#else
-static inline uint16_t le16_to_cpu(uint16_t value) { return value; }
-static inline uint32_t le32_to_cpu(uint32_t value) { return value; }
-static inline uint16_t cpu_to_le16(uint16_t value) { return value; }
-static inline uint32_t cpu_to_le32(uint32_t value) { return value; }
-static inline uint16_t be16_to_cpu(uint16_t value) { return __builtin_bswap16(value); }
-static inline uint32_t be32_to_cpu(uint32_t value) { return __builtin_bswap32(value); }
-static inline uint16_t cpu_to_be16(uint16_t value) { return __builtin_bswap16(value); }
-static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(value); }
-#endif
-
-#ifndef likely
-#define likely(x) __builtin_expect(!!(x),1)
-#endif
-
-#ifndef unlikely
-#define unlikely(x) __builtin_expect(!!(x),0)
-#endif
-
 
 struct led {
 #if CFG_TUSB_DEBUG > 0

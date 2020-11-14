@@ -34,9 +34,6 @@ static const tusb_desc_device_t device = {
 	.bDescriptorType    = TUSB_DESC_DEVICE,
 	.bcdUSB             = 0x0210,
 
-	// .bDeviceClass       = TUSB_CLASS_MISC,
-	// .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
-	// .bDeviceProtocol    = MISC_PROTOCOL_IAD,
 	.bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
 	.bDeviceSubClass    = TUSB_CLASS_UNSPECIFIED,
 	.bDeviceProtocol    = TUSB_CLASS_UNSPECIFIED,
@@ -70,6 +67,7 @@ static uint8_t const desc_configuration[] =
 	// Config number, interface count, string index, total length, attribute, power in mA
 	TUD_CONFIG_DESCRIPTOR(1, 2, 0, CONFIG_TOTAL_LEN, 0, 100),
 
+#if CFG_TUD_DFU_RT
 	9, TUSB_DESC_INTERFACE, 0, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_RT, 4, \
   	/* Function */
 #if 0
@@ -104,6 +102,7 @@ Bit 0: download capable
 
 	// required for MS OS 2.0
 	9, TUSB_DESC_INTERFACE, 1, 0, 0, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 2,
+#endif
 };
 
 
@@ -114,10 +113,14 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 }
 
 
+#if CFG_TUD_DFU_RT
+#	define DFU_MS_OS_20_DESC_LEN (0x08+0x14)
+#else
+#	define DFU_MS_OS_20_DESC_LEN 0
+#endif
 
 
-
-#define MS_OS_20_DESC_LEN (0x0A+0x08 + 2*(0x08+0x14))
+#define MS_OS_20_DESC_LEN (0x0A+0x08 + (0x08+0x14) + DFU_MS_OS_20_DESC_LEN)
 uint8_t const desc_ms_os_20[] =
 {
 	// Set header: length, type, windows version, total length
@@ -146,16 +149,14 @@ uint8_t const desc_ms_os_20[] =
 	// 'B', 0x00, '3', 0x00, '1', 0x00, '4', 0x00, '9', 0x00, 'C', 0x00, 'A', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00,
 
 
-
+#if CFG_TUD_DFU_RT
 	// Function Subset header: length, type, first interface, reserved, subset length
 	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 1, 0, U16_TO_U8S_LE(0x08 + 0x14),
 
 	// MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
 	U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
-
-
-
+#endif
 };
 
 
@@ -190,7 +191,9 @@ static char const* string_desc_arr [] =
 	"Jean Gressmann",                // 1: Manufacturer
 	"Blinky",	                     // 2: Product
 	"",                              // 3: Serial
+#if CFG_TUD_DFU_RT
 	"USB DFU 1.1",                   // 4: DFU
+#endif
 };
 
 
