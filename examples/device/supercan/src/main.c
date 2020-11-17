@@ -2092,9 +2092,10 @@ static void can_usb_task(void *param)
 
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
-
+#if SUPERCAN_DEBUG
 	uint32_t rx_ts_last = 0;
 	uint32_t tx_ts_last = 0;
+#endif
 	uint8_t previous_bus_status = 0;
 	uint8_t current_bus_status = 0;
 	TickType_t bus_activity_tc = 0;
@@ -2122,8 +2123,10 @@ static void can_usb_task(void *param)
 			had_bus_activity = false;
 			has_bus_error = false;
 			had_bus_error = false;
+#if SUPERCAN_DEBUG
 			rx_ts_last = 0;
 			tx_ts_last = 0;
+#endif
 			LOG("ch%u usb state reset\n", index);
 			continue;
 		}
@@ -2136,17 +2139,19 @@ static void can_usb_task(void *param)
 		for (bool done = false; !done; ) {
 			done = true;
 
+#if SUPERCAN_DEBUG
 			// loop
 			{
-				// uint32_t ts = __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE);
-				// if (TS_HI(ts) - TS_HI(rx_ts_last) > 0x7FFFFFFF) {
-				// 	rx_ts_last = ts - 0x40000000;
-				// }
+				uint32_t ts = __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE);
+				if (ts - rx_ts_last >= 0x20000000) {
+					rx_ts_last = ts - 0x20000000;
+				}
 
-				// if (TS_HI(ts) - TS_HI(tx_ts_last) > 0x7FFFFFFF) {
-				// 	rx_ts_last = ts - 0x40000000;
-				// }
+				if (ts - tx_ts_last >= 0x20000000) {
+					tx_ts_last = ts - 0x20000000;
+				}
 			}
+#endif
 
 			if (send_can_status) {
 				struct sc_msg_can_status *msg = NULL;
@@ -2309,7 +2314,7 @@ static void can_usb_task(void *param)
 					uint32_t ts = can->rx_frames[get_index].tscv_hi;
 					ts <<= M_CAN_TS_COUNTER_BITS;
 					ts |= r1.bit.RXTS;
-
+#if SUPERCAN_DEBUG
 					uint32_t delta = ts - rx_ts_last;
 					bool rx_ts_ok = delta <= 0x3FFFFFFF;
 					if (unlikely(!rx_ts_ok)) {
@@ -2324,6 +2329,7 @@ static void can_usb_task(void *param)
 					SC_ASSERT(rx_ts_ok);
 					// LOG("ch%u rx gi=%u d=%lx\n", index, get_index, ts - rx_ts_last);
 					rx_ts_last = ts;
+#endif
 
 					msg->timestamp_us = can_bittime_to_us(can, ts);
 
@@ -2396,7 +2402,7 @@ static void can_usb_task(void *param)
 					uint32_t ts = can->tx_frames[get_index].tscv_hi;
 					ts <<= M_CAN_TS_COUNTER_BITS;
 					ts |= t1.bit.TXTS;
-
+#if SUPERCAN_DEBUG
 					// bool tx_ts_ok = ts >= tx_ts_last || (TS_HI(tx_ts_last) == 0xffff && TS_HI(ts) == 0);
 					uint32_t delta = ts - tx_ts_last;
 					bool tx_ts_ok = delta <= 0x3FFFFFFF;
@@ -2412,7 +2418,7 @@ static void can_usb_task(void *param)
 					SC_ASSERT(tx_ts_ok);
 					// LOG("ch%u tx gi=%u d=%lx\n", index, get_index, ts - tx_ts_last);
 					tx_ts_last = ts;
-
+#endif
 					msg->timestamp_us = can_bittime_to_us(can, ts);
 					msg->flags = 0;
 					if (t0.bit.ESI) {
