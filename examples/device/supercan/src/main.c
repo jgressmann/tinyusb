@@ -1351,12 +1351,107 @@ send_can_info:
 	}
 }
 
-static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
+static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header const *msg)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+	SC_DEBUG_ASSERT(msg);
+	SC_DEBUG_ASSERT(SC_MSG_CAN_TX == msg->id);
 
 	struct can *can = &cans.can[index];
+	struct usb_can *usb_can = &usb.can[index];
+
+	// LOG("SC_MSG_CAN_TX %lx\n", __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE));
+	struct sc_msg_can_tx const *tmsg = (struct sc_msg_can_tx const *)msg;
+	if (unlikely(msg->len < sizeof(*tmsg))) {
+		LOG("ch%u ERROR: SC_MSG_CAN_TX msg too short\n", index);
+		return;
+	}
+
+	const uint8_t can_frame_len = dlc_to_len(tmsg->dlc);
+	if (!(tmsg->flags & SC_CAN_FRAME_FLAG_RTR)) {
+		if (msg->len < sizeof(*tmsg) + can_frame_len) {
+			LOG("ch%u ERROR: SC_MSG_CAN_TX msg too short\n", index);
+			return;
+		}
+	}
+
+	if (can->tx_available) {
+		--can->tx_available;
+
+		uint32_t id = tmsg->can_id;
+		uint8_t put_index = can->m_can->TXFQS.bit.TFQPI;
+
+		CAN_TXBE_0_Type t0;
+		t0.reg = (((tmsg->flags & SC_CAN_FRAME_FLAG_ESI) == SC_CAN_FRAME_FLAG_ESI) << CAN_TXBE_0_ESI_Pos)
+			| (((tmsg->flags & SC_CAN_FRAME_FLAG_RTR) == SC_CAN_FRAME_FLAG_RTR) << CAN_TXBE_0_RTR_Pos)
+			| (((tmsg->flags & SC_CAN_FRAME_FLAG_EXT) == SC_CAN_FRAME_FLAG_EXT) << CAN_TXBE_0_XTD_Pos)
+			;
+
+
+
+		if (tmsg->flags & SC_CAN_FRAME_FLAG_EXT) {
+			t0.reg |= CAN_TXBE_0_ID(id);
+		} else {
+			t0.reg |= CAN_TXBE_0_ID(id << 18);
+		}
+
+		can->tx_fifo[put_index].T0 = t0;
+		can->tx_fifo[put_index].T1.bit.DLC = tmsg->dlc;
+		can->tx_fifo[put_index].T1.bit.FDF = (tmsg->flags & SC_CAN_FRAME_FLAG_FDF) == SC_CAN_FRAME_FLAG_FDF;
+		can->tx_fifo[put_index].T1.bit.BRS = (tmsg->flags & SC_CAN_FRAME_FLAG_BRS) == SC_CAN_FRAME_FLAG_BRS;
+		can->tx_fifo[put_index].T1.bit.MM = tmsg->track_id;
+
+		// SC_ASSERT(!(can->tx_slots_used & (UINT32_C(1) << tmsg->track_id)));
+		// can->tx_slots_used |= UINT32_C(1) << tmsg->track_id;
+		// LOG("in MM %u\n", tmsg->track_id);
+
+		if (likely(!(tmsg->flags & SC_CAN_FRAME_FLAG_RTR))) {
+			if (likely(can_frame_len)) {
+				memcpy(can->tx_fifo[put_index].data, tmsg->data, can_frame_len);
+			}
+		}
+
+		can->m_can->TXBAR.reg = UINT32_C(1) << put_index;
+	} else {
+		struct sc_msg_can_txr render_buffer;
+		struct sc_msg_can_txr* rep = NULL;
+		++can->tx_dropped;
+send_txr:
+		if (chunky_writer_available(&usb_can->w) >= sizeof(*rep)) {
+			rep = chunky_writer_chunk_reserve(&usb_can->w, sizeof(*rep));
+			if (!rep) {
+				rep = &render_buffer;
+			}
+
+			rep->id = SC_MSG_CAN_TXR;
+			rep->len = sizeof(*rep);
+			rep->track_id = tmsg->track_id;
+			uint32_t ts = __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE);
+			rep->timestamp_us = can_bittime_to_us(can, ts);
+			rep->flags = SC_CAN_FRAME_FLAG_DRP;
+
+			if (rep == &render_buffer) {
+				chunky_writer_write(&usb_can->w, rep, sizeof(*rep));
+			}
+		} else {
+			if (sc_can_bulk_in_ep_ready(index)) {
+				sc_can_bulk_in_submit(index, __func__);
+				goto send_txr;
+			} else {
+				LOG("ch%u: desync\n", index);
+				can->desync = true;
+			}
+		}
+	}
+}
+
+static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
+{
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+	// SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+
+	// struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
 	// led_burst(can->led_traffic, LED_BURST_DURATION_MS);
 
@@ -1387,7 +1482,7 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 		if (unlikely(CHUNKYE_NONE != error)) {
 			switch (error) {
 			case CHUNKYE_SEQ:
-				LOG("ch%u: sequence error, expect %u\n", index, usb_can->r.seq_no);
+				LOG("ch%u: sequence error, expect=%u have=%u\n", index, usb_can->r.seq_no, ((struct chunky_chunk_hdr*)in_ptr)->seq_no);
 				break;
 			default:
 				LOG("ch%u: chunky_reader_chunk_process error %d\n", index, error);
@@ -1438,7 +1533,7 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 			}
 
 			if (!msg->id || !msg->len) {
-				LOG("ch%u unexecpted zero id/len msg\n", index);
+				LOG("ch%u unexpected zero id/len msg\n", index);
 				ptr = eptr;
 				break;
 			}
@@ -1446,94 +1541,12 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 			ptr += msg->len;
 
 			switch (msg->id) {
-			case SC_MSG_CAN_TX: {
-				// LOG("SC_MSG_CAN_TX %lx\n", __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE));
-				struct sc_msg_can_tx const *tmsg = (struct sc_msg_can_tx const *)msg;
-				if (unlikely(msg->len < sizeof(*tmsg))) {
-					LOG("ch%u ERROR: msg too short\n", index);
-					continue;
-				}
-
-				const uint8_t can_frame_len = dlc_to_len(tmsg->dlc);
-				if (!(tmsg->flags & SC_CAN_FRAME_FLAG_RTR)) {
-					if (msg->len < sizeof(*tmsg) + can_frame_len) {
-						LOG("ch%u ERROR: msg too short\n", index);
-						continue;
-					}
-				}
-
-				if (can->tx_available) {
-					--can->tx_available;
-
-					uint32_t id = tmsg->can_id;
-					uint8_t put_index = can->m_can->TXFQS.bit.TFQPI;
-
-					CAN_TXBE_0_Type t0;
-					t0.reg = (((tmsg->flags & SC_CAN_FRAME_FLAG_ESI) == SC_CAN_FRAME_FLAG_ESI) << CAN_TXBE_0_ESI_Pos)
-						| (((tmsg->flags & SC_CAN_FRAME_FLAG_RTR) == SC_CAN_FRAME_FLAG_RTR) << CAN_TXBE_0_RTR_Pos)
-						| (((tmsg->flags & SC_CAN_FRAME_FLAG_EXT) == SC_CAN_FRAME_FLAG_EXT) << CAN_TXBE_0_XTD_Pos)
-						;
-
-
-
-					if (tmsg->flags & SC_CAN_FRAME_FLAG_EXT) {
-						t0.reg |= CAN_TXBE_0_ID(id);
-					} else {
-						t0.reg |= CAN_TXBE_0_ID(id << 18);
-					}
-
-					can->tx_fifo[put_index].T0 = t0;
-					can->tx_fifo[put_index].T1.bit.DLC = tmsg->dlc;
-					can->tx_fifo[put_index].T1.bit.FDF = (tmsg->flags & SC_CAN_FRAME_FLAG_FDF) == SC_CAN_FRAME_FLAG_FDF;
-					can->tx_fifo[put_index].T1.bit.BRS = (tmsg->flags & SC_CAN_FRAME_FLAG_BRS) == SC_CAN_FRAME_FLAG_BRS;
-					can->tx_fifo[put_index].T1.bit.MM = tmsg->track_id;
-
-					// SC_ASSERT(!(can->tx_slots_used & (UINT32_C(1) << tmsg->track_id)));
-					// can->tx_slots_used |= UINT32_C(1) << tmsg->track_id;
-					// LOG("in MM %u\n", tmsg->track_id);
-
-					if (likely(!(tmsg->flags & SC_CAN_FRAME_FLAG_RTR))) {
-						if (likely(can_frame_len)) {
-							memcpy(can->tx_fifo[put_index].data, tmsg->data, can_frame_len);
-						}
-					}
-
-					can->m_can->TXBAR.reg = UINT32_C(1) << put_index;
-				} else {
-					struct sc_msg_can_txr render_buffer;
-					struct sc_msg_can_txr* rep = NULL;
-					++can->tx_dropped;
-	send_txr:
-					if (chunky_writer_available(&usb_can->w) >= sizeof(*rep)) {
-						rep = chunky_writer_chunk_reserve(&usb_can->w, sizeof(*rep));
-						if (!rep) {
-							rep = &render_buffer;
-						}
-
-						rep->id = SC_MSG_CAN_TXR;
-						rep->len = sizeof(*rep);
-						rep->track_id = tmsg->track_id;
-						uint32_t ts = __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE);
-						rep->timestamp_us = can_bittime_to_us(can, ts);
-						rep->flags = SC_CAN_FRAME_FLAG_DRP;
-
-						if (rep == &render_buffer) {
-							chunky_writer_write(&usb_can->w, rep, sizeof(*rep));
-						}
-					} else {
-						if (sc_can_bulk_in_ep_ready(index)) {
-							sc_can_bulk_in_submit(index, __func__);
-							goto send_txr;
-						} else {
-							LOG("ch%u: desync\n", index);
-							can->desync = true;
-						}
-					}
-				}
-			} break;
+			case SC_MSG_CAN_TX:
+				sc_process_msg_can_tx(index, msg);
+				break;
 
 			default:
-#if defined(SUPERCAN_DEBUG) && SUPERCAN_DEBUG
+#if SUPERCAN_DEBUG
 				sc_dump_mem(msg, msg->len);
 #endif
 				break;
