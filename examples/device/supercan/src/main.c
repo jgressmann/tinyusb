@@ -739,7 +739,7 @@ static inline void canled_set_status(struct can *can, int status)
 		break;
 	case CANLED_STATUS_ERROR_PASSIVE:
 		led_set(can->led_status_green, 0);
-		led_blink(can->led_status_red, BLINK_DELAY_PASSIVE_MS);
+		led_blink(can->led_status_red, BLINK_DELAY_ACTIVE_MS);
 		break;
 	case CANLED_STATUS_ERROR_ACTIVE:
 		led_set(can->led_status_green, 0);
