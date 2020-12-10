@@ -42,9 +42,9 @@ void vApplicationStackOverflowHook(TaskHandle_t pxTask, signed char *pcTaskName)
 		board_uart_write(pcTaskName, -1);
 		board_uart_write("\n", -1);
 	} else {
-		board_uart_write("stack overflow", -1);
+		board_uart_write("stack overflow\n", -1);
 	}
-	SC_ASSERT(false && "stack overflow");
+	while (1);
 }
 
 /* configSUPPORT_STATIC_ALLOCATION is set to 1, so the application must provide an
