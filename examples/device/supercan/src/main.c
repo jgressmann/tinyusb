@@ -192,7 +192,6 @@ struct can {
 	uint32_t nm_bittime_us;
 	uint32_t int_prev_psr_reg;
 	uint32_t sync_tscv;
-	// uint32_t tx_slots_used;
 	uint16_t nmbt_brp;
 	uint16_t nmbt_tseg1;
 	uint16_t rx_lost;
@@ -1402,10 +1401,6 @@ static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header const *msg
 		can->tx_fifo[put_index].T1.bit.BRS = (tmsg->flags & SC_CAN_FRAME_FLAG_BRS) == SC_CAN_FRAME_FLAG_BRS;
 		can->tx_fifo[put_index].T1.bit.MM = tmsg->track_id;
 
-		// SC_ASSERT(!(can->tx_slots_used & (UINT32_C(1) << tmsg->track_id)));
-		// can->tx_slots_used |= UINT32_C(1) << tmsg->track_id;
-		// LOG("in MM %u\n", tmsg->track_id);
-
 		if (likely(!(tmsg->flags & SC_CAN_FRAME_FLAG_RTR))) {
 			if (likely(can_frame_len)) {
 				memcpy(can->tx_fifo[put_index].data, tmsg->data, can_frame_len);
@@ -2406,11 +2401,6 @@ static void can_usb_task(void *param)
 					msg->id = SC_MSG_CAN_TXR;
 					msg->len = sizeof(*msg);
 					msg->track_id = t1.bit.MM;
-
-					// LOG("out MM %u\n", msg->track_id);
-					// SC_ASSERT(can->tx_slots_used & (UINT32_C(1) << msg->track_id));
-					// can->tx_slots_used &= ~(UINT32_C(1) << msg->track_id);
-
 
 					uint32_t ts = can->tx_frames[get_index].tscv_hi;
 					ts <<= M_CAN_TS_COUNTER_BITS;
