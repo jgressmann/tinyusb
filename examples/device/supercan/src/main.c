@@ -258,7 +258,7 @@ static inline void can_init_clock(void) // controller and hardware specific setu
 	GCLK->PCHCTRL[CAN1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0 -> 120MHz
 }
 
-static inline void can_log_nominal_bittiming(struct can *c)
+static inline void can_log_nominal_bit_timing(struct can *c)
 {
 	(void)c;
 
@@ -269,7 +269,7 @@ static inline void can_log_nominal_bittiming(struct can *c)
 	);
 }
 
-static inline void can_log_data_bittiming(struct can *c)
+static inline void can_log_data_bit_timing(struct can *c)
 {
 	(void)c;
 
@@ -323,8 +323,8 @@ static void can_configure(struct can *c)
 	);
 
 
-	can_log_nominal_bittiming(c);
-	can_log_data_bittiming(c);
+	can_log_nominal_bit_timing(c);
+	can_log_data_bit_timing(c);
 
 	can->TSCC.reg = CAN_TSCC_TCP(0) | CAN_TSCC_TSS(1); // time stamp counter in CAN bittime
 	can->TOCC.reg = CAN_TOCC_TOP(0xffff) | CAN_TOCC_TOS(0); // Timeout Counter disabled, Reset-default
@@ -1256,7 +1256,7 @@ send_can_info:
 
 				// set nominal bittime for timestamp calculation
 				can->nm_bittime_us = UINT32_C(1000000) / (CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (1 + can->nmbt_tseg1 + can->nmbt_tseg2)));
-				can_log_nominal_bittiming(can);
+				can_log_nominal_bit_timing(can);
 			}
 
 			sc_cmd_place_error_reply(index, error);
@@ -1274,7 +1274,7 @@ send_can_info:
 				can->dtbt_sjw = tu_max8(M_CAN_DTBT_SJW_MIN, tu_min8(tmsg->sjw, M_CAN_DTBT_SJW_MAX));
 				can->dtbt_tseg1 = tu_max16(M_CAN_DTBT_TSEG1_MIN, tu_min16(tmsg->tseg1, M_CAN_DTBT_TSEG1_MAX));
 				can->dtbt_tseg2 = tu_max8(M_CAN_DTBT_TSEG2_MIN, tu_min8(tmsg->tseg2, M_CAN_DTBT_TSEG2_MAX));
-				can_log_data_bittiming(can);
+				can_log_data_bit_timing(can);
 			}
 
 			sc_cmd_place_error_reply(index, error);
