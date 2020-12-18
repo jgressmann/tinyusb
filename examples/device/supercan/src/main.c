@@ -221,9 +221,6 @@ struct can {
 
 static struct {
 	struct can can[2];
-	StackType_t poll_task_stack_mem[configMINIMAL_STACK_SIZE];
-	StaticTask_t poll_task_mem;
-	TaskHandle_t poll_task_handle;
 } cans;
 
 
@@ -360,16 +357,17 @@ static void can_configure(struct can *c)
 
 	// wanted interrupts
 	can->IE.reg =
-		// CAN_IE_TSWE     // time stamp counter wrap
+		//
 		0
+		| CAN_IE_TSWE   // time stamp counter wrap
 		| CAN_IE_BOE    // bus off
 		| CAN_IE_EWE    // error warning
 		| CAN_IE_EPE    // error passive
-		// | CAN_IE_RF0NE  // new message in rx fifo0
+		| CAN_IE_RF0NE  // new message in rx fifo0
 		| CAN_IE_RF0LE  // message lost b/c fifo0 was full
 		| CAN_IE_PEAE   // proto error in arbitration phase
 		| CAN_IE_PEDE   // proto error in data phase
-	 	// | CAN_IE_TEFNE  // new message in tx event fifo
+	 	| CAN_IE_TEFNE  // new message in tx event fifo
 		| CAN_IE_MRAFE  // message RAM access failure
 		| CAN_IE_BEUE   // bit error uncorrected, sets CCCR.INIT
 		| CAN_IE_BECE   // bit error corrected
@@ -440,6 +438,8 @@ static inline uint8_t can_map_m_can_ec(uint8_t lec, uint8_t previous)
 	}
 }
 
+static bool can_poll(uint8_t index, uint8_t *events);
+
 static void can_int(uint8_t index)
 {
 
@@ -459,25 +459,41 @@ static void can_int(uint8_t index)
 	// 	notify_usb = true;
 	// }
 
-	if (ir.bit.RF0N) {
-		/* F0PI is incremented prior to interrupt call
-		 *
-		 * This interrupt can be late in the sense that F0PI will already
-		 * have incremted again by the time this code runs. Conversely,
-		 * we cannot rely on this interrupt to track the high part of the
-		 * receive timestamp.
-		 *
-		 * Timestamp tracking now happens in the CAN task which does its own
-		 * tracking of the high part.
-		 */
+	// if (ir.bit.RF0N) {
+	// 	/* F0PI is incremented prior to interrupt call
+	// 	 *
+	// 	 * This interrupt can be late in the sense that F0PI will already
+	// 	 * have incremted again by the time this code runs. Conversely,
+	// 	 * we cannot rely on this interrupt to track the high part of the
+	// 	 * receive timestamp.
+	// 	 *
+	// 	 * Timestamp tracking now happens in the CAN task which does its own
+	// 	 * tracking of the high part.
+	// 	 */
 
-		// notify_ts = true;
+	// 	// notify_ts = true;
+
+	// }
+
+	// if (ir.bit.TEFN) {
+	// 	/* see comment for ir.bit.RF0N */
+	// 	// notify_ts = true;
+	// }
+
+	if (ir.reg & (CAN_IR_TSW | CAN_IR_TEFN | CAN_IR_RF0N)) {
+		// LOG("CAN%u RX/TX/TSW\n", index);
+		uint8_t events = 0;
+		can_poll(index, &events);
+		if (likely(events)) {
+			for (uint8_t i = 0; i < events - 1; ++i) {
+				vTaskNotifyGiveFromISR(can->usb_task_handle, NULL);
+			}
+
+			notify_usb = true;
+		}
 	}
 
-	if (ir.bit.TEFN) {
-		/* see comment for ir.bit.RF0N */
-		// notify_ts = true;
-	}
+
 
 	if (unlikely(ir.bit.MRAF)) {
 		LOG("CAN%u MRAF\n", index);
@@ -686,7 +702,6 @@ static StaticTask_t usb_device_stack_mem;
 
 static void tusb_device_task(void* param);
 static void can_usb_task(void* param);
-static void can_poll_task(void* param);
 
 #define LED_BURST_DURATION_MS 8
 
@@ -761,7 +776,7 @@ static inline void cans_led_status_set(int status)
 
 #define MAJOR 0
 #define MINOR 3
-#define PATCH 1
+#define PATCH 2
 
 
 #if SUPERDFU_APP
@@ -1649,8 +1664,8 @@ int main(void)
 	can_init_clock();
 	can_init_module();
 
-	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-2, usb_device_stack, &usb_device_stack_mem);
-	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-2, led_task_stack, &led_task_mem);
+	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);
+	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
 
 	usb.can[0].mutex_handle = xSemaphoreCreateMutexStatic(&usb.can[0].mutex_mem);
 	usb.can[1].mutex_handle = xSemaphoreCreateMutexStatic(&usb.can[1].mutex_mem);
@@ -1666,12 +1681,8 @@ int main(void)
 	cans.can[1].queue_handle = xQueueCreateStatic(CAN_QUEUE_SIZE, sizeof(cans.can[1].queue_storage) / CAN_QUEUE_SIZE, cans.can[0].queue_storage, &cans.can[1].queue_mem);
 
 
-	cans.can[0].usb_task_handle = xTaskCreateStatic(&can_usb_task, "usb_can0", TU_ARRAY_SIZE(cans.can[0].usb_task_stack_mem), (void*)(uintptr_t)0, configMAX_PRIORITIES-2, cans.can[0].usb_task_stack_mem, &cans.can[0].usb_task_mem);
-	cans.can[1].usb_task_handle = xTaskCreateStatic(&can_usb_task, "usb_can1", TU_ARRAY_SIZE(cans.can[1].usb_task_stack_mem), (void*)(uintptr_t)1, configMAX_PRIORITIES-2, cans.can[1].usb_task_stack_mem, &cans.can[1].usb_task_mem);
-
-	// ATTENTION: higher prio
-	cans.poll_task_handle = xTaskCreateStatic(&can_poll_task, "can_poll", TU_ARRAY_SIZE(cans.poll_task_stack_mem), NULL, configMAX_PRIORITIES-1, cans.poll_task_stack_mem, &cans.poll_task_mem);
-
+	cans.can[0].usb_task_handle = xTaskCreateStatic(&can_usb_task, "usb_can0", TU_ARRAY_SIZE(cans.can[0].usb_task_stack_mem), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, cans.can[0].usb_task_stack_mem, &cans.can[0].usb_task_mem);
+	cans.can[1].usb_task_handle = xTaskCreateStatic(&can_usb_task, "usb_can1", TU_ARRAY_SIZE(cans.can[1].usb_task_stack_mem), (void*)(uintptr_t)1, configMAX_PRIORITIES-1, cans.can[1].usb_task_stack_mem, &cans.can[1].usb_task_mem);
 
 	led_blink(0, 2000);
 	led_set(POWER_LED, 1);
@@ -2492,8 +2503,12 @@ static void can_usb_task(void *param)
 	}
 }
 
-static bool can_poll(uint8_t index)
+static bool can_poll(uint8_t index, uint8_t* events)
 {
+	SC_DEBUG_ASSERT(events);
+
+	*events = 0;
+
 	struct can *can = &cans.can[index];
 
 	// not initalized? happens on bus off as well
@@ -2514,7 +2529,11 @@ static bool can_poll(uint8_t index)
 	if (tscv < can->task_poll_tscv_lo) {
 		++can->task_poll_tscv_hi;
 		// LOG("ch%u lo %u->%u ts_hi=%04x\n", index, tscv, tscv_lo, tscv_hi);
-		xTaskNotifyGive(can->usb_task_handle);
+		++*events;
+		// BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+		// vTaskNotifyGiveFromISR(can->usb_task_handle, &xHigherPriorityTaskWoken);
+		// portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+		// vTaskNotifyGiveFromISR(can->usb_task_handle);
 	}
 
 	can->task_poll_tscv_lo = tscv;
@@ -2573,7 +2592,11 @@ static bool can_poll(uint8_t index)
 
 				++can->rx_put_index;
 
-				xTaskNotifyGive(can->usb_task_handle);
+				// xTaskNotifyGive(can->usb_task_handle);
+				// BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+				// vTaskNotifyGiveFromISR(can->usb_task_handle, &xHigherPriorityTaskWoken);
+				// portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+				++*events;
 			}
 		}
 
@@ -2622,7 +2645,11 @@ static bool can_poll(uint8_t index)
 				++can->tx_put_index;
 			// }
 
-			xTaskNotifyGive(can->usb_task_handle);
+			// xTaskNotifyGive(can->usb_task_handle);
+			// BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+			// vTaskNotifyGiveFromISR(can->usb_task_handle, &xHigherPriorityTaskWoken);
+			// portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+			++*events;
 		}
 
 		// removes frames from tx fifo
@@ -2634,24 +2661,4 @@ static bool can_poll(uint8_t index)
 	__atomic_thread_fence(__ATOMIC_RELEASE);
 
 	return more;
-}
-
-static void can_poll_task(void *param)
-{
-	(void)param;
-
-	LOG("can poll task start\n", index);
-
-	while (42) {
-		bool sleep = true;
-		for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
-			if (can_poll(i)) {
-				sleep = false;
-			}
-		}
-
-		if (sleep) {
-			vTaskDelay(pdMS_TO_TICKS(1));
-		}
-	}
 }
