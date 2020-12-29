@@ -877,13 +877,19 @@ static struct usb {
 	bool mounted;
 } usb;
 
-static inline void can_reset_state(uint8_t index)
+static inline void can_reset_task_state_unsafe(uint8_t index)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 
 	struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
+
+
+#if SUPERCAN_DEBUG
+	memset(can->rx_frames, 0, sizeof(can->rx_frames));
+	memset(can->tx_frames, 0, sizeof(can->tx_frames));
+#endif
 
 	can->rx_lost = 0;
 	can->tx_dropped = 0;
@@ -894,12 +900,10 @@ static inline void can_reset_state(uint8_t index)
 	can->int_prev_psr_reg = 0;
 	__atomic_thread_fence(__ATOMIC_RELEASE); // rx_lost
 
-	// clear tx buffers
-	while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
 
 	for (size_t j = 0; j < TU_ARRAY_SIZE(usb_can->tx_buffers); ++j) {
 		usb_can->tx_offsets[j] = 0;
-		memset(usb_can->tx_buffers[j], 0, sizeof(usb_can->tx_buffers[j]));
+		//memset(usb_can->tx_buffers[j], 0, sizeof(usb_can->tx_buffers[j]));
 	}
 
 	chunky_writer_init(&usb_can->w, SC_M1_EP_SIZE);
@@ -910,8 +914,17 @@ static inline void can_reset_state(uint8_t index)
 	chunky_reader_init(&usb_can->r);
 	SC_DEBUG_ASSERT(usb_can->r.seq_no == 0);
 	usb_can->rx_reassembly_count = 0;
+}
 
-	xSemaphoreGive(usb_can->mutex_handle);
+static inline void can_reset_interrupt_state_unsafe(uint8_t index)
+{
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+
+	struct can *can = &cans.can[index];
+	// call this here to timestamp / last rx/tx values
+	// since we won't get any further interrupts
+	uint8_t events = 0;
+	can_poll(index, &events);
 
 	// clear interrupt handler queue
 	xQueueReset(can->queue_handle);
@@ -922,19 +935,30 @@ static inline void can_off(uint8_t index)
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 
+
 	struct can *can = &cans.can[index];
+	struct usb_can *usb_can = &usb.can[index];
 
 	// go bus off
 	can_set_state1(can->m_can, can->interrupt_id, false);
 
-	// reset can bus state
+	// _With_ usb lock, since this isn't the interrupt handler
+	// and neither a higher priority task.
+	while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
+
+	// Call this with the lock held so the tasks
+	// don't read an inconsistent state
+	can_reset_interrupt_state_unsafe(index);
+
+	// mark CAN as disabled
 	can->enabled = false;
+
+	can_reset_task_state_unsafe(index);
+
+	xSemaphoreGive(usb_can->mutex_handle);
 
 	// notify task to make sure its knows
 	xTaskNotifyGive(can->usb_task_handle);
-	// xTaskNotifyGive(can->ts_task_handle);
-
-	can_reset_state(index);
 }
 
 static inline void can_reset(uint8_t index)
@@ -1366,7 +1390,6 @@ send_can_info:
 				if (was_enabled != can->enabled) {
 					LOG("ch%u enabled=%u\n", index, can->enabled);
 					if (can->enabled) {
-						can_reset_state(index); // necessary?
 						can_configure(can);
 						can_set_state1(can->m_can, can->interrupt_id, can->enabled);
 						canled_set_status(can, CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
@@ -1374,8 +1397,6 @@ send_can_info:
 					} else {
 						can_off(index);
 						canled_set_status(can, CANLED_STATUS_ENABLED_BUS_OFF);
-						// notify, so that last rx/tx timestamps can get reset
-						xSemaphoreGive(usb_can->mutex_handle);
 					}
 				}
 			}
@@ -2532,6 +2553,10 @@ static void can_usb_task(void *param)
 	}
 }
 
+#ifdef SUPERCAN_DEBUG
+static volatile uint32_t rx_lost_reported[TU_ARRAY_SIZE(cans.can)];
+#endif
+
 static bool can_poll(uint8_t index, uint8_t* events)
 {
 	SC_DEBUG_ASSERT(events);
@@ -2568,12 +2593,14 @@ static bool can_poll(uint8_t index, uint8_t* events)
 	can->task_poll_tscv_lo = tscv;
 
 	// store sync timestamp
-	can->sync_tscv = (((uint32_t)can->task_poll_tscv_hi) << M_CAN_TS_COUNTER_BITS) | tscv;
+	//can->sync_tscv = (((uint32_t)can->task_poll_tscv_hi) << M_CAN_TS_COUNTER_BITS) | tscv;
+	__atomic_store_n(&can->sync_tscv, (((uint32_t)can->task_poll_tscv_hi) << M_CAN_TS_COUNTER_BITS) | tscv, __ATOMIC_RELEASE);
 
 
 	bool more = false;
 	uint16_t tscv_his[CAN_RX_FIFO_SIZE];
 	uint8_t count = 0;
+	uint8_t pi = 0;
 
 	count = can->m_can->RXF0S.bit.F0FL;
 	if (count) {
@@ -2598,6 +2625,8 @@ static bool can_poll(uint8_t index, uint8_t* events)
 		}
 
 		// forward loop stores frames and notifies usb task
+		pi = can->rx_put_index;
+
 		for (uint8_t i = 0, gio = can->m_can->RXF0S.bit.F0GI; i < count; ++i) {
 			get_index = (gio + i) & (CAN_RX_FIFO_SIZE-1);
 
@@ -2606,9 +2635,20 @@ static bool can_poll(uint8_t index, uint8_t* events)
 			SC_ASSERT(used <= CAN_RX_FIFO_SIZE);
 
 			if (unlikely(used == CAN_RX_FIFO_SIZE)) {
-				__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
+				//__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
+				can_inc_sat_rx_lost(index);
+
+#ifdef SUPERCAN_DEBUG
+			{
+				uint32_t millis = board_millis() >> 7; // ~once per second
+				if (rx_lost_reported[index] != millis) {
+					rx_lost_reported[index] = millis;
+					LOG("ch%u rx lost %lx\n", index, can->sync_tscv);
+				}
+			}
+#endif
 			} else {
-				uint8_t put_index = can->rx_put_index & (CAN_RX_FIFO_SIZE-1);
+				uint8_t put_index = pi & (CAN_RX_FIFO_SIZE-1);
 				can->rx_frames[put_index].R0 = can->rx_fifo[get_index].R0;
 				can->rx_frames[put_index].R1 = can->rx_fifo[get_index].R1;
 				can->rx_frames[put_index].tscv_hi = tscv_his[get_index];
@@ -2619,7 +2659,7 @@ static bool can_poll(uint8_t index, uint8_t* events)
 					}
 				}
 
-				++can->rx_put_index;
+				++pi;
 
 				// xTaskNotifyGive(can->usb_task_handle);
 				// BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -2632,7 +2672,8 @@ static bool can_poll(uint8_t index, uint8_t* events)
 		// removes frames from rx fifo
 		can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(get_index);
 
-
+		// atomic update of rx put index
+		__atomic_store_n(&can->rx_put_index, pi, __ATOMIC_RELEASE);
 	}
 
 	count = can->m_can->TXEFS.bit.EFFL;
@@ -2658,10 +2699,12 @@ static bool can_poll(uint8_t index, uint8_t* events)
 		}
 
 		// forward loop stores frames and notifies usb task
+		pi = can->tx_put_index;
+
 		for (uint8_t i = 0, gio = can->m_can->TXEFS.bit.EFGI; i < count; ++i) {
 			get_index = (gio + i) & (CAN_TX_FIFO_SIZE-1);
 
-			uint8_t put_index = can->tx_put_index & (CAN_TX_FIFO_SIZE-1);
+			uint8_t put_index = pi & (CAN_TX_FIFO_SIZE-1);
 			// if (unlikely(target_put_index == can->rx_get_index)) {
 			// 	__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
 			// } else {
@@ -2671,7 +2714,8 @@ static bool can_poll(uint8_t index, uint8_t* events)
 				// LOG("ch%u tx place MM %u @ index %u\n", index, can->tx_frames[put_index].T1.bit.MM, put_index);
 
 				//__atomic_store_n(&can->tx_put_index, target_put_index, __ATOMIC_RELEASE);
-				++can->tx_put_index;
+				//++can->tx_put_index;
+				++pi;
 			// }
 
 			// xTaskNotifyGive(can->usb_task_handle);
@@ -2684,10 +2728,13 @@ static bool can_poll(uint8_t index, uint8_t* events)
 		// removes frames from tx fifo
 		can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(get_index);
         // LOG("ch%u poll tx count=%u done\n", index, count);
+
+		// atomic update of tx put index
+		__atomic_store_n(&can->tx_put_index, pi, __ATOMIC_RELEASE);
 	}
 
 	// Because this task runs at a higher priority, it is ok to do this last
-	__atomic_thread_fence(__ATOMIC_RELEASE);
+	//__atomic_thread_fence(__ATOMIC_RELEASE);
 
 	return more;
 }
