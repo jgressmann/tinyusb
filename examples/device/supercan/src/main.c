@@ -440,6 +440,34 @@ static inline uint8_t can_map_m_can_ec(uint8_t lec, uint8_t previous)
 
 static bool can_poll(uint8_t index, uint8_t *events);
 
+static void sat_u16(volatile uint16_t* sat)
+{
+	uint16_t prev = 0;
+	uint16_t curr = 0;
+
+	do {
+		curr = __atomic_load_n(sat, __ATOMIC_ACQUIRE);
+
+		if (curr == 0xffff) {
+			break;
+		}
+
+		prev = curr;
+		++curr;
+	} while (!__atomic_compare_exchange_n(sat, &prev, curr, 0 /* weak */, __ATOMIC_RELEASE, __ATOMIC_RELAXED));
+}
+
+static inline void can_inc_sat_rx_lost(uint8_t index)
+{
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+
+	struct can *can = &cans.can[index];
+
+	sat_u16(&can->rx_lost);
+}
+
+
+
 static void can_int(uint8_t index)
 {
 
@@ -632,8 +660,9 @@ static void can_int(uint8_t index)
 	}
 
 	if (ir.bit.RF0L) {
-		// LOG("CAN%u msg lost\n", index);
-		__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
+		LOG("CAN%u msg lost\n", index);
+		//__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
+		can_inc_sat_rx_lost(index);
 		// notify = true;
 	}
 
