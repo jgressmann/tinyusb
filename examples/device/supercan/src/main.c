@@ -2639,13 +2639,13 @@ static bool can_poll(uint8_t index, uint8_t* events)
 				can_inc_sat_rx_lost(index);
 
 #ifdef SUPERCAN_DEBUG
-			{
-				uint32_t millis = board_millis() >> 7; // ~once per second
-				if (rx_lost_reported[index] != millis) {
-					rx_lost_reported[index] = millis;
-					LOG("ch%u rx lost %lx\n", index, can->sync_tscv);
+				{
+					uint32_t millis = board_millis() >> 7; // ~once per second
+					if (rx_lost_reported[index] != millis) {
+						rx_lost_reported[index] = millis;
+						LOG("ch%u rx lost %lx\n", index, can->sync_tscv);
+					}
 				}
-			}
 #endif
 			} else {
 				uint8_t put_index = pi & (CAN_RX_FIFO_SIZE-1);
