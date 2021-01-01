@@ -393,13 +393,16 @@ static void can_init_module(void)
 
 		for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can[0].rx_fifo); ++i) {
 			// can->rx_frames[i].tscv_hi = 0x8000-1;
+
+			SC_DEBUG_ASSERT(can->rx_frames[i].tscv_hi == 0);
 		}
 
 		for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can[0].tx_fifo); ++i) {
 			can->tx_fifo[i].T1.bit.EFC = 1; // store tx events
 			// can->tx_frames[i].tscv_hi = 0x8000-1;
-		}
 
+			SC_DEBUG_ASSERT(can->tx_frames[i].tscv_hi == 0);
+		}
 	}
 
 	m_can_init_begin(CAN0);
@@ -473,6 +476,16 @@ static void can_int(uint8_t index)
 
 	// SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 	struct can *can = &cans.can[index];
+
+	// if (can->m_can->CCCR.reg & CAN_CCCR_CCE) { // config mode sentinal
+	// 	LOG("CAN%u CCE\n", index);
+	// 	return;
+	// }
+
+	// if (can->m_can->CCCR.reg & CAN_CCCR_INIT) {
+	// 	LOG("CAN%u INIT\n", index);
+	// 	return;
+	// }
 
 	// LOG("IE=%08lx IR=%08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
 	bool notify_usb = false;
@@ -955,6 +968,39 @@ static inline void can_off(uint8_t index)
 
 	can_reset_task_state_unsafe(index);
 
+	canled_set_status(can, CANLED_STATUS_ENABLED_BUS_OFF);
+
+	xSemaphoreGive(usb_can->mutex_handle);
+
+	// notify task to make sure its knows
+	xTaskNotifyGive(can->usb_task_handle);
+}
+
+
+static inline void can_on(uint8_t index)
+{
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+
+
+	struct can *can = &cans.can[index];
+	struct usb_can *usb_can = &usb.can[index];
+
+	// _With_ usb lock, since this isn't the interrupt handler
+	// and neither a higher priority task.
+	while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
+
+	// mark CAN as disabled
+	can->enabled = true;
+
+	can_configure(can);
+
+	can_set_state1(can->m_can, can->interrupt_id, can->enabled);
+
+	SC_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
+
+	canled_set_status(can, CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
+
 	xSemaphoreGive(usb_can->mutex_handle);
 
 	// notify task to make sure its knows
@@ -1386,17 +1432,15 @@ send_can_info:
 				error = SC_ERROR_SHORT;
 			} else {
 				bool was_enabled = can->enabled;
-				can->enabled = tmsg->arg != 0;
-				if (was_enabled != can->enabled) {
-					LOG("ch%u enabled=%u\n", index, can->enabled);
-					if (can->enabled) {
-						can_configure(can);
-						can_set_state1(can->m_can, can->interrupt_id, can->enabled);
-						canled_set_status(can, CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
-						SC_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
+				bool is_enabled = tmsg->arg != 0;
+				if (was_enabled != is_enabled) {
+					LOG("ch%u enabled=%u\n", index, is_enabled);
+					if (is_enabled) {
+						can_on(index);
+
 					} else {
 						can_off(index);
-						canled_set_status(can, CANLED_STATUS_ENABLED_BUS_OFF);
+
 					}
 				}
 			}
