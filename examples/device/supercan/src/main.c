@@ -2631,7 +2631,7 @@ static bool can_poll(uint8_t index, uint8_t* events)
 			get_index = (gio + i) & (CAN_RX_FIFO_SIZE-1);
 
 			uint8_t rx_get_index = __atomic_load_n(&can->rx_get_index, __ATOMIC_ACQUIRE);
-			uint8_t used = can->rx_put_index - rx_get_index;
+			uint8_t used = pi - rx_get_index;
 			SC_ASSERT(used <= CAN_RX_FIFO_SIZE);
 
 			if (unlikely(used == CAN_RX_FIFO_SIZE)) {
