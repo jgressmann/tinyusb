@@ -139,16 +139,14 @@ struct can_rx_fifo_element {
 struct rx_frame {
 	CAN_RXF0E_0_Type R0;
 	CAN_RXF0E_1_Type R1;
-	uint16_t tscv_hi;
-	uint16_t unused;
+	uint32_t ts;
 	uint8_t data[CAN_ELEMENT_DATA_SIZE];
 };
 
 struct tx_frame {
 	CAN_TXEFE_0_Type T0;
 	CAN_TXEFE_1_Type T1;
-	uint16_t tscv_hi;
-	uint16_t unused;
+	uint32_t ts;
 };
 
 
@@ -189,9 +187,11 @@ struct can {
 	QueueHandle_t queue_handle;
 	Can *m_can;
 	IRQn_Type interrupt_id;
-	uint32_t nm_bittime_us;
+	// uint32_t nm_bittime_us;
+	uint32_t nm_us_per_bit;
+	uint32_t dt_us_per_bit_factor_shift10;
 	uint32_t int_prev_psr_reg;
-	uint32_t sync_tscv;
+	//uint32_t sync_tscv;
 	uint16_t nmbt_brp;
 	uint16_t nmbt_tseg1;
 	uint16_t rx_lost;
@@ -215,6 +215,7 @@ struct can {
 	uint8_t rx_put_index; // NOT an index, uses full range of type
 	uint8_t tx_get_index; // NOT an index, uses full range of type
 	uint8_t tx_put_index; // NOT an index, uses full range of type
+
 	bool enabled;
 	bool desync;
 };
@@ -323,8 +324,10 @@ static void can_configure(struct can *c)
 	can_log_nominal_bit_timing(c);
 	can_log_data_bit_timing(c);
 
-	can->TSCC.reg = CAN_TSCC_TCP(0) | CAN_TSCC_TSS(1); // time stamp counter in CAN bittime
-	can->TOCC.reg = CAN_TOCC_TOP(0xffff) | CAN_TOCC_TOS(0); // Timeout Counter disabled, Reset-default
+	// reset default TSCV.TSS = 0 (= value always 0)
+	//can->TSCC.reg = CAN_TSCC_TSS_ZERO; // time stamp counter in CAN bittime
+	// reset default TOCC.ETOC = 0 (disabled)
+	// can->TOCC.reg = CAN_TOCC_TOP(0xffff) | CAN_TOCC_TOS(0); // Timeout Counter disabled, Reset-default
 	can->NBTP.reg = CAN_NBTP_NSJW(c->nmbt_sjw-1)
 			| CAN_NBTP_NBRP(c->nmbt_brp-1)
 			| CAN_NBTP_NTSEG1(c->nmbt_tseg1-1)
@@ -359,7 +362,7 @@ static void can_configure(struct can *c)
 	can->IE.reg =
 		//
 		0
-		| CAN_IE_TSWE   // time stamp counter wrap
+		// | CAN_IE_TSWE   // time stamp counter wrap
 		| CAN_IE_BOE    // bus off
 		| CAN_IE_EWE    // error warning
 		| CAN_IE_EPE    // error passive
@@ -394,14 +397,14 @@ static void can_init_module(void)
 		for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can[0].rx_fifo); ++i) {
 			// can->rx_frames[i].tscv_hi = 0x8000-1;
 
-			SC_DEBUG_ASSERT(can->rx_frames[i].tscv_hi == 0);
+			SC_DEBUG_ASSERT(can->rx_frames[i].ts == 0);
 		}
 
 		for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can[0].tx_fifo); ++i) {
 			can->tx_fifo[i].T1.bit.EFC = 1; // store tx events
 			// can->tx_frames[i].tscv_hi = 0x8000-1;
 
-			SC_DEBUG_ASSERT(can->tx_frames[i].tscv_hi == 0);
+			SC_DEBUG_ASSERT(can->tx_frames[i].ts == 0);
 		}
 	}
 
@@ -521,8 +524,8 @@ static void can_int(uint8_t index)
 	// 	// notify_ts = true;
 	// }
 
-	if (ir.reg & (CAN_IR_TSW | CAN_IR_TEFN | CAN_IR_RF0N)) {
-		// LOG("CAN%u RX/TX/TSW\n", index);
+	if (ir.reg & (CAN_IR_TEFN | CAN_IR_RF0N)) {
+		// LOG("CAN%u RX/TX\n", index);
 		uint8_t events = 0;
 		can_poll(index, &events);
 		if (likely(events)) {
@@ -734,12 +737,6 @@ static inline uint8_t dlc_to_len(uint8_t dlc)
 	return map[dlc & 0xf];
 }
 
-static inline uint32_t can_bittime_to_us(struct can const *can, uint32_t can_time)
-{
-	return can->nm_bittime_us * can_time;
-}
-
-
 static inline void counter_init_clock(void)
 {
 	/* configure clock-generator 3 to use DPLL1 as source */
@@ -769,11 +766,19 @@ static inline void counter_reset(void)
 	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
 }
 
-static inline uint32_t counter_read(void)
+static inline uint32_t counter_read_isr(void)
 {
 	TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
 	while (TC0->COUNT32.CTRLBSET.bit.CMD != TC_CTRLBSET_CMD_NONE_Val);
 	return TC0->COUNT32.COUNT.reg;
+}
+
+static inline uint32_t counter_read(void)
+{
+	taskDISABLE_INTERRUPTS();
+	uint32_t r = counter_read_isr();
+	taskENABLE_INTERRUPTS();
+	return r;
 }
 
 static StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
@@ -1027,7 +1032,11 @@ static inline void can_on(uint8_t index)
 	// and neither a higher priority task.
 	while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
 
-	// mark CAN as disabled
+	can->nm_us_per_bit = UINT32_C(1000000) / (CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (1 + can->nmbt_tseg1 + can->nmbt_tseg2)));
+	uint32_t dtbr = CAN_CLK_HZ / ((uint32_t)can->dtbt_brp * (1 + can->dtbt_tseg1 + can->dtbt_tseg2));
+	can->dt_us_per_bit_factor_shift10 = (UINT32_C(1000000) << 10) / dtbr;
+
+	// mark CAN as enabled
 	can->enabled = true;
 
 	can_configure(can);
@@ -1055,7 +1064,6 @@ static inline void can_reset(uint8_t index)
 	struct can *can = &cans.can[index];
 
 	can->features = CAN_FEAT_PERM;
-	can->nm_bittime_us = 0;
 	can->nmbt_brp = 0;
 	can->nmbt_sjw = 0;
 	can->nmbt_tseg1 = 0;
@@ -1405,9 +1413,9 @@ send_can_info:
 				can->nmbt_tseg1 = tu_max16(M_CAN_NMBT_TSEG1_MIN, tu_min16(tmsg->tseg1, M_CAN_NMBT_TSEG1_MAX));
 				can->nmbt_tseg2 = tu_max8(M_CAN_NMBT_TSEG2_MIN, tu_min8(tmsg->tseg2, M_CAN_NMBT_TSEG2_MAX));
 
-				// set nominal bittime for timestamp calculation
-				can->nm_bittime_us = UINT32_C(1000000) / (CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (1 + can->nmbt_tseg1 + can->nmbt_tseg2)));
 				can_log_nominal_bit_timing(can);
+
+
 			}
 
 			sc_cmd_place_error_reply(index, error);
@@ -1568,8 +1576,8 @@ send_txr:
 			rep->id = SC_MSG_CAN_TXR;
 			rep->len = sizeof(*rep);
 			rep->track_id = tmsg->track_id;
-			uint32_t ts = __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE);
-			rep->timestamp_us = can_bittime_to_us(can, ts);
+			uint32_t ts = counter_read();
+			rep->timestamp_us = ts;
 			rep->flags = SC_CAN_FRAME_FLAG_DRP;
 
 			if (rep == &render_buffer) {
@@ -1797,7 +1805,6 @@ int main(void)
 	can_init_pins();
 	can_init_clock();
 	can_init_module();
-
 
 	counter_init_clock();
 
@@ -2307,7 +2314,7 @@ static void can_usb_task(void *param)
 #if SUPERCAN_DEBUG
 			// loop
 			{
-				uint32_t ts = __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE);
+				uint32_t ts = counter_read();
 				if (ts - rx_ts_last >= 0x20000000) {
 					rx_ts_last = ts - 0x20000000;
 				}
@@ -2336,15 +2343,14 @@ static void can_usb_task(void *param)
 					uint16_t rx_lost = __sync_fetch_and_and(&can->rx_lost, 0);
 					uint16_t tx_dropped = can->tx_dropped;
 					can->tx_dropped = 0;
-					uint32_t ts = __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE);
+					uint32_t ts = counter_read();
 					// LOG("status ts %lu\n", ts);
-					uint32_t us = can_bittime_to_us(can, ts);
 					CAN_ECR_Type ecr = can->m_can->ECR;
 
 
 					msg->id = SC_MSG_CAN_STATUS;
 					msg->len = sizeof(*msg);
-					msg->timestamp_us = us;
+					msg->timestamp_us = ts;
 					msg->rx_lost = rx_lost;
 					msg->tx_dropped = tx_dropped;
 					msg->flags = __sync_or_and_fetch(&can->int_comm_flags, 0);
@@ -2394,12 +2400,11 @@ static void can_usb_task(void *param)
 							msg = (void*)render_buffer;
 						}
 
-						uint32_t ts = __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE);
-						uint32_t us = can_bittime_to_us(can, ts);
+						uint32_t ts = counter_read();
 
 						msg->id = SC_MSG_CAN_ERROR;
 						msg->len = sizeof(*msg);
-						msg->timestamp_us = us;
+						msg->timestamp_us = ts;
 						msg->error = queue_item.payload;
 						msg->flags = 0;
 						if (queue_item.tx) {
@@ -2476,9 +2481,7 @@ static void can_usb_task(void *param)
 					msg->can_id = id;
 
 
-					uint32_t ts = can->rx_frames[get_index].tscv_hi;
-					ts <<= M_CAN_TS_COUNTER_BITS;
-					ts |= r1.bit.RXTS;
+					uint32_t ts = can->rx_frames[get_index].ts;
 #if SUPERCAN_DEBUG
 					uint32_t delta = ts - rx_ts_last;
 					bool rx_ts_ok = delta <= 0x3FFFFFFF;
@@ -2487,7 +2490,7 @@ static void can_usb_task(void *param)
 						// m_can_init_begin(can);
 						LOG("ch%u rx gi=%u ts=%lx prev=%lx\n", index, get_index, ts, rx_ts_last);
 						for (unsigned i = 0; i < CAN_RX_FIFO_SIZE; ++i) {
-							LOG("ch%u rx gi=%u hi=%x lo=%x\n", index, i, can->rx_frames[get_index].tscv_hi, can->rx_frames[i].R1.bit.RXTS);
+							LOG("ch%u rx gi=%u ts=%lx\n", index, i, can->rx_frames[get_index].ts);
 						}
 
 					}
@@ -2496,7 +2499,7 @@ static void can_usb_task(void *param)
 					rx_ts_last = ts;
 #endif
 
-					msg->timestamp_us = can_bittime_to_us(can, ts);
+					msg->timestamp_us = ts;
 
 					// LOG("ch%u rx i=%u rx hi=%x lo=%x tscv hi=%x lo=%x\n", index, get_index, rx_high, rx_low, tscv_high, tscv_low);
 					// LOG("ch%u rx i=%u rx=%lx\n", index, get_index, ts);
@@ -2559,9 +2562,7 @@ static void can_usb_task(void *param)
 					msg->len = sizeof(*msg);
 					msg->track_id = t1.bit.MM;
 
-					uint32_t ts = can->tx_frames[get_index].tscv_hi;
-					ts <<= M_CAN_TS_COUNTER_BITS;
-					ts |= t1.bit.TXTS;
+					uint32_t ts = can->tx_frames[get_index].ts;
 #if SUPERCAN_DEBUG
 					// bool tx_ts_ok = ts >= tx_ts_last || (TS_HI(tx_ts_last) == 0xffff && TS_HI(ts) == 0);
 					uint32_t delta = ts - tx_ts_last;
@@ -2571,7 +2572,7 @@ static void can_usb_task(void *param)
 						// m_can_init_begin(can);
 						LOG("ch%u tx gi=%u ts=%lx prev=%lx\n", index, get_index, ts, tx_ts_last);
 						for (unsigned i = 0; i < CAN_TX_FIFO_SIZE; ++i) {
-							LOG("ch%u tx gi=%u hi=%x lo=%x\n", index, i, can->tx_frames[get_index].tscv_hi, can->tx_frames[i].T1.bit.TXTS);
+							LOG("ch%u tx gi=%u ts=%lx\n", index, i, can->tx_frames[get_index].ts);
 						}
 
 					}
@@ -2579,7 +2580,7 @@ static void can_usb_task(void *param)
 					// LOG("ch%u tx gi=%u d=%lx\n", index, get_index, ts - tx_ts_last);
 					tx_ts_last = ts;
 #endif
-					msg->timestamp_us = can_bittime_to_us(can, ts);
+					msg->timestamp_us = ts;
 					msg->flags = 0;
 					if (t0.bit.ESI) {
 						msg->flags |= SC_CAN_FRAME_FLAG_ESI;
@@ -2649,6 +2650,91 @@ static void can_usb_task(void *param)
 	}
 }
 
+static inline void can_frame_bits(
+	uint32_t xtd,
+	uint32_t rtr,
+	uint32_t brs,
+	uint8_t dlc,
+	uint32_t* nmbr_bits,
+	uint32_t* dtbr_bits)
+{
+	// https://en.wikipedia.org/wiki/CAN_bus
+	/*
+	Start-of-frame 	1 	Denotes the start of frame transmission
+Identifier A (green) 	11 	First part of the (unique) identifier which also represents the message priority
+Substitute remote request (SRR) 	1 	Must be recessive (1)
+Identifier extension bit (IDE) 	1 	Must be recessive (1) for extended frame format with 29-bit identifiers
+Identifier B (green) 	18 	Second part of the (unique) identifier which also represents the message priority
+Remote transmission request (RTR) (blue) 	1 	Must be dominant (0) for data frames and recessive (1) for remote request frames (see Remote Frame, below)
+FDF
+BRS
+Data length code (DLC) (yellow) 	4 	Number of bytes of data (0–8 bytes)[a]
+Data field (red) 	0–64 (0-8 bytes) 	Data to be transmitted (length dictated by DLC field)
+CRC 	15 	Cyclic redundancy check
+CRC delimiter 	1 	Must be recessive (1)
+ACK slot 	1 	Transmitter sends recessive (1) and any receiver can assert a dominant (0)
+ACK delimiter 	1 	Must be recessive (1)
+End-of-frame (EOF) 	7 	Must be recessive (1)
+*/
+	if (brs) {
+		*nmbr_bits =
+			0
+			+ 1 /* Start-of-frame */
+			+ 11 /* non XTD identifier part */
+			+ 1 /* SRR */
+			+ 1 /* IDE */
+			+ 18 * xtd /* XTD identifier part */
+			+ 1 /* RTR */
+			+ 1 /* FDF */
+			+ 1 /* BRS */
+			+ 4 /* DLC */
+			+ 15 /* CRC */
+			+ 1 /* CRC delimiter */
+			+ 1 /* ACK slot */
+			+ 1 /* ACK delimiter */
+			+ 7 /* EOF */
+		;
+
+		*dtbr_bits =
+			0
+			+ 4 /* DLC */
+			+ 15 /* CRC */
+			+ 1 /* CRC delimiter */
+			+ (!rtr) * dlc_to_len(dlc) * UINT32_C(8)
+		;
+	} else {
+		*nmbr_bits =
+			0
+			+ 1 /* Start-of-frame */
+			+ 11 /* non XTD identifier part */
+			+ 1 /* SRR */
+			+ 1 /* IDE */
+			+ 18 * xtd /* XTD identifier part */
+			+ 1 /* RTR */
+			+ 1 /* FDF */
+			+ 1 /* BRS */
+			+ 4 /* DLC */
+			+ (!rtr) * dlc_to_len(dlc) * UINT32_C(8)
+			+ 15 /* CRC */
+			+ 1 /* CRC delimiter */
+			+ 1 /* ACK slot */
+			+ 1 /* ACK delimiter */
+			+ 7 /* EOF */
+		;
+
+		*dtbr_bits = 0;
+	}
+}
+
+static inline uint32_t can_frame_time_us(
+	uint8_t index,
+	uint32_t nm,
+	uint32_t dt)
+{
+	struct can *can = &cans.can[index];
+	return can->nm_us_per_bit * nm + ((can->dt_us_per_bit_factor_shift10 * dt) >> 10);
+}
+
 #ifdef SUPERCAN_DEBUG
 static volatile uint32_t rx_lost_reported[TU_ARRAY_SIZE(cans.can)];
 #endif
@@ -2663,38 +2749,19 @@ static bool can_poll(uint8_t index, uint8_t* events)
 
 	// not initalized? happens on bus off as well
 	if (can->m_can->CCCR.bit.INIT) {
-		can->task_poll_tscv_lo = 0;
-		can->task_poll_tscv_hi = 0;
 		can->rx_get_index = 0;
 		can->rx_put_index = 0;
 		can->tx_get_index = 0;
 		can->tx_put_index = 0;
-		can->sync_tscv = 0;
 		__atomic_thread_fence(__ATOMIC_RELEASE);
 		return false;
 	}
 
-	uint16_t tscv = can->m_can->TSCV.bit.TSC;
-
-	if (tscv < can->task_poll_tscv_lo) {
-		++can->task_poll_tscv_hi;
-		// LOG("ch%u lo %u->%u ts_hi=%04x\n", index, tscv, tscv_lo, tscv_hi);
-		++*events;
-		// BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-		// vTaskNotifyGiveFromISR(can->usb_task_handle, &xHigherPriorityTaskWoken);
-		// portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-		// vTaskNotifyGiveFromISR(can->usb_task_handle);
-	}
-
-	can->task_poll_tscv_lo = tscv;
-
-	// store sync timestamp
-	//can->sync_tscv = (((uint32_t)can->task_poll_tscv_hi) << M_CAN_TS_COUNTER_BITS) | tscv;
-	__atomic_store_n(&can->sync_tscv, (((uint32_t)can->task_poll_tscv_hi) << M_CAN_TS_COUNTER_BITS) | tscv, __ATOMIC_RELEASE);
 
 
 	bool more = false;
-	uint16_t tscv_his[CAN_RX_FIFO_SIZE];
+	uint32_t tsv[CAN_RX_FIFO_SIZE];
+	uint32_t tsc = counter_read();
 	uint8_t count = 0;
 	uint8_t pi = 0;
 
@@ -2702,22 +2769,30 @@ static bool can_poll(uint8_t index, uint8_t* events)
 	if (count) {
 		more = true;
 
-		// reverse loop reconstructs high timestamp
-		uint16_t rx_hi = can->task_poll_tscv_hi;
-		uint16_t rx_prev_lo = can->task_poll_tscv_lo;
+		// reverse loop reconstructs timestamps
+		uint32_t ts = tsc;
 		uint8_t get_index;
 		for (uint8_t i = 0, gio = can->m_can->RXF0S.bit.F0GI; i < count; ++i) {
 			get_index = (gio + count - 1 - i) & (CAN_RX_FIFO_SIZE-1);
 			// LOG("ch%u ts rx count=%u gi=%u\n", index, count, get_index);
 
-			uint16_t rx_lo = can->rx_fifo[get_index].R1.bit.RXTS;
-			if (rx_lo > rx_prev_lo) {
-				--rx_hi;
-			}
+			tsv[get_index] = ts;
 
-			tscv_his[get_index] = rx_hi;
+			uint32_t nmbr_bits, dtbr_bits;
+			can_frame_bits(
+				can->rx_fifo[get_index].R0.bit.XTD,
+				can->rx_fifo[get_index].R0.bit.RTR,
+				can->rx_fifo[get_index].R1.bit.BRS,
+				can->rx_fifo[get_index].R1.bit.DLC,
+				&nmbr_bits,
+				&dtbr_bits);
 
-			rx_prev_lo = rx_lo;
+			LOG("ch%u rx gi=%u xtd=%d rtr=%d brs=%d dlc=%d nmbr_bits=%lu dtbr_bits=%lu\n",
+				index, get_index, can->rx_fifo[get_index].R0.bit.XTD,
+				can->rx_fifo[get_index].R0.bit.RTR, can->rx_fifo[get_index].R1.bit.BRS,
+				can->rx_fifo[get_index].R1.bit.DLC, nmbr_bits, dtbr_bits);
+
+			ts -= can_frame_time_us(index, nmbr_bits, dtbr_bits);
 		}
 
 		// forward loop stores frames and notifies usb task
@@ -2739,7 +2814,7 @@ static bool can_poll(uint8_t index, uint8_t* events)
 					uint32_t millis = board_millis() >> 7; // ~once per second
 					if (rx_lost_reported[index] != millis) {
 						rx_lost_reported[index] = millis;
-						LOG("ch%u rx lost %lx\n", index, can->sync_tscv);
+						LOG("ch%u rx lost %lx\n", index, ts);
 					}
 				}
 #endif
@@ -2747,7 +2822,7 @@ static bool can_poll(uint8_t index, uint8_t* events)
 				uint8_t put_index = pi & (CAN_RX_FIFO_SIZE-1);
 				can->rx_frames[put_index].R0 = can->rx_fifo[get_index].R0;
 				can->rx_frames[put_index].R1 = can->rx_fifo[get_index].R1;
-				can->rx_frames[put_index].tscv_hi = tscv_his[get_index];
+				can->rx_frames[put_index].ts = tsv[get_index];
 				if (likely(!can->rx_frames[put_index].R0.bit.RTR)) {
 					uint8_t can_frame_len = dlc_to_len(can->rx_frames[put_index].R1.bit.DLC);
 					if (likely(can_frame_len)) {
@@ -2776,22 +2851,25 @@ static bool can_poll(uint8_t index, uint8_t* events)
 	if (count) {
 		more = true;
 
-		// reverse loop reconstructs high timestamp
-		uint16_t tx_hi = can->task_poll_tscv_hi;
-		uint16_t tx_prev_lo = can->task_poll_tscv_lo;
+		// reverse loop reconstructs timestamps
+		uint32_t ts = tsc;
 		uint8_t get_index;
 		for (uint8_t i = 0, gio = can->m_can->TXEFS.bit.EFGI; i < count; ++i) {
 			get_index = (gio + count - 1 - i) & (CAN_TX_FIFO_SIZE-1);
 			// LOG("ch%u poll tx count=%u gi=%u\n", index, count, get_index);
 
-			uint16_t tx_lo = can->tx_event_fifo[get_index].T1.bit.TXTS;
-			if (tx_lo > tx_prev_lo) {
-				--tx_hi;
-			}
+			tsv[get_index] = ts;
 
-			tscv_his[get_index] = tx_hi;
+			uint32_t nmbr_bits, dtbr_bits;
+			can_frame_bits(
+				can->tx_event_fifo[get_index].T0.bit.XTD,
+				can->tx_event_fifo[get_index].T0.bit.RTR,
+				can->tx_event_fifo[get_index].T1.bit.BRS,
+				can->tx_event_fifo[get_index].T1.bit.DLC,
+				&nmbr_bits,
+				&dtbr_bits);
 
-			tx_prev_lo = tx_lo;
+			ts -= can_frame_time_us(index, nmbr_bits + 2 /* TXP */, dtbr_bits);
 		}
 
 		// forward loop stores frames and notifies usb task
@@ -2806,7 +2884,7 @@ static bool can_poll(uint8_t index, uint8_t* events)
 			// } else {
 				can->tx_frames[put_index].T0 = can->tx_event_fifo[get_index].T0;
 				can->tx_frames[put_index].T1 = can->tx_event_fifo[get_index].T1;
-				can->tx_frames[put_index].tscv_hi = tscv_his[get_index];
+				can->tx_frames[put_index].ts = tsv[get_index];
 				// LOG("ch%u tx place MM %u @ index %u\n", index, can->tx_frames[put_index].T1.bit.MM, put_index);
 
 				//__atomic_store_n(&can->tx_put_index, target_put_index, __ATOMIC_RELEASE);
