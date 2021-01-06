@@ -739,6 +739,43 @@ static inline uint32_t can_bittime_to_us(struct can const *can, uint32_t can_tim
 	return can->nm_bittime_us * can_time;
 }
 
+
+static inline void counter_init_clock(void)
+{
+	/* configure clock-generator 3 to use DPLL1 as source */
+	GCLK->GENCTRL[3].reg =
+		GCLK_GENCTRL_DIV(48) |	/* 48Mhz -> 1MHz */
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_DPLL1 |
+		GCLK_GENCTRL_IDC ;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL3); /* wait for the synchronization between clock domains to be complete */
+
+	// TC0 and TC1 pair to form a single 32 bit counter
+	// TC1 is enslaved to TC0 and doesn't need to be configured.
+	// DS60001507E-page 1716, 48.6.2.4 Counter Mode
+	MCLK->APBAMASK.bit.TC0_ = 1;
+	MCLK->APBAMASK.bit.TC1_ = 1;
+	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN; /* setup TC0 to use GLCK3 */
+	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN; /* setup TC1 to use GLCK3 */
+}
+
+static inline void counter_reset(void)
+{
+	TC0->COUNT32.CTRLA.reg = TC_CTRLA_SWRST;
+	while(1 == TC0->COUNT32.SYNCBUSY.bit.SWRST);
+
+	TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT32 | TC_CTRLA_PRESCALER_DIV1;
+	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
+}
+
+static inline uint32_t counter_read(void)
+{
+	TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
+	while (TC0->COUNT32.CTRLBSET.bit.CMD != TC_CTRLBSET_CMD_NONE_Val);
+	return TC0->COUNT32.COUNT.reg;
+}
+
 static StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
 static StaticTask_t usb_device_stack_mem;
 
@@ -1728,7 +1765,10 @@ send:
 	}
 }
 
-
+// void TC0_Handler(void)
+// {
+// 	LOG("TC0_Handler\n");
+// }
 
 int main(void)
 {
@@ -1758,6 +1798,10 @@ int main(void)
 	can_init_clock();
 	can_init_module();
 
+
+	counter_init_clock();
+
+
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
 
@@ -1786,6 +1830,14 @@ int main(void)
 #if SUPERDFU_APP
 	dfu_app_watchdog_disable();
 #endif
+
+
+	// counter_reset();
+
+	// while (1) {
+	// 	uint32_t counter = counter_read();
+	// 	LOG("count=%lu\n", (counter / 1000000) % 60);
+	// }
 
 
 	vTaskStartScheduler();
