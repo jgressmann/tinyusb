@@ -2653,76 +2653,133 @@ static void can_usb_task(void *param)
 static inline void can_frame_bits(
 	uint32_t xtd,
 	uint32_t rtr,
+	uint32_t fdf,
 	uint32_t brs,
 	uint8_t dlc,
 	uint32_t* nmbr_bits,
 	uint32_t* dtbr_bits)
 {
-	// https://en.wikipedia.org/wiki/CAN_bus
-	/*
-	Start-of-frame 	1 	Denotes the start of frame transmission
-Identifier A (green) 	11 	First part of the (unique) identifier which also represents the message priority
-Substitute remote request (SRR) 	1 	Must be recessive (1)
-Identifier extension bit (IDE) 	1 	Must be recessive (1) for extended frame format with 29-bit identifiers
-Identifier B (green) 	18 	Second part of the (unique) identifier which also represents the message priority
-Remote transmission request (RTR) (blue) 	1 	Must be dominant (0) for data frames and recessive (1) for remote request frames (see Remote Frame, below)
-FDF
-BRS
-Data length code (DLC) (yellow) 	4 	Number of bytes of data (0–8 bytes)[a]
-Data field (red) 	0–64 (0-8 bytes) 	Data to be transmitted (length dictated by DLC field)
-CRC 	15 	Cyclic redundancy check
-CRC delimiter 	1 	Must be recessive (1)
-ACK slot 	1 	Transmitter sends recessive (1) and any receiver can assert a dominant (0)
-ACK delimiter 	1 	Must be recessive (1)
-End-of-frame (EOF) 	7 	Must be recessive (1)
-*/
-	if (brs) {
-		*nmbr_bits =
-			0
-			+ 1 /* Start-of-frame */
-			+ 11 /* non XTD identifier part */
-			+ 1 /* SRR */
-			+ 1 /* IDE */
-			+ 18 * xtd /* XTD identifier part */
-			+ 1 /* RTR */
-			+ 1 /* FDF */
-			+ 1 /* BRS */
-			+ 4 /* DLC */
-			+ 15 /* CRC */
-			+ 1 /* CRC delimiter */
-			+ 1 /* ACK slot */
-			+ 1 /* ACK delimiter */
-			+ 7 /* EOF */
-		;
+	if (fdf) {
+		if (brs) {
+			*dtbr_bits =
+				1 /* ESI */
+				+ 4 /* DLC */
+				+ dlc_to_len(dlc) * UINT32_C(8) /* payload */
+				+ 15; /* CRC */
 
-		*dtbr_bits =
-			0
-			+ 4 /* DLC */
-			+ 15 /* CRC */
-			+ 1 /* CRC delimiter */
-			+ (!rtr) * dlc_to_len(dlc) * UINT32_C(8)
-		;
+			if (xtd) {
+				*nmbr_bits =
+					1 /* SOF */
+					+ 11 /* ID */
+					+ 1 /* SRR */
+					+ 1 /* IDE */
+					+ 18 /* ID */
+					+ 1 /* reserved 0 */
+					+ 1 /* EDL */
+					+ 1 /* reserved 0 */
+					+ 1 /* BRS */
+					// + 1 /* ESI */
+					// + 4 /* DLC */
+					// + dlc_to_len(dlc) * UINT32_C(8) /* payload */
+					// + 15 /* CRC */
+					+ 1 /* CRC delimiter */
+					+ 1 /* ACK slot */
+					+ 1 /* ACK delimiter */
+					+ 7; /* EOF */
+
+			} else {
+				*nmbr_bits =
+					1 /* SOF */
+					+ 11 /* ID */
+					+ 1 /* reserved 1 */
+					+ 1 /* IDE */
+					+ 1 /* EDL */
+					+ 1 /* reserved 0 */
+					+ 1 /* BRS */
+					// + 1 /* ESI */
+					// + 4 /* DLC */
+					// + dlc_to_len(dlc) * UINT32_C(8) /* payload */
+					// + 15 /* CRC */
+					+ 1 /* CRC delimiter */
+					+ 1 /* ACK slot */
+					+ 1 /* ACK delimiter */
+					+ 7; /* EOF */
+			}
+		} else {
+			*dtbr_bits = 0;
+
+			if (xtd) {
+				*nmbr_bits =
+					1 /* SOF */
+					+ 11 /* ID */
+					+ 1 /* SRR */
+					+ 1 /* IDE */
+					+ 18 /* ID */
+					+ 1 /* reserved 0 */
+					+ 1 /* EDL */
+					+ 1 /* reserved 0 */
+					+ 1 /* BRS */
+					+ 1 /* ESI */
+					+ 4 /* DLC */
+					+ dlc_to_len(dlc) * UINT32_C(8) /* payload */
+					+ 15 /* CRC */
+					+ 1 /* CRC delimiter */
+					+ 1 /* ACK slot */
+					+ 1 /* ACK delimiter */
+					+ 7; /* EOF */
+			} else {
+				*nmbr_bits =
+					1 /* SOF */
+					+ 11 /* ID */
+					+ 1 /* reserved 1 */
+					+ 1 /* IDE */
+					+ 1 /* EDL */
+					+ 1 /* reserved 0 */
+					+ 1 /* BRS */
+					+ 1 /* ESI */
+					+ 4 /* DLC */
+					+ dlc_to_len(dlc) * UINT32_C(8) /* payload */
+					+ 15 /* CRC */
+					+ 1 /* CRC delimiter */
+					+ 1 /* ACK slot */
+					+ 1 /* ACK delimiter */
+					+ 7; /* EOF */
+			}
+		}
 	} else {
-		*nmbr_bits =
-			0
-			+ 1 /* Start-of-frame */
-			+ 11 /* non XTD identifier part */
-			+ 1 /* SRR */
-			+ 1 /* IDE */
-			+ 18 * xtd /* XTD identifier part */
-			+ 1 /* RTR */
-			+ 1 /* FDF */
-			+ 1 /* BRS */
-			+ 4 /* DLC */
-			+ (!rtr) * dlc_to_len(dlc) * UINT32_C(8)
-			+ 15 /* CRC */
-			+ 1 /* CRC delimiter */
-			+ 1 /* ACK slot */
-			+ 1 /* ACK delimiter */
-			+ 7 /* EOF */
-		;
-
 		*dtbr_bits = 0;
+
+		if (xtd) {
+			*nmbr_bits =
+				1 /* SOF */
+				+ 11 /* non XTD identifier part */
+				+ 1 /* SRR */
+				+ 1 /* IDE */
+				+ 18 /* XTD identifier part */
+				+ 1 /* RTR */
+				+ 2 /* reserved */
+				+ 4 /* DLC */
+				+ (!rtr) * dlc_to_len(dlc) * UINT32_C(8)
+				+ 15 /* CRC */
+				+ 1 /* CRC delimiter */
+				+ 1 /* ACK slot */
+				+ 1 /* ACK delimiter */
+				+ 7; /* EOF */
+		} else {
+			*nmbr_bits =
+				1 /* SOF */
+				+ 11 /* ID */
+				+ 1 /* RTR */
+				+ 1 /* IDE */
+				+ 1 /* reserved */
+				+ 4 /* DLC */
+				+ (!rtr) * dlc_to_len(dlc) * UINT32_C(8) /* payload */
+				+ 15 /* CRC */
+				+ 1 /* CRC delimiter */
+				+ 1 /* ACK slot */
+				+ 1 /* ACK delimiter */
+				+ 7; /* EOF */
+		}
 	}
 }
 
@@ -2782,15 +2839,19 @@ static bool can_poll(uint8_t index, uint8_t* events)
 			can_frame_bits(
 				can->rx_fifo[get_index].R0.bit.XTD,
 				can->rx_fifo[get_index].R0.bit.RTR,
+				can->rx_fifo[get_index].R1.bit.FDF,
 				can->rx_fifo[get_index].R1.bit.BRS,
 				can->rx_fifo[get_index].R1.bit.DLC,
 				&nmbr_bits,
 				&dtbr_bits);
 
-			LOG("ch%u rx gi=%u xtd=%d rtr=%d brs=%d dlc=%d nmbr_bits=%lu dtbr_bits=%lu\n",
+			LOG("ch%u rx gi=%u xtd=%d rtr=%d fdf=%d brs=%d dlc=%d nmbr_bits=%lu dtbr_bits=%lu ts=%lx\n",
 				index, get_index, can->rx_fifo[get_index].R0.bit.XTD,
-				can->rx_fifo[get_index].R0.bit.RTR, can->rx_fifo[get_index].R1.bit.BRS,
-				can->rx_fifo[get_index].R1.bit.DLC, nmbr_bits, dtbr_bits);
+				can->rx_fifo[get_index].R0.bit.RTR,
+				can->rx_fifo[get_index].R1.bit.FDF,
+				can->rx_fifo[get_index].R1.bit.BRS,
+				can->rx_fifo[get_index].R1.bit.DLC, nmbr_bits, dtbr_bits,
+				(unsigned long)ts);
 
 			ts -= can_frame_time_us(index, nmbr_bits, dtbr_bits);
 		}
@@ -2864,6 +2925,7 @@ static bool can_poll(uint8_t index, uint8_t* events)
 			can_frame_bits(
 				can->tx_event_fifo[get_index].T0.bit.XTD,
 				can->tx_event_fifo[get_index].T0.bit.RTR,
+				can->tx_event_fifo[get_index].T1.bit.FDF,
 				can->tx_event_fifo[get_index].T1.bit.BRS,
 				can->tx_event_fifo[get_index].T1.bit.DLC,
 				&nmbr_bits,
