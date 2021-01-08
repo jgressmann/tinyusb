@@ -757,7 +757,7 @@ static inline void counter_init_clock(void)
 	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN; /* setup TC1 to use GLCK3 */
 }
 
-static inline void counter_reset(void)
+static inline void can_us_reset(void)
 {
 	TC0->COUNT32.CTRLA.reg = TC_CTRLA_SWRST;
 	while(1 == TC0->COUNT32.SYNCBUSY.bit.SWRST);
@@ -766,17 +766,17 @@ static inline void counter_reset(void)
 	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
 }
 
-static inline uint32_t counter_read_isr(void)
+static inline uint32_t can_us_read_isr(void)
 {
 	TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
 	while (TC0->COUNT32.CTRLBSET.bit.CMD != TC_CTRLBSET_CMD_NONE_Val);
 	return TC0->COUNT32.COUNT.reg;
 }
 
-static inline uint32_t counter_read(void)
+static inline uint32_t can_us_read(void)
 {
 	taskDISABLE_INTERRUPTS();
-	uint32_t r = counter_read_isr();
+	uint32_t r = can_us_read_isr();
 	taskENABLE_INTERRUPTS();
 	return r;
 }
@@ -1576,7 +1576,7 @@ send_txr:
 			rep->id = SC_MSG_CAN_TXR;
 			rep->len = sizeof(*rep);
 			rep->track_id = tmsg->track_id;
-			uint32_t ts = counter_read();
+			uint32_t ts = can_us_read();
 			rep->timestamp_us = ts;
 			rep->flags = SC_CAN_FRAME_FLAG_DRP;
 
@@ -1837,14 +1837,6 @@ int main(void)
 #if SUPERDFU_APP
 	dfu_app_watchdog_disable();
 #endif
-
-
-	// counter_reset();
-
-	// while (1) {
-	// 	uint32_t counter = counter_read();
-	// 	LOG("count=%lu\n", (counter / 1000000) % 60);
-	// }
 
 
 	vTaskStartScheduler();
@@ -2314,7 +2306,7 @@ static void can_usb_task(void *param)
 #if SUPERCAN_DEBUG
 			// loop
 			{
-				uint32_t ts = counter_read();
+				uint32_t ts = can_us_read();
 				if (ts - rx_ts_last >= 0x20000000) {
 					rx_ts_last = ts - 0x20000000;
 				}
@@ -2343,7 +2335,7 @@ static void can_usb_task(void *param)
 					uint16_t rx_lost = __sync_fetch_and_and(&can->rx_lost, 0);
 					uint16_t tx_dropped = can->tx_dropped;
 					can->tx_dropped = 0;
-					uint32_t ts = counter_read();
+					uint32_t ts = can_us_read();
 					// LOG("status ts %lu\n", ts);
 					CAN_ECR_Type ecr = can->m_can->ECR;
 
@@ -2400,7 +2392,7 @@ static void can_usb_task(void *param)
 							msg = (void*)render_buffer;
 						}
 
-						uint32_t ts = counter_read();
+						uint32_t ts = can_us_read();
 
 						msg->id = SC_MSG_CAN_ERROR;
 						msg->len = sizeof(*msg);
@@ -2818,7 +2810,7 @@ static bool can_poll(uint8_t index, uint8_t* events)
 
 	bool more = false;
 	uint32_t tsv[CAN_RX_FIFO_SIZE];
-	uint32_t tsc = counter_read();
+	uint32_t tsc = can_us_read();
 	uint8_t count = 0;
 	uint8_t pi = 0;
 
