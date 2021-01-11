@@ -325,6 +325,10 @@ static void can_configure(struct can *c)
 
 	// reset default TSCV.TSS = 0 (= value always 0)
 	//can->TSCC.reg = CAN_TSCC_TSS_ZERO; // time stamp counter in CAN bittime
+
+	// NOTE: this needs to be on, else we might actually wrap TC0/1
+	// which would lead to mistallying of time on the host
+	can->TSCC.reg = CAN_TSCC_TSS_INC;
 	// reset default TOCC.ETOC = 0 (disabled)
 	// can->TOCC.reg = CAN_TOCC_TOP(0xffff) | CAN_TOCC_TOS(0); // Timeout Counter disabled, Reset-default
 	can->NBTP.reg = CAN_NBTP_NSJW(c->nmbt_sjw-1)
@@ -361,7 +365,7 @@ static void can_configure(struct can *c)
 	can->IE.reg =
 		//
 		0
-		// | CAN_IE_TSWE   // time stamp counter wrap
+		| CAN_IE_TSWE   // time stamp counter wrap
 		| CAN_IE_BOE    // bus off
 		| CAN_IE_EWE    // error warning
 		| CAN_IE_EPE    // error passive
@@ -494,10 +498,10 @@ static void can_int(uint8_t index)
 
 
 	CAN_IR_Type ir = can->m_can->IR;
-	// if (ir.bit.TSW) {
-	// 	// always notify here to enable the host to keep track of CAN bus time
-	// 	notify_usb = true;
-	// }
+	if (ir.bit.TSW) {
+		// always notify here to enable the host to keep track of CAN bus time
+		notify_usb = true;
+	}
 
 	// if (ir.bit.RF0N) {
 	// 	/* F0PI is incremented prior to interrupt call
@@ -923,7 +927,7 @@ static inline void cans_led_status_set(int status)
 
 #define MAJOR 0
 #define MINOR 3
-#define PATCH 4
+#define PATCH 5
 
 
 #if SUPERDFU_APP
