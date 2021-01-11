@@ -153,6 +153,7 @@ struct tx_frame {
 enum {
 	CAN_FEAT_PERM = SC_FEATURE_FLAG_TXR,
 	CAN_FEAT_CONF = (MSG_BUFFER_SIZE >= 128 ? SC_FEATURE_FLAG_FDF : 0)
+					| SC_FEATURE_FLAG_TXP
 					| SC_FEATURE_FLAG_EHD
 					// not yet implemented
 					// | SC_FEATURE_FLAG_DAR
@@ -283,7 +284,6 @@ static void can_configure(struct can *c)
 
 	m_can_conf_begin(can);
 
-	can->CCCR.bit.TXP = 1;  // enable tx pause
 	can->CCCR.bit.EFBI = 1; // enable edge filtering
 	can->CCCR.bit.BRSE = 1; // enable CAN-FD bitrate switching (only effective on CAN-FD mode if configured)
 
@@ -312,11 +312,12 @@ static void can_configure(struct can *c)
 	can->CCCR.bit.FDOE = (c->features & SC_FEATURE_FLAG_FDF) == SC_FEATURE_FLAG_FDF;
 	can->CCCR.bit.PXHD = (c->features & SC_FEATURE_FLAG_EHD) == SC_FEATURE_FLAG_EHD;
 	can->CCCR.bit.DAR = (c->features & SC_FEATURE_FLAG_DAR) == SC_FEATURE_FLAG_DAR; // disable automatic retransmission
+	can->CCCR.bit.TXP = (c->features & SC_FEATURE_FLAG_TXP) == SC_FEATURE_FLAG_TXP;  // enable tx pause
 
-	LOG("MON=%u TEST=%u ASM=%u PXHD=%u FDOE=%u BRSE=%u DAR=%u\n",
+	LOG("MON=%u TEST=%u ASM=%u PXHD=%u FDOE=%u BRSE=%u DAR=%u TXP=%u\n",
 		can->CCCR.bit.MON, can->CCCR.bit.TEST, can->CCCR.bit.ASM,
 		can->CCCR.bit.PXHD, can->CCCR.bit.FDOE, can->CCCR.bit.BRSE,
-		can->CCCR.bit.DAR
+		can->CCCR.bit.DAR, can->CCCR.bit.TXP
 	);
 
 
@@ -2998,6 +2999,7 @@ static bool can_poll(uint8_t index, uint8_t* events)
 		// reverse loop reconstructs timestamps
 		uint32_t ts = tsc;
 		uint8_t get_index;
+		uint32_t txp = can->m_can->CCCR.bit.TXP * 2;
 		for (uint8_t i = 0, gio = can->m_can->TXEFS.bit.EFGI; i < count; ++i) {
 			get_index = (gio + count - 1 - i) & (CAN_TX_FIFO_SIZE-1);
 			// LOG("ch%u poll tx count=%u gi=%u\n", index, count, get_index);
@@ -3014,7 +3016,7 @@ static bool can_poll(uint8_t index, uint8_t* events)
 				&nmbr_bits,
 				&dtbr_bits);
 
-			ts -= can_frame_time_us(index, nmbr_bits + 2 /* TXP */, dtbr_bits);
+			ts -= can_frame_time_us(index, nmbr_bits + txp, dtbr_bits);
 		}
 
 		// forward loop stores frames and notifies usb task
