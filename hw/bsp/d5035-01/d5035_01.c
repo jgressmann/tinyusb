@@ -138,15 +138,6 @@ static inline void init_clock(void)
 		GCLK_GENCTRL_SRC_DPLL1 |
 		GCLK_GENCTRL_IDC ;
 	while(1 == GCLK->SYNCBUSY.bit.GENCTRL1); /* wait for the synchronization between clock domains to be complete */
-
-	/* configure clock-generator 2 to use DPLL0 as source -> for use with SERCOM */
-	GCLK->GENCTRL[2].reg =
-		GCLK_GENCTRL_DIV(1) |	/* 80MHz */
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DPLL0 |
-		GCLK_GENCTRL_IDC ;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
 }
 
 static inline void uart_init(void)
@@ -162,7 +153,7 @@ static inline void uart_init(void)
 		PORT_WRCONFIG_PMUXEN;
 
 	MCLK->APBDMASK.bit.SERCOM5_ = 1;
-	GCLK->PCHCTRL[SERCOM5_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK2 -> 80MHz */
+	GCLK->PCHCTRL[SERCOM5_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK0 -> 80MHz */
 
 	SERCOM5->USART.CTRLA.reg = 0x00; /* disable SERCOM -> enable config */
 	while(SERCOM5->USART.SYNCBUSY.bit.ENABLE);
