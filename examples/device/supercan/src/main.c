@@ -481,6 +481,8 @@ static void can_int(uint8_t index)
 	// SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 	struct can *can = &cans.can[index];
 
+
+
 	// if (can->m_can->CCCR.reg & CAN_CCCR_CCE) { // config mode sentinal
 	// 	LOG("CAN%u CCE\n", index);
 	// 	return;
@@ -499,6 +501,10 @@ static void can_int(uint8_t index)
 
 
 	CAN_IR_Type ir = can->m_can->IR;
+
+	// clear all interrupts
+	can->m_can->IR = ir;
+
 	if (ir.bit.TSW) {
 		// always notify here to enable the host to keep track of CAN bus time
 		notify_usb = true;
@@ -688,8 +694,7 @@ static void can_int(uint8_t index)
 		}
 	}
 
-	// clear all interrupts
-	can->m_can->IR = ir;
+
 
 	// if (notify_ts) {
 	// 	// LOG("CAN%u notify\n", index);
@@ -757,9 +762,36 @@ static inline void counter_1MHz_request_current_value(void)
 	TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
 }
 
+static inline void counter_1MHz_request_current_value_lazy(void)
+{
+	uint8_t reg;
+
+	reg = __atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE);
+
+	while (1) {
+		uint8_t cmd = reg & TC_CTRLBSET_CMD_Msk;
+		SC_DEBUG_ASSERT(cmd == TC_CTRLBSET_CMD_READSYNC || cmd == TC_CTRLBSET_CMD_NONE);
+		if (cmd == TC_CTRLBSET_CMD_READSYNC) {
+			break;
+		}
+
+		if (likely(__atomic_compare_exchange_n(
+			&TC0->COUNT32.CTRLBSET.reg,
+			&reg,
+			TC_CTRLBSET_CMD_READSYNC,
+			false, /* weak? */
+			__ATOMIC_RELEASE,
+			__ATOMIC_ACQUIRE))) {
+				break;
+			}
+
+	}
+}
+
 static inline bool counter_1MHz_is_current_value_ready(void)
 {
-	return TC0->COUNT32.CTRLBSET.bit.CMD == TC_CTRLBSET_CMD_NONE_Val;
+	return (__atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE) & TC_CTRLBSET_CMD_Msk) == TC_CTRLBSET_CMD_NONE;
+	//return TC0->COUNT32.CTRLBSET.bit.CMD == TC_CTRLBSET_CMD_NONE_Val;
 }
 
 static inline uint32_t counter_1MHz_read_unsafe(void)
@@ -788,7 +820,7 @@ static inline uint32_t counter_1MHz_wait_for_current_value(void)
 
 static inline uint32_t counter_1MHz_read_sync(void)
 {
-	counter_1MHz_request_current_value();
+	counter_1MHz_request_current_value_lazy();
 	return counter_1MHz_wait_for_current_value();
 }
 
@@ -802,19 +834,26 @@ static inline uint32_t counter_1MHz_read_sync(void)
 // 	return c++;
 // }
 
-static inline void can_us_request_current_value(void)
+static inline void can_us_request_current_value_safe(void)
+{
+	counter_1MHz_request_current_value_lazy();
+}
+
+static inline void can_us_request_current_value_unsafe(void)
 {
 	counter_1MHz_request_current_value();
 }
+
+
 
 // static inline bool can_us_is_current_value_ready(void)
 // {
 // 	return counter_1MHz_is_current_value_ready();
 // }
 
-static inline uint32_t can_us_read_unsafe(void)
+static inline uint32_t can_us_read_unsafe(uint8_t index)
 {
-	return counter_1MHz_read_unsafe();
+	return counter_1MHz_read_unsafe() - cans.can[index].can_us_offset;
 }
 
 static inline uint32_t can_us_wait_for_current_value(uint8_t index)
@@ -824,7 +863,7 @@ static inline uint32_t can_us_wait_for_current_value(uint8_t index)
 
 static inline uint32_t can_us_read_sync(uint8_t index)
 {
-	can_us_request_current_value();
+	can_us_request_current_value_safe();
 	return can_us_wait_for_current_value(index);
 }
 
@@ -838,15 +877,17 @@ static inline void can_us_init(uint8_t index)
 void CAN0_Handler(void)
 {
 	// LOG("CAN0 int\n");
-	can_us_request_current_value();
+	can_us_request_current_value_unsafe();
 	can_int(0);
+	// can_us_request_current_value_safe();
 }
 
 void CAN1_Handler(void)
 {
 	// LOG("CAN1 int\n");
-	can_us_request_current_value();
+	can_us_request_current_value_unsafe();
 	can_int(1);
+	// can_us_request_current_value_safe();
 }
 
 static StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
@@ -1636,7 +1677,7 @@ static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header const *msg
 		struct sc_msg_can_txr render_buffer;
 		struct sc_msg_can_txr* rep = NULL;
 		++can->tx_dropped;
-		can_us_request_current_value();
+		can_us_request_current_value_safe();
 
 send_txr:
 		if (chunky_writer_available(&usb_can->w) >= sizeof(*rep)) {
@@ -2400,7 +2441,7 @@ static void can_usb_task(void *param)
 				if (chunky_writer_available(&usb_can->w) >= sizeof(*msg)) {
 					done = false;
 					send_can_status = 0;
-					can_us_request_current_value();
+					can_us_request_current_value_safe();
 
 
 					msg = chunky_writer_chunk_reserve(&usb_can->w, sizeof(*msg));
@@ -2467,7 +2508,7 @@ static void can_usb_task(void *param)
 					has_bus_error = SC_CAN_ERROR_NONE != queue_item.payload;
 					struct sc_msg_can_error *msg = NULL;
 					if (chunky_writer_available(&usb_can->w) >= sizeof(*msg)) {
-						can_us_request_current_value();
+						can_us_request_current_value_safe();
 
 						msg = chunky_writer_chunk_reserve(&usb_can->w, sizeof(*msg));
 						if (!msg) {
@@ -2872,6 +2913,7 @@ static inline uint32_t can_frame_time_us(
 
 #ifdef SUPERCAN_DEBUG
 static volatile uint32_t rx_lost_reported[TU_ARRAY_SIZE(cans.can)];
+// static volatile uint32_t rx_ts_last[TU_ARRAY_SIZE(cans.can)];
 #endif
 
 static bool can_poll(uint8_t index, uint8_t* events)
@@ -2903,13 +2945,22 @@ static bool can_poll(uint8_t index, uint8_t* events)
 	count = can->m_can->RXF0S.bit.F0FL;
 	// static volatile uint32_t c = 0;
 	// tsc = c++;
-	tsc = can_us_read_unsafe();
+	// if (!counter_1MHz_is_current_value_ready()) {
+	// 	LOG("ch%u counter not ready\n", index);
+	// }
+	tsc = can_us_wait_for_current_value(index);
+	// can_us_request_current_value_unsafe();
+	//tsc = can_us_read_unsafe(index);
 
 
 
 	if (count) {
 		more = true;
-
+// #ifdef SUPERCAN_DEBUG
+// 		uint32_t us = tsc - rx_ts_last[index];
+// 		rx_ts_last[index] = tsc;
+// 		LOG("ch%u rx dt=%lu\n", index, (unsigned long)us);
+// #endif
 		// reverse loop reconstructs timestamps
 		uint32_t ts = tsc;
 		uint8_t get_index;
