@@ -252,8 +252,8 @@ static inline void can_init_clock(void) // controller and hardware specific setu
 {
 	MCLK->AHBMASK.bit.CAN0_ = 1;
 	MCLK->AHBMASK.bit.CAN1_ = 1;
-	GCLK->PCHCTRL[CAN0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0 -> 120MHz
-	GCLK->PCHCTRL[CAN1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0 -> 120MHz
+	GCLK->PCHCTRL[CAN0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0
+	GCLK->PCHCTRL[CAN1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0
 }
 
 static inline void can_log_nominal_bit_timing(struct can *c)
@@ -445,7 +445,7 @@ static inline uint8_t can_map_m_can_ec(uint8_t lec, uint8_t previous)
 	}
 }
 
-static bool can_poll(uint8_t index, uint8_t *events);
+static bool can_poll(uint8_t index, uint8_t *events, uint32_t tsc);
 
 static void sat_u16(volatile uint16_t* sat)
 {
@@ -475,8 +475,148 @@ static inline void can_inc_sat_rx_lost(uint8_t index)
 
 
 
+static inline void counter_1MHz_init_clock(void)
+{
+	/* configure clock-generator 2 to use DPLL0 as source */
+	GCLK->GENCTRL[2].reg =
+		GCLK_GENCTRL_DIV(5) |	/* 80Mhz -> 16MHz */
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_DPLL0 |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
+
+	// TC0 and TC1 pair to form a single 32 bit counter
+	// TC1 is enslaved to TC0 and doesn't need to be configured.
+	// DS60001507E-page 1716, 48.6.2.4 Counter Mode
+	MCLK->APBAMASK.bit.TC0_ = 1;
+	MCLK->APBAMASK.bit.TC1_ = 1;
+	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup TC0 to use GLCK2 */
+	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup TC1 to use GLCK2 */
+}
+
+static inline void counter_1MHz_request_current_value(void)
+{
+	TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
+}
+
+static inline void counter_1MHz_request_current_value_lazy(void)
+{
+	uint8_t reg;
+
+	reg = __atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE);
+
+	while (1) {
+		uint8_t cmd = reg & TC_CTRLBSET_CMD_Msk;
+		SC_DEBUG_ASSERT(cmd == TC_CTRLBSET_CMD_READSYNC || cmd == TC_CTRLBSET_CMD_NONE);
+		if (cmd == TC_CTRLBSET_CMD_READSYNC) {
+			break;
+		}
+
+		if (likely(__atomic_compare_exchange_n(
+			&TC0->COUNT32.CTRLBSET.reg,
+			&reg,
+			TC_CTRLBSET_CMD_READSYNC,
+			false, /* weak? */
+			__ATOMIC_RELEASE,
+			__ATOMIC_ACQUIRE))) {
+				break;
+			}
+
+	}
+}
+
+static inline bool counter_1MHz_is_current_value_ready(void)
+{
+	return (__atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE) & TC_CTRLBSET_CMD_Msk) == TC_CTRLBSET_CMD_NONE;
+	//return TC0->COUNT32.CTRLBSET.bit.CMD == TC_CTRLBSET_CMD_NONE_Val;
+}
+
+static inline uint32_t counter_1MHz_read_unsafe(void)
+{
+	return TC0->COUNT32.COUNT.reg;
+}
+
+static inline void counter_1MHz_reset(void)
+{
+	TC0->COUNT32.CTRLA.reg = TC_CTRLA_SWRST;
+	while(1 == TC0->COUNT32.SYNCBUSY.bit.SWRST);
+
+	// 16MHz -> 1MHz
+	TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT32 | TC_CTRLA_PRESCALER_DIV16;
+	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
+}
+
+
+static inline uint32_t counter_1MHz_wait_for_current_value(void)
+{
+	while (!counter_1MHz_is_current_value_ready()) {
+		;
+	}
+
+	return counter_1MHz_read_unsafe();
+}
+
+static inline uint32_t counter_1MHz_read_sync(void)
+{
+	counter_1MHz_request_current_value_lazy();
+	return counter_1MHz_wait_for_current_value();
+}
+
+
+// static inline uint32_t can_us_read_isr(void)
+// {
+// 	// TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
+// 	// while (TC0->COUNT32.CTRLBSET.bit.CMD != TC_CTRLBSET_CMD_NONE_Val);
+// 	// return TC0->COUNT32.COUNT.reg;
+// 	static volatile uint32_t c = 0;
+// 	return c++;
+// }
+
+static inline void can_us_request_current_value_safe(void)
+{
+	counter_1MHz_request_current_value_lazy();
+}
+
+static inline void can_us_request_current_value_unsafe(void)
+{
+	counter_1MHz_request_current_value();
+}
+
+
+
+// static inline bool can_us_is_current_value_ready(void)
+// {
+// 	return counter_1MHz_is_current_value_ready();
+// }
+
+static inline uint32_t can_us_read_unsafe(uint8_t index)
+{
+	return counter_1MHz_read_unsafe() - cans.can[index].can_us_offset;
+}
+
+static inline uint32_t can_us_wait_for_current_value(uint8_t index)
+{
+	return counter_1MHz_wait_for_current_value() - cans.can[index].can_us_offset;
+}
+
+static inline uint32_t can_us_read_sync(uint8_t index)
+{
+	can_us_request_current_value_safe();
+	return can_us_wait_for_current_value(index);
+}
+
+static inline void can_us_init(uint8_t index)
+{
+	struct can *can = &cans.can[index];
+
+	can->can_us_offset = counter_1MHz_read_sync();
+}
+
 static void can_int(uint8_t index)
 {
+
+	can_us_request_current_value_unsafe();
 
 	// SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 	struct can *can = &cans.can[index];
@@ -682,9 +822,11 @@ static void can_int(uint8_t index)
 	// recent counter value.
 
 	if (ir.reg & (CAN_IR_TEFN | CAN_IR_RF0N)) {
+
+		uint32_t tsc = can_us_wait_for_current_value(index);
 		// LOG("CAN%u RX/TX\n", index);
 		uint8_t events = 0;
-		can_poll(index, &events);
+		can_poll(index, &events, tsc);
 		if (likely(events)) {
 			for (uint8_t i = 0; i < events - 1; ++i) {
 				vTaskNotifyGiveFromISR(can->usb_task_handle, NULL);
@@ -737,157 +879,21 @@ static inline uint8_t dlc_to_len(uint8_t dlc)
 	return map[dlc & 0xf];
 }
 
-static inline void counter_1MHz_init_clock(void)
-{
-	/* configure clock-generator 3 to use DPLL1 as source */
-	GCLK->GENCTRL[3].reg =
-		GCLK_GENCTRL_DIV(48) |	/* 48Mhz -> 1MHz */
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DPLL1 |
-		GCLK_GENCTRL_IDC ;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL3); /* wait for the synchronization between clock domains to be complete */
-
-	// TC0 and TC1 pair to form a single 32 bit counter
-	// TC1 is enslaved to TC0 and doesn't need to be configured.
-	// DS60001507E-page 1716, 48.6.2.4 Counter Mode
-	MCLK->APBAMASK.bit.TC0_ = 1;
-	MCLK->APBAMASK.bit.TC1_ = 1;
-	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN; /* setup TC0 to use GLCK3 */
-	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN; /* setup TC1 to use GLCK3 */
-}
-
-static inline void counter_1MHz_request_current_value(void)
-{
-	TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
-}
-
-static inline void counter_1MHz_request_current_value_lazy(void)
-{
-	uint8_t reg;
-
-	reg = __atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE);
-
-	while (1) {
-		uint8_t cmd = reg & TC_CTRLBSET_CMD_Msk;
-		SC_DEBUG_ASSERT(cmd == TC_CTRLBSET_CMD_READSYNC || cmd == TC_CTRLBSET_CMD_NONE);
-		if (cmd == TC_CTRLBSET_CMD_READSYNC) {
-			break;
-		}
-
-		if (likely(__atomic_compare_exchange_n(
-			&TC0->COUNT32.CTRLBSET.reg,
-			&reg,
-			TC_CTRLBSET_CMD_READSYNC,
-			false, /* weak? */
-			__ATOMIC_RELEASE,
-			__ATOMIC_ACQUIRE))) {
-				break;
-			}
-
-	}
-}
-
-static inline bool counter_1MHz_is_current_value_ready(void)
-{
-	return (__atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE) & TC_CTRLBSET_CMD_Msk) == TC_CTRLBSET_CMD_NONE;
-	//return TC0->COUNT32.CTRLBSET.bit.CMD == TC_CTRLBSET_CMD_NONE_Val;
-}
-
-static inline uint32_t counter_1MHz_read_unsafe(void)
-{
-	return TC0->COUNT32.COUNT.reg;
-}
-
-static inline void counter_1MHz_reset(void)
-{
-	TC0->COUNT32.CTRLA.reg = TC_CTRLA_SWRST;
-	while(1 == TC0->COUNT32.SYNCBUSY.bit.SWRST);
-
-	TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT32 | TC_CTRLA_PRESCALER_DIV1;
-	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
-}
-
-
-static inline uint32_t counter_1MHz_wait_for_current_value(void)
-{
-	while (!counter_1MHz_is_current_value_ready()) {
-		;
-	}
-
-	return counter_1MHz_read_unsafe();
-}
-
-static inline uint32_t counter_1MHz_read_sync(void)
-{
-	counter_1MHz_request_current_value_lazy();
-	return counter_1MHz_wait_for_current_value();
-}
-
-
-// static inline uint32_t can_us_read_isr(void)
-// {
-// 	// TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
-// 	// while (TC0->COUNT32.CTRLBSET.bit.CMD != TC_CTRLBSET_CMD_NONE_Val);
-// 	// return TC0->COUNT32.COUNT.reg;
-// 	static volatile uint32_t c = 0;
-// 	return c++;
-// }
-
-static inline void can_us_request_current_value_safe(void)
-{
-	counter_1MHz_request_current_value_lazy();
-}
-
-static inline void can_us_request_current_value_unsafe(void)
-{
-	counter_1MHz_request_current_value();
-}
-
-
-
-// static inline bool can_us_is_current_value_ready(void)
-// {
-// 	return counter_1MHz_is_current_value_ready();
-// }
-
-static inline uint32_t can_us_read_unsafe(uint8_t index)
-{
-	return counter_1MHz_read_unsafe() - cans.can[index].can_us_offset;
-}
-
-static inline uint32_t can_us_wait_for_current_value(uint8_t index)
-{
-	return counter_1MHz_wait_for_current_value() - cans.can[index].can_us_offset;
-}
-
-static inline uint32_t can_us_read_sync(uint8_t index)
-{
-	can_us_request_current_value_safe();
-	return can_us_wait_for_current_value(index);
-}
-
-static inline void can_us_init(uint8_t index)
-{
-	struct can *can = &cans.can[index];
-
-	can->can_us_offset = counter_1MHz_read_sync();
-}
 
 void CAN0_Handler(void)
 {
 	// LOG("CAN0 int\n");
-	can_us_request_current_value_unsafe();
+
 	can_int(0);
-	// can_us_request_current_value_safe();
+
 }
 
 void CAN1_Handler(void)
 {
 	// LOG("CAN1 int\n");
-	can_us_request_current_value_unsafe();
+
 	can_int(1);
-	// can_us_request_current_value_safe();
+
 }
 
 static StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
@@ -1088,7 +1094,7 @@ static inline void can_reset_interrupt_state_unsafe(uint8_t index)
 	// call this here to timestamp / last rx/tx values
 	// since we won't get any further interrupts
 	uint8_t events = 0;
-	can_poll(index, &events);
+	can_poll(index, &events, 0);
 
 	// clear interrupt handler queue
 	xQueueReset(can->queue_handle);
@@ -1954,8 +1960,13 @@ int main(void)
 
 	// while (1) {
 	// 	uint32_t c = counter_1MHz_read_sync();
+	// 	counter_1MHz_request_current_value();
+	// 	uint32_t x = 0;
+	// 	while (!counter_1MHz_is_current_value_ready()) {
+	// 		++x;
+	// 	}
 
-	// 	LOG("c=%lx\n", c);
+	// 	LOG("c=%lx, wait=%lx\n", c, x);
 	// }
 
 	vTaskStartScheduler();
@@ -2916,7 +2927,10 @@ static volatile uint32_t rx_lost_reported[TU_ARRAY_SIZE(cans.can)];
 // static volatile uint32_t rx_ts_last[TU_ARRAY_SIZE(cans.can)];
 #endif
 
-static bool can_poll(uint8_t index, uint8_t* events)
+static bool can_poll(
+	uint8_t index,
+	uint8_t* events,
+	uint32_t tsc)
 {
 	SC_DEBUG_ASSERT(events);
 
@@ -2938,7 +2952,7 @@ static bool can_poll(uint8_t index, uint8_t* events)
 
 	bool more = false;
 	uint32_t tsv[CAN_RX_FIFO_SIZE];
-	uint32_t tsc = 0;
+	// uint32_t tsc = 0;
 	uint8_t count = 0;
 	uint8_t pi = 0;
 
@@ -2948,7 +2962,7 @@ static bool can_poll(uint8_t index, uint8_t* events)
 	// if (!counter_1MHz_is_current_value_ready()) {
 	// 	LOG("ch%u counter not ready\n", index);
 	// }
-	tsc = can_us_wait_for_current_value(index);
+	//tsc = can_us_wait_for_current_value(index);
 	// can_us_request_current_value_unsafe();
 	//tsc = can_us_read_unsafe(index);
 
