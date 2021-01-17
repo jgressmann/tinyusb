@@ -975,7 +975,7 @@ static inline void cans_led_status_set(int status)
 
 #define MAJOR 0
 #define MINOR 3
-#define PATCH 8
+#define PATCH 9
 
 
 #if SUPERDFU_APP
@@ -2789,18 +2789,22 @@ static inline void can_frame_bits(
 	uint32_t* nmbr_bits,
 	uint32_t* dtbr_bits)
 {
+	uint32_t payload_bits = dlc_to_len(dlc) * UINT32_C(8); /* payload */
+
 	if (fdf) {
+		uint32_t crc_bits = dlc <= 10 ? 17 : 21;
+
 		if (brs) {
 			*dtbr_bits =
 				1 /* ESI */
 				+ 4 /* DLC */
-				+ dlc_to_len(dlc) * UINT32_C(8) /* payload */
-				+ 15; /* CRC */
+				+ payload_bits
+				+ crc_bits; /* CRC */
 
 			if (xtd) {
 				*nmbr_bits =
-					1 /* SOF */
-					+ 11 /* ID */
+					// 1 /* SOF? */
+					11 /* ID */
 					+ 1 /* SRR */
 					+ 1 /* IDE */
 					+ 18 /* ID */
@@ -2815,12 +2819,13 @@ static inline void can_frame_bits(
 					+ 1 /* CRC delimiter */
 					+ 1 /* ACK slot */
 					+ 1 /* ACK delimiter */
-					+ 7; /* EOF */
+					+ 7 /* EOF */
+					+ 3; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
 
 			} else {
 				*nmbr_bits =
-					1 /* SOF */
-					+ 11 /* ID */
+					// 1 /* SOF */
+					11 /* ID */
 					+ 1 /* reserved 1 */
 					+ 1 /* IDE */
 					+ 1 /* EDL */
@@ -2833,15 +2838,16 @@ static inline void can_frame_bits(
 					+ 1 /* CRC delimiter */
 					+ 1 /* ACK slot */
 					+ 1 /* ACK delimiter */
-					+ 7; /* EOF */
+					+ 7 /* EOF */
+					+ 3; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
 			}
 		} else {
 			*dtbr_bits = 0;
 
 			if (xtd) {
 				*nmbr_bits =
-					1 /* SOF */
-					+ 11 /* ID */
+					// 1 /* SOF */
+					11 /* ID */
 					+ 1 /* SRR */
 					+ 1 /* IDE */
 					+ 18 /* ID */
@@ -2851,16 +2857,17 @@ static inline void can_frame_bits(
 					+ 1 /* BRS */
 					+ 1 /* ESI */
 					+ 4 /* DLC */
-					+ dlc_to_len(dlc) * UINT32_C(8) /* payload */
-					+ 15 /* CRC */
+					+ payload_bits
+					+ crc_bits /* CRC */
 					+ 1 /* CRC delimiter */
 					+ 1 /* ACK slot */
 					+ 1 /* ACK delimiter */
-					+ 7; /* EOF */
+					+ 7 /* EOF */
+					+ 3; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
 			} else {
 				*nmbr_bits =
-					1 /* SOF */
-					+ 11 /* ID */
+					// 1 /* SOF */
+					11 /* ID */
 					+ 1 /* reserved 1 */
 					+ 1 /* IDE */
 					+ 1 /* EDL */
@@ -2868,12 +2875,13 @@ static inline void can_frame_bits(
 					+ 1 /* BRS */
 					+ 1 /* ESI */
 					+ 4 /* DLC */
-					+ dlc_to_len(dlc) * UINT32_C(8) /* payload */
-					+ 15 /* CRC */
+					+ payload_bits
+					+ crc_bits /* CRC */
 					+ 1 /* CRC delimiter */
 					+ 1 /* ACK slot */
 					+ 1 /* ACK delimiter */
-					+ 7; /* EOF */
+					+ 7 /* EOF */
+					+ 3; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
 			}
 		}
 	} else {
@@ -2889,12 +2897,13 @@ static inline void can_frame_bits(
 				+ 1 /* RTR */
 				+ 2 /* reserved */
 				+ 4 /* DLC */
-				+ (!rtr) * dlc_to_len(dlc) * UINT32_C(8)
+				+ (!rtr) * payload_bits
 				+ 15 /* CRC */
 				+ 1 /* CRC delimiter */
 				+ 1 /* ACK slot */
 				+ 1 /* ACK delimiter */
-				+ 7; /* EOF */
+				+ 7 /* EOF */
+				+ 3; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
 		} else {
 			*nmbr_bits =
 				1 /* SOF */
@@ -2903,12 +2912,13 @@ static inline void can_frame_bits(
 				+ 1 /* IDE */
 				+ 1 /* reserved */
 				+ 4 /* DLC */
-				+ (!rtr) * dlc_to_len(dlc) * UINT32_C(8) /* payload */
+				+ (!rtr) * payload_bits
 				+ 15 /* CRC */
 				+ 1 /* CRC delimiter */
 				+ 1 /* ACK slot */
 				+ 1 /* ACK delimiter */
-				+ 7; /* EOF */
+				+ 7 /* EOF */
+				+ 3; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
 		}
 	}
 }
