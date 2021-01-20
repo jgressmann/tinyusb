@@ -975,7 +975,7 @@ static inline void cans_led_status_set(int status)
 
 #define MAJOR 0
 #define MINOR 3
-#define PATCH 9
+#define PATCH 10
 
 
 #if SUPERDFU_APP
@@ -2792,7 +2792,10 @@ static inline void can_frame_bits(
 	uint32_t payload_bits = dlc_to_len(dlc) * UINT32_C(8); /* payload */
 
 	if (fdf) {
-		uint32_t crc_bits = dlc <= 10 ? 17 : 21;
+		// FD frames have a 3 bit stuff count field and a 1 bit parity field prior to the actual checksum
+		// There is a stuff bit at the begin of the stuff count field (always) and then at fixed positions
+		// every 4 bits.
+		uint32_t crc_bits = dlc <= 10 ? (17+4+5) : (21+4+6);
 
 		if (brs) {
 			*dtbr_bits =
@@ -2815,7 +2818,7 @@ static inline void can_frame_bits(
 					// + 1 /* ESI */
 					// + 4 /* DLC */
 					// + dlc_to_len(dlc) * UINT32_C(8) /* payload */
-					// + 15 /* CRC */
+					// + /* CRC */
 					+ 1 /* CRC delimiter */
 					+ 1 /* ACK slot */
 					+ 1 /* ACK delimiter */
@@ -2834,7 +2837,7 @@ static inline void can_frame_bits(
 					// + 1 /* ESI */
 					// + 4 /* DLC */
 					// + dlc_to_len(dlc) * UINT32_C(8) /* payload */
-					// + 15 /* CRC */
+					// + /* CRC */
 					+ 1 /* CRC delimiter */
 					+ 1 /* ACK slot */
 					+ 1 /* ACK delimiter */
