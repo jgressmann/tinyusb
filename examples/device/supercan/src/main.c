@@ -975,7 +975,7 @@ static inline void cans_led_status_set(int status)
 
 #define MAJOR 0
 #define MINOR 3
-#define PATCH 10
+#define PATCH 11
 
 
 #if SUPERDFU_APP
@@ -2712,16 +2712,27 @@ static void can_usb_task(void *param)
 // #endif
 					msg->timestamp_us = ts;
 					msg->flags = 0;
-					if (t0.bit.ESI) {
-						msg->flags |= SC_CAN_FRAME_FLAG_ESI;
+
+					// Report the available flags back so host code
+					// needs to store less information.
+					if (t0.bit.XTD) {
+						msg->flags |= SC_CAN_FRAME_FLAG_EXT;
 					}
 
 					if (t1.bit.FDF) {
 						msg->flags |= SC_CAN_FRAME_FLAG_FDF;
-					}
 
-					if (t1.bit.BRS) {
-						msg->flags |= SC_CAN_FRAME_FLAG_BRS;
+						if (t0.bit.ESI) {
+							msg->flags |= SC_CAN_FRAME_FLAG_ESI;
+						}
+
+						if (t1.bit.BRS) {
+							msg->flags |= SC_CAN_FRAME_FLAG_BRS;
+						}
+					} else {
+						if (t0.bit.RTR) {
+							msg->flags |= SC_CAN_FRAME_FLAG_RTR;
+						}
 					}
 
 					if (msg == (void*)render_buffer) {
