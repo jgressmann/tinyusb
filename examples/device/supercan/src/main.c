@@ -1933,7 +1933,7 @@ int main(void)
 	cans.can[0].led_traffic = CAN0_TRAFFIC_LED;
 	cans.can[1].led_traffic = CAN1_TRAFFIC_LED;
 	cans.can[0].queue_handle = xQueueCreateStatic(CAN_QUEUE_SIZE, sizeof(cans.can[0].queue_storage) / CAN_QUEUE_SIZE, cans.can[0].queue_storage, &cans.can[0].queue_mem);
-	cans.can[1].queue_handle = xQueueCreateStatic(CAN_QUEUE_SIZE, sizeof(cans.can[1].queue_storage) / CAN_QUEUE_SIZE, cans.can[0].queue_storage, &cans.can[1].queue_mem);
+	cans.can[1].queue_handle = xQueueCreateStatic(CAN_QUEUE_SIZE, sizeof(cans.can[1].queue_storage) / CAN_QUEUE_SIZE, cans.can[1].queue_storage, &cans.can[1].queue_mem);
 
 
 	cans.can[0].usb_task_handle = xTaskCreateStatic(&can_usb_task, "usb_can0", TU_ARRAY_SIZE(cans.can[0].usb_task_stack_mem), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, cans.can[0].usb_task_stack_mem, &cans.can[0].usb_task_mem);
