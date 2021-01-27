@@ -1529,10 +1529,7 @@ send_can_info:
 				can->nmbt_sjw = tu_max8(M_CAN_NMBT_SJW_MIN, tu_min8(tmsg->sjw, M_CAN_NMBT_SJW_MAX));
 				can->nmbt_tseg1 = tu_max16(M_CAN_NMBT_TSEG1_MIN, tu_min16(tmsg->tseg1, M_CAN_NMBT_TSEG1_MAX));
 				can->nmbt_tseg2 = tu_max8(M_CAN_NMBT_TSEG2_MIN, tu_min8(tmsg->tseg2, M_CAN_NMBT_TSEG2_MAX));
-
 				can_log_nominal_bit_timing(can);
-
-
 			}
 
 			sc_cmd_place_error_reply(index, error);
@@ -1599,10 +1596,8 @@ send_can_info:
 					LOG("ch%u enabled=%u\n", index, is_enabled);
 					if (is_enabled) {
 						can_on(index);
-
 					} else {
 						can_off(index);
-
 					}
 				}
 			}
@@ -1891,11 +1886,6 @@ send:
 		}
 	}
 }
-
-// void TC0_Handler(void)
-// {
-// 	LOG("TC0_Handler\n");
-// }
 
 int main(void)
 {
