@@ -2792,6 +2792,13 @@ static inline void can_frame_bits(
 {
 	uint32_t payload_bits = dlc_to_len(dlc) * UINT32_C(8); /* payload */
 
+	/* For SOF / interframe spacing, see ISO 11898-1:2015(E) 10.4.2.2 SOF
+	 *
+	 * Since the third bit (if dominant) in the interframe space marks
+	 * SOF, there could be sitiuations in which the IFS is only 2 bit times
+	 * long. The solution adopted here is to compute including 1 bit time SOF and shorted
+	 * IFS to 2.
+
 	if (fdf) {
 		// FD frames have a 3 bit stuff count field and a 1 bit parity field prior to the actual checksum
 		// There is a stuff bit at the begin of the stuff count field (always) and then at fixed positions
@@ -2807,7 +2814,7 @@ static inline void can_frame_bits(
 
 			if (xtd) {
 				*nmbr_bits =
-					// 1 /* SOF? */
+					1 /* SOF? */
 					11 /* ID */
 					+ 1 /* SRR */
 					+ 1 /* IDE */
@@ -2824,11 +2831,11 @@ static inline void can_frame_bits(
 					+ 1 /* ACK slot */
 					+ 1 /* ACK delimiter */
 					+ 7 /* EOF */
-					+ 3; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
+					+ 2; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
 
 			} else {
 				*nmbr_bits =
-					// 1 /* SOF */
+					1 /* SOF */
 					11 /* ID */
 					+ 1 /* reserved 1 */
 					+ 1 /* IDE */
@@ -2843,14 +2850,14 @@ static inline void can_frame_bits(
 					+ 1 /* ACK slot */
 					+ 1 /* ACK delimiter */
 					+ 7 /* EOF */
-					+ 3; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
+					+ 2; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
 			}
 		} else {
 			*dtbr_bits = 0;
 
 			if (xtd) {
 				*nmbr_bits =
-					// 1 /* SOF */
+					1 /* SOF */
 					11 /* ID */
 					+ 1 /* SRR */
 					+ 1 /* IDE */
@@ -2867,10 +2874,10 @@ static inline void can_frame_bits(
 					+ 1 /* ACK slot */
 					+ 1 /* ACK delimiter */
 					+ 7 /* EOF */
-					+ 3; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
+					+ 2; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
 			} else {
 				*nmbr_bits =
-					// 1 /* SOF */
+					1 /* SOF */
 					11 /* ID */
 					+ 1 /* reserved 1 */
 					+ 1 /* IDE */
@@ -2885,7 +2892,7 @@ static inline void can_frame_bits(
 					+ 1 /* ACK slot */
 					+ 1 /* ACK delimiter */
 					+ 7 /* EOF */
-					+ 3; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
+					+ 2; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
 			}
 		}
 	} else {
@@ -2907,7 +2914,7 @@ static inline void can_frame_bits(
 				+ 1 /* ACK slot */
 				+ 1 /* ACK delimiter */
 				+ 7 /* EOF */
-				+ 3; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
+				+ 2; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
 		} else {
 			*nmbr_bits =
 				1 /* SOF */
@@ -2922,7 +2929,7 @@ static inline void can_frame_bits(
 				+ 1 /* ACK slot */
 				+ 1 /* ACK delimiter */
 				+ 7 /* EOF */
-				+ 3; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
+				+ 2; /* INTERFRAME SPACE: INTERMISSION (3) + (SUSPEND TRANSMISSION)? + (BUS IDLE)? */
 		}
 	}
 }
