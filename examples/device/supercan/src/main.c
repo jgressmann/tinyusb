@@ -975,7 +975,7 @@ static inline void cans_led_status_set(int status)
 
 #define MAJOR 0
 #define MINOR 3
-#define PATCH 13
+#define PATCH 14
 
 
 #if SUPERDFU_APP
@@ -2798,6 +2798,7 @@ static inline void can_frame_bits(
 	 * SOF, there could be sitiuations in which the IFS is only 2 bit times
 	 * long. The solution adopted here is to compute including 1 bit time SOF and shorted
 	 * IFS to 2.
+	 */
 
 	if (fdf) {
 		// FD frames have a 3 bit stuff count field and a 1 bit parity field prior to the actual checksum
@@ -2815,7 +2816,7 @@ static inline void can_frame_bits(
 			if (xtd) {
 				*nmbr_bits =
 					1 /* SOF? */
-					11 /* ID */
+					+ 11 /* ID */
 					+ 1 /* SRR */
 					+ 1 /* IDE */
 					+ 18 /* ID */
@@ -2836,7 +2837,7 @@ static inline void can_frame_bits(
 			} else {
 				*nmbr_bits =
 					1 /* SOF */
-					11 /* ID */
+					+ 11 /* ID */
 					+ 1 /* reserved 1 */
 					+ 1 /* IDE */
 					+ 1 /* EDL */
@@ -2858,7 +2859,7 @@ static inline void can_frame_bits(
 			if (xtd) {
 				*nmbr_bits =
 					1 /* SOF */
-					11 /* ID */
+					+ 11 /* ID */
 					+ 1 /* SRR */
 					+ 1 /* IDE */
 					+ 18 /* ID */
@@ -2878,7 +2879,7 @@ static inline void can_frame_bits(
 			} else {
 				*nmbr_bits =
 					1 /* SOF */
-					11 /* ID */
+					+ 11 /* ID */
 					+ 1 /* reserved 1 */
 					+ 1 /* IDE */
 					+ 1 /* EDL */
