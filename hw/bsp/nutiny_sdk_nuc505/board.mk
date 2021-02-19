@@ -44,7 +44,6 @@ FREERTOS_PORT = ARM_CM4F
 
 # For flash-jlink target
 JLINK_DEVICE = NUC505YO13Y
-JLINK_IF = swd
 
 # Note
 # To be able to program the SPI flash, it need to boot with ICP mode "1011". 
@@ -58,5 +57,5 @@ JLINK_IF = swd
 
 # Flash using Nuvoton's openocd fork at https://github.com/OpenNuvoton/OpenOCD-Nuvoton
 # Please compile and install it from github source
-flash: $(BUILD)/$(BOARD)-firmware.elf
+flash: $(BUILD)/$(PROJECT).elf
 	openocd -f interface/nulink.cfg -f target/numicroM4.cfg -c "program $< reset exit"

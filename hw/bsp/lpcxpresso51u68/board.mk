@@ -41,8 +41,7 @@ FREERTOS_PORT = ARM_CM0
 
 # For flash-jlink target
 JLINK_DEVICE = LPC51U68
-JLINK_IF = swd
 
 # flash using pyocd (51u68 is not supported yet)
-flash: $(BUILD)/$(BOARD)-firmware.hex
+flash: $(BUILD)/$(PROJECT).hex
 	pyocd flash -t LPC51U68 $<

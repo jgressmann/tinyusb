@@ -47,8 +47,7 @@ FREERTOS_PORT = ARM_CM4F
 
 # For flash-jlink target
 JLINK_DEVICE = ATSAMG55J19
-JLINK_IF = swd
 
 # flash using edbg from https://github.com/ataradov/edbg
-flash: $(BUILD)/$(BOARD)-firmware.bin
+flash: $(BUILD)/$(PROJECT).bin
 	edbg --verbose -t samg55 -pv -f $< 
