@@ -4,7 +4,7 @@ The board support code is only used for self-contained examples and testing. It 
 - One LED : for status
 - One Button : to get input from user
 - One UART : optional for device, but required for host examples
- 
+
 ## Supported Boards
 
 This code base already had supported for a handful of following boards (sorted alphabetically)
@@ -23,6 +23,12 @@ This code base already had supported for a handful of following boards (sorted a
 - [Adafruit Metro M0 Express](https://www.adafruit.com/product/3505)
 - [Adafruit Metro M4 Express](https://www.adafruit.com/product/3382)
 - [Seeeduino Xiao](https://www.seeedstudio.com/Seeeduino-XIAO-Arduino-Microcontroller-SAMD21-Cortex-M0+-p-4426.html)
+- [D5035-01](https://github.com/RudolphRiedel/USB_CAN-FD)
+- [Microchip SAME54 Xplained Pro](https://www.microchip.com/developmenttools/productdetails/atsame54-xpro)
+
+### MicroChip SAMG
+
+- [Microchip SAMG55 Xplained Pro](https://www.microchip.com/DevelopmentTools/ProductDetails/PartNO/ATSAMG55-XPRO)
 
 ### Nordic nRF5x
 
@@ -96,7 +102,7 @@ This code base already had supported for a handful of following boards (sorted a
 ### TI
 
  - [MSP430F5529 USB LaunchPad Evaluation Kit](http://www.ti.com/tool/MSP-EXP430F5529LP)
- 
+
 ### Tomu
 
 - [Fomu](https://www.crowdsupply.com/sutajio-kosagi/fomu)
