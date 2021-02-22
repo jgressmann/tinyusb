@@ -45,7 +45,7 @@
 // for OPT_MCU_
 #include "tusb_option.h"
 
-#if CFG_TUSB_MCU == OPT_MCU_SAME51
+#if CFG_TUSB_MCU == OPT_MCU_SAME5X
   #include "sam.h"
   #define SVC_Handler SVCall_Handler
 

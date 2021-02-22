@@ -61,7 +61,7 @@
 #elif CFG_TUSB_MCU == OPT_MCU_SAMD21 || CFG_TUSB_MCU == OPT_MCU_SAMD51
   #include "sam.h"
 
-#elif CFG_TUSB_MCU == OPT_MCU_SAME51
+#elif CFG_TUSB_MCU == OPT_MCU_SAME5X
   #include "sam.h"
   #define SVC_Handler SVCall_Handler
 

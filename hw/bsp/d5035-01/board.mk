@@ -9,7 +9,7 @@ CFLAGS += \
   -D__SAME51J19A__ \
   -DCONF_CPU_FREQUENCY=80000000 \
   -DCONF_GCLK_USB_FREQUENCY=48000000 \
-  -DCFG_TUSB_MCU=OPT_MCU_SAME51 \
+  -DCFG_TUSB_MCU=OPT_MCU_SAME5X \
   -DD5035_01=1 \
   -DBOARD_NAME="\"D5035-01\""
 
@@ -68,30 +68,30 @@ endif
 # 	hw/mcu/microchip/same/asf4/same51/hal/utils/src/utils_syscalls.c
 
 SRC_C += \
-	hw/mcu/microchip/same/asf4/same51/gcc/gcc/startup_same51.c \
-  hw/mcu/microchip/same/asf4/same51/gcc/system_same51.c \
+  hw/mcu/microchip/asf4/same51/gcc/gcc/startup_same51.c \
+  hw/mcu/microchip/asf4/same51/gcc/system_same51.c \
 
 ifdef SYSCALLS
 ifneq ($(SYSCALLS),0)
-  SRC_C += hw/mcu/microchip/same/asf4/same51/hal/utils/src/utils_syscalls.c
+  SRC_C += hw/mcu/microchip/asf4/same51/hal/utils/src/utils_syscalls.c
 endif
 endif
 
 ifdef LOG
 ifneq ($(LOG),0)
-  SRC_C += hw/mcu/microchip/same/asf4/same51/hal/utils/src/utils_syscalls.c
+  SRC_C += hw/mcu/microchip/asf4/same51/hal/utils/src/utils_syscalls.c
 endif
 endif
 
 INC += \
-	$(TOP)/hw/mcu/microchip/same/asf4/same51/ \
-	$(TOP)/hw/mcu/microchip/same/asf4/same51/config \
-	$(TOP)/hw/mcu/microchip/same/asf4/same51/include \
-	$(TOP)/hw/mcu/microchip/same/asf4/same51/hal/include \
-	$(TOP)/hw/mcu/microchip/same/asf4/same51/hal/utils/include \
-	$(TOP)/hw/mcu/microchip/same/asf4/same51/hpl/port \
-	$(TOP)/hw/mcu/microchip/same/asf4/same51/hri \
-	$(TOP)/hw/mcu/microchip/same/asf4/same51/CMSIS/Core/Include
+	$(TOP)/hw/mcu/microchip/asf4/same51/ \
+	$(TOP)/hw/mcu/microchip/asf4/same51/config \
+	$(TOP)/hw/mcu/microchip/asf4/same51/include \
+	$(TOP)/hw/mcu/microchip/asf4/same51/hal/include \
+	$(TOP)/hw/mcu/microchip/asf4/same51/hal/utils/include \
+	$(TOP)/hw/mcu/microchip/asf4/same51/hpl/port \
+	$(TOP)/hw/mcu/microchip/asf4/same51/hri \
+	$(TOP)/hw/mcu/microchip/asf4/same51/CMSIS/Include
 
 # For TinyUSB port source
 VENDOR = microchip

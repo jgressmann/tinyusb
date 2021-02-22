@@ -45,7 +45,7 @@
 // for OPT_MCU_
 #include "tusb_option.h"
 
-#if CFG_TUSB_MCU == OPT_MCU_SAME51
+#if CFG_TUSB_MCU == OPT_MCU_SAME5X
   #include "sam.h"
   #define SVC_Handler SVCall_Handler
 
@@ -156,7 +156,7 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg);
 /* FreeRTOS hooks to NVIC vectors */
 #define xPortPendSVHandler    PendSV_Handler
 #define xPortSysTickHandler   SysTick_Handler
-#define vPortSVCHandler       SVC_Handler
+#define vPortSVCHandler       SVCall_Handler
 
 //--------------------------------------------------------------------+
 // Interrupt nesting behavior configuration.

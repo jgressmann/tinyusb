@@ -26,7 +26,7 @@
 
 #include "tusb_option.h"
 
-#if TUSB_OPT_DEVICE_ENABLED && (CFG_TUSB_MCU == OPT_MCU_SAME51)
+#if TUSB_OPT_DEVICE_ENABLED && (CFG_TUSB_MCU == OPT_MCU_SAME5X)
 #undef CFG_TUSB_MCU
 #define CFG_TUSB_MCU OPT_MCU_SAMD51
 #include "../samd/dcd_samd.c"

@@ -1,4 +1,4 @@
-BOARD=d5035-01
+BOARD ?= d5035-01
 
 include ../../../tools/top.mk
 include ../../make.mk
