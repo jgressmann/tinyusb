@@ -47,8 +47,6 @@
 
 #if CFG_TUSB_MCU == OPT_MCU_SAME5X
   #include "sam.h"
-  #define SVC_Handler SVCall_Handler
-
 #else
   #error "FreeRTOSConfig.h need to include low level mcu header for configuration"
 #endif
