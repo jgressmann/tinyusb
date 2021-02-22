@@ -154,7 +154,7 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg);
 /* FreeRTOS hooks to NVIC vectors */
 #define xPortPendSVHandler    PendSV_Handler
 #define xPortSysTickHandler   SysTick_Handler
-#define vPortSVCHandler       SVCall_Handler
+#define vPortSVCHandler       SVC_Handler
 
 //--------------------------------------------------------------------+
 // Interrupt nesting behavior configuration.
