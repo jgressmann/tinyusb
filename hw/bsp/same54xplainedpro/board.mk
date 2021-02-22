@@ -1,28 +1,26 @@
 CONF_CPU_FREQUENCY ?= 120000000
 
 CFLAGS += \
-  -mthumb \
-  -mabi=aapcs \
-  -mlong-calls \
-  -mcpu=cortex-m4 \
-  -mfloat-abi=hard \
-  -mfpu=fpv4-sp-d16 \
-  -nostdlib -nostartfiles \
-  -D__SAME54P20A__ \
-  -DCONF_CPU_FREQUENCY=$(CONF_CPU_FREQUENCY) \
-  -DCFG_TUSB_MCU=OPT_MCU_SAME5X \
+	-mthumb \
+	-mabi=aapcs \
+	-mlong-calls \
+	-mcpu=cortex-m4 \
+	-mfloat-abi=hard \
+	-mfpu=fpv4-sp-d16 \
+	-nostdlib -nostartfiles \
+	-D__SAME54P20A__ \
+	-DCONF_CPU_FREQUENCY=$(CONF_CPU_FREQUENCY) \
+	-DCFG_TUSB_MCU=OPT_MCU_SAME5X \
+	-DSAME54XPLAINEDPRO=1 \
 
-
-
-#  -DSVC_Handler=SVCall_Handler
 
 # All source paths should be relative to the top level.
 LD_FILE = hw/bsp/$(BOARD)/same54p20a_flash.ld
 
 SRC_C += \
-  hw/mcu/microchip/asf4/same54/gcc/gcc/startup_same54.c \
-  hw/mcu/microchip/asf4/same54/gcc/system_same54.c \
-  hw/mcu/microchip/asf4/same54/hal/utils/src/utils_syscalls.c
+	hw/mcu/microchip/asf4/same54/gcc/gcc/startup_same54.c \
+	hw/mcu/microchip/asf4/same54/gcc/system_same54.c \
+	hw/mcu/microchip/asf4/same54/hal/utils/src/utils_syscalls.c
 
 INC += \
 	$(TOP)/hw/mcu/microchip/asf4/same54/ \
@@ -36,7 +34,7 @@ INC += \
 
 # For TinyUSB port source
 VENDOR = microchip
-CHIP_FAMILY = samd
+CHIP_FAMILY = same
 
 # For freeRTOS port source
 FREERTOS_PORT = ARM_CM4F
@@ -46,5 +44,5 @@ FREERTOS_PORT = ARM_CM4F
 JLINK_DEVICE = ATSAME54P20
 
 # flash using edbg from https://github.com/ataradov/edbg
-flash: $(BUILD)/$(PROJECT).bin
+flash: $(BUILD)/$(BOARD)-firmware.bin
 	edbg --verbose -t same54 -pv -f $<
