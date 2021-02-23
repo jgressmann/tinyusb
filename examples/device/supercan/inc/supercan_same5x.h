@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,21 +25,12 @@
 
 #pragma once
 
-#include <FreeRTOS.h>
-#include <task.h>
-#include <stdbool.h>
+#include <stdint.h>
 
-#define LED_STACK_SIZE configMINIMAL_STACK_SIZE
-
-extern StackType_t led_task_stack[LED_STACK_SIZE];
-extern StaticTask_t led_task_mem;
-
-extern void led_task(void *param);
-
-
-extern void led_set(uint8_t index, bool on);
-extern void led_toggle(uint8_t index);
-extern void led_blink(uint8_t index, uint16_t delay_ms);
-extern void led_burst(uint8_t index, uint16_t duration_ms);
-
-
+static inline void same5x_get_serial_number(uint32_t serial[4])
+{
+	serial[0] = *(uint32_t const *)0x008061FC;
+	serial[1] = *(uint32_t const *)0x00806010;
+	serial[2] = *(uint32_t const *)0x00806014;
+	serial[3] = *(uint32_t const *)0x00806018;
+}

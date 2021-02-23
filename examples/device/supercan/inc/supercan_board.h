@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,21 +25,18 @@
 
 #pragma once
 
-#include <FreeRTOS.h>
-#include <task.h>
-#include <stdbool.h>
+#if defined(D5035_01)
+#	include "supercan_D5035_01.h"
+#elif defined(SAME54XPLAINEDPRO)
+#	include "supercan_same54_xplained_pro.h"
+#else
+#	error "Unsupported board!"
+#endif
 
-#define LED_STACK_SIZE configMINIMAL_STACK_SIZE
+#ifndef D5035_01
+#	define D5035_01 0
+#endif
 
-extern StackType_t led_task_stack[LED_STACK_SIZE];
-extern StaticTask_t led_task_mem;
-
-extern void led_task(void *param);
-
-
-extern void led_set(uint8_t index, bool on);
-extern void led_toggle(uint8_t index);
-extern void led_blink(uint8_t index, uint16_t delay_ms);
-extern void led_burst(uint8_t index, uint16_t duration_ms);
-
-
+#ifndef SAME54XPLAINEDPRO
+#	define SAME54XPLAINEDPRO 0
+#endif

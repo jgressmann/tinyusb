@@ -46,11 +46,12 @@
 
 #include <supercan.h>
 #include <supercan_m1.h>
+#include <supercan_board.h>
 #include <supercan_debug.h>
+#include <supercan_same5x.h>
 #include <usb_descriptors.h>
 #include <m_can.h>
 #include <mcu.h>
-#include <supercan_mcu.h>
 #include <leds.h>
 #include <usb_dfu_1_1.h>
 
@@ -83,12 +84,6 @@ static inline uint32_t be32_to_cpu(uint32_t value) { return __builtin_bswap32(va
 static inline uint16_t cpu_to_be16(uint16_t value) { return __builtin_bswap16(value); }
 static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(value); }
 #endif
-
-#if !D5035_01 && !SAME54XPLAINEDPRO
-#	error Only D5035-01 or SAM E54 X Plained Pro boards supported
-#endif
-
-
 
 #ifndef likely
 #define likely(x) __builtin_expect(!!(x),1)
@@ -1922,7 +1917,7 @@ int main(void)
 	dfu.timer_handle = xTimerCreateStatic("dfu", pdMS_TO_TICKS(DFU_USB_RESET_TIMEOUT_MS), pdFALSE, NULL, &dfu_timer_expired, &dfu.timer_mem);
 #endif
 
-	led_init();
+	sc_board_led_init();
 
 	tusb_init();
 
@@ -1937,27 +1932,29 @@ int main(void)
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
 
-	usb.can[0].mutex_handle = xSemaphoreCreateMutexStatic(&usb.can[0].mutex_mem);
-	usb.can[1].mutex_handle = xSemaphoreCreateMutexStatic(&usb.can[1].mutex_mem);
-#if HWREV >= 3
+	for (size_t i = 0; i < SC_CAN_COUNT; ++i) {
+		usb.can[i].mutex_handle = xSemaphoreCreateMutexStatic(&usb.can[i].mutex_mem);
+		cans.can[i].queue_handle = xQueueCreateStatic(CAN_QUEUE_SIZE, sizeof(cans.can[i].queue_storage) / CAN_QUEUE_SIZE, cans.can[i].queue_storage, &cans.can[i].queue_mem);
+		cans.can[i].usb_task_handle = xTaskCreateStatic(&can_usb_task, "usb_can", TU_ARRAY_SIZE(cans.can[0].usb_task_stack_mem), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, cans.can[i].usb_task_stack_mem, &cans.can[i].usb_task_mem);
+	}
+
+#if D5035_01 && HWREV >= 3
 	cans.can[0].led_status_green = LED_CAN0_STATUS_GREEN;
 	cans.can[0].led_status_red = LED_CAN0_STATUS_RED;
 	cans.can[1].led_status_green = LED_CAN1_STATUS_GREEN;
 	cans.can[1].led_status_red = LED_CAN1_STATUS_RED;
 #endif
+
+#if D5035_01
 	cans.can[0].led_traffic = CAN0_TRAFFIC_LED;
 	cans.can[1].led_traffic = CAN1_TRAFFIC_LED;
-	cans.can[0].queue_handle = xQueueCreateStatic(CAN_QUEUE_SIZE, sizeof(cans.can[0].queue_storage) / CAN_QUEUE_SIZE, cans.can[0].queue_storage, &cans.can[0].queue_mem);
-	cans.can[1].queue_handle = xQueueCreateStatic(CAN_QUEUE_SIZE, sizeof(cans.can[1].queue_storage) / CAN_QUEUE_SIZE, cans.can[1].queue_storage, &cans.can[1].queue_mem);
-
-
-	cans.can[0].usb_task_handle = xTaskCreateStatic(&can_usb_task, "usb_can0", TU_ARRAY_SIZE(cans.can[0].usb_task_stack_mem), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, cans.can[0].usb_task_stack_mem, &cans.can[0].usb_task_mem);
-	cans.can[1].usb_task_handle = xTaskCreateStatic(&can_usb_task, "usb_can1", TU_ARRAY_SIZE(cans.can[1].usb_task_stack_mem), (void*)(uintptr_t)1, configMAX_PRIORITIES-1, cans.can[1].usb_task_stack_mem, &cans.can[1].usb_task_mem);
+#endif
 
 	led_blink(0, 2000);
+
+#if D5035_01
 	led_set(POWER_LED, 1);
-
-
+#endif
 
 #if SUPERDFU_APP
 	dfu_app_watchdog_disable();
@@ -2054,18 +2051,21 @@ void tud_custom_reset_cb(uint8_t rhport)
 	LOG("port %u reset\n", rhport);
 	usb.mounted = false;
 	usb.port = rhport;
+
 	usb.cmd[0].pipe = SC_M1_EP_CMD0_BULK_OUT;
 	usb.cmd[0].tx_offsets[0] = 0;
 	usb.cmd[0].tx_offsets[1] = 0;
-	usb.cmd[1].pipe = SC_M1_EP_CMD1_BULK_OUT;
-	usb.cmd[1].tx_offsets[0] = 0;
-	usb.cmd[1].tx_offsets[1] = 0;
 	usb.can[0].pipe = SC_M1_EP_MSG0_BULK_OUT;
 	usb.can[0].tx_offsets[0] = 0;
 	usb.can[0].tx_offsets[1] = 0;
+#if SC_CAN_COUNT > 1
 	usb.can[1].pipe = SC_M1_EP_MSG1_BULK_OUT;
 	usb.can[1].tx_offsets[0] = 0;
 	usb.can[1].tx_offsets[1] = 0;
+	usb.cmd[1].pipe = SC_M1_EP_CMD1_BULK_OUT;
+	usb.cmd[1].tx_offsets[0] = 0;
+	usb.cmd[1].tx_offsets[1] = 0;
+#endif
 }
 
 bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t* p_length)

@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,21 +25,51 @@
 
 #pragma once
 
-#include <FreeRTOS.h>
-#include <task.h>
 #include <stdbool.h>
+#include <stdint.h>
 
-#define LED_STACK_SIZE configMINIMAL_STACK_SIZE
+#ifndef D5035_01
+#	error "Only include this file for D5035-01 boards"
+#endif
 
-extern StackType_t led_task_stack[LED_STACK_SIZE];
-extern StaticTask_t led_task_mem;
+#ifndef HWREV
+#	error "Define HWREV"
+#endif
 
-extern void led_task(void *param);
+#define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
+#define SC_BOARD_USB_MANUFACTURER_STRING "2guys"
 
+#if HWREV == 1
+#	define SC_CAN_COUNT 1
 
-extern void led_set(uint8_t index, bool on);
-extern void led_toggle(uint8_t index);
-extern void led_blink(uint8_t index, uint16_t delay_ms);
-extern void led_burst(uint8_t index, uint16_t duration_ms);
+enum {
+	SC_BOARD_DEBUG_DEFAULT,
+	LED_RED1,
+	LED_ORANGE1,
+	LED_GREEN1,
+	LED_RED2,
+	LED_ORANGE2,
+	LED_GREEN2,
+	SC_LED_COUNT
+};
+#else HWREV > 1
+#	define SC_CAN_COUNT 2
+#endif
+enum {
+	SC_BOARD_DEBUG_DEFAULT,
+	LED_DEBUG_0,
+	LED_DEBUG_1,
+	LED_DEBUG_2,
+	LED_DEBUG_3,
+#if HWREV >= 3
+	LED_CAN0_STATUS_GREEN,
+	LED_CAN0_STATUS_RED,
+	LED_CAN1_STATUS_GREEN,
+	LED_CAN1_STATUS_RED,
+#endif
+	SC_LED_COUNT
+};
 
-
+extern void sc_board_led_init(void);
+extern void sc_board_led_set(uint8_t index, bool on);
+extern void sc_board_leds_on_unsafe(void);

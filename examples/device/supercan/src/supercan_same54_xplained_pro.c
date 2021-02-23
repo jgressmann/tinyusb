@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -23,23 +23,31 @@
  *
  */
 
-#pragma once
+#ifdef SAME54XPLAINEDPRO
 
-#include <FreeRTOS.h>
-#include <task.h>
-#include <stdbool.h>
+#include "supercan_same54_xplained_pro.h"
+#include "supercan_debug.h"
 
-#define LED_STACK_SIZE configMINIMAL_STACK_SIZE
-
-extern StackType_t led_task_stack[LED_STACK_SIZE];
-extern StaticTask_t led_task_mem;
-
-extern void led_task(void *param);
+#include <bsp/board.h>
 
 
-extern void led_set(uint8_t index, bool on);
-extern void led_toggle(uint8_t index);
-extern void led_blink(uint8_t index, uint16_t delay_ms);
-extern void led_burst(uint8_t index, uint16_t duration_ms);
+extern void sc_board_led_init(void)
+{
+
+}
+
+extern void sc_board_led_set(uint8_t index, bool on)
+{
+	SC_DEBUG_ASSERT(0 == index);
+
+	board_led_write(on);
+}
 
 
+extern void sc_board_leds_on_unsafe(void)
+{
+	board_led_write(true);
+}
+
+
+#endif // #ifdef SAME54XPLAINEDPRO

@@ -1,11 +1,7 @@
 #include "leds.h"
 #include "supercan_debug.h"
+#include "supercan_board.h"
 
-
-#include <sam.h>
-
-#include <hal/include/hal_gpio.h>
-#include <bsp/board.h>
 
 #ifndef ARRAY_SIZE
 #	define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
@@ -41,75 +37,10 @@ typedef union {
 
 struct led {
 	uint16_t cmd;
-	uint8_t pin;
+	// uint8_t pin;
 };
 
-#define LED_STATIC_INITIALIZER(name, pin) \
-	{ 0, pin }
-
-
-#if D5035_01
-#if HWREV == 1
-static struct led leds[] = {
-	LED_STATIC_INITIALIZER("debug", PIN_PA02), // board led
-	LED_STATIC_INITIALIZER("red1", PIN_PB14),
-	LED_STATIC_INITIALIZER("orange1", PIN_PB15),
-	LED_STATIC_INITIALIZER("green1", PIN_PA12),
-	LED_STATIC_INITIALIZER("red2", PIN_PA13),
-	LED_STATIC_INITIALIZER("orange2", PIN_PA14),
-	LED_STATIC_INITIALIZER("green2", PIN_PA15),
-};
-
-extern void led_init(void)
-{
-	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
-	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA12; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA13; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA14; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
-}
-#else // HWREV > 1
-static struct led leds[] = {
-	LED_STATIC_INITIALIZER("debug", PIN_PA02), // board led
-	LED_STATIC_INITIALIZER("red", PIN_PA18),
-	LED_STATIC_INITIALIZER("orange", PIN_PA19),
-	LED_STATIC_INITIALIZER("green", PIN_PB16),
-	LED_STATIC_INITIALIZER("blue", PIN_PB17),
-#if HWREV >= 3
-	LED_STATIC_INITIALIZER("can0_green", PIN_PB03),
-	LED_STATIC_INITIALIZER("can0_red", PIN_PB02),
-	LED_STATIC_INITIALIZER("can1_green", PIN_PB01),
-	LED_STATIC_INITIALIZER("can1_red", PIN_PB00),
-#endif
-};
-
-
-
-
-extern void led_init(void)
-{
-	PORT->Group[0].DIRSET.reg = PORT_PA18 | PORT_PA19;
-	PORT->Group[1].DIRSET.reg =
-		PORT_PB16 | PORT_PB17
-#if HWREV >= 3
-		| PORT_PB00 | PORT_PB01 | PORT_PB02 | PORT_PB03
-#endif
-		;
-}
-
-#endif // HWREV > 1
-#else
-
-static struct led leds[] = {
-	LED_STATIC_INITIALIZER("debug", 0), // board led
-};
-
-extern void led_init(void)
-{
-
-}
-#endif
+static struct led leds[SC_BOARD_LED_COUNT];
 
 extern void led_set(uint8_t index, bool on)
 {
@@ -149,17 +80,6 @@ extern void led_burst(uint8_t index, uint16_t duration_ms)
 	s.bit.cmd = LED_CMD_BURST;
 	s.bit.millis = duration_ms;
 	__atomic_store_n(&leds[index].cmd, s.reg, __ATOMIC_RELEASE);
-}
-
-extern void leds_on_unsafe(void)
-{
-#if D5035_01
-	for (unsigned i = 0; i < LED_COUNT; ++i) {
-		gpio_set_pin_level(leds[i].pin, 1);
-	}
-#else
-	board_led_write(true);
-#endif
 }
 
 extern void led_task(void *param)
@@ -260,12 +180,8 @@ extern void led_task(void *param)
 				}
 				break;
 			}
-#if D5035_01
-			gpio_set_pin_level(leds[i].pin, state[i]);
-#else
-			// board_led_write(state[i]);
-			board_led_write(0);
-#endif
+
+			sc_board_led_set((uint8_t)i, state[i]);
 		}
 
 		vTaskDelay(pdMS_TO_TICKS(TICK_MS));
