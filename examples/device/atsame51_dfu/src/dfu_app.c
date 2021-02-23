@@ -25,9 +25,9 @@
 
 #include <dfu_app.h>
 #include <dfu_debug.h>
+#include <dfu_mcu.h>
 #include <string.h>
 #include <sam.h>
-#include <mcu.h>
 
 #ifndef MCU_NVM_SIZE
 #error Define MCU_NVM_SIZE

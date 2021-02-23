@@ -27,7 +27,7 @@
 
 #include <usb_descriptors.h>
 #include <sam.h>
-#include <mcu.h>
+#include <dfu_mcu.h>
 
 #ifndef VID
 #	error Define VID

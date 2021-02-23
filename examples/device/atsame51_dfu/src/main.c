@@ -34,8 +34,8 @@
 #include <hal/include/hal_gpio.h>
 
 #include <usb_descriptors.h>
-#include <mcu.h>
 #include <usb_dfu_1_1.h>
+#include <dfu_mcu.h>
 #include <dfu_ram.h>
 #include <dfu_app.h>
 #include <dfu_debug.h>

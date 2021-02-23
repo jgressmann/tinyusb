@@ -27,7 +27,7 @@
 
 #include <stdint.h>
 #include <assert.h>
-#include <mcu.h>
+#include <dfu_mcu.h>
 
 #define DFU_APP_HDR_SECTION_NAME ".dfuapphdr"
 #define DFU_APP_FTR_SECTION_NAME ".dfuappftr"
