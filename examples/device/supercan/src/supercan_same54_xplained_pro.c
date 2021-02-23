@@ -28,7 +28,7 @@
 #include "supercan_same54_xplained_pro.h"
 #include "supercan_debug.h"
 #include "supercan_can.h"
-#include "leds.h"
+
 
 #include <bsp/board.h>
 #include <hal/include/hal_gpio.h>
@@ -42,6 +42,7 @@ extern void sc_board_led_init(void)
 extern void sc_board_led_set(uint8_t index, bool on)
 {
 	SC_DEBUG_ASSERT(0 == index);
+	(void)index;
 
 	board_led_write(on);
 }
@@ -85,6 +86,7 @@ extern void sc_board_can_init_clock(void) // controller and hardware specific se
 extern void sc_board_can_interrupt_enable(uint8_t index, bool on)
 {
 	SC_DEBUG_ASSERT(0 == index);
+	(void)index;
 
 	if (on) {
 		NVIC_EnableIRQ(CAN1_IRQn);
@@ -96,6 +98,7 @@ extern void sc_board_can_interrupt_enable(uint8_t index, bool on)
 extern void* sc_board_can_m_can(uint8_t index)
 {
 	SC_DEBUG_ASSERT(0 == index);
+	(void)index;
 
 	return CAN1;
 }
@@ -119,6 +122,16 @@ extern void CAN1_Handler(void)
 	// LOG("CAN1 int\n");
 
 	sc_can_int(0); // map to index 0
+}
+
+extern void sc_board_power_led_on(void)
+{
+
+}
+
+extern void sc_board_usb_led_burst(uint16_t duration_ms)
+{
+	(void)duration_ms;
 }
 
 

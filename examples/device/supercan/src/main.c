@@ -889,14 +889,6 @@ static void can_usb_task(void* param);
 #define LED_BURST_DURATION_MS 8
 
 
-enum {
-	CANLED_STATUS_DISABLED,
-	CANLED_STATUS_ENABLED_BUS_OFF,
-	CANLED_STATUS_ENABLED_BUS_ON_PASSIVE,
-	CANLED_STATUS_ENABLED_BUS_ON_ACTIVE,
-	CANLED_STATUS_ERROR_ACTIVE,
-	CANLED_STATUS_ERROR_PASSIVE,
-};
 
 
 static inline void cans_led_status_set(int status)
@@ -980,7 +972,7 @@ static struct usb {
 	bool mounted;
 } usb;
 
-#define USB_TRAFFIC_DO_LED sc_board_usb_burst_led(8)
+#define USB_TRAFFIC_DO_LED sc_board_usb_led_burst(8)
 
 static inline void can_reset_task_state_unsafe(uint8_t index)
 {

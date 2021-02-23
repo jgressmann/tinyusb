@@ -30,9 +30,9 @@
 #include "supercan_D5035_01.h"
 #include "supercan_debug.h"
 #include "supercan_can.h"
+#include "supercan_board.h"
 #include "leds.h"
 
-#include <sam.h>
 #include <hal/include/hal_gpio.h>
 
 #ifndef ARRAY_SIZE
@@ -99,7 +99,7 @@ static struct led leds[] = {
 #endif
 };
 
-static struct can cans[SC_BOARD_CAN_COUNT];
+
 
 
 extern void sc_board_led_init(void)
@@ -122,6 +122,7 @@ extern void sc_board_led_init(void)
 #endif // HWREV > 1
 
 
+static struct can cans[SC_BOARD_CAN_COUNT];
 
 extern void sc_board_led_set(uint8_t index, bool on)
 {
@@ -283,7 +284,7 @@ extern void sc_board_power_led_on(void)
 	led_set(POWER_LED, 1);
 }
 
-extern void sc_board_usb_burst_led(uint16_t duration_ms)
+extern void sc_board_usb_led_burst(uint16_t duration_ms)
 {
 	led_burst(USB_LED, duration_ms);
 }

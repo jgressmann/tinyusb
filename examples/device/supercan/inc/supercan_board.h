@@ -44,6 +44,16 @@
 #	define SAME54XPLAINEDPRO 0
 #endif
 
+enum {
+	CANLED_STATUS_DISABLED,
+	CANLED_STATUS_ENABLED_BUS_OFF,
+	CANLED_STATUS_ENABLED_BUS_ON_PASSIVE,
+	CANLED_STATUS_ENABLED_BUS_ON_ACTIVE,
+	CANLED_STATUS_ERROR_ACTIVE,
+	CANLED_STATUS_ERROR_PASSIVE,
+};
+
+
 extern void sc_board_led_init(void);
 extern void sc_board_led_set(uint8_t index, bool on);
 extern void sc_board_leds_on_unsafe(void);
@@ -56,4 +66,4 @@ extern void* sc_board_can_m_can(uint8_t index);
 extern void sc_board_can_burst_led(uint8_t index, uint16_t duration_ms);
 extern void sc_board_can_led_set_status(uint8_t index, int status);
 extern void sc_board_power_led_on(void);
-extern void sc_board_usb_burst_led(uint16_t duration_ms);
+extern void sc_board_usb_led_burst(uint16_t duration_ms);

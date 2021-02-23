@@ -55,7 +55,6 @@ enum {
 };
 #else // HWREV > 1
 #	define SC_BOARD_CAN_COUNT 2
-#endif
 enum {
 	SC_BOARD_DEBUG_DEFAULT,
 	LED_DEBUG_0,
@@ -70,4 +69,5 @@ enum {
 #endif
 	SC_BOARD_LED_COUNT
 };
+#endif
 
