@@ -5,6 +5,7 @@
 #include <sam.h>
 
 #include <hal/include/hal_gpio.h>
+#include <bsp/board.h>
 
 #ifndef ARRAY_SIZE
 #	define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
@@ -47,6 +48,7 @@ struct led {
 	{ 0, pin }
 
 
+#if D5035_01
 #if HWREV == 1
 static struct led leds[] = {
 	LED_STATIC_INITIALIZER("debug", PIN_PA02), // board led
@@ -97,7 +99,17 @@ extern void led_init(void)
 }
 
 #endif // HWREV > 1
+#else
 
+static struct led leds[] = {
+	LED_STATIC_INITIALIZER("debug", 0), // board led
+};
+
+extern void led_init(void)
+{
+
+}
+#endif
 
 extern void led_set(uint8_t index, bool on)
 {
@@ -141,9 +153,13 @@ extern void led_burst(uint8_t index, uint16_t duration_ms)
 
 extern void leds_on_unsafe(void)
 {
+#if D5035_01
 	for (unsigned i = 0; i < LED_COUNT; ++i) {
 		gpio_set_pin_level(leds[i].pin, 1);
 	}
+#else
+	board_led_write(true);
+#endif
 }
 
 extern void led_task(void *param)
@@ -244,8 +260,12 @@ extern void led_task(void *param)
 				}
 				break;
 			}
-
+#if D5035_01
 			gpio_set_pin_level(leds[i].pin, state[i]);
+#else
+			// board_led_write(state[i]);
+			board_led_write(0);
+#endif
 		}
 
 		vTaskDelay(pdMS_TO_TICKS(TICK_MS));

@@ -12,6 +12,7 @@ CFLAGS += \
 	-DCONF_CPU_FREQUENCY=$(CONF_CPU_FREQUENCY) \
 	-DCFG_TUSB_MCU=OPT_MCU_SAME5X \
 	-DSAME54XPLAINEDPRO=1 \
+  -DBOARD_NAME="\"Microchip SAM E54 Xplained Pro\""
 
 
 # All source paths should be relative to the top level.

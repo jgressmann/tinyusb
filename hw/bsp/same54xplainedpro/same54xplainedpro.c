@@ -58,7 +58,6 @@ void USB_3_Handler(void)
 #define LED_PIN PIN_PC18
 #define BUTTON_PIN PIN_PB31
 #define BOARD_SERCOM SERCOM2
-#define BOARD_NAME "Microchip SAM E54 Xplained Pro"
 
 static inline void init_clock(void)
 {

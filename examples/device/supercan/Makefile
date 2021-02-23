@@ -1,4 +1,5 @@
 BOARD ?= d5035-01
+HWREV ?= 1
 
 include ../../../tools/top.mk
 include ../../make.mk
@@ -18,9 +19,15 @@ INC += \
 CFLAGS += -Wno-error
 
 ifdef SUPERCAN_DEBUG
-  CFLAGS += -DSUPERCAN_DEBUG=$(SUPERCAN_DEBUG)
+	CFLAGS += -DSUPERCAN_DEBUG=$(SUPERCAN_DEBUG)
 else
-  CFLAGS += -DSUPERCAN_DEBUG=0
+	CFLAGS += -DSUPERCAN_DEBUG=0
+endif
+
+ifdef SUPERDFU_APP
+	CFLAGS += -DSUPERDFU_APP=$(SUPERDFU_APP)
+else
+	CFLAGS += -DSUPERDFU_APP=0
 endif
 
 # Example source

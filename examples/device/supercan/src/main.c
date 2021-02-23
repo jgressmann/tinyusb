@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <assert.h>
 
 #include <FreeRTOS.h>
 #include <task.h>
@@ -49,10 +50,15 @@
 #include <usb_descriptors.h>
 #include <m_can.h>
 #include <mcu.h>
-#include <usb_dfu_1_1.h>
-#include <dfu_ram.h>
-#include <dfu_app.h>
+#include <supercan_mcu.h>
 #include <leds.h>
+#include <usb_dfu_1_1.h>
+
+#if SUPERDFU_APP
+#	include <dfu_ram.h>
+#	include <dfu_app.h>
+#endif
+
 
 
 
@@ -78,8 +84,8 @@ static inline uint16_t cpu_to_be16(uint16_t value) { return __builtin_bswap16(va
 static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(value); }
 #endif
 
-#ifndef D5035_01
-# error Only D5035-01 boards supported
+#if !D5035_01 && !SAME54XPLAINEDPRO
+#	error Only D5035-01 or SAM E54 X Plained Pro boards supported
 #endif
 
 
@@ -238,7 +244,7 @@ static inline void can_init_pins(void)
 		PORT_WRCONFIG_WRPMUX |
 		PORT_WRCONFIG_PMUX(8) |         // I, CAN0, DS60001507E page 32, 910
 		PORT_WRCONFIG_PMUXEN;
-
+#if SC_CAN_COUNT > 1
 	// CAN1 port
 	PORT->Group[1].WRCONFIG.reg =
 		PORT_WRCONFIG_PINMASK(0xc000) | // PB14/15 = 0xc000, PB12/13 = 0x3000
@@ -246,6 +252,7 @@ static inline void can_init_pins(void)
 		PORT_WRCONFIG_WRPMUX |
 		PORT_WRCONFIG_PMUX(7) |         // H, CAN1, DS60001507E page 32, 910
 		PORT_WRCONFIG_PMUXEN;
+#endif
 }
 
 static inline void can_init_clock(void) // controller and hardware specific setup of clock for the m_can module
@@ -904,6 +911,7 @@ static void can_usb_task(void* param);
 
 #define LED_BURST_DURATION_MS 8
 
+#if D5035_01
 #if HWREV == 1
 #define USB_TRAFFIC_LED LED_DEBUG
 #define USB_TRAFFIC_DO_LED led_burst(LED_ORANGE1, LED_BURST_DURATION_MS)
@@ -917,7 +925,14 @@ static void can_usb_task(void* param);
 #define CAN0_TRAFFIC_LED LED_DEBUG_1
 #define CAN1_TRAFFIC_LED LED_DEBUG_2
 #endif // HWREV > 1
+#else
 
+#define USB_TRAFFIC_DO_LED
+#define POWER_LED LED_DEBUG_DEFAULT
+#define CAN0_TRAFFIC_LED LED_DEBUG_DEFAULT
+#define CAN1_TRAFFIC_LED LED_DEBUG_DEFAULT
+
+#endif
 
 
 enum {
@@ -931,7 +946,7 @@ enum {
 
 static inline void canled_set_status(struct can *can, int status)
 {
-#if HWREV >= 3
+#if D5035_01 && HWREV >= 3
 	const uint16_t BLINK_DELAY_PASSIVE_MS = 512;
 	const uint16_t BLINK_DELAY_ACTIVE_MS = 128;
 	switch (status) {
@@ -1457,7 +1472,7 @@ send_dev_info:
 				rep->sn_len = 16;
 				static_assert(sizeof(rep->sn_bytes) >= 16, "expect at least 16 of buffer for serial number");
 				uint32_t serial[4];
-				same51_get_serial_number(serial);
+				same5x_get_serial_number(serial);
 				for (unsigned i = 0, j = 0; i < 4; ++i) {
 					uint32_t w = serial[i];
 					rep->sn_bytes[j++] = (w >> 24) & 0xff;
