@@ -25,35 +25,7 @@
 
 #pragma once
 
-#include <stdbool.h>
 #include <stdint.h>
 
-#if defined(D5035_01)
-#	include "supercan_D5035_01.h"
-#elif defined(SAME54XPLAINEDPRO)
-#	include "supercan_same54_xplained_pro.h"
-#else
-#	error "Unsupported board!"
-#endif
+__attribute__((section(".ramfunc"))) void sc_can_int(uint8_t index);
 
-#ifndef D5035_01
-#	define D5035_01 0
-#endif
-
-#ifndef SAME54XPLAINEDPRO
-#	define SAME54XPLAINEDPRO 0
-#endif
-
-extern void sc_board_led_init(void);
-extern void sc_board_led_set(uint8_t index, bool on);
-extern void sc_board_leds_on_unsafe(void);
-
-extern void sc_board_can_init_module(void);
-extern void sc_board_can_init_pins(void);
-extern void sc_board_can_init_clock(void);
-extern void sc_board_can_interrupt_enable(uint8_t index, bool on);
-extern void* sc_board_can_m_can(uint8_t index);
-extern void sc_board_can_burst_led(uint8_t index, uint16_t duration_ms);
-extern void sc_board_can_led_set_status(uint8_t index, int status);
-extern void sc_board_power_led_on(void);
-extern void sc_board_usb_burst_led(uint16_t duration_ms);

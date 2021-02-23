@@ -188,7 +188,7 @@ struct can {
 	StaticQueue_t queue_mem;
 	QueueHandle_t queue_handle;
 	Can *m_can;
-	IRQn_Type interrupt_id;
+	// IRQn_Type interrupt_id;
 	uint32_t can_us_offset;
 	uint32_t nm_us_per_bit;
 	uint32_t dt_us_per_bit_factor_shift8;
@@ -208,9 +208,9 @@ struct can {
 	uint8_t dtbt_tseg2;
 	uint8_t int_comm_flags;
 	uint8_t int_prev_bus_state;
-	uint8_t led_status_green;
-	uint8_t led_status_red;
-	uint8_t led_traffic;
+	// uint8_t led_status_green;
+	// uint8_t led_status_red;
+	// uint8_t led_traffic;
 	uint8_t tx_available;
 	uint8_t rx_get_index; // NOT an index, uses full range of type
 	uint8_t rx_put_index; // NOT an index, uses full range of type
@@ -222,41 +222,9 @@ struct can {
 };
 
 static struct {
-	struct can can[2];
+	struct can can[SC_BOARD_CAN_COUNT];
 } cans;
 
-
-
-
- // controller and hardware specific setup of i/o pins for CAN
-static inline void can_init_pins(void)
-{
-	// CAN0 port
-	PORT->Group[0].WRCONFIG.reg =
-		PORT_WRCONFIG_HWSEL |           // upper half
-		PORT_WRCONFIG_PINMASK(0x00c0) | // PA22/23
-		PORT_WRCONFIG_WRPINCFG |
-		PORT_WRCONFIG_WRPMUX |
-		PORT_WRCONFIG_PMUX(8) |         // I, CAN0, DS60001507E page 32, 910
-		PORT_WRCONFIG_PMUXEN;
-#if SC_CAN_COUNT > 1
-	// CAN1 port
-	PORT->Group[1].WRCONFIG.reg =
-		PORT_WRCONFIG_PINMASK(0xc000) | // PB14/15 = 0xc000, PB12/13 = 0x3000
-		PORT_WRCONFIG_WRPINCFG |
-		PORT_WRCONFIG_WRPMUX |
-		PORT_WRCONFIG_PMUX(7) |         // H, CAN1, DS60001507E page 32, 910
-		PORT_WRCONFIG_PMUXEN;
-#endif
-}
-
-static inline void can_init_clock(void) // controller and hardware specific setup of clock for the m_can module
-{
-	MCLK->AHBMASK.bit.CAN0_ = 1;
-	MCLK->AHBMASK.bit.CAN1_ = 1;
-	GCLK->PCHCTRL[CAN0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0
-	GCLK->PCHCTRL[CAN1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0
-}
 
 static inline void can_log_nominal_bit_timing(struct can *c)
 {
@@ -391,14 +359,11 @@ static void can_init_module(void)
 {
 	memset(&cans, 0, sizeof(cans));
 
-	cans.can[0].m_can = CAN0;
-	cans.can[1].m_can = CAN1;
-	cans.can[0].interrupt_id = CAN0_IRQn;
-	cans.can[1].interrupt_id = CAN1_IRQn;
-
 	for (size_t j = 0; j < TU_ARRAY_SIZE(cans.can); ++j) {
 		struct can *can = &cans.can[j];
 		can->features = CAN_FEAT_PERM;
+		can->m_can = sc_board_can_m_can((uint8_t)j);
+		m_can_init_begin(can->m_can);
 
 		for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can[0].rx_fifo); ++i) {
 			SC_DEBUG_ASSERT(can->rx_frames[i].ts == 0);
@@ -411,11 +376,43 @@ static void can_init_module(void)
 		}
 	}
 
-	m_can_init_begin(CAN0);
-	m_can_init_begin(CAN1);
 
-	NVIC_SetPriority(CAN0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(CAN1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+
+// #if SC_BOARD_CAN_COUNT > 1
+// 	sc_can_init_module(1);
+// #endif
+
+// 	cans.can[0].m_can = CAN0;
+// 	cans.can[0].interrupt_id = CAN0_IRQn;
+// #if SC_BOARD_CAN_COUNT > 1
+// 	cans.can[1].m_can = CAN1;
+// 	cans.can[1].interrupt_id = CAN1_IRQn;
+// #endif
+
+// 	for (size_t j = 0; j < TU_ARRAY_SIZE(cans.can); ++j) {
+// 		struct can *can = &cans.can[j];
+// 		can->features = CAN_FEAT_PERM;
+
+// 		for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can[0].rx_fifo); ++i) {
+// 			SC_DEBUG_ASSERT(can->rx_frames[i].ts == 0);
+// 		}
+
+// 		for (size_t i = 0; i < TU_ARRAY_SIZE(cans.can[0].tx_fifo); ++i) {
+// 			can->tx_fifo[i].T1.bit.EFC = 1; // store tx events
+
+// 			SC_DEBUG_ASSERT(can->tx_frames[i].ts == 0);
+// 		}
+// 	}
+
+// 	m_can_init_begin(CAN0);
+// #if SC_BOARD_CAN_COUNT > 1
+// 	m_can_init_begin(CAN1);
+// #endif
+
+// 	NVIC_SetPriority(CAN0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+// #if SC_BOARD_CAN_COUNT > 1
+// 	NVIC_SetPriority(CAN1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+// #endif
 }
 
 static inline char const *m_can_psr_act_str(uint8_t act)
@@ -497,12 +494,12 @@ static inline void counter_1MHz_init_clock(void)
 	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup TC1 to use GLCK2 */
 }
 
-static inline void counter_1MHz_request_current_value(void)
+__attribute__((section(".ramfunc"))) static inline void counter_1MHz_request_current_value(void)
 {
 	TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
 }
 
-static inline void counter_1MHz_request_current_value_lazy(void)
+__attribute__((section(".ramfunc"))) static inline void counter_1MHz_request_current_value_lazy(void)
 {
 	uint8_t reg;
 
@@ -528,18 +525,18 @@ static inline void counter_1MHz_request_current_value_lazy(void)
 	}
 }
 
-static inline bool counter_1MHz_is_current_value_ready(void)
+__attribute__((section(".ramfunc"))) static inline bool counter_1MHz_is_current_value_ready(void)
 {
 	return (__atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE) & TC_CTRLBSET_CMD_Msk) == TC_CTRLBSET_CMD_NONE;
 	//return TC0->COUNT32.CTRLBSET.bit.CMD == TC_CTRLBSET_CMD_NONE_Val;
 }
 
-static inline uint32_t counter_1MHz_read_unsafe(void)
+__attribute__((section(".ramfunc"))) static inline uint32_t counter_1MHz_read_unsafe(void)
 {
 	return TC0->COUNT32.COUNT.reg;
 }
 
-static inline void counter_1MHz_reset(void)
+__attribute__((section(".ramfunc"))) static inline void counter_1MHz_reset(void)
 {
 	TC0->COUNT32.CTRLA.reg = TC_CTRLA_SWRST;
 	while(1 == TC0->COUNT32.SYNCBUSY.bit.SWRST);
@@ -550,7 +547,7 @@ static inline void counter_1MHz_reset(void)
 }
 
 
-static inline uint32_t counter_1MHz_wait_for_current_value(void)
+__attribute__((section(".ramfunc"))) static inline uint32_t counter_1MHz_wait_for_current_value(void)
 {
 	while (!counter_1MHz_is_current_value_ready()) {
 		;
@@ -559,7 +556,7 @@ static inline uint32_t counter_1MHz_wait_for_current_value(void)
 	return counter_1MHz_read_unsafe();
 }
 
-static inline uint32_t counter_1MHz_read_sync(void)
+__attribute__((section(".ramfunc"))) static inline uint32_t counter_1MHz_read_sync(void)
 {
 	counter_1MHz_request_current_value_lazy();
 	return counter_1MHz_wait_for_current_value();
@@ -575,12 +572,12 @@ static inline uint32_t counter_1MHz_read_sync(void)
 // 	return c++;
 // }
 
-static inline void can_us_request_current_value_safe(void)
+__attribute__((section(".ramfunc"))) static inline void can_us_request_current_value_safe(void)
 {
 	counter_1MHz_request_current_value_lazy();
 }
 
-static inline void can_us_request_current_value_unsafe(void)
+__attribute__((section(".ramfunc"))) static inline void can_us_request_current_value_unsafe(void)
 {
 	counter_1MHz_request_current_value();
 }
@@ -592,32 +589,31 @@ static inline void can_us_request_current_value_unsafe(void)
 // 	return counter_1MHz_is_current_value_ready();
 // }
 
-static inline uint32_t can_us_read_unsafe(uint8_t index)
+__attribute__((section(".ramfunc"))) static inline uint32_t can_us_read_unsafe(uint8_t index)
 {
 	return counter_1MHz_read_unsafe() - cans.can[index].can_us_offset;
 }
 
-static inline uint32_t can_us_wait_for_current_value(uint8_t index)
+__attribute__((section(".ramfunc"))) static inline uint32_t can_us_wait_for_current_value(uint8_t index)
 {
 	return counter_1MHz_wait_for_current_value() - cans.can[index].can_us_offset;
 }
 
-static inline uint32_t can_us_read_sync(uint8_t index)
+__attribute__((section(".ramfunc"))) static inline uint32_t can_us_read_sync(uint8_t index)
 {
 	can_us_request_current_value_safe();
 	return can_us_wait_for_current_value(index);
 }
 
-static inline void can_us_init(uint8_t index)
+__attribute__((section(".ramfunc"))) static inline void can_us_init(uint8_t index)
 {
 	struct can *can = &cans.can[index];
 
 	can->can_us_offset = counter_1MHz_read_sync();
 }
 
-static void can_int(uint8_t index)
+__attribute__((section(".ramfunc"))) void sc_can_int(uint8_t index)
 {
-
 	can_us_request_current_value_unsafe();
 
 	// SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
@@ -856,17 +852,20 @@ static void can_int(uint8_t index)
 }
 
 
-static inline void can_set_state1(Can *can, IRQn_Type interrupt_id, bool enabled)
+static inline void can_set_state1(uint8_t index, bool enabled)
 {
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+
+	Can* can = cans.can[index].m_can;
 	if (enabled) {
 		// enable interrupt
-		NVIC_EnableIRQ(interrupt_id);
+		sc_board_can_interrupt_enable(index, enabled);
 		// disable initialization
 		m_can_init_end(can);
 
 	} else {
 		m_can_init_begin(can);
-		NVIC_DisableIRQ(interrupt_id);
+		sc_board_can_interrupt_enable(index, enabled);
 		// clear any old interrupts
 		can->IR = can->IR;
 		// TXFQS, RXF0S are reset when CCCR.CCE is set (read as 0), DS60001507E-page 1207
@@ -881,23 +880,6 @@ static inline uint8_t dlc_to_len(uint8_t dlc)
 	return map[dlc & 0xf];
 }
 
-
-void CAN0_Handler(void)
-{
-	// LOG("CAN0 int\n");
-
-	can_int(0);
-
-}
-
-void CAN1_Handler(void)
-{
-	// LOG("CAN1 int\n");
-
-	can_int(1);
-
-}
-
 static StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
 static StaticTask_t usb_device_stack_mem;
 
@@ -905,29 +887,6 @@ static void tusb_device_task(void* param);
 static void can_usb_task(void* param);
 
 #define LED_BURST_DURATION_MS 8
-
-#if D5035_01
-#if HWREV == 1
-#define USB_TRAFFIC_LED LED_DEBUG
-#define USB_TRAFFIC_DO_LED led_burst(LED_ORANGE1, LED_BURST_DURATION_MS)
-#define POWER_LED LED_RED1
-#define CAN0_TRAFFIC_LED LED_GREEN1
-#define CAN1_TRAFFIC_LED LED_GREEN2
-
-#else // HWREV > 1
-#define USB_TRAFFIC_DO_LED led_burst(LED_DEBUG_3, LED_BURST_DURATION_MS)
-#define POWER_LED LED_DEBUG_0
-#define CAN0_TRAFFIC_LED LED_DEBUG_1
-#define CAN1_TRAFFIC_LED LED_DEBUG_2
-#endif // HWREV > 1
-#else
-
-#define USB_TRAFFIC_DO_LED
-#define POWER_LED LED_DEBUG_DEFAULT
-#define CAN0_TRAFFIC_LED LED_DEBUG_DEFAULT
-#define CAN1_TRAFFIC_LED LED_DEBUG_DEFAULT
-
-#endif
 
 
 enum {
@@ -939,47 +898,11 @@ enum {
 	CANLED_STATUS_ERROR_PASSIVE,
 };
 
-static inline void canled_set_status(struct can *can, int status)
-{
-#if D5035_01 && HWREV >= 3
-	const uint16_t BLINK_DELAY_PASSIVE_MS = 512;
-	const uint16_t BLINK_DELAY_ACTIVE_MS = 128;
-	switch (status) {
-	case CANLED_STATUS_DISABLED:
-		led_set(can->led_status_green, 0);
-		led_set(can->led_status_red, 0);
-		break;
-	case CANLED_STATUS_ENABLED_BUS_OFF:
-		led_set(can->led_status_green, 1);
-		led_set(can->led_status_red, 0);
-		break;
-	case CANLED_STATUS_ENABLED_BUS_ON_PASSIVE:
-		led_blink(can->led_status_green, BLINK_DELAY_PASSIVE_MS);
-		led_set(can->led_status_red, 0);
-		break;
-	case CANLED_STATUS_ENABLED_BUS_ON_ACTIVE:
-		led_blink(can->led_status_green, BLINK_DELAY_ACTIVE_MS);
-		led_set(can->led_status_red, 0);
-		break;
-	case CANLED_STATUS_ERROR_PASSIVE:
-		led_set(can->led_status_green, 0);
-		led_blink(can->led_status_red, BLINK_DELAY_ACTIVE_MS);
-		break;
-	case CANLED_STATUS_ERROR_ACTIVE:
-		led_set(can->led_status_green, 0);
-		led_blink(can->led_status_red, BLINK_DELAY_ACTIVE_MS);
-		break;
-	}
-#else
-	(void)can;
-	(void)status;
-#endif
-}
 
 static inline void cans_led_status_set(int status)
 {
 	for (uint8_t i = 0; i < TU_ARRAY_SIZE(cans.can); ++i) {
-		canled_set_status(&cans.can[i], status);
+		sc_board_can_led_set_status(i, status);
 	}
 }
 
@@ -1051,11 +974,13 @@ struct usb_cmd {
 
 
 static struct usb {
-	struct usb_cmd cmd[2];
-	struct usb_can can[2];
+	struct usb_cmd cmd[SC_BOARD_CAN_COUNT];
+	struct usb_can can[SC_BOARD_CAN_COUNT];
 	uint8_t port;
 	bool mounted;
 } usb;
+
+#define USB_TRAFFIC_DO_LED sc_board_usb_burst_led(8)
 
 static inline void can_reset_task_state_unsafe(uint8_t index)
 {
@@ -1120,7 +1045,7 @@ static inline void can_off(uint8_t index)
 	struct usb_can *usb_can = &usb.can[index];
 
 	// go bus off
-	can_set_state1(can->m_can, can->interrupt_id, false);
+	can_set_state1(index, false);
 
 	// _With_ usb lock, since this isn't the interrupt handler
 	// and neither a higher priority task.
@@ -1135,7 +1060,7 @@ static inline void can_off(uint8_t index)
 
 	can_reset_task_state_unsafe(index);
 
-	canled_set_status(can, CANLED_STATUS_ENABLED_BUS_OFF);
+	sc_board_can_led_set_status(index, CANLED_STATUS_ENABLED_BUS_OFF);
 
 	xSemaphoreGive(usb_can->mutex_handle);
 
@@ -1168,11 +1093,11 @@ static inline void can_on(uint8_t index)
 
 	can_us_init(index);
 
-	can_set_state1(can->m_can, can->interrupt_id, can->enabled);
+	can_set_state1(index, can->enabled);
 
 	SC_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
 
-	canled_set_status(can, CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
+	sc_board_can_led_set_status(index, CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
 
 	xSemaphoreGive(usb_can->mutex_handle);
 
@@ -1414,7 +1339,7 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 			// reset
 			can_reset(index);
-			canled_set_status(can, CANLED_STATUS_ENABLED_BUS_OFF);
+			sc_board_can_led_set_status(index, CANLED_STATUS_ENABLED_BUS_OFF);
 
 			// transmit empty buffers (clear whatever was in there before)
 			(void)dcd_edpt_xfer(usb.port, 0x80 | usb_can->pipe, usb_can->tx_buffers[usb_can->tx_bank], usb_can->tx_offsets[usb_can->tx_bank]);
@@ -1901,6 +1826,8 @@ int main(void)
 {
 	board_init();
 
+	// LOG("CONF_CPU_FREQUENCY=%lu CAN_CLK_HZ=%lu\n", CONF_CPU_FREQUENCY, CAN_CLK_HZ);
+
 #if SUPERDFU_APP
 	LOG(
 		"%s v%u.%u.%u starting...\n",
@@ -1921,9 +1848,13 @@ int main(void)
 
 	tusb_init();
 
-	can_init_pins();
-	can_init_clock();
+
+	sc_board_can_init_module();
 	can_init_module();
+
+	sc_board_can_init_pins();
+	sc_board_can_init_clock();
+
 
 	counter_1MHz_init_clock();
 	counter_1MHz_reset();
@@ -1932,33 +1863,24 @@ int main(void)
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
 
-	for (size_t i = 0; i < SC_CAN_COUNT; ++i) {
+	for (size_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
 		usb.can[i].mutex_handle = xSemaphoreCreateMutexStatic(&usb.can[i].mutex_mem);
 		cans.can[i].queue_handle = xQueueCreateStatic(CAN_QUEUE_SIZE, sizeof(cans.can[i].queue_storage) / CAN_QUEUE_SIZE, cans.can[i].queue_storage, &cans.can[i].queue_mem);
-		cans.can[i].usb_task_handle = xTaskCreateStatic(&can_usb_task, "usb_can", TU_ARRAY_SIZE(cans.can[0].usb_task_stack_mem), (void*)(uintptr_t)0, configMAX_PRIORITIES-1, cans.can[i].usb_task_stack_mem, &cans.can[i].usb_task_mem);
 	}
 
-#if D5035_01 && HWREV >= 3
-	cans.can[0].led_status_green = LED_CAN0_STATUS_GREEN;
-	cans.can[0].led_status_red = LED_CAN0_STATUS_RED;
-	cans.can[1].led_status_green = LED_CAN1_STATUS_GREEN;
-	cans.can[1].led_status_red = LED_CAN1_STATUS_RED;
-#endif
-
-#if D5035_01
-	cans.can[0].led_traffic = CAN0_TRAFFIC_LED;
-	cans.can[1].led_traffic = CAN1_TRAFFIC_LED;
-#endif
+	for (size_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
+		cans.can[i].usb_task_handle = xTaskCreateStatic(&can_usb_task, "usb_can", TU_ARRAY_SIZE(cans.can[i].usb_task_stack_mem), (void*)(uintptr_t)i, configMAX_PRIORITIES-1, cans.can[i].usb_task_stack_mem, &cans.can[i].usb_task_mem);
+	}
 
 	led_blink(0, 2000);
 
-#if D5035_01
-	led_set(POWER_LED, 1);
-#endif
+	sc_board_power_led_on();
 
 #if SUPERDFU_APP
 	dfu_app_watchdog_disable();
 #endif
+
+
 
 	// while (1) {
 	// 	uint32_t c = counter_1MHz_read_sync();
@@ -2058,7 +1980,7 @@ void tud_custom_reset_cb(uint8_t rhport)
 	usb.can[0].pipe = SC_M1_EP_MSG0_BULK_OUT;
 	usb.can[0].tx_offsets[0] = 0;
 	usb.can[0].tx_offsets[1] = 0;
-#if SC_CAN_COUNT > 1
+#if SC_BOARD_CAN_COUNT > 1
 	usb.can[1].pipe = SC_M1_EP_MSG1_BULK_OUT;
 	usb.can[1].tx_offsets[0] = 0;
 	usb.can[1].tx_offsets[1] = 0;
@@ -2072,9 +1994,9 @@ bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf,
 {
 	LOG("port %u open\n", rhport);
 
-	if (unlikely(rhport != usb.port)) {
-		return false;
-	}
+	// if (unlikely(rhport != usb.port)) {
+	// 	return false;
+	// }
 
 	TU_VERIFY(TUSB_CLASS_VENDOR_SPECIFIC == desc_intf->bInterfaceClass);
 
@@ -2122,10 +2044,11 @@ bool tud_custom_xfer_cb(
 	uint32_t xferred_bytes)
 {
 	(void)event; // always success
+	(void)rhport;
 
-	if (unlikely(rhport != usb.port)) {
-		return false;
-	}
+	// if (unlikely(rhport != usb.port)) {
+	// 	return false;
+	// }
 
 	USB_TRAFFIC_DO_LED;
 
@@ -2135,27 +2058,29 @@ bool tud_custom_xfer_cb(
 	case SC_M1_EP_CMD0_BULK_OUT:
 		sc_cmd_bulk_out(0, xferred_bytes);
 		break;
-	case SC_M1_EP_CMD1_BULK_OUT:
-		sc_cmd_bulk_out(1, xferred_bytes);
+	case SC_M1_EP_MSG0_BULK_IN:
+		sc_can_bulk_in(0);
 		break;
 	case SC_M1_EP_CMD0_BULK_IN:
 		sc_cmd_bulk_in(0);
 		break;
-	case SC_M1_EP_CMD1_BULK_IN:
-		sc_cmd_bulk_in(1);
-		break;
 	case SC_M1_EP_MSG0_BULK_OUT:
 		sc_can_bulk_out(0, xferred_bytes);
+		break;
+#if SC_BOARD_CAN_COUNT > 1
+	case SC_M1_EP_CMD1_BULK_OUT:
+		sc_cmd_bulk_out(1, xferred_bytes);
+		break;
+	case SC_M1_EP_CMD1_BULK_IN:
+		sc_cmd_bulk_in(1);
 		break;
 	case SC_M1_EP_MSG1_BULK_OUT:
 		sc_can_bulk_out(1, xferred_bytes);
 		break;
-	case SC_M1_EP_MSG0_BULK_IN:
-		sc_can_bulk_in(0);
-		break;
 	case SC_M1_EP_MSG1_BULK_IN:
 		sc_can_bulk_in(1);
 		break;
+#endif
 	default:
 		LOG("port %u ep %02x event %d bytes %u\n", rhport, ep_addr, event, (unsigned)xferred_bytes);
 		return false;
@@ -2214,14 +2139,19 @@ bool tud_vendor_control_request_cb(uint8_t rhport, tusb_control_request_t const 
 {
 	// LOG("port %u req\n", rhport);
 
-	if (unlikely(rhport != usb.port)) {
-		return false;
-	}
+	// if (unlikely(rhport != usb.port)) {
+	// 	return false;
+	// }
+
+	(void)rhport;
+
+
 
 	USB_TRAFFIC_DO_LED;
 
 	switch (request->bRequest) {
 	case VENDOR_REQUEST_MICROSOFT:
+		LOG("VENDOR_REQUEST_MICROSOFT\n");
 		if (request->wIndex == 7) {
 			// Get Microsoft OS 2.0 compatible descriptor
 			uint16_t total_len;
@@ -2430,7 +2360,7 @@ static void can_usb_task(void *param)
 			continue;
 		}
 
-		led_burst(can->led_traffic, LED_BURST_DURATION_MS);
+		sc_board_can_burst_led(index, LED_BURST_DURATION_MS);
 		send_can_status = 1;
 
 		while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
@@ -2782,9 +2712,9 @@ static void can_usb_task(void *param)
 
 		if (led_change) {
 			if (has_bus_error || current_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE) {
-				canled_set_status(can, has_bus_activity ? CANLED_STATUS_ERROR_ACTIVE : CANLED_STATUS_ERROR_PASSIVE);
+				sc_board_can_led_set_status(index, has_bus_activity ? CANLED_STATUS_ERROR_ACTIVE : CANLED_STATUS_ERROR_PASSIVE);
 			} else {
-				canled_set_status(can, has_bus_activity ? CANLED_STATUS_ENABLED_BUS_ON_ACTIVE : CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
+				sc_board_can_led_set_status(index, has_bus_activity ? CANLED_STATUS_ENABLED_BUS_ON_ACTIVE : CANLED_STATUS_ENABLED_BUS_ON_PASSIVE);
 			}
 		}
 

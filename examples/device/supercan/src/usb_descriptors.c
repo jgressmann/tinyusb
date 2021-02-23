@@ -33,12 +33,8 @@
 #include <supercan_same5x.h>
 
 
-#ifndef SC_CAN_COUNT
-#	error "Define SC_CAN_COUNT!"
-#endif
-
-#if SC_CAN_COUNT > 2
-// warning
+#ifndef SC_BOARD_CAN_COUNT
+#	error "Define SC_BOARD_CAN_COUNT!"
 #endif
 
 static const tusb_desc_device_t device = {
@@ -46,9 +42,12 @@ static const tusb_desc_device_t device = {
 	.bDescriptorType    = TUSB_DESC_DEVICE,
 	.bcdUSB             = 0x0210,
 
-	.bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
-	.bDeviceSubClass    = TUSB_CLASS_UNSPECIFIED,
-	.bDeviceProtocol    = TUSB_CLASS_UNSPECIFIED,
+    // Also, the interface association (class 0xEF, subclass 0x02, proto 1)
+    // is apparently not necessary.
+
+	.bDeviceClass       = 0xEF,
+	.bDeviceSubClass    = 0x02,
+	.bDeviceProtocol    = 1,
 
 	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
@@ -84,10 +83,10 @@ uint8_t const * tud_descriptor_device_cb(void)
 
 
 
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + (SC_CAN_COUNT)*(9+4*7) + DFU_DESC_LEN)
-#define DFU_STR_INDEX 5 + ((SC_CAN_COUNT) - 1)
-#define DFU_INTERFACE_INDEX (SC_CAN_COUNT)
-#define INTERFACE_COUNT ((SC_CAN_COUNT) + DFU_INTERFACE_COUNT)
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + (SC_BOARD_CAN_COUNT)*(9+4*7) + DFU_DESC_LEN)
+#define DFU_STR_INDEX 4 + (SC_BOARD_CAN_COUNT)
+#define DFU_INTERFACE_INDEX (SC_BOARD_CAN_COUNT)
+#define INTERFACE_COUNT ((SC_BOARD_CAN_COUNT) + DFU_INTERFACE_COUNT)
 
 static uint8_t const desc_configuration[] =
 {
@@ -99,7 +98,7 @@ static uint8_t const desc_configuration[] =
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_CMD0_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG0_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG0_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
-#if SC_CAN_COUNT > 1
+#if SC_BOARD_CAN_COUNT > 1
 	9, TUSB_DESC_INTERFACE, 1, 0, 4, TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, 5,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_CMD1_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_CMD1_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
@@ -160,7 +159,7 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 #	define DFU_MS_OS_20_DESC_LEN 0
 #endif
 
-#define MS_OS_20_DESC_LEN (0x0A+0x08 + (SC_CAN_COUNT) * (0x08+0x14+0x84) + DFU_MS_OS_20_DESC_LEN)
+#define MS_OS_20_DESC_LEN (0x0A+0x08 + (SC_BOARD_CAN_COUNT) * (0x08+0x14+0x84) + DFU_MS_OS_20_DESC_LEN)
 
 uint8_t const desc_ms_os_20[] =
 {
@@ -188,7 +187,7 @@ uint8_t const desc_ms_os_20[] =
 	'D', 0x00, 'C', 0x00, '0', 0x00, '7', 0x00, '-', 0x00, '4', 0x00, 'F', 0x00, '2', 0x00, '1', 0x00, '-', 0x00,
 	'8', 0x00, '6', 0x00, '6', 0x00, '0', 0x00, '-', 0x00, 'A', 0x00, 'E', 0x00, '5', 0x00, '0', 0x00, 'C', 0x00,
 	'B', 0x00, '3', 0x00, '1', 0x00, '4', 0x00, '9', 0x00, 'C', 0x00, '9', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00,
-#if SC_CAN_COUNT > 1
+#if SC_BOARD_CAN_COUNT > 1
 	// Function Subset header: length, type, first interface, reserved, subset length
 	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 1, 0, U16_TO_U8S_LE(0x08 + 0x14 + 0x84),
 
@@ -250,7 +249,7 @@ static char const* string_desc_arr [] =
 	BOARD_NAME " " SC_NAME,              // 2: Product
 	"",                        		     // 3: Serial
 	SC_NAME " (ch0)",
-#if SC_CAN_COUNT > 1
+#if SC_BOARD_CAN_COUNT > 1
 	SC_NAME " (ch1)",
 #endif
 #if CFG_TUD_DFU_RT
@@ -259,7 +258,7 @@ static char const* string_desc_arr [] =
 };
 
 
-static uint16_t _desc_str[33];
+static uint16_t _desc_str[49];
 static const char hex_map[16] = "0123456789abcdef";
 
 // Invoked when received GET STRING DESCRIPTOR request

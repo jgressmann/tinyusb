@@ -28,6 +28,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+
 #ifndef D5035_01
 #	error "Only include this file for D5035-01 boards"
 #endif
@@ -40,7 +41,7 @@
 #define SC_BOARD_USB_MANUFACTURER_STRING "2guys"
 
 #if HWREV == 1
-#	define SC_CAN_COUNT 1
+#	define SC_BOARD_CAN_COUNT 1
 
 enum {
 	SC_BOARD_DEBUG_DEFAULT,
@@ -50,10 +51,10 @@ enum {
 	LED_RED2,
 	LED_ORANGE2,
 	LED_GREEN2,
-	SC_LED_COUNT
+	SC_BOARD_LED_COUNT
 };
-#else HWREV > 1
-#	define SC_CAN_COUNT 2
+#else // HWREV > 1
+#	define SC_BOARD_CAN_COUNT 2
 #endif
 enum {
 	SC_BOARD_DEBUG_DEFAULT,
@@ -67,9 +68,6 @@ enum {
 	LED_CAN1_STATUS_GREEN,
 	LED_CAN1_STATUS_RED,
 #endif
-	SC_LED_COUNT
+	SC_BOARD_LED_COUNT
 };
 
-extern void sc_board_led_init(void);
-extern void sc_board_led_set(uint8_t index, bool on);
-extern void sc_board_leds_on_unsafe(void);

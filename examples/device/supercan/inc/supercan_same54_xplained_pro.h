@@ -28,16 +28,15 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
 #define SC_BOARD_USB_BCD_DEVICE (1 << 8)
 #define SC_BOARD_USB_MANUFACTURER_STRING "Jean Gressmann"
-#define SC_CAN_COUNT 1
+#define SC_BOARD_CAN_COUNT 1
+#define MCU_NVM_PAGE_SIZE 512
+#define MCU_VECTOR_TABLE_ALIGNMENT 1024
 
 enum {
 	SC_BOARD_DEBUG_DEFAULT,
 	SC_BOARD_LED_COUNT
 };
 
-extern void sc_board_led_init(void);
-extern void sc_board_led_set(uint8_t index, bool on);
-extern void sc_board_leds_on_unsafe(void);
+
