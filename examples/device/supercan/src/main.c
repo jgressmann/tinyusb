@@ -469,93 +469,18 @@ static inline void can_inc_sat_rx_lost(uint8_t index)
 	sat_u16(&can->rx_lost);
 }
 
-
-
-static inline void counter_1MHz_init_clock(void)
-{
-	/* configure clock-generator 2 to use DPLL0 as source */
-	GCLK->GENCTRL[2].reg =
-		GCLK_GENCTRL_DIV(5) |	/* 80Mhz -> 16MHz */
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DPLL0 |
-		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
-
-	// TC0 and TC1 pair to form a single 32 bit counter
-	// TC1 is enslaved to TC0 and doesn't need to be configured.
-	// DS60001507E-page 1716, 48.6.2.4 Counter Mode
-	MCLK->APBAMASK.bit.TC0_ = 1;
-	MCLK->APBAMASK.bit.TC1_ = 1;
-	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup TC0 to use GLCK2 */
-	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup TC1 to use GLCK2 */
-}
-
-__attribute__((section(".ramfunc"))) static inline void counter_1MHz_request_current_value(void)
-{
-	TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
-}
-
-__attribute__((section(".ramfunc"))) static inline void counter_1MHz_request_current_value_lazy(void)
-{
-	uint8_t reg;
-
-	reg = __atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE);
-
-	while (1) {
-		uint8_t cmd = reg & TC_CTRLBSET_CMD_Msk;
-		SC_DEBUG_ASSERT(cmd == TC_CTRLBSET_CMD_READSYNC || cmd == TC_CTRLBSET_CMD_NONE);
-		if (cmd == TC_CTRLBSET_CMD_READSYNC) {
-			break;
-		}
-
-		if (likely(__atomic_compare_exchange_n(
-			&TC0->COUNT32.CTRLBSET.reg,
-			&reg,
-			TC_CTRLBSET_CMD_READSYNC,
-			false, /* weak? */
-			__ATOMIC_RELEASE,
-			__ATOMIC_ACQUIRE))) {
-				break;
-			}
-
-	}
-}
-
-__attribute__((section(".ramfunc"))) static inline bool counter_1MHz_is_current_value_ready(void)
-{
-	return (__atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE) & TC_CTRLBSET_CMD_Msk) == TC_CTRLBSET_CMD_NONE;
-	//return TC0->COUNT32.CTRLBSET.bit.CMD == TC_CTRLBSET_CMD_NONE_Val;
-}
-
-__attribute__((section(".ramfunc"))) static inline uint32_t counter_1MHz_read_unsafe(void)
-{
-	return TC0->COUNT32.COUNT.reg;
-}
-
-__attribute__((section(".ramfunc"))) static inline void counter_1MHz_reset(void)
-{
-	TC0->COUNT32.CTRLA.reg = TC_CTRLA_SWRST;
-	while(1 == TC0->COUNT32.SYNCBUSY.bit.SWRST);
-
-	// 16MHz -> 1MHz
-	TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT32 | TC_CTRLA_PRESCALER_DIV16;
-	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
-}
-
-
 __attribute__((section(".ramfunc"))) static inline uint32_t counter_1MHz_wait_for_current_value(void)
 {
-	while (!counter_1MHz_is_current_value_ready()) {
+	while (!sc_board_counter_1MHz_is_current_value_ready()) {
 		;
 	}
 
-	return counter_1MHz_read_unsafe();
+	return sc_board_counter_1MHz_read_unsafe();
 }
 
 __attribute__((section(".ramfunc"))) static inline uint32_t counter_1MHz_read_sync(void)
 {
-	counter_1MHz_request_current_value_lazy();
+	sc_board_counter_1MHz_request_current_value_lazy();
 	return counter_1MHz_wait_for_current_value();
 }
 
@@ -571,12 +496,12 @@ __attribute__((section(".ramfunc"))) static inline uint32_t counter_1MHz_read_sy
 
 __attribute__((section(".ramfunc"))) static inline void can_us_request_current_value_safe(void)
 {
-	counter_1MHz_request_current_value_lazy();
+	sc_board_counter_1MHz_request_current_value_lazy();
 }
 
 __attribute__((section(".ramfunc"))) static inline void can_us_request_current_value_unsafe(void)
 {
-	counter_1MHz_request_current_value();
+	sc_board_counter_1MHz_request_current_value();
 }
 
 
@@ -588,7 +513,7 @@ __attribute__((section(".ramfunc"))) static inline void can_us_request_current_v
 
 __attribute__((section(".ramfunc"))) static inline uint32_t can_us_read_unsafe(uint8_t index)
 {
-	return counter_1MHz_read_unsafe() - cans.can[index].can_us_offset;
+	return sc_board_counter_1MHz_read_unsafe() - cans.can[index].can_us_offset;
 }
 
 __attribute__((section(".ramfunc"))) static inline uint32_t can_us_wait_for_current_value(uint8_t index)
@@ -1845,8 +1770,8 @@ int main(void)
 	sc_board_can_init_clock();
 
 
-	counter_1MHz_init_clock();
-	counter_1MHz_reset();
+	sc_board_counter_1MHz_init();
+	// counter_1MHz_reset();
 
 
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);

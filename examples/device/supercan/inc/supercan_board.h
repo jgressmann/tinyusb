@@ -67,3 +67,56 @@ extern void sc_board_can_burst_led(uint8_t index, uint16_t duration_ms);
 extern void sc_board_can_led_set_status(uint8_t index, int status);
 extern void sc_board_power_led_on(void);
 extern void sc_board_usb_led_burst(uint16_t duration_ms);
+extern void sc_board_counter_1MHz_init(void);
+
+#include <supercan_debug.h>
+
+#ifndef likely
+#define likely(x) __builtin_expect(!!(x),1)
+#endif
+
+#ifndef unlikely
+#define unlikely(x) __builtin_expect(!!(x),0)
+#endif
+
+
+__attribute__((section(".ramfunc"))) static inline void sc_board_counter_1MHz_request_current_value(void)
+{
+	TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
+}
+
+__attribute__((section(".ramfunc"))) static inline void sc_board_counter_1MHz_request_current_value_lazy(void)
+{
+	uint8_t reg;
+
+	reg = __atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE);
+
+	while (1) {
+		uint8_t cmd = reg & TC_CTRLBSET_CMD_Msk;
+		SC_DEBUG_ASSERT(cmd == TC_CTRLBSET_CMD_READSYNC || cmd == TC_CTRLBSET_CMD_NONE);
+		if (cmd == TC_CTRLBSET_CMD_READSYNC) {
+			break;
+		}
+
+		if (likely(__atomic_compare_exchange_n(
+			&TC0->COUNT32.CTRLBSET.reg,
+			&reg,
+			TC_CTRLBSET_CMD_READSYNC,
+			false, /* weak? */
+			__ATOMIC_RELEASE,
+			__ATOMIC_ACQUIRE))) {
+				break;
+			}
+	}
+}
+
+__attribute__((section(".ramfunc"))) static inline bool sc_board_counter_1MHz_is_current_value_ready(void)
+{
+	return (__atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE) & TC_CTRLBSET_CMD_Msk) == TC_CTRLBSET_CMD_NONE;
+	//return TC0->COUNT32.CTRLBSET.bit.CMD == TC_CTRLBSET_CMD_NONE_Val;
+}
+
+__attribute__((section(".ramfunc"))) static inline uint32_t sc_board_counter_1MHz_read_unsafe(void)
+{
+	return TC0->COUNT32.COUNT.reg;
+}

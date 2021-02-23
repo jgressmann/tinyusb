@@ -26,12 +26,12 @@ ifdef APP
 ifneq ($(APP),0)
   # All source paths should be relative to the top level.
   LD_FILE = hw/bsp/$(BOARD)/same51j19a_flash_app.ld
-  CFLAGS += -DSUPERDFU_APP=1
+  SUPERDFU_APP = 1
 else
-  CFLAGS += -DSUPERDFU_APP=0
+  SUPERDFU_APP = 0
 endif
 else
-  CFLAGS += -DSUPERDFU_APP=0
+  SUPERDFU_APP = 0
 endif
 
 ifdef BOOTLOADER

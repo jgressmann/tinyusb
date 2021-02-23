@@ -289,4 +289,33 @@ extern void sc_board_usb_led_burst(uint16_t duration_ms)
 	led_burst(USB_LED, duration_ms);
 }
 
+
+
+extern void sc_board_counter_1MHz_init(void)
+{
+	/* configure clock-generator 2 to use DPLL0 as source */
+	GCLK->GENCTRL[2].reg =
+		GCLK_GENCTRL_DIV(3) |	/* 48Mhz -> 16MHz */
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_DPLL1 |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
+
+	// TC0 and TC1 pair to form a single 32 bit counter
+	// TC1 is enslaved to TC0 and doesn't need to be configured.
+	// DS60001507E-page 1716, 48.6.2.4 Counter Mode
+	MCLK->APBAMASK.bit.TC0_ = 1;
+	MCLK->APBAMASK.bit.TC1_ = 1;
+	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup TC0 to use GLCK2 */
+	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup TC1 to use GLCK2 */
+
+	TC0->COUNT32.CTRLA.reg = TC_CTRLA_SWRST;
+	while(1 == TC0->COUNT32.SYNCBUSY.bit.SWRST);
+
+	// 16MHz -> 1MHz
+	TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT32 | TC_CTRLA_PRESCALER_DIV16;
+	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
+}
+
 #endif // #ifdef D5035_01
