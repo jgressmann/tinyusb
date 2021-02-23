@@ -107,3 +107,7 @@ JLINK_IF = swd
 
 # flash using jlink
 flash: flash-jlink
+
+# flash using edbg from https://github.com/ataradov/edbg
+flash-edbg: $(BUILD)/$(BOARD)-firmware.bin
+	edbg --verbose -t same51 -pv -f $<
