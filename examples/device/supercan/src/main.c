@@ -51,11 +51,12 @@
 #include <supercan_same5x.h>
 #include <usb_descriptors.h>
 #include <m_can.h>
-#include <mcu.h>
+
 #include <leds.h>
 #include <usb_dfu_1_1.h>
 
 #if SUPERDFU_APP
+#	include <dfu_mcu.h>
 #	include <dfu_ram.h>
 #	include <dfu_app.h>
 #endif
@@ -188,7 +189,6 @@ struct can {
 	StaticQueue_t queue_mem;
 	QueueHandle_t queue_handle;
 	Can *m_can;
-	// IRQn_Type interrupt_id;
 	uint32_t can_us_offset;
 	uint32_t nm_us_per_bit;
 	uint32_t dt_us_per_bit_factor_shift8;
@@ -208,9 +208,6 @@ struct can {
 	uint8_t dtbt_tseg2;
 	uint8_t int_comm_flags;
 	uint8_t int_prev_bus_state;
-	// uint8_t led_status_green;
-	// uint8_t led_status_red;
-	// uint8_t led_traffic;
 	uint8_t tx_available;
 	uint8_t rx_get_index; // NOT an index, uses full range of type
 	uint8_t rx_put_index; // NOT an index, uses full range of type
@@ -2143,8 +2140,8 @@ bool tud_vendor_control_request_cb(uint8_t rhport, tusb_control_request_t const 
 
 	switch (request->bRequest) {
 	case VENDOR_REQUEST_MICROSOFT:
-		LOG("VENDOR_REQUEST_MICROSOFT\n");
 		if (request->wIndex == 7) {
+			LOG("VENDOR_REQUEST_MICROSOFT\n");
 			// Get Microsoft OS 2.0 compatible descriptor
 			uint16_t total_len;
 			memcpy(&total_len, desc_ms_os_20+8, 2);
@@ -2205,6 +2202,7 @@ void dfu_rtd_init(void)
 void dfu_rtd_reset(uint8_t rhport)
 {
 	(void) rhport;
+#if SUPERDFU_APP
 	LOG("dfu_rtd_reset\n");
 
 	if (DFU_STATE_APP_DETACH == dfu.status.bState) {
@@ -2214,6 +2212,7 @@ void dfu_rtd_reset(uint8_t rhport)
 	} else {
 		dfu.status.bState = DFU_STATE_APP_IDLE;
 	}
+#endif
 }
 
 bool dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_length)
@@ -2250,14 +2249,13 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 	// TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
 	// TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
 
-
-
-
+#if SUPERDFU_APP
 	switch (request->bRequest) {
 	case DFU_REQUEST_GETSTATUS:
 		return tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status));
 	case DFU_REQUEST_DETACH:
 		LOG("detach request, timeout %u [ms]\n", request->wValue);
+
 		if (!dfu_signature_compatible()) {
 			TU_LOG1("Bootloader runtime signature incompatible, not starting detach\n");
 		} else {
@@ -2282,7 +2280,10 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 			request->wLength);
 		break;
 	}
-
+#else
+	(void)rhport;
+	(void)request;
+#endif
 	return false;
 }
 

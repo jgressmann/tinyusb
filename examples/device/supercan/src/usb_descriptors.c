@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,6 +31,7 @@
 #include <usb_descriptors.h>
 #include <supercan_board.h>
 #include <supercan_same5x.h>
+#include <dfu_mcu.h>
 
 
 #ifndef SC_BOARD_CAN_COUNT
@@ -42,12 +43,9 @@ static const tusb_desc_device_t device = {
 	.bDescriptorType    = TUSB_DESC_DEVICE,
 	.bcdUSB             = 0x0210,
 
-    // Also, the interface association (class 0xEF, subclass 0x02, proto 1)
-    // is apparently not necessary.
-
-	.bDeviceClass       = 0xEF,
-	.bDeviceSubClass    = 0x02,
-	.bDeviceProtocol    = 1,
+	.bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
+	.bDeviceSubClass    = TUSB_CLASS_UNSPECIFIED,
+	.bDeviceProtocol    = TUSB_CLASS_UNSPECIFIED,
 
 	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
@@ -74,11 +72,11 @@ uint8_t const * tud_descriptor_device_cb(void)
 // Configuration Descriptor
 //--------------------------------------------------------------------+
 #if CFG_TUD_DFU_RT
-#	define DFU_DESC_LEN TUD_DFU_RT_DESC_LEN
-#	define DFU_INTERFACE_COUNT 1
+	#define DFU_DESC_LEN TUD_DFU_RT_DESC_LEN
+	#define DFU_INTERFACE_COUNT 1
 #else
-#	define DFU_DESC_LEN 0
-#	define DFU_INTERFACE_COUNT 0
+	#define DFU_DESC_LEN 0
+	#define DFU_INTERFACE_COUNT 0
 #endif
 
 
@@ -107,7 +105,7 @@ static uint8_t const desc_configuration[] =
 #endif
 
 #if CFG_TUD_DFU_RT
-	9, TUSB_DESC_INTERFACE, DFU_INTERFACE_INDEX, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_RT, DFU_STR_INDEX, \
+	9, TUSB_DESC_INTERFACE, DFU_INTERFACE_INDEX, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, 1 /* 1 == DFU_PROTOCOL_RT */, DFU_STR_INDEX, \
   	/* Function */
 #if 0
 	DFU attributes
@@ -133,7 +131,7 @@ Bit 0: download capable
 1 = yes
 #endif
 	9,
-	DFU_DESC_FUNCTIONAL,
+	0x21 /* 0x21 == DFU_DESC_FUNCTIONAL */,
 	(0<<3) | (1<<2) | (0<<1) | (1<<0) /*attrs*/,
 	U16_TO_U8S_LE(DFU_USB_RESET_TIMEOUT_MS) /* timeout [ms]*/,
 	U16_TO_U8S_LE(MCU_NVM_PAGE_SIZE)/* xfer size*/,
@@ -167,7 +165,7 @@ uint8_t const desc_ms_os_20[] =
 	U16_TO_U8S_LE(0x000A), U16_TO_U8S_LE(MS_OS_20_SET_HEADER_DESCRIPTOR), U32_TO_U8S_LE(0x06030000), U16_TO_U8S_LE(MS_OS_20_DESC_LEN),
 
 	// Configuration subset header: length, type, configuration index, reserved, configuration total length
-	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_CONFIGURATION), 0, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A),
+	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_CONFIGURATION), 0, 0, U16_TO_U8S_LE((MS_OS_20_DESC_LEN-0x0A)),
 
 	// Function Subset header: length, type, first interface, reserved, subset length
 	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 0, 0, U16_TO_U8S_LE(0x08 + 0x14 + 0x84),
