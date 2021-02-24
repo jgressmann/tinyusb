@@ -2644,7 +2644,7 @@ static void can_usb_task(void *param)
 	}
 }
 
-static inline void can_frame_bits(
+__attribute__((section(".ramfunc"))) static inline void can_frame_bits(
 	uint32_t xtd,
 	uint32_t rtr,
 	uint32_t fdf,
@@ -2798,7 +2798,7 @@ static inline void can_frame_bits(
 	}
 }
 
-static inline uint32_t can_frame_time_us(
+__attribute__((section(".ramfunc"))) static inline uint32_t can_frame_time_us(
 	uint8_t index,
 	uint32_t nm,
 	uint32_t dt)
@@ -2812,7 +2812,7 @@ static volatile uint32_t rx_lost_reported[TU_ARRAY_SIZE(cans.can)];
 // static volatile uint32_t rx_ts_last[TU_ARRAY_SIZE(cans.can)];
 #endif
 
-static bool can_poll(
+__attribute__((section(".ramfunc"))) static bool can_poll(
 	uint8_t index,
 	uint8_t* events,
 	uint32_t tsc)
