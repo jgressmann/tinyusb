@@ -28,6 +28,9 @@
 
 #include <hal/include/hal_gpio.h>
 
+#if CONF_CPU_FREQUENCY != 120000000
+	#error CONF_CPU_FREQUENCY must be 120MHz
+#endif
 
 //--------------------------------------------------------------------+
 // Forward USB interrupt events to TinyUSB IRQ Handler
@@ -72,14 +75,10 @@ static inline void init_clock(void)
 	while(0 == OSCCTRL->STATUS.bit.XOSCRDY1);
 
 	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(5) | OSCCTRL_DPLLCTRLB_REFCLK_XOSC1; /* 12MHz / 12 = 1Mhz, input = XOSC1 */
-	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR((CONF_CPU_FREQUENCY / 1000000)-1); /* multiply to get CONF_CPU_FREQUENCY (default = 120MHz) */
+	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(119); /* multiply to get 120MHz */
 	OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
 	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
 
-	OSCCTRL->Dpll[1].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(5) | OSCCTRL_DPLLCTRLB_REFCLK_XOSC1; /* 12MHz / 12 = 1Mhz, input = XOSC1 */
-	OSCCTRL->Dpll[1].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(47); /* multiply by 48 -> 48 MHz */
-	OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
-	while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL1 to be ready */
 
 	/* configure clock-generator 0 to use DPLL0 as source -> GCLK0 is used for the core */
 	GCLK->GENCTRL[0].reg =
@@ -90,14 +89,39 @@ static inline void init_clock(void)
 		GCLK_GENCTRL_IDC;
 	while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
 
-	/* configure clock-generator 1 to use DPLL1 as source -> for use with some peripheral */
+
+	// configure GCLK1 for 12MHz from XOSC1
 	GCLK->GENCTRL[1].reg =
 		GCLK_GENCTRL_DIV(0) |
 		GCLK_GENCTRL_RUNSTDBY |
 		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DPLL1 |
-		GCLK_GENCTRL_IDC ;
+		GCLK_GENCTRL_SRC_XOSC1 |
+		GCLK_GENCTRL_IDC;
 	while(1 == GCLK->SYNCBUSY.bit.GENCTRL1); /* wait for the synchronization between clock domains to be complete */
+
+
+	 /* setup DFLL48M to use GLCK1 */
+	GCLK->PCHCTRL[OSCCTRL_GCLK_ID_DFLL48].reg = GCLK_PCHCTRL_GEN_GCLK1 | GCLK_PCHCTRL_CHEN;
+
+	OSCCTRL->DFLLCTRLA.reg = 0;
+	while(1 == OSCCTRL->DFLLSYNC.bit.ENABLE);
+
+	OSCCTRL->DFLLCTRLB.reg = OSCCTRL_DFLLCTRLB_MODE | OSCCTRL_DFLLCTRLB_WAITLOCK;
+	OSCCTRL->DFLLMUL.bit.MUL = 4; // 4 * 12MHz -> 48MHz
+
+	OSCCTRL->DFLLCTRLA.reg =
+		OSCCTRL_DFLLCTRLA_ENABLE |
+		OSCCTRL_DFLLCTRLA_RUNSTDBY;
+	while(1 == OSCCTRL->DFLLSYNC.bit.ENABLE);
+
+	// setup 48 MHz GCLK2 from DFLL48M
+	GCLK->GENCTRL[2].reg =
+		GCLK_GENCTRL_DIV(0) |
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_DFLL |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2);
 }
 
 static inline void uart_init(void)
@@ -105,8 +129,9 @@ static inline void uart_init(void)
 	gpio_set_pin_function(PIN_PB24, PINMUX_PB24D_SERCOM2_PAD1);
 	gpio_set_pin_function(PIN_PB25, PINMUX_PB25D_SERCOM2_PAD0);
 
+	/* setup SERCOM to use GLCK2 -> 48MHz */
 	MCLK->APBBMASK.bit.SERCOM2_ = 1;
-	GCLK->PCHCTRL[SERCOM2_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK1 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK1 -> 48MHz */
+	GCLK->PCHCTRL[SERCOM2_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN;
 
 	BOARD_SERCOM->USART.CTRLA.bit.SWRST = 1; /* reset and disable SERCOM -> enable configuration */
 	while (BOARD_SERCOM->USART.SYNCBUSY.bit.SWRST);
@@ -199,7 +224,7 @@ void board_init(void)
 	 * The USB module requires a GCLK_USB of 48 MHz ~ 0.25% clock
 	 * for low speed and full speed operation.
 	 */
-	hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK1_Val | GCLK_PCHCTRL_CHEN);
+	hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK2_Val | GCLK_PCHCTRL_CHEN);
 	hri_mclk_set_AHBMASK_USB_bit(MCLK);
 	hri_mclk_set_APBBMASK_USB_bit(MCLK);
 
