@@ -136,12 +136,11 @@ extern void sc_board_usb_led_burst(uint16_t duration_ms)
 
 extern void sc_board_counter_1MHz_init(void)
 {
-	/* configure clock-generator 2 to use DPLL0 as source */
 	GCLK->GENCTRL[2].reg =
-		GCLK_GENCTRL_DIV(5) |	/* 80Mhz -> 16MHz */
+		GCLK_GENCTRL_DIV(3) |	/* 48Mhz -> 16MHz */
 		GCLK_GENCTRL_RUNSTDBY |
 		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DPLL0 |
+		GCLK_GENCTRL_SRC_DPLL1 |
 		GCLK_GENCTRL_IDC;
 	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
 
@@ -156,7 +155,7 @@ extern void sc_board_counter_1MHz_init(void)
 	TC0->COUNT32.CTRLA.reg = TC_CTRLA_SWRST;
 	while(1 == TC0->COUNT32.SYNCBUSY.bit.SWRST);
 
-	TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT32 | TC_CTRLA_PRESCALER_DIV1;
+	TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT32 | TC_CTRLA_PRESCALER_DIV16;
 	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
 
 }
