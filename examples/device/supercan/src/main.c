@@ -119,7 +119,7 @@ static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(va
 #define CAN_TX_FIFO_SIZE 32
 #define CAN_RX_FIFO_SIZE 64
 #define CAN_ELEMENT_DATA_SIZE 64
-#define CAN_CLK_HZ CONF_CPU_FREQUENCY
+
 
 struct can_tx_fifo_element {
 	volatile CAN_TXBE_0_Type T0;
@@ -229,7 +229,7 @@ static inline void can_log_nominal_bit_timing(struct can *c)
 
 	LOG("nominal brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
 		c->nmbt_brp, c->nmbt_sjw, c->nmbt_tseg1, c->nmbt_tseg2,
-		CAN_CLK_HZ / ((uint32_t)c->nmbt_brp * (1 + c->nmbt_tseg1 + c->nmbt_tseg2)),
+		SC_BOARD_CAN_CLK_HZ / ((uint32_t)c->nmbt_brp * (1 + c->nmbt_tseg1 + c->nmbt_tseg2)),
 		((1 + c->nmbt_tseg1) * 1000) / (1 + c->nmbt_tseg1 + c->nmbt_tseg2)
 	);
 }
@@ -240,7 +240,7 @@ static inline void can_log_data_bit_timing(struct can *c)
 
 	LOG("data brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
 		c->dtbt_brp, c->dtbt_sjw, c->dtbt_tseg1, c->dtbt_tseg2,
-		CAN_CLK_HZ / ((uint32_t)c->dtbt_brp * (1 + c->dtbt_tseg1 + c->dtbt_tseg2)),
+		SC_BOARD_CAN_CLK_HZ / ((uint32_t)c->dtbt_brp * (1 + c->dtbt_tseg1 + c->dtbt_tseg2)),
 		((1 + c->dtbt_tseg1) * 1000) / (1 + c->dtbt_tseg1 + c->dtbt_tseg2)
 	);
 }
@@ -996,8 +996,8 @@ static inline void can_on(uint8_t index)
 	// and neither a higher priority task.
 	while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
 
-	can->nm_us_per_bit = UINT32_C(1000000) / (CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (1 + can->nmbt_tseg1 + can->nmbt_tseg2)));
-	uint32_t dtbr = CAN_CLK_HZ / ((uint32_t)can->dtbt_brp * (1 + can->dtbt_tseg1 + can->dtbt_tseg2));
+	can->nm_us_per_bit = UINT32_C(1000000) / (SC_BOARD_CAN_CLK_HZ / ((uint32_t)can->nmbt_brp * (1 + can->nmbt_tseg1 + can->nmbt_tseg2)));
+	uint32_t dtbr = SC_BOARD_CAN_CLK_HZ / ((uint32_t)can->dtbt_brp * (1 + can->dtbt_tseg1 + can->dtbt_tseg2));
 	can->dt_us_per_bit_factor_shift8 = (UINT32_C(1000000) << 8) / dtbr;
 
 	// mark CAN as enabled
@@ -1338,7 +1338,7 @@ send_can_info:
 				struct sc_msg_can_info *rep = (struct sc_msg_can_info *)out_ptr;
 				rep->id = SC_MSG_CAN_INFO;
 				rep->len = bytes;
-				rep->can_clk_hz = CAN_CLK_HZ;
+				rep->can_clk_hz = SC_BOARD_CAN_CLK_HZ;
 				rep->nmbt_brp_min = M_CAN_NMBT_BRP_MIN;
 				rep->nmbt_brp_max = M_CAN_NMBT_BRP_MAX;
 				rep->nmbt_sjw_max = M_CAN_NMBT_SJW_MAX;
@@ -1740,7 +1740,7 @@ int main(void)
 {
 	board_init();
 
-	// LOG("CONF_CPU_FREQUENCY=%lu CAN_CLK_HZ=%lu\n", CONF_CPU_FREQUENCY, CAN_CLK_HZ);
+	LOG("CONF_CPU_FREQUENCY=%lu SC_BOARD_CAN_CLK_HZ=%lu\n", CONF_CPU_FREQUENCY, SC_BOARD_CAN_CLK_HZ);
 
 #if SUPERDFU_APP
 	LOG(

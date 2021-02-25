@@ -79,8 +79,22 @@ extern void sc_board_can_init_pins(void)
 
 extern void sc_board_can_init_clock(void) // controller and hardware specific setup of clock for the m_can module
 {
+	OSCCTRL->Dpll[1].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(2) | OSCCTRL_DPLLCTRLB_REFCLK_XOSC1; /* 12MHz / 6 = 2Mhz, input = XOSC1 */
+	OSCCTRL->Dpll[1].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(39); /* multiply to get 80MHz */
+	OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
+	while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL to be ready */
+
+	GCLK->GENCTRL[4].reg =
+		GCLK_GENCTRL_DIV(0) |
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_DPLL1 |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL4); /* wait for the synchronization between clock domains to be complete */
+
+
 	MCLK->AHBMASK.bit.CAN1_ = 1;
-	GCLK->PCHCTRL[CAN1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0
+	GCLK->PCHCTRL[CAN1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
 }
 
 extern void sc_board_can_interrupt_enable(uint8_t index, bool on)
@@ -136,21 +150,21 @@ extern void sc_board_usb_led_burst(uint16_t duration_ms)
 
 extern void sc_board_counter_1MHz_init(void)
 {
-	GCLK->GENCTRL[3].reg =
-		GCLK_GENCTRL_DIV(3) |	/* 48Mhz -> 16MHz */
+	GCLK->GENCTRL[5].reg =
+		GCLK_GENCTRL_DIV(5) |	/* 80Mhz -> 16MHz */
 		GCLK_GENCTRL_RUNSTDBY |
 		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DFLL |
+		GCLK_GENCTRL_SRC_DPLL1 |
 		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL3); /* wait for the synchronization between clock domains to be complete */
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL5); /* wait for the synchronization between clock domains to be complete */
 
 	// TC0 and TC1 pair to form a single 32 bit counter
 	// TC1 is enslaved to TC0 and doesn't need to be configured.
 	// DS60001507E-page 1716, 48.6.2.4 Counter Mode
 	MCLK->APBAMASK.bit.TC0_ = 1;
 	MCLK->APBAMASK.bit.TC1_ = 1;
-	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN; /* setup TC0 to use GLCK2 */
-	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN; /* setup TC1 to use GLCK2 */
+	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK5 | GCLK_PCHCTRL_CHEN;
+	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK5 | GCLK_PCHCTRL_CHEN;
 
 	TC0->COUNT32.CTRLA.reg = TC_CTRLA_SWRST;
 	while(1 == TC0->COUNT32.SYNCBUSY.bit.SWRST);
