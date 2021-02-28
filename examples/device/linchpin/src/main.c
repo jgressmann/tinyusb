@@ -28,32 +28,123 @@
 #include <string.h>
 #include <ctype.h>
 
+#include <FreeRTOS.h>
+#include <task.h>
+#include <semphr.h>
+#include <timers.h>
+
 #include <bsp/board.h>
 #include <tusb.h>
+#include <hal/include/hal_gpio.h>
+#include <sam.h>
+
+#include <linchpin_debug.h>
+
+#ifndef likely
+#define likely(x) __builtin_expect(!!(x),1)
+#endif
+
+#ifndef unlikely
+#define unlikely(x) __builtin_expect(!!(x),0)
+#endif
+
+#define RAMFUNC __attribute__((section(".ramfunc")))
 
 
-static void cdc_task(void);
+static void tusb_device_task(void* param);
+static void cdc_task(void* param);
+RAMFUNC static void lin_task(void* param);
+
+#define LIN_TX_PIN PIN_PC04
+#define LIN_RX_PIN PIN_PC05
+
+enum state {
+	IDLE, // no connection
+	READY, // connected, not running
+	RUNNING,
+};
+
+static struct linchpin {
+	StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
+	StaticTask_t usb_device_task_mem;
+	StackType_t cdc_task_stack_mem[configMINIMAL_SECURE_STACK_SIZE];
+	StaticTask_t cdc_task_mem;
+	StackType_t lin_task_stack_mem[configMINIMAL_STACK_SIZE];
+	StaticTask_t lin_task_mem;
+	char error_message[64];
+	int error_code;
+	// TaskHandle_t usb_task_handle;
+	volatile uint8_t state;
+} lp;
+
+
 
 
 int main(void)
 {
 	board_init();
+	board_led_write(true);
 
+	while (1);
 	tusb_init();
 
-	while (1)
-	{
-		tud_task(); // tinyusb device task
-		cdc_task();
-	}
+	// gpio_set_pin_function(LIN_TX_PIN, GPIO_PIN_FUNCTION_OFF);
+	// gpio_set_pin_direction(LIN_TX_PIN, GPIO_DIRECTION_OUT);
+	// gpio_set_pin_level(LIN_TX_PIN, true);
+	// gpio_set_pin_pull_mode(LIN_TX_PIN, GPIO_PULL_OFF);
+
+	// gpio_set_pin_function(LIN_RX_PIN, GPIO_PIN_FUNCTION_OFF);
+	// gpio_set_pin_direction(LIN_RX_PIN, GPIO_DIRECTION_IN);
+	// gpio_set_pin_pull_mode(LIN_RX_PIN, GPIO_PULL_OFF);
+	// PORT->Group[2].CTRL.reg |= 0b1000;
+
+	MCLK->APBAMASK.bit.TC0_ = 1;
+	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
+
+
+
+	TC0->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
+	while(1 == TC0->COUNT16.SYNCBUSY.bit.SWRST);
+	// TC0->COUNT16.CTRLA.reg = TC_CTRLA_CAPTEN0;
+	TC0->COUNT16.CTRLBSET.reg = TC_CTRLBSET_DIR;
+	TC0->COUNT16.INTENSET.reg = TC_INTENCLR_OVF;
+	TC0->COUNT16.COUNT.reg = 12000;
+	// TC0->COUNT16.CCBUF[0].reg = 12000;
+	TC0->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE;
+
+
+	lp.state = IDLE;
+
+	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(lp.usb_device_stack), NULL, configMAX_PRIORITIES-1, lp.usb_device_stack, &lp.usb_device_task_mem);
+	(void) xTaskCreateStatic(&cdc_task, "cdc", TU_ARRAY_SIZE(lp.cdc_task_stack_mem), NULL, configMAX_PRIORITIES-1, lp.cdc_task_stack_mem, &lp.cdc_task_mem);
+	// // (void) xTaskCreateStatic(&lin_task, "lin", TU_ARRAY_SIZE(lp.lin_task_stack_mem), NULL, configMAX_PRIORITIES-2, lp.lin_task_stack_mem, &lp.lin_task_mem);
+
+
+	board_uart_write("start scheduler\n", -1);
+	// board_led_off();
+	vTaskStartScheduler();
+	NVIC_SystemReset();
 
 	return 0;
 }
 
 
-static void cdc_task(void)
+static void tusb_device_task(void* param)
 {
-	if (tud_cdc_n_connected(0)) {
+	(void) param;
+
+	while (1) {
+		LOG("tud_task\n");
+		tud_task();
+	}
+}
+
+static void cdc_task(void* param)
+{
+	(void) param;
+
+	while (1) {
+		if (tud_cdc_n_connected(0)) {
 			if (tud_cdc_n_available(0)) {
 				uint8_t buf[64];
 				uint32_t count = tud_cdc_n_read(0, buf, sizeof(buf));
@@ -62,5 +153,30 @@ static void cdc_task(void)
 					board_uart_write(buf, count);
 				}
 			}
+		} else {
+			// back to idle
+			vTaskDelay(pdMS_TO_TICKS(1));
 		}
+	}
+}
+
+RAMFUNC static void lin_task(void* param)
+{
+	(void) param;
+
+
+}
+
+
+
+extern void TC0_Handler(void)
+{
+	static char buf[16];
+
+	TC0->COUNT16.INTFLAG.reg = ~0;
+
+	bool value = (PORT->Group[2].IN.reg & 0b1000) == 0b1000;
+
+	usnprintf(buf, sizeof(buf), "%u\n", value);
+	board_uart_write(buf, -1);
 }
