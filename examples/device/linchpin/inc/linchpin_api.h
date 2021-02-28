@@ -25,16 +25,17 @@
 
 #pragma once
 
-#define LP_ERROR_NONE 0
-#define LP_ERROR_UNKNOWN_CMD -1
-#define LP_ERROR_INVALID_PARAM -2
+#define LP_ERROR_NONE            0
+#define LP_ERROR_UNKNOWN_CMD    -1
+#define LP_ERROR_INVALID_PARAM  -2
+#define LP_ERROR_OUT_OF_RANGE   -3
 
 #define LP_CMD_LOAD_BIN "LDB"
 #define LP_CMD_LOAD_HEX "LDH"
-#define LP_CMD_ERR "E"
+// #define LP_CMD_ERR "E"
 #define LP_CMD_RUN "RUN"
-#define LP_CMD_SET_F "SF"
-#define LP_CMD_GET_F "GF"
+#define LP_CMD_SET_F "!F"
+#define LP_CMD_GET_F "?F"
 
 
 
