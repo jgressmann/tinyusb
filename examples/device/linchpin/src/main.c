@@ -83,34 +83,38 @@ static struct linchpin {
 int main(void)
 {
 	board_init();
-	board_led_write(true);
-
-	while (1);
 	tusb_init();
 
-	// gpio_set_pin_function(LIN_TX_PIN, GPIO_PIN_FUNCTION_OFF);
-	// gpio_set_pin_direction(LIN_TX_PIN, GPIO_DIRECTION_OUT);
+	gpio_set_pin_function(LIN_TX_PIN, GPIO_PIN_FUNCTION_OFF);
+	gpio_set_pin_direction(LIN_TX_PIN, GPIO_DIRECTION_OUT);
 	// gpio_set_pin_level(LIN_TX_PIN, true);
-	// gpio_set_pin_pull_mode(LIN_TX_PIN, GPIO_PULL_OFF);
+	gpio_set_pin_pull_mode(LIN_TX_PIN, GPIO_PULL_OFF);
 
-	// gpio_set_pin_function(LIN_RX_PIN, GPIO_PIN_FUNCTION_OFF);
-	// gpio_set_pin_direction(LIN_RX_PIN, GPIO_DIRECTION_IN);
-	// gpio_set_pin_pull_mode(LIN_RX_PIN, GPIO_PULL_OFF);
-	// PORT->Group[2].CTRL.reg |= 0b1000;
+	gpio_set_pin_function(LIN_RX_PIN, GPIO_PIN_FUNCTION_OFF);
+	gpio_set_pin_direction(LIN_RX_PIN, GPIO_DIRECTION_IN);
+	gpio_set_pin_pull_mode(LIN_RX_PIN, GPIO_PULL_UP);
+	PORT->Group[2].CTRL.reg |= 0b100000;
+
+
+	NVIC_EnableIRQ(TC0_IRQn);
 
 	MCLK->APBAMASK.bit.TC0_ = 1;
 	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
 
 
-
 	TC0->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
 	while(1 == TC0->COUNT16.SYNCBUSY.bit.SWRST);
-	// TC0->COUNT16.CTRLA.reg = TC_CTRLA_CAPTEN0;
-	TC0->COUNT16.CTRLBSET.reg = TC_CTRLBSET_DIR;
-	TC0->COUNT16.INTENSET.reg = TC_INTENCLR_OVF;
-	TC0->COUNT16.COUNT.reg = 12000;
+	// TC0->COUNT16.CTRLA.reg = TC_CTRLA_PRESCALER_DIV1024;
+	// TC0->COUNT16.CTRLBSET.reg = TC_CTRLBSET_DIR;
+	TC0->COUNT16.INTENSET.reg = TC_INTENSET_OVF;
+	TC0->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
+	TC0->COUNT16.CC[0].reg = 4;
+	// TC0->COUNT16.COUNT.reg = 12000;
 	// TC0->COUNT16.CCBUF[0].reg = 12000;
 	TC0->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE;
+	while(1 == TC0->COUNT16.SYNCBUSY.bit.ENABLE);
+
+	CMCC->CTRL.bit.CEN = 1;
 
 
 	lp.state = IDLE;
@@ -167,16 +171,22 @@ RAMFUNC static void lin_task(void* param)
 
 }
 
-
-
-extern void TC0_Handler(void)
+RAMFUNC static void foo(void)
 {
 	static char buf[16];
 
 	TC0->COUNT16.INTFLAG.reg = ~0;
 
-	bool value = (PORT->Group[2].IN.reg & 0b1000) == 0b1000;
+	uint32_t r = PORT->Group[2].IN.reg;
 
-	usnprintf(buf, sizeof(buf), "%u\n", value);
-	board_uart_write(buf, -1);
+	bool value = (r & 0b100000) == 0b100000;
+	PORT->Group[2].OUTTGL.reg = 0b10000;
+
+	// usnprintf(buf, sizeof(buf), "%#lx %#lx\n", (unsigned long)value, r);
+	// board_uart_write(buf, -1);
+}
+
+extern void TC0_Handler(void)
+{
+	foo();
 }
