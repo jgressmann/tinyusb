@@ -83,13 +83,15 @@ static void process_input(void);
 #define OP_RES 0x2
 #define OP_ONE 0x3
 
-typedef union {
-	uint8_t value;
+union rle_bit {
+	uint8_t mux;
 	struct {
-		uint8_t out:1;
 		uint8_t count:7;
+		uint8_t value:1;
 	} bit;
-} cmd;
+};
+
+#define RLE_BIT_MAX_COUNT 127
 
 enum state {
 	IDLE, // no connection
@@ -127,9 +129,20 @@ static struct linchpin {
 	volatile uint8_t signal_rx_buffer_gi;
 	bool running;
 	bool started;
-	bool overflow;
-	volatile bool stall;
+	bool finished;
+	bool tx_overflow;
+	volatile uint32_t output_count_total;
+	volatile uint32_t output_flags;
+	// union rle_bit input;
+	// union rle_bit output;
+	uint8_t input_bit;
+	uint8_t input_count;
+	// uint8_t output_bit;
+	uint8_t output_count;
 } lp;
+
+#define OUTPUT_FLAG_STALLED     0x1
+#define OUTPUT_FLAG_RX_OVERFLOW 0x2
 
 static inline void counter_stop(void)
 {
@@ -173,7 +186,7 @@ int main(void)
 	// TC0->COUNT16.CTRLBSET.reg = TC_CTRLBSET_DIR;
 	TC0->COUNT16.INTENSET.reg = TC_INTENSET_OVF;
 	TC0->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
-	TC0->COUNT16.CC[0].reg = 40;
+	// TC0->COUNT16.CC[0].reg = 40;
 	// TC0->COUNT16.COUNT.reg = 12000;
 	// TC0->COUNT16.CCBUF[0].reg = 12000;
 	// TC0->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE;
@@ -259,16 +272,17 @@ static inline base64_flush(void)
 	uint8_t used = pi - gi;
 	if (likely(used < TU_ARRAY_SIZE(lp.signal_tx_buffer))) {
 		uint8_t index = pi & (TU_ARRAY_SIZE(lp.signal_tx_buffer)-1);
+		// LOG("dec %#x\n", lp.usb_rx_base64_state);
 		lp.signal_tx_buffer[index] = lp.usb_rx_base64_state;
 		__atomic_store_n(&lp.signal_tx_buffer_pi, pi + 1, __ATOMIC_RELEASE);
 	} else {
-		lp.overflow = true;
+		lp.tx_overflow = true;
 	}
 
 	lp.usb_rx_base64_bits = 0;
 }
 
-static inline base64_shift(uint8_t bits)
+static inline void base64_shift(uint8_t bits)
 {
 	LP_DEBUG_ASSERT(!(bits & 0xc0));
 	switch (lp.usb_rx_base64_bits) {
@@ -277,7 +291,7 @@ static inline base64_shift(uint8_t bits)
 		lp.usb_rx_base64_state = bits;
 		break;
 	case 2:
-		lp.usb_rx_base64_state <<= 2;
+		lp.usb_rx_base64_state <<= 6;
 		lp.usb_rx_base64_state |= bits;
 		base64_flush();
 		break;
@@ -287,6 +301,7 @@ static inline base64_shift(uint8_t bits)
 		base64_flush();
 		lp.usb_rx_base64_bits = 2;
 		lp.usb_rx_base64_state = bits & 0x3;
+		break;
 	case 6:
 		lp.usb_rx_base64_state <<= 2;
 		lp.usb_rx_base64_state |= (bits >> 4) & 0x3;
@@ -317,9 +332,42 @@ static void cdc_task(void* param)
 		if (tud_cdc_n_connected(0)) {
 			bool more = false;
 
+			if (lp.running && lp.started) {
+				uint8_t flags = __atomic_load_n(&lp.output_flags, __ATOMIC_ACQUIRE);
+				if (lp.finished) {
+					if (flags) {
+						flags &= ~OUTPUT_FLAG_STALLED;
+						if (flags) {
+							// ouch!
+							LOG("ERROR: early abort %#x\n", flags);
+						} else if (lp.tx_overflow) {
+							LOG("ERROR: tx overflow\n");
+							lp.running = false;
+						} else {
+							// thread fence and send last datum
+							LOG("W00t!\n");
+						}
+					}
+
+					lp.running = false;
+				} else {
+					if (flags) {
+						// ouch!
+						LOG("ERROR: early abort %#x\n", flags);
+						lp.running = false;
+					} else if (lp.tx_overflow) {
+						LOG("ERROR: tx overflow\n");
+						lp.running = false;
+					} else {
+						// LOG("running\n");
+
+					}
+				}
+			}
+
 			if (tud_cdc_n_available(0) && lp.usb_rx_count < TU_ARRAY_SIZE(lp.usb_rx_buffer)) {
 				uint8_t offset = lp.usb_rx_count;
-				lp.usb_rx_count += (uint8_t)tud_cdc_n_read(0, &lp.usb_rx_buffer[lp.usb_rx_count], TU_ARRAY_SIZE(lp.usb_rx_buffer) - lp.usb_rx_count);
+				lp.usb_rx_count += (uint8_t)tud_cdc_n_read(0, &lp.usb_rx_buffer[offset], TU_ARRAY_SIZE(lp.usb_rx_buffer) - offset);
 				// LOG("read: ");
 				// for (uint8_t i = offset; i < lp.usb_rx_count; ++i) {
 				// 	LOG("%c %#x", lp.usb_rx_buffer[i], lp.usb_rx_buffer[i]);
@@ -330,50 +378,81 @@ static void cdc_task(void* param)
 
 			if (lp.usb_rx_count) {
 				if (lp.running) {
-					char* p = (char*)lp.usb_rx_buffer;
-					for (uint8_t i = 0; i < lp.usb_rx_count; ++i) {
-						char c = p[i];
-						switch (c) {
-						case '\n':
-						case '\r':
-						case ' ':
-						case '\t':
-							break;
-						case '+':
-							base64_shift(0b111110);
-							break;
-						case '/':
-							base64_shift(0b111111);
-							break;
-						case '=':
-							base64_flush();
-							lp.running = false;
-							lp.started = false;
-							break;
-						default:
-							if (c >= 'A' && c <= 'Z') {
-								base64_shift(c - 'A');
-							} else if (c >= 'a' && c <= 'z') {
-								base64_shift(c - 'a' + 0b011010);
-							} else if (c >= '0' && c <= '0') {
-								base64_shift(c - '0' + 0b110100);
-							} else {
-								LOG("invalid char '%c'\n", c);
-								lp.running = false;
+					if (!lp.finished) {
+						char* p = (char*)lp.usb_rx_buffer;
+						for (uint8_t i = 0; i < lp.usb_rx_count; ++i) {
+							char c = p[i];
+							switch (c) {
+							case '\n':
+							case '\r':
+							case ' ':
+							case '\t':
+								break;
+							case '+':
+								base64_shift(62);
+								break;
+							case '/':
+								base64_shift(63);
+								break;
+							case '=':
+								base64_flush();
+								// lp.running = false;
+								// lp.started = false;
+
+								// wait for stall
+								lp.finished = true;
+								break;
+							default:
+								if (c >= 'A' && c <= 'Z') {
+									base64_shift(c - 'A');
+								} else if (c >= 'a' && c <= 'z') {
+									base64_shift((c - 'a') + 26);
+								} else if (c >= '0' && c <= '0') {
+									base64_shift((c - '0') + 52);
+								} else {
+									base64_flush();
+									// LOG("invalid char '%c'\n", c);
+									// lp.running = false;
+									lp.finished = true;
+								}
+								break;
 							}
-							break;
 						}
 					}
+
 					lp.usb_rx_count = 0;
+
 					if (!lp.started) {
-						LOG("start\n");
-						lp.stall = false;
-						lp.overflow = false;
-						TC0->COUNT16.CC[0].reg = CONF_CPU_FREQUENCY / lp.signal_frequency;
-						restart_counter();
+						uint8_t gi = __atomic_load_n(&lp.signal_tx_buffer_gi, __ATOMIC_ACQUIRE);
+						uint8_t pi = lp.signal_tx_buffer_pi;
+						if (pi != gi) {
+							LOG("start\n");
+
+							lp.started = true;
+							lp.finished = false;
+							lp.tx_overflow = false;
+							lp.output_flags = 0;
+							// lp.output_bits = 0;
+
+							lp.output_count_total = 0;
+							// lp.output.mux = 0;
+							// lp.input.mux = 0;
+							lp.output_count = 0;
+							lp.input_count = 0;
+
+
+							__atomic_thread_fence(__ATOMIC_RELEASE);
+
+							// set pin to high to start
+							gpio_set_pin_level(LIN_TX_PIN, true);
+							TC0->COUNT16.CC[0].reg = CONF_CPU_FREQUENCY / lp.signal_frequency;
+
+
+							restart_counter();
+						}
 					}
 				} else {
-					LOG("1\n");
+					// LOG("1\n");
 					char* p = (char*)lp.usb_rx_buffer;
 					for (uint8_t i = 0; i < lp.usb_rx_count; ++i) {
 						char c = p[i];
@@ -384,12 +463,12 @@ static void cdc_task(void* param)
 							// 	++i;
 							// }
 							lp.cmd_buffer[lp.cmd_count] = 0;
-							LOG("1.1: %s\n", lp.cmd_buffer);
+							// LOG("1.1: %s\n", lp.cmd_buffer);
 							process_input();
 							lp.cmd_count = 0;
 							break;
 						default:
-							LOG("1.2\n");
+							// LOG("1.2\n");
 							if (lp.cmd_count + 1 == TU_ARRAY_SIZE(lp.cmd_buffer)) {
 								lp.cmd_count = 0;
 								place_unknown_cmd_response();
@@ -412,10 +491,9 @@ static void cdc_task(void* param)
 				if (w) {
 					if (w < lp.usb_tx_count) {
 						memmove(&lp.usb_tx_buffer[0], &lp.usb_tx_buffer[w], lp.usb_tx_count - w);
-						lp.usb_tx_count -= w;
-					} else {
-						lp.usb_tx_count = 0;
 					}
+
+					lp.usb_tx_count -= w;
 
 					more = true;
 				}
@@ -430,11 +508,11 @@ static void cdc_task(void* param)
 				vTaskDelay(pdMS_TO_TICKS(1));
 			}
 		} else {
-			lp.usb_rx_count = 0;
-			lp.usb_tx_count = 0;
-			lp.usb_rx_base64_state = 0;
-			lp.usb_rx_base64_bits = 0;
-			counter_stop();
+			// lp.usb_rx_count = 0;
+			// lp.usb_tx_count = 0;
+			// lp.usb_rx_base64_state = 0;
+			// lp.usb_rx_base64_bits = 0;
+			// counter_stop();
 			vTaskDelay(pdMS_TO_TICKS(10));
 		}
 	}
@@ -447,16 +525,114 @@ RAMFUNC static void lin_task(void* param)
 
 }
 
-RAMFUNC static void foo(void)
+// @120 MHz 1.625 us
+RAMFUNC static void output_next_bit(void)
 {
-	static char buf[16];
-
+	// clear interrupt
 	TC0->COUNT16.INTFLAG.reg = ~0;
 
-	uint32_t r = PORT->Group[2].IN.reg;
-
-	bool value = (r & 0b100000) == 0b100000;
 	PORT->Group[2].OUTTGL.reg = 0b10000;
+	goto out;
+
+	if (likely(lp.output_count_total)) {
+		//
+		uint32_t r = PORT->Group[2].IN.reg;
+		bool value = (r & 0b100000) == 0b100000;
+
+
+		if (likely(lp.input_count)) {
+			bool store = true;
+			if (value == lp.input_bit) {
+				if (likely(lp.input_count != RLE_BIT_MAX_COUNT)) {
+					++lp.input_count;
+					store = false;
+				}
+			}
+
+			if (store) {
+				uint8_t pi = lp.signal_rx_buffer_pi;
+				uint8_t gi = __atomic_load_n(&lp.signal_rx_buffer_gi, __ATOMIC_ACQUIRE);
+				uint8_t used = pi - gi;
+				if (unlikely(used == TU_ARRAY_SIZE(lp.signal_rx_buffer))) {
+					__atomic_or_fetch(&lp.output_flags, OUTPUT_FLAG_RX_OVERFLOW, __ATOMIC_RELEASE);
+					// stop timer
+					TC0->COUNT16.CTRLA.bit.ENABLE = 0;
+					goto out;
+				} else {
+					// LOG("IN pin=%u count=%u\n", lp.input.bit.value, lp.input.bit.count);
+					union rle_bit r;
+					uint8_t index = pi & (TU_ARRAY_SIZE(lp.signal_rx_buffer)-1);
+					r.bit.value = lp.input_bit;
+					r.bit.count = lp.input_count;
+					lp.signal_rx_buffer[index] = r.mux;
+					__atomic_store_n(&lp.signal_rx_buffer_pi, pi + 1, __ATOMIC_RELEASE);
+				}
+
+				lp.input_count = 1;
+				lp.input_bit = value;
+			}
+		} else {
+			lp.input_count = 1;
+			lp.input_bit = value;
+		}
+	}
+
+	// if (!lp.output.bit.count) {
+	if (unlikely(!lp.output_count)) {
+		uint8_t pi, gi;
+fetch:
+		pi = __atomic_load_n(&lp.signal_tx_buffer_pi, __ATOMIC_ACQUIRE);
+		gi = lp.signal_tx_buffer_gi;
+
+		if (unlikely(pi == gi)) {
+			__atomic_or_fetch(&lp.output_flags, OUTPUT_FLAG_STALLED, __ATOMIC_RELEASE);
+			// stop timer
+			TC0->COUNT16.CTRLA.bit.ENABLE = 0;
+			goto out;
+		} else {
+			uint8_t index = gi & (TU_ARRAY_SIZE(lp.signal_tx_buffer)-1);
+			// lp.output.mux = lp.signal_tx_buffer[index];
+			union rle_bit r;
+			r.mux = lp.signal_tx_buffer[index];
+			__atomic_store_n(&lp.signal_tx_buffer_gi, gi + 1, __ATOMIC_RELEASE);
+
+			// lp.output_bit = r.bit.value;
+			lp.output_count = r.bit.count;
+
+			if (unlikely(!lp.output_count)) {
+				goto fetch;
+			}
+
+			// LOG("OUT pin=%u count=%u\n", r.value, r.bit.count);
+
+			if (r.bit.value) {
+				PORT->Group[2].OUTSET.reg = 0b10000;
+			} else {
+				PORT->Group[2].OUTCLR.reg = 0b10000;
+			}
+		}
+	}
+
+
+	LP_ISR_ASSERT(lp.output_count);
+
+	--lp.output_count;
+	++lp.output_count_total;
+
+	// LP_ISR_ASSERT(lp.output.bit.count);
+
+	// --lp.output.bit.count;
+	// ++lp.output_count_total;
+	// LOG("output count=%lu\n", lp.output_count_total);
+
+
+	// PORT->Group[2].OUT.reg = 0b10000;
+
+
+out:
+	;
+
+	// PORT->Group[2].OUTTGL.reg = 0b10000;
 
 	// usnprintf(buf, sizeof(buf), "%#lx %#lx\n", (unsigned long)value, r);
 	// board_uart_write(buf, -1);
@@ -464,7 +640,7 @@ RAMFUNC static void foo(void)
 
 extern void TC0_Handler(void)
 {
-	foo();
+	output_next_bit();
 }
 
 static void process_input()
@@ -521,9 +697,11 @@ static void process_input()
 					lp.usb_tx_count = usnprintf(
 						(char*)lp.usb_tx_buffer,
 						sizeof(lp.usb_tx_buffer),
-						"0 %s %s\n",
-						(lp.overflow ? "OVR" : ""),
-						(lp.stall ? "STALL" : ""));
+						"0 %s %s %s\n",
+						(lp.tx_overflow ? "TXOVR" : ""),
+						((lp.output_flags & OUTPUT_FLAG_RX_OVERFLOW) == OUTPUT_FLAG_RX_OVERFLOW ? "RXOVR" : ""),
+						((lp.output_flags & OUTPUT_FLAG_STALLED) == OUTPUT_FLAG_STALLED ? "STALLED" : "")
+						);
 					break;
 				default:
 					place_unknown_cmd_response();

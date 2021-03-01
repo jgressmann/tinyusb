@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 import asyncio
+import base64
 import serial
 import serial_asyncio
 
@@ -33,7 +34,9 @@ if __name__ == "__main__":
 
 	def blocking_write():
 		serialPort.write(b'RUN\n')
-		serialPort.write(b'asdfadfasdfasdfdf====')
+		x = base64.b64encode(b'\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01')
+		print(repr(x))
+		serialPort.write(x + b'====')
 		serialPort.write(b'?S')
 
 	# connected = False
