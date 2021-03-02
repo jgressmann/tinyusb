@@ -146,21 +146,35 @@ static struct linchpin {
 
 static inline void counter_stop(void)
 {
-	TC0->COUNT16.CTRLA.bit.ENABLE = 0;
-	while(1 == TC0->COUNT16.SYNCBUSY.bit.ENABLE);
+	TC0->COUNT32.CTRLA.bit.ENABLE = 0;
+	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
 }
 
 static inline void restart_counter(void)
 {
 	counter_stop();
-	TC0->COUNT16.COUNT.reg = 0;
-	TC0->COUNT16.CTRLA.bit.ENABLE = 1;
+	TC0->COUNT32.COUNT.reg = 0;
+	TC0->COUNT32.CTRLA.bit.ENABLE = 1;
 }
+
 
 
 int main(void)
 {
 	board_init();
+
+	// increase main clock to 200MHz
+	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(99);
+	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
+#undef CONF_CPU_FREQUENCY
+#define CONF_CPU_FREQUENCY 200000000
+
+// 	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(74);
+// 	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
+// #undef CONF_CPU_FREQUENCY
+// #define CONF_CPU_FREQUENCY 150000000
+
+
 	tusb_init();
 
 	gpio_set_pin_function(LIN_TX_PIN, GPIO_PIN_FUNCTION_OFF);
@@ -177,33 +191,36 @@ int main(void)
 	NVIC_EnableIRQ(TC0_IRQn);
 
 	MCLK->APBAMASK.bit.TC0_ = 1;
+	MCLK->APBAMASK.bit.TC1_ = 1;
 	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
+	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
 
 
-	TC0->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
-	while(1 == TC0->COUNT16.SYNCBUSY.bit.SWRST);
-	// TC0->COUNT16.CTRLA.reg = TC_CTRLA_PRESCALER_DIV1024;
-	// TC0->COUNT16.CTRLBSET.reg = TC_CTRLBSET_DIR;
-	TC0->COUNT16.INTENSET.reg = TC_INTENSET_OVF;
-	TC0->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
-	// TC0->COUNT16.CC[0].reg = 40;
-	// TC0->COUNT16.COUNT.reg = 12000;
-	// TC0->COUNT16.CCBUF[0].reg = 12000;
-	// TC0->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE;
-	// while(1 == TC0->COUNT16.SYNCBUSY.bit.ENABLE);
+	TC0->COUNT32.CTRLA.reg = TC_CTRLA_SWRST;
+	while(1 == TC0->COUNT32.SYNCBUSY.bit.SWRST);
+	TC0->COUNT32.CTRLA.reg = TC_CTRLA_MODE_COUNT32;
+	// TC0->COUNT32.CTRLBSET.reg = TC_CTRLBSET_DIR;
+	TC0->COUNT32.INTENSET.reg = TC_INTENSET_OVF;
+	TC0->COUNT32.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
+	// TC0->COUNT32.CC[0].reg = 40;
+	// TC0->COUNT32.COUNT.reg = 12000;
+	// TC0->COUNT32.CCBUF[0].reg = 12000;
+	// TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE;
+	// while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
 
 
-	// TC0->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE;
-	// while(1 == TC0->COUNT16.SYNCBUSY.bit.ENABLE);
-	// TC0->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP;
+	// TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE;
+	// while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
+	// TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP;
 
 	// restart_counter();
 
-	// CMCC->CTRL.bit.CEN = 1;
+	CMCC->CTRL.bit.CEN = 1;
 
 
 	lp.state = IDLE;
-	lp.signal_frequency = 1000000;
+	lp.signal_frequency = 1250000;
+	// lp.signal_frequency = 100000000;
 
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(lp.usb_device_stack), NULL, configMAX_PRIORITIES-1, lp.usb_device_stack, &lp.usb_device_task_mem);
 	(void) xTaskCreateStatic(&cdc_task, "cdc", TU_ARRAY_SIZE(lp.cdc_task_stack_mem), NULL, configMAX_PRIORITIES-1, lp.cdc_task_stack_mem, &lp.cdc_task_mem);
@@ -445,7 +462,7 @@ static void cdc_task(void* param)
 
 							// set pin to high to start
 							gpio_set_pin_level(LIN_TX_PIN, true);
-							TC0->COUNT16.CC[0].reg = CONF_CPU_FREQUENCY / lp.signal_frequency;
+							TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY / lp.signal_frequency;
 
 
 							restart_counter();
@@ -525,14 +542,17 @@ RAMFUNC static void lin_task(void* param)
 
 }
 
-// @120 MHz 1.625 us
+// @120 MHz 1.625 us, cache off
+// @200 MHz 1.250 us, cache off
+// @200 MHz 550-580 ns, cache on
+// @200 MHz 100 ns, cache on (pin toggle)
 RAMFUNC static void output_next_bit(void)
 {
 	// clear interrupt
-	TC0->COUNT16.INTFLAG.reg = ~0;
+	TC0->COUNT32.INTFLAG.reg = ~0;
 
-	PORT->Group[2].OUTTGL.reg = 0b10000;
-	goto out;
+	// PORT->Group[2].OUTTGL.reg = 0b10000;
+	// goto out;
 
 	if (likely(lp.output_count_total)) {
 		//
@@ -556,7 +576,7 @@ RAMFUNC static void output_next_bit(void)
 				if (unlikely(used == TU_ARRAY_SIZE(lp.signal_rx_buffer))) {
 					__atomic_or_fetch(&lp.output_flags, OUTPUT_FLAG_RX_OVERFLOW, __ATOMIC_RELEASE);
 					// stop timer
-					TC0->COUNT16.CTRLA.bit.ENABLE = 0;
+					TC0->COUNT32.CTRLA.bit.ENABLE = 0;
 					goto out;
 				} else {
 					// LOG("IN pin=%u count=%u\n", lp.input.bit.value, lp.input.bit.count);
@@ -587,7 +607,7 @@ fetch:
 		if (unlikely(pi == gi)) {
 			__atomic_or_fetch(&lp.output_flags, OUTPUT_FLAG_STALLED, __ATOMIC_RELEASE);
 			// stop timer
-			TC0->COUNT16.CTRLA.bit.ENABLE = 0;
+			TC0->COUNT32.CTRLA.bit.ENABLE = 0;
 			goto out;
 		} else {
 			uint8_t index = gi & (TU_ARRAY_SIZE(lp.signal_tx_buffer)-1);
