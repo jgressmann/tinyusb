@@ -90,7 +90,8 @@ endif()
 enable_testing()
 
 set(SOURCES
-	src/test_base64.cpp)
+	src/test_base64.cpp
+	../src/base64.c)
 
 add_executable(linchpin-tests ${SOURCES})
 target_include_directories(
