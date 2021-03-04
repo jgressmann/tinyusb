@@ -23,16 +23,24 @@
  *
  */
 
+
 #pragma once
 
+#ifndef ARRAY_SIZE
+	#define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
+#endif
 
+#ifndef likely
+	#define likely(x) __builtin_expect(!!(x),1)
+#endif
 
-#define LP_CMD_LOAD_BIN "LDB"
-#define LP_CMD_LOAD_HEX "LDH"
-// #define LP_CMD_ERR "E"
-#define LP_CMD_RUN "RUN"
-#define LP_CMD_SET_F "!F"
-#define LP_CMD_GET_F "?F"
+#ifndef unlikely
+	#define unlikely(x) __builtin_expect(!!(x),0)
+#endif
+
+#ifndef RAMFUNC
+	#define RAMFUNC __attribute__((section(".ramfunc")))
+#endif
 
 
 

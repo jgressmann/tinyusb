@@ -38,36 +38,21 @@
 #include <hal/include/hal_gpio.h>
 #include <sam.h>
 
-#include <linchpin_debug.h>
-#include <linchpin_api.h>
 
-#ifndef likely
-#define likely(x) __builtin_expect(!!(x),1)
-#endif
+#include <linchpin.h>
+#include <base64.h>
 
-#ifndef unlikely
-#define unlikely(x) __builtin_expect(!!(x),0)
-#endif
+// #ifndef likely
+// #define likely(x) __builtin_expect(!!(x),1)
+// #endif
 
-#define RAMFUNC __attribute__((section(".ramfunc")))
+// #ifndef unlikely
+// #define unlikely(x) __builtin_expect(!!(x),0)
+// #endif
 
-static char const * const error_messages[] = {
-	"OK",
-	"unknown command",
-	"invalid parameter",
-};
+// #define RAMFUNC __attribute__((section(".ramfunc")))
 
-static inline char const * lp_strerror(int code) {
-	if (code < 0) {
-		code = -code;
-	}
 
-	if (unlikely((size_t)code >= TU_ARRAY_SIZE(error_messages))) {
-		return "<invalid error code>";
-	}
-
-	return error_messages[code];
-}
 
 
 static void tusb_device_task(void* param);
@@ -83,66 +68,31 @@ static void process_input(void);
 #define OP_RES 0x2
 #define OP_ONE 0x3
 
-union rle_bit {
-	uint8_t mux;
-	struct {
-		uint8_t count:7;
-		uint8_t value:1;
-	} bit;
-};
-
-#define RLE_BIT_MAX_COUNT 127
-
 enum state {
 	IDLE, // no connection
 	READY, // connected, not running
 	RUNNING,
 };
 
-#define USB_BUFFER_SIZE 64
 
-static struct linchpin {
+static struct linchpin lp;
+
+
+static struct tasks {
 	StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_device_task_mem;
 	StackType_t cdc_task_stack_mem[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t cdc_task_mem;
-	StackType_t lin_task_stack_mem[configMINIMAL_STACK_SIZE];
-	StaticTask_t lin_task_mem;
+	// StackType_t lin_task_stack_mem[configMINIMAL_STACK_SIZE];
+	// StaticTask_t lin_task_mem;
 	// char error_message[64];
 	// int error_code;
 	// TaskHandle_t usb_task_handle;
-	volatile uint8_t state;
-	uint32_t signal_frequency;
-	uint8_t cmd_buffer[USB_BUFFER_SIZE];
-	uint8_t usb_rx_buffer[USB_BUFFER_SIZE];
-	uint8_t usb_tx_buffer[USB_BUFFER_SIZE];
-	uint8_t signal_tx_buffer[USB_BUFFER_SIZE];
-	uint8_t signal_rx_buffer[USB_BUFFER_SIZE];
-	uint8_t cmd_count;
-	uint8_t usb_rx_count;
-	uint8_t usb_tx_count;
-	uint8_t usb_rx_base64_state;
-	uint8_t usb_rx_base64_bits;
-	volatile uint8_t signal_tx_buffer_pi;
-	volatile uint8_t signal_tx_buffer_gi;
-	volatile uint8_t signal_rx_buffer_pi;
-	volatile uint8_t signal_rx_buffer_gi;
-	bool running;
-	bool started;
-	bool finished;
-	bool tx_overflow;
-	volatile uint32_t output_count_total;
-	volatile uint32_t output_flags;
-	// union rle_bit input;
-	// union rle_bit output;
-	uint8_t input_bit;
-	uint8_t input_count;
-	// uint8_t output_bit;
-	uint8_t output_count;
-} lp;
+} tasks;
 
-#define OUTPUT_FLAG_STALLED     0x1
-#define OUTPUT_FLAG_RX_OVERFLOW 0x2
+
+// #define OUTPUT_FLAG_STALLED     0x1
+// #define OUTPUT_FLAG_RX_OVERFLOW 0x2
 
 static inline void counter_stop(void)
 {
@@ -163,11 +113,14 @@ int main(void)
 {
 	board_init();
 
+	LOG("CONF_CPU_FREQUENCY=%lu\n", CONF_CPU_FREQUENCY);
+
+
 	// increase main clock to 200MHz
-	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(99);
-	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
-#undef CONF_CPU_FREQUENCY
-#define CONF_CPU_FREQUENCY 200000000
+// 	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(99);
+// 	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
+// #undef CONF_CPU_FREQUENCY
+// #define CONF_CPU_FREQUENCY 200000000
 
 // 	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(74);
 // 	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
@@ -222,10 +175,17 @@ int main(void)
 	lp.signal_frequency = 1250000;
 	// lp.signal_frequency = 100000000;
 
-	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(lp.usb_device_stack), NULL, configMAX_PRIORITIES-1, lp.usb_device_stack, &lp.usb_device_task_mem);
-	(void) xTaskCreateStatic(&cdc_task, "cdc", TU_ARRAY_SIZE(lp.cdc_task_stack_mem), NULL, configMAX_PRIORITIES-1, lp.cdc_task_stack_mem, &lp.cdc_task_mem);
-	// // (void) xTaskCreateStatic(&lin_task, "lin", TU_ARRAY_SIZE(lp.lin_task_stack_mem), NULL, configMAX_PRIORITIES-2, lp.lin_task_stack_mem, &lp.lin_task_mem);
 
+
+	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(tasks.usb_device_stack), NULL, configMAX_PRIORITIES-1, tasks.usb_device_stack, &tasks.usb_device_task_mem);
+	(void) xTaskCreateStatic(&cdc_task, "cdc", TU_ARRAY_SIZE(tasks.cdc_task_stack_mem), NULL, configMAX_PRIORITIES-1, tasks.cdc_task_stack_mem, &tasks.cdc_task_mem);
+	// (void) xTaskCreateStatic(&lin_task, "lin", TU_ARRAY_SIZE(lp.lin_task_stack_mem), NULL, configMAX_PRIORITIES-2, lp.lin_task_stack_mem, &lp.lin_task_mem);
+
+		gpio_set_pin_level(LIN_TX_PIN, true);
+		TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY / lp.signal_frequency;
+
+
+		restart_counter();
 
 	board_uart_write("start scheduler\n", -1);
 	// board_led_off();
@@ -246,16 +206,6 @@ static void tusb_device_task(void* param)
 	}
 }
 
-static const uint8_t base64_table[64] = {
-	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
-	'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
-	'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
-	'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
-	'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
-	'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
-	'w', 'x', 'y', 'z', '0', '1', '2', '3',
-	'4', '5', '6', '7', '8', '9', '+', '/'
-};
 
 #define BASE64_OP_CODE_BYTE
 
@@ -278,58 +228,75 @@ static const uint8_t base64_table[64] = {
 // 	}
 // }
 
-static inline base64_flush(void)
+static inline void base64_decode_flush_dev(void)
 {
-	if (unlikely(!lp.usb_rx_base64_bits)) {
-		return;
-	}
+	base64_decode_flush(
+		&lp.usb_rx_base64_state,
+		&lp.signal_tx_buffer_gi,
+		&lp.signal_tx_buffer_pi,
+		lp.signal_tx_buffer,
+		(uint8_t)ARRAY_SIZE(lp.signal_tx_buffer)
+	);
+	// if (unlikely(!lp.usb_rx_base64_bits)) {
+	// 	return;
+	// }
 
-	uint8_t gi = __atomic_load_n(&lp.signal_tx_buffer_gi, __ATOMIC_ACQUIRE);
-	uint8_t pi = lp.signal_tx_buffer_pi;
-	uint8_t used = pi - gi;
-	if (likely(used < TU_ARRAY_SIZE(lp.signal_tx_buffer))) {
-		uint8_t index = pi & (TU_ARRAY_SIZE(lp.signal_tx_buffer)-1);
-		// LOG("dec %#x\n", lp.usb_rx_base64_state);
-		lp.signal_tx_buffer[index] = lp.usb_rx_base64_state;
-		__atomic_store_n(&lp.signal_tx_buffer_pi, pi + 1, __ATOMIC_RELEASE);
-	} else {
-		lp.tx_overflow = true;
-	}
+	// uint8_t gi = __atomic_load_n(&lp.signal_tx_buffer_gi, __ATOMIC_ACQUIRE);
+	// uint8_t pi = lp.signal_tx_buffer_pi;
+	// uint8_t used = pi - gi;
+	// if (likely(used < TU_ARRAY_SIZE(lp.signal_tx_buffer))) {
+	// 	uint8_t index = pi & (TU_ARRAY_SIZE(lp.signal_tx_buffer)-1);
+	// 	// LOG("dec %#x\n", lp.usb_rx_base64_state);
+	// 	lp.signal_tx_buffer[index] = lp.usb_rx_base64_state;
+	// 	__atomic_store_n(&lp.signal_tx_buffer_pi, pi + 1, __ATOMIC_RELEASE);
+	// } else {
+	// 	lp.tx_overflow = true;
+	// }
 
-	lp.usb_rx_base64_bits = 0;
+	// lp.usb_rx_base64_bits = 0;
+
 }
 
-static inline void base64_shift(uint8_t bits)
+static inline void base64_decode_shift_dev(uint8_t bits)
 {
-	LP_DEBUG_ASSERT(!(bits & 0xc0));
-	switch (lp.usb_rx_base64_bits) {
-	case 0:
-		lp.usb_rx_base64_bits = 6;
-		lp.usb_rx_base64_state = bits;
-		break;
-	case 2:
-		lp.usb_rx_base64_state <<= 6;
-		lp.usb_rx_base64_state |= bits;
-		base64_flush();
-		break;
-	case 4:
-		lp.usb_rx_base64_state <<= 4;
-		lp.usb_rx_base64_state |= (bits >> 2) & 0xf;
-		base64_flush();
-		lp.usb_rx_base64_bits = 2;
-		lp.usb_rx_base64_state = bits & 0x3;
-		break;
-	case 6:
-		lp.usb_rx_base64_state <<= 2;
-		lp.usb_rx_base64_state |= (bits >> 4) & 0x3;
-		base64_flush();
-		lp.usb_rx_base64_bits = 4;
-		lp.usb_rx_base64_state = bits & 0xf;
-		break;
-	default:
-		LP_ASSERT(false);
-		break;
-	}
+	base64_decode_shift(
+		bits,
+		&lp.usb_rx_base64_state,
+		&lp.signal_tx_buffer_gi,
+		&lp.signal_tx_buffer_pi,
+		lp.signal_tx_buffer,
+		(uint8_t)ARRAY_SIZE(lp.signal_tx_buffer)
+	);
+
+	// LP_DEBUG_ASSERT(!(bits & 0xc0));
+	// switch (lp.usb_rx_base64_bits) {
+	// case 0:
+	// 	lp.usb_rx_base64_bits = 6;
+	// 	lp.usb_rx_base64_state = bits;
+	// 	break;
+	// case 2:
+	// 	lp.usb_rx_base64_state <<= 6;
+	// 	lp.usb_rx_base64_state |= bits;
+	// 	base64_decode_flush();
+	// 	break;
+	// case 4:
+	// 	lp.usb_rx_base64_state <<= 4;
+	// 	lp.usb_rx_base64_state |= (bits >> 2) & 0xf;
+	// 	base64_decode_flush();
+	// 	lp.usb_rx_base64_bits = 2;
+	// 	lp.usb_rx_base64_state = bits & 0x3;
+	// 	break;
+	// case 6:
+	// 	lp.usb_rx_base64_state <<= 2;
+	// 	lp.usb_rx_base64_state |= (bits >> 4) & 0x3;
+	// 	base64_decode_flush();
+	// 	lp.usb_rx_base64_bits = 4;
+	// 	lp.usb_rx_base64_state = bits & 0xf;
+	// 	break;
+	// default:
+	// 	LP_ASSERT(false);
+	// 	break;
+	// }
 }
 
 
@@ -344,7 +311,7 @@ static void cdc_task(void* param)
 	(void) param;
 
 	while (1) {
-
+		// PORT->Group[2].OUTTGL.reg = 0b10000;
 
 		if (tud_cdc_n_connected(0)) {
 			bool more = false;
@@ -406,13 +373,13 @@ static void cdc_task(void* param)
 							case '\t':
 								break;
 							case '+':
-								base64_shift(62);
+								base64_decode_shift_dev(62);
 								break;
 							case '/':
-								base64_shift(63);
+								base64_decode_shift_dev(63);
 								break;
 							case '=':
-								base64_flush();
+								base64_decode_flush_dev();
 								// lp.running = false;
 								// lp.started = false;
 
@@ -421,13 +388,13 @@ static void cdc_task(void* param)
 								break;
 							default:
 								if (c >= 'A' && c <= 'Z') {
-									base64_shift(c - 'A');
+									base64_decode_shift_dev(c - 'A');
 								} else if (c >= 'a' && c <= 'z') {
-									base64_shift((c - 'a') + 26);
+									base64_decode_shift_dev((c - 'a') + 26);
 								} else if (c >= '0' && c <= '0') {
-									base64_shift((c - '0') + 52);
+									base64_decode_shift_dev((c - '0') + 52);
 								} else {
-									base64_flush();
+									base64_decode_flush_dev();
 									// LOG("invalid char '%c'\n", c);
 									// lp.running = false;
 									lp.finished = true;
@@ -551,8 +518,8 @@ RAMFUNC static void output_next_bit(void)
 	// clear interrupt
 	TC0->COUNT32.INTFLAG.reg = ~0;
 
-	// PORT->Group[2].OUTTGL.reg = 0b10000;
-	// goto out;
+	PORT->Group[2].OUTTGL.reg = 0b10000;
+	goto out;
 
 	if (likely(lp.output_count_total)) {
 		//

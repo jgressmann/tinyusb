@@ -1,5 +1,8 @@
+CONF_CPU_FREQUENCY = 200000000
+
 include ../../../tools/top.mk
 include ../../make.mk
+
 
 FREERTOS_SRC = lib/FreeRTOS/FreeRTOS/Source
 

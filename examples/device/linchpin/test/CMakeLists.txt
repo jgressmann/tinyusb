@@ -70,6 +70,7 @@ set(CMAKE_CXX_STANDARD 14)
 
 # https://cliutils.gitlab.io/modern-cmake/chapters/testing/googletest.html
 include(FetchContent)
+include(GoogleTest)
 
 FetchContent_Declare(
   googletest
@@ -86,9 +87,18 @@ endif()
 # message("googletest_SOURCE_DIR: ${googletest_SOURCE_DIR}")
 # message("googletest_BINARY_DIR: ${googletest_BINARY_DIR}")
 
+enable_testing()
 
-add_executable(linchpin-tests main.cpp)
-target_include_directories(linchpin-tests PRIVATE ${googletest_SOURCE_DIR}/googletest/include)
+set(SOURCES
+	src/test_base64.cpp)
+
+add_executable(linchpin-tests ${SOURCES})
+target_include_directories(
+	linchpin-tests PRIVATE
+	${googletest_SOURCE_DIR}/googletest/include
+	inc
+	../inc)
 # target_link_directories(linchpin-tests PRIVATE gtest_main)
 target_link_libraries(linchpin-tests gtest_main)
-#add_test(NAME "LINchPIN Tests" COMMAND linchpin-tests)
+# gtest_add_tests(NAME "LINchPINTests" COMMAND linchpin-tests)
+gtest_add_tests(TARGET linchpin-tests)

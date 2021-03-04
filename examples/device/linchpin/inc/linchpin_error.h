@@ -23,16 +23,35 @@
  *
  */
 
+
 #pragma once
 
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-#define LP_CMD_LOAD_BIN "LDB"
-#define LP_CMD_LOAD_HEX "LDH"
-// #define LP_CMD_ERR "E"
-#define LP_CMD_RUN "RUN"
-#define LP_CMD_SET_F "!F"
-#define LP_CMD_GET_F "?F"
+#define LP_ERROR_NONE            0
+#define LP_ERROR_UNKNOWN_CMD    -1
+#define LP_ERROR_INVALID_PARAM  -2
+#define LP_ERROR_OUT_OF_RANGE   -3
 
+#define LP_ERROR_COUNT           4
 
+extern char const * const lp_error_messages[LP_ERROR_COUNT];
 
+static inline char const * lp_strerror(int code) {
+	if (code < 0) {
+		code = -code;
+	}
+
+	if (unlikely((unsigned)code >= ARRAY_SIZE(lp_error_messages))) {
+		return "<invalid error code>";
+	}
+
+	return lp_error_messages[code];
+}
+
+#ifdef __cplusplus
+}
+#endif

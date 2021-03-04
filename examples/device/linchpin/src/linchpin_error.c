@@ -23,16 +23,12 @@
  *
  */
 
-#pragma once
+#include <linchpin.h>
 
 
-
-#define LP_CMD_LOAD_BIN "LDB"
-#define LP_CMD_LOAD_HEX "LDH"
-// #define LP_CMD_ERR "E"
-#define LP_CMD_RUN "RUN"
-#define LP_CMD_SET_F "!F"
-#define LP_CMD_GET_F "?F"
-
-
-
+char const * const lp_error_messages[LP_ERROR_COUNT] = {
+	"OK",
+	"unknown command",
+	"invalid parameter",
+	"out of range",
+};

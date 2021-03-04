@@ -23,16 +23,15 @@
  *
  */
 
-#pragma once
+#include "base64.h"
 
-
-
-#define LP_CMD_LOAD_BIN "LDB"
-#define LP_CMD_LOAD_HEX "LDH"
-// #define LP_CMD_ERR "E"
-#define LP_CMD_RUN "RUN"
-#define LP_CMD_SET_F "!F"
-#define LP_CMD_GET_F "?F"
-
-
-
+const char base64_to_ascii_table[64] = {
+	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+	'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+	'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+	'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
+	'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
+	'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+	'w', 'x', 'y', 'z', '0', '1', '2', '3',
+	'4', '5', '6', '7', '8', '9', '+', '/'
+};
