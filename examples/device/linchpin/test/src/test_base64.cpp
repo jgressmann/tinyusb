@@ -136,6 +136,16 @@ TEST_F(base64_fixture, encode_finalize2)
 	EXPECT_EQ('=', buf[3]);
 }
 
+TEST_F(base64_fixture, encode_finalize2_sets_overflow_if_no_space_left_in_output_buffer)
+{
+	base64_encode_shift(0xff, &e, &gi, &pi, buf, sizeof(buf));
+	EXPECT_EQ(0, e.flags);
+	pi = sizeof(buf);
+	base64_encode_finalize(&e, &gi, &pi, buf, sizeof(buf));
+	EXPECT_EQ(BASE64_FLAG_OVERFLOW, e.flags);
+}
+
+
 TEST_F(base64_fixture, encode_finalize1)
 {
 	base64_encode_shift(0xf0, &e, &gi, &pi, buf, sizeof(buf));
@@ -150,4 +160,14 @@ TEST_F(base64_fixture, encode_finalize1)
 	EXPECT_EQ('A', buf[1]);
 	EXPECT_EQ('8', buf[2]);
 	EXPECT_EQ('=', buf[3]);
+}
+
+TEST_F(base64_fixture, encode_finalize1_sets_overflow_if_no_space_left_in_output_buffer)
+{
+	base64_encode_shift(0xf0, &e, &gi, &pi, buf, sizeof(buf));
+	base64_encode_shift(0x0f, &e, &gi, &pi, buf, sizeof(buf));
+	EXPECT_EQ(0, e.flags);
+	pi = sizeof(buf);
+	base64_encode_finalize(&e, &gi, &pi, buf, sizeof(buf));
+	EXPECT_EQ(BASE64_FLAG_OVERFLOW, e.flags);
 }
