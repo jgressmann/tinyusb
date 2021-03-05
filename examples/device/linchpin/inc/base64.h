@@ -35,12 +35,8 @@
 	#define BASE64_ASSERT assert
 #endif
 
-#ifndef BASE64_FUNC_MANY
-	#define BASE64_FUNC_MANY
-#endif
-
-#ifndef BASE64_FUNC_ONCE
-	#define BASE64_FUNC_ONCE
+#ifndef BASE64_FUNC
+	#define BASE64_FUNC
 #endif
 
 #ifndef base64_likely
@@ -52,9 +48,8 @@
 #endif
 
 
-#define BASE64_FLAG_OVERFLOW  0x1
-#define BASE64_FLAG_UNDERFLOW 0x2
-
+#define BASE64_FLAG_OVERFLOW     0x1
+#define BASE64_FLAG_INVALID_CHAR 0x2
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,22 +60,22 @@ extern "C" {
 
 struct base64_state {
 	uint8_t state;
-	uint8_t bits:3;
+	uint8_t bits:4;
 	uint8_t rem:2;
-	uint8_t flags:3;
+	uint8_t flags:2;
 };
 
 extern const char base64_to_ascii_table[64];
 
 #define base64_to_ascii(x) (base64_to_ascii_table[(x) & 0x3f])
 
-BASE64_FUNC_ONCE static inline void base64_init(struct base64_state* state)
+BASE64_FUNC static inline void base64_init(struct base64_state* state)
 {
 	BASE64_ASSERT(state);
 	memset(state, 0, sizeof(*state));
 }
 
-BASE64_FUNC_MANY static inline void base64_flush_bits(
+BASE64_FUNC static inline void base64_flush_bits(
 	struct base64_state* state,
 	uint8_t volatile* gi_ptr,
 	uint8_t volatile* pi_ptr,
@@ -93,15 +88,7 @@ BASE64_FUNC_MANY static inline void base64_flush_bits(
 	BASE64_ASSERT(pi_ptr);
 	BASE64_ASSERT(buf_ptr);
 	BASE64_ASSERT(buf_size > 0);
-
-	if (base64_unlikely(!state->bits)) {
-		return;
-	}
-
-	if (base64_unlikely(expected_bits != state->bits)) {
-		state->flags |= BASE64_FLAG_UNDERFLOW;
-		return;
-	}
+	BASE64_ASSERT(state->bits == expected_bits);
 
 	uint8_t gi = __atomic_load_n(gi_ptr, __ATOMIC_ACQUIRE);
 	uint8_t pi = *pi_ptr;
@@ -113,11 +100,9 @@ BASE64_FUNC_MANY static inline void base64_flush_bits(
 	} else {
 		state->flags |= BASE64_FLAG_OVERFLOW;
 	}
-
-	state->bits = 0;
 }
 
-BASE64_FUNC_MANY static inline void base64_encode_flush(
+BASE64_FUNC static inline void base64_encode_flush(
 	struct base64_state* state,
 	uint8_t volatile* gi_ptr,
 	uint8_t volatile* pi_ptr,
@@ -128,7 +113,7 @@ BASE64_FUNC_MANY static inline void base64_encode_flush(
 }
 
 
-BASE64_FUNC_MANY static inline void base64_encode_shift(
+BASE64_FUNC static inline void base64_encode_shift(
 	uint8_t bits,
 	struct base64_state* state,
 	uint8_t volatile* gi_ptr,
@@ -171,6 +156,7 @@ BASE64_FUNC_MANY static inline void base64_encode_shift(
 		state->bits = 6;
 		state->state = base64_to_ascii(bits & 0x3f);
 		base64_encode_flush(state, gi_ptr, pi_ptr, buf_ptr, buf_size);
+		state->bits = 0;
 		break;
 	default:
 		BASE64_ASSERT(0 && "base64_encode_shift unhandled no bits");
@@ -178,7 +164,7 @@ BASE64_FUNC_MANY static inline void base64_encode_shift(
 	}
 }
 
-BASE64_FUNC_MANY static inline void base64_encode_finalize(
+BASE64_FUNC static inline void base64_encode_finalize(
 	struct base64_state* state,
 	uint8_t volatile* gi_ptr,
 	uint8_t volatile* pi_ptr,
@@ -204,6 +190,7 @@ BASE64_FUNC_MANY static inline void base64_encode_finalize(
 		state->bits = 6;
 		state->state = '=';
 		base64_encode_flush(state, gi_ptr, pi_ptr, buf_ptr, buf_size);
+		state->bits = 0;
 		break;
 	case 2:
 		state->bits = 6;
@@ -212,6 +199,7 @@ BASE64_FUNC_MANY static inline void base64_encode_finalize(
 		state->bits = 6;
 		state->state = '=';
 		base64_encode_flush(state, gi_ptr, pi_ptr, buf_ptr, buf_size);
+		state->bits = 0;
 		break;
 	default:
 		BASE64_ASSERT(0 && "base64_encode_finalize");
@@ -221,7 +209,7 @@ BASE64_FUNC_MANY static inline void base64_encode_finalize(
 	state->rem = 0;
 }
 
-BASE64_FUNC_MANY static inline void base64_decode_flush(
+BASE64_FUNC static inline void base64_decode_flush(
 	struct base64_state* state,
 	uint8_t volatile* gi_ptr,
 	uint8_t volatile* pi_ptr,
@@ -232,50 +220,13 @@ BASE64_FUNC_MANY static inline void base64_decode_flush(
 }
 
 
-BASE64_FUNC_MANY static inline void base64_decode_shift(
-	uint8_t bits,
+BASE64_FUNC void base64_decode_shift(
+	uint8_t c,
 	struct base64_state* state,
 	uint8_t volatile* gi_ptr,
 	uint8_t volatile* pi_ptr,
 	uint8_t* buf_ptr,
-	uint8_t buf_size)
-{
-	BASE64_ASSERT(state);
-	BASE64_ASSERT(gi_ptr);
-	BASE64_ASSERT(pi_ptr);
-	BASE64_ASSERT(buf_ptr);
-	BASE64_ASSERT(buf_size > 0);
-
-	BASE64_ASSERT(!(bits & 0xc0));
-	switch (state->bits) {
-	case 0:
-		state->bits = 6;
-		state->state = bits;
-		break;
-	case 2:
-		state->state <<= 6;
-		state->state |= bits;
-		base64_decode_flush(state, gi_ptr, pi_ptr, buf_ptr, buf_size);
-		break;
-	case 4:
-		state->state <<= 4;
-		state->state |= (bits >> 2) & 0xf;
-		base64_decode_flush(state, gi_ptr, pi_ptr, buf_ptr, buf_size);
-		state->bits = 2;
-		state->state = bits & 0x3;
-		break;
-	case 6:
-		state->state <<= 2;
-		state->state |= (bits >> 4) & 0x3;
-		base64_decode_flush(state, gi_ptr, pi_ptr, buf_ptr, buf_size);
-		state->bits = 4;
-		state->state = bits & 0xf;
-		break;
-	default:
-		BASE64_ASSERT(0 && "base64_decode_shift unhandled no bits");
-		break;
-	}
-}
+	uint8_t buf_size);
 
 #ifdef __cplusplus
 }
