@@ -48,7 +48,7 @@ union rle_bit {
 #define RLE_BIT_MAX_COUNT 127
 
 
-#define LP_USB_BUFFER_SIZE 64
+//#define LP_USB_BUFFER_SIZE 64
 
 enum lp_state {
 	LP_DISCONNECTED,
@@ -59,6 +59,8 @@ enum lp_state {
 enum lp_run_state {
 	LP_RUN_REQUESTED,
 	LP_RUN_STARTED,
+	LP_RUN_STOPPING,
+	LP_RUN_STOPPED,
 };
 
 struct linchpin {
@@ -70,7 +72,8 @@ struct linchpin {
 	uint8_t signal_rx_buffer[LP_USB_BUFFER_SIZE];
 	uint8_t cmd_count;
 	uint8_t usb_rx_count;
-	uint8_t usb_tx_count;
+	uint8_t usb_tx_buffer_gi;
+	uint8_t usb_tx_buffer_pi;
 	uint8_t state;
 	uint8_t run_state;
 	struct base64_state usb_rx_base64_state;
@@ -87,23 +90,65 @@ struct linchpin {
 	uint8_t output_count;
 };
 
-#define OUTPUT_FLAG_TX_STALLED     0x1
+#define OUTPUT_FLAG_TX_STALLED  0x1
 #define OUTPUT_FLAG_RX_OVERFLOW 0x2
+#define OUTPUT_FLAG_OUTPUT_DONE 0x4
+#define OUTPUT_FLAG_INPUT_DONE  0x8
+
 
 extern struct linchpin lp;
 void lp_init(void);
-void lp_cdc_task(void);
+LP_RAMFUNC void lp_cdc_task(void);
 LP_RAMFUNC void lp_output_next_bit(void);
-LP_RAMFUNC bool lp_cdc_is_connected(void);
-LP_RAMFUNC uint32_t lp_cdc_rx_available(void);
-LP_RAMFUNC uint32_t lp_cdc_tx_available(void);
-LP_RAMFUNC uint32_t lp_cdc_rx(uint8_t *ptr, uint32_t count);
-LP_RAMFUNC uint32_t lp_cdc_tx(uint8_t const *ptr, uint32_t count);
-LP_RAMFUNC void lp_cdc_tx_flush(void);
-LP_RAMFUNC void lp_set_tx_pin(bool value);
-LP_RAMFUNC void lp_start_counter(void);
-LP_RAMFUNC void lp_delay_ms(uint32_t ms);
-LP_RAMFUNC bool lp_pin_set(uint32_t pin, bool value);
+
+
+#ifndef lp_rx_pin_read
+	#error Define bool lp_rx_pin_read(void);
+#endif
+
+#ifndef lp_tx_pin_set
+	#error Define void lp_tx_pin_set(void);
+#endif
+
+#ifndef lp_tx_pin_clear
+	#error Define void lp_tx_pin_clear(void);
+#endif
+
+#ifndef lp_timer_stop
+	#error Define void lp_timer_stop(void);
+#endif
+
+#ifndef lp_timer_start
+	#error Define void lp_timer_start(void);
+#endif
+
+#ifndef lp_cdc_is_connected
+	#error Define bool lp_cdc_is_connected(void);
+#endif
+
+#ifndef lp_cdc_rx_available
+	#error Define uint32_t lp_cdc_rx_available(void);
+#endif
+
+#ifndef lp_cdc_tx_available
+	#error Define uint32_t lp_cdc_tx_available(void);
+#endif
+
+#ifndef lp_cdc_rx
+	#error Define uint32_t lp_cdc_rx(uint8_t *ptr, uint32_t count);
+#endif
+
+#ifndef lp_cdc_rx
+	#error Define uint32_t lp_cdc_tx(uint8_t const *ptr, uint32_t count);
+#endif
+
+#ifndef lp_cdc_tx_flush
+	#error Define void lp_cdc_tx_flush(void);
+#endif
+
+
+void lp_delay_ms(uint32_t ms);
+bool lp_pin_set(uint32_t pin, bool value);
 
 #ifdef __cplusplus
 } // extern "C"

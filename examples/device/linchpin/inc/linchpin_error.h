@@ -36,6 +36,7 @@ extern "C" {
 #define LP_ERROR_INVALID_PARAM  -2
 #define LP_ERROR_OUT_OF_RANGE   -3
 #define LP_ERROR_MALFORMED      -4
+#define LP_ERROR_FAILED         -5
 
 #define LP_ERROR_COUNT           5
 

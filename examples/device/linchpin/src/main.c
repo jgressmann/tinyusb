@@ -191,363 +191,194 @@ static void cdc_task(void* param)
 		// PORT->Group[2].OUTTGL.reg = 0b10000;
 
 		lp_cdc_task();
-
-		// if (lp_cdc_is_connected()) {
-		// 	bool more = false;
-
-		// 	if (lp.running && lp.started) {
-		// 		uint8_t flags = __atomic_load_n(&lp.output_flags, __ATOMIC_ACQUIRE);
-		// 		if (lp.finished) {
-		// 			if (flags) {
-		// 				flags &= ~OUTPUT_FLAG_TX_STALLED;
-		// 				if (flags) {
-		// 					// ouch!
-		// 					LP_LOG("ERROR: early abort %#x\n", flags);
-		// 				} else if (lp.tx_overflow) {
-		// 					LP_LOG("ERROR: tx overflow\n");
-		// 					lp.running = false;
-		// 				} else {
-		// 					// thread fence and send last datum
-		// 					LP_LOG("W00t!\n");
-		// 				}
-		// 			}
-
-		// 			lp.running = false;
-		// 		} else {
-		// 			if (flags) {
-		// 				// ouch!
-		// 				LP_LOG("ERROR: early abort %#x\n", flags);
-		// 				lp.running = false;
-		// 			} else if (lp.tx_overflow) {
-		// 				LP_LOG("ERROR: tx overflow\n");
-		// 				lp.running = false;
-		// 			} else {
-		// 				// LP_LOG("running\n");
-
-		// 			}
-		// 		}
-		// 	}
-
-		// 	if (tud_cdc_n_available(0) && lp.usb_rx_count < ARRAY_SIZE(lp.usb_rx_buffer)) {
-		// 		uint8_t offset = lp.usb_rx_count;
-		// 		lp.usb_rx_count += (uint8_t)lp_cdc_read(&lp.usb_rx_buffer[offset], ARRAY_SIZE(lp.usb_rx_buffer) - offset);
-		// 		// LP_LOG("read: ");
-		// 		// for (uint8_t i = offset; i < lp.usb_rx_count; ++i) {
-		// 		// 	LP_LOG("%c %#x", lp.usb_rx_buffer[i], lp.usb_rx_buffer[i]);
-		// 		// }
-		// 		// LP_LOG("\n");
-		// 		more = true;
-		// 	}
-
-		// 	if (lp.usb_rx_count) {
-		// 		if (lp.running) {
-		// 			if (!lp.finished) {
-		// 				char* p = (char*)lp.usb_rx_buffer;
-		// 				for (uint8_t i = 0; i < lp.usb_rx_count; ++i) {
-		// 					char c = p[i];
-		// 					switch (c) {
-		// 					case '\n':
-		// 					case '\r':
-		// 					case ' ':
-		// 					case '\t':
-		// 						break;
-		// 					case '+':
-		// 						base64_decode_shift_dev(62);
-		// 						break;
-		// 					case '/':
-		// 						base64_decode_shift_dev(63);
-		// 						break;
-		// 					case '=':
-		// 						base64_decode_flush_dev();
-		// 						// lp.running = false;
-		// 						// lp.started = false;
-
-		// 						// wait for stall
-		// 						lp.finished = true;
-		// 						break;
-		// 					default:
-		// 						if (c >= 'A' && c <= 'Z') {
-		// 							base64_decode_shift_dev(c - 'A');
-		// 						} else if (c >= 'a' && c <= 'z') {
-		// 							base64_decode_shift_dev((c - 'a') + 26);
-		// 						} else if (c >= '0' && c <= '0') {
-		// 							base64_decode_shift_dev((c - '0') + 52);
-		// 						} else {
-		// 							base64_decode_flush_dev();
-		// 							// LP_LOG("invalid char '%c'\n", c);
-		// 							// lp.running = false;
-		// 							lp.finished = true;
-		// 						}
-		// 						break;
-		// 					}
-		// 				}
-		// 			}
-
-		// 			lp.usb_rx_count = 0;
-
-		// 			if (!lp.started) {
-		// 				uint8_t gi = __atomic_load_n(&lp.signal_tx_buffer_gi, __ATOMIC_ACQUIRE);
-		// 				uint8_t pi = lp.signal_tx_buffer_pi;
-		// 				if (pi != gi) {
-		// 					LP_LOG("start\n");
-
-		// 					lp.started = true;
-		// 					lp.finished = false;
-		// 					lp.tx_overflow = false;
-		// 					lp.output_flags = 0;
-		// 					// lp.output_bits = 0;
-
-		// 					lp.output_count_total = 0;
-		// 					// lp.output.mux = 0;
-		// 					// lp.input.mux = 0;
-		// 					lp.output_count = 0;
-		// 					lp.input_count = 0;
-
-
-		// 					__atomic_thread_fence(__ATOMIC_RELEASE);
-
-		// 					// set pin to high to start
-
-		// 					lp_set_tx_pin(true);
-		// 					lp_start_counter();
-
-
-		// 				}
-		// 			}
-		// 		} else {
-		// 			// LP_LOG("1\n");
-		// 			char* p = (char*)lp.usb_rx_buffer;
-		// 			for (uint8_t i = 0; i < lp.usb_rx_count; ++i) {
-		// 				char c = p[i];
-		// 				switch (c) {
-		// 				case '\n':
-		// 				case '\r':
-		// 					// while (i < lp.usb_rx_count && (p[i] == '\r' || p[i] == '\r'))) {
-		// 					// 	++i;
-		// 					// }
-		// 					lp.cmd_buffer[lp.cmd_count] = 0;
-		// 					// LP_LOG("1.1: %s\n", lp.cmd_buffer);
-		// 					process_input();
-		// 					lp.cmd_count = 0;
-		// 					break;
-		// 				default:
-		// 					// LP_LOG("1.2\n");
-		// 					if (lp.cmd_count + 1 == ARRAY_SIZE(lp.cmd_buffer)) {
-		// 						lp.cmd_count = 0;
-		// 						place_unknown_cmd_response();
-		// 					} else {
-		// 						lp.cmd_buffer[lp.cmd_count++] = c;
-		// 					}
-		// 					break;
-		// 				}
-		// 			}
-
-		// 			lp.usb_rx_count = 0;
-
-		// 			more = true;
-		// 		}
-		// 	}
-
-		// 	if (lp.usb_tx_count) {
-		// 		// LP_LOG("tx %s\n", lp.usb_tx_buffer);
-		// 		uint32_t w = tud_cdc_n_write(0, lp.usb_tx_buffer, lp.usb_tx_count);
-		// 		if (w) {
-		// 			if (w < lp.usb_tx_count) {
-		// 				memmove(&lp.usb_tx_buffer[0], &lp.usb_tx_buffer[w], lp.usb_tx_count - w);
-		// 			}
-
-		// 			lp.usb_tx_count -= w;
-
-		// 			more = true;
-		// 		}
-
-		// 		if (!lp.running) {
-		// 			lp_cdc_tx_flush();
-
-		// 		}
-		// 	}
-
-		// 	if (!more) {
-		// 		// board_uart_write("no more\n", -1);
-		// 		lp_delay_ms(1);
-		// 	}
-		// } else {
-		// 	// lp.usb_rx_count = 0;
-		// 	// lp.usb_tx_count = 0;
-		// 	// lp.usb_rx_base64_state = 0;
-		// 	// lp.usb_rx_base64_bits = 0;
-		// 	// counter_stop();
-		// 	vTaskDelay(pdMS_TO_TICKS(10));
-		// 	lp_delay_ms(1);
-		// }
 	}
 }
 
 
-// @120 MHz 1.625 us, cache off
-// @200 MHz 1.250 us, cache off
-// @200 MHz 550-580 ns, cache on
-// @200 MHz 100 ns, cache on (pin toggle)
-LP_RAMFUNC void lp_output_next_bit(void)
+//// @120 MHz 1.625 us, cache off
+//// @200 MHz 1.250 us, cache off
+//// @200 MHz 550-580 ns, cache on
+//// @200 MHz 100 ns, cache on (pin toggle)
+//LP_RAMFUNC void lp_output_next_bit(void)
+//{
+//	// clear interrupt
+//	TC0->COUNT32.INTFLAG.reg = ~0;
+
+//	// PORT->Group[2].OUTTGL.reg = 0b10000;
+//	// goto out;
+
+//	if (likely(lp.output_count_total)) {
+//		//
+//		uint32_t r = PORT->Group[2].IN.reg;
+//		bool value = (r & 0b100000) == 0b100000;
+
+
+//		if (likely(lp.input_count)) {
+//			bool store = true;
+//			if (value == lp.input_bit) {
+//				if (likely(lp.input_count != RLE_BIT_MAX_COUNT)) {
+//					++lp.input_count;
+//					store = false;
+//				}
+//			}
+
+//			if (store) {
+//				uint8_t pi = lp.signal_rx_buffer_pi;
+//				uint8_t gi = __atomic_load_n(&lp.signal_rx_buffer_gi, __ATOMIC_ACQUIRE);
+//				uint8_t used = pi - gi;
+//				if (unlikely(used == ARRAY_SIZE(lp.signal_rx_buffer))) {
+//					__atomic_or_fetch(&lp.output_flags, OUTPUT_FLAG_RX_OVERFLOW, __ATOMIC_RELEASE);
+//					// stop timer
+//					TC0->COUNT32.CTRLA.bit.ENABLE = 0;
+//					goto out;
+//				} else {
+//					// LP_LOG("IN pin=%u count=%u\n", lp.input.bit.value, lp.input.bit.count);
+//					union rle_bit rle;
+//					uint8_t index = pi & (ARRAY_SIZE(lp.signal_rx_buffer)-1);
+//					rle.bit.value = lp.input_bit;
+//					rle.bit.count = lp.input_count;
+//					lp.signal_rx_buffer[index] = rle.mux;
+//					__atomic_store_n(&lp.signal_rx_buffer_pi, pi + 1, __ATOMIC_RELEASE);
+//				}
+
+//				lp.input_count = 1;
+//				lp.input_bit = value;
+//			}
+//		} else {
+//			lp.input_count = 1;
+//			lp.input_bit = value;
+//		}
+//	}
+
+//	// if (!lp.output.bit.count) {
+//	if (unlikely(!lp.output_count)) {
+//		uint8_t pi, gi;
+//fetch:
+//		pi = __atomic_load_n(&lp.signal_tx_buffer_pi, __ATOMIC_ACQUIRE);
+//		gi = lp.signal_tx_buffer_gi;
+
+//		if (unlikely(pi == gi)) {
+//			__atomic_or_fetch(&lp.output_flags, OUTPUT_FLAG_TX_STALLED, __ATOMIC_RELEASE);
+//			// stop timer
+//			TC0->COUNT32.CTRLA.bit.ENABLE = 0;
+//			goto out;
+//		} else {
+//			uint8_t index = gi & (ARRAY_SIZE(lp.signal_tx_buffer)-1);
+//			// lp.output.mux = lp.signal_tx_buffer[index];
+//			union rle_bit r;
+//			r.mux = lp.signal_tx_buffer[index];
+//			__atomic_store_n(&lp.signal_tx_buffer_gi, gi + 1, __ATOMIC_RELEASE);
+
+//			// lp.output_bit = r.bit.value;
+//			lp.output_count = r.bit.count;
+
+//			if (unlikely(!lp.output_count)) {
+//				goto fetch;
+//			}
+
+//			// LP_LOG("OUT pin=%u count=%u\n", r.value, r.bit.count);
+
+//			if (r.bit.value) {
+//				PORT->Group[2].OUTSET.reg = 0b10000;
+//			} else {
+//				PORT->Group[2].OUTCLR.reg = 0b10000;
+//			}
+//		}
+//	}
+
+
+//	LP_ISR_ASSERT(lp.output_count);
+
+//	--lp.output_count;
+//	++lp.output_count_total;
+
+//	// LP_ISR_ASSERT(lp.output.bit.count);
+
+//	// --lp.output.bit.count;
+//	// ++lp.output_count_total;
+//	// LP_LOG("output count=%lu\n", lp.output_count_total);
+
+
+//	// PORT->Group[2].OUT.reg = 0b10000;
+
+
+//out:
+//	;
+
+//	// PORT->Group[2].OUTTGL.reg = 0b10000;
+
+//	// usnprintf(buf, sizeof(buf), "%#lx %#lx\n", (unsigned long)value, r);
+//	// board_uart_write(buf, -1);
+//}
+
+LP_RAMFUNC static void timer_interrupt(void)
 {
 	// clear interrupt
 	TC0->COUNT32.INTFLAG.reg = ~0;
 
-	// PORT->Group[2].OUTTGL.reg = 0b10000;
-	// goto out;
-
-	if (likely(lp.output_count_total)) {
-		//
-		uint32_t r = PORT->Group[2].IN.reg;
-		bool value = (r & 0b100000) == 0b100000;
-
-
-		if (likely(lp.input_count)) {
-			bool store = true;
-			if (value == lp.input_bit) {
-				if (likely(lp.input_count != RLE_BIT_MAX_COUNT)) {
-					++lp.input_count;
-					store = false;
-				}
-			}
-
-			if (store) {
-				uint8_t pi = lp.signal_rx_buffer_pi;
-				uint8_t gi = __atomic_load_n(&lp.signal_rx_buffer_gi, __ATOMIC_ACQUIRE);
-				uint8_t used = pi - gi;
-				if (unlikely(used == ARRAY_SIZE(lp.signal_rx_buffer))) {
-					__atomic_or_fetch(&lp.output_flags, OUTPUT_FLAG_RX_OVERFLOW, __ATOMIC_RELEASE);
-					// stop timer
-					TC0->COUNT32.CTRLA.bit.ENABLE = 0;
-					goto out;
-				} else {
-					// LP_LOG("IN pin=%u count=%u\n", lp.input.bit.value, lp.input.bit.count);
-					union rle_bit rle;
-					uint8_t index = pi & (ARRAY_SIZE(lp.signal_rx_buffer)-1);
-					rle.bit.value = lp.input_bit;
-					rle.bit.count = lp.input_count;
-					lp.signal_rx_buffer[index] = rle.mux;
-					__atomic_store_n(&lp.signal_rx_buffer_pi, pi + 1, __ATOMIC_RELEASE);
-				}
-
-				lp.input_count = 1;
-				lp.input_bit = value;
-			}
-		} else {
-			lp.input_count = 1;
-			lp.input_bit = value;
-		}
-	}
-
-	// if (!lp.output.bit.count) {
-	if (unlikely(!lp.output_count)) {
-		uint8_t pi, gi;
-fetch:
-		pi = __atomic_load_n(&lp.signal_tx_buffer_pi, __ATOMIC_ACQUIRE);
-		gi = lp.signal_tx_buffer_gi;
-
-		if (unlikely(pi == gi)) {
-			__atomic_or_fetch(&lp.output_flags, OUTPUT_FLAG_TX_STALLED, __ATOMIC_RELEASE);
-			// stop timer
-			TC0->COUNT32.CTRLA.bit.ENABLE = 0;
-			goto out;
-		} else {
-			uint8_t index = gi & (ARRAY_SIZE(lp.signal_tx_buffer)-1);
-			// lp.output.mux = lp.signal_tx_buffer[index];
-			union rle_bit r;
-			r.mux = lp.signal_tx_buffer[index];
-			__atomic_store_n(&lp.signal_tx_buffer_gi, gi + 1, __ATOMIC_RELEASE);
-
-			// lp.output_bit = r.bit.value;
-			lp.output_count = r.bit.count;
-
-			if (unlikely(!lp.output_count)) {
-				goto fetch;
-			}
-
-			// LP_LOG("OUT pin=%u count=%u\n", r.value, r.bit.count);
-
-			if (r.bit.value) {
-				PORT->Group[2].OUTSET.reg = 0b10000;
-			} else {
-				PORT->Group[2].OUTCLR.reg = 0b10000;
-			}
-		}
-	}
-
-
-	LP_ISR_ASSERT(lp.output_count);
-
-	--lp.output_count;
-	++lp.output_count_total;
-
-	// LP_ISR_ASSERT(lp.output.bit.count);
-
-	// --lp.output.bit.count;
-	// ++lp.output_count_total;
-	// LP_LOG("output count=%lu\n", lp.output_count_total);
-
-
-	// PORT->Group[2].OUT.reg = 0b10000;
-
-
-out:
-	;
-
-	// PORT->Group[2].OUTTGL.reg = 0b10000;
-
-	// usnprintf(buf, sizeof(buf), "%#lx %#lx\n", (unsigned long)value, r);
-	// board_uart_write(buf, -1);
+	lp_output_next_bit();
 }
 
 extern void TC0_Handler(void)
 {
-	lp_output_next_bit();
+	timer_interrupt();
 }
 
-LP_RAMFUNC bool lp_cdc_is_connected(void)
-{
-	return tud_cdc_n_connected(0) != 0;
-}
+// LP_RAMFUNC bool lp_cdc_is_connected(void)
+// {
+// 	return tud_cdc_n_connected(0) != 0;
+// }
 
-LP_RAMFUNC void lp_set_tx_pin(bool value)
-{
-	gpio_set_pin_level(LIN_TX_PIN, value);
-}
+// LP_RAMFUNC void lp_set_tx_pin(bool value)
+// {
+// 	gpio_set_pin_level(LIN_TX_PIN, value);
+// }
 
-LP_RAMFUNC void lp_start_counter(void)
-{
-	TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY / lp.signal_frequency;
-	restart_counter();
-}
+// LP_RAMFUNC void lp_start_counter(void)
+// {
+// 	TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY / lp.signal_frequency;
+// 	restart_counter();
+// }
 
-LP_RAMFUNC void lp_cdc_tx_flush(void)
-{
-	tud_cdc_n_write_flush(0);
-}
+// LP_RAMFUNC void lp_cdc_tx_flush(void)
+// {
+// 	tud_cdc_n_write_flush(0);
+// }
 
-LP_RAMFUNC uint32_t lp_cdc_tx_available(void)
-{
-	return tud_cdc_n_write_available(0);
-}
+// LP_RAMFUNC uint32_t lp_cdc_tx_available(void)
+// {
+// 	return tud_cdc_n_write_available(0);
+// }
 
-LP_RAMFUNC uint32_t lp_cdc_tx(uint8_t const *ptr, uint32_t count)
-{
-	return tud_cdc_n_write(0, ptr, count);
-}
+// LP_RAMFUNC uint32_t lp_cdc_tx(uint8_t const *ptr, uint32_t count)
+// {
+// 	return tud_cdc_n_write(0, ptr, count);
+// }
 
-LP_RAMFUNC uint32_t lp_cdc_rx_available(void)
-{
-	return tud_cdc_n_available(0);
-}
+// LP_RAMFUNC uint32_t lp_cdc_rx_available(void)
+// {
+// 	return tud_cdc_n_available(0);
+// }
 
-LP_RAMFUNC uint32_t lp_cdc_rx(uint8_t  *ptr, uint32_t count)
-{
-	return tud_cdc_n_read(0, ptr, count);
-}
+// LP_RAMFUNC uint32_t lp_cdc_rx(uint8_t  *ptr, uint32_t count)
+// {
+// 	return tud_cdc_n_read(0, ptr, count);
+// }
 
 LP_RAMFUNC void lp_delay_ms(uint32_t ms)
 {
 	vTaskDelay(pdMS_TO_TICKS(ms));
+}
+
+bool lp_pin_set(uint32_t pin, bool value)
+{
+	PortGroup* group = &PORT->Group[(pin >> 5) & 0x3];
+	if (value) {
+		group->OUTSET.reg = UINT32_C(1) << (pin & 0x1f);
+	} else {
+		group->OUTCLR.reg = UINT32_C(1) << (pin & 0x1f);
+	}
+
+	return true;
 }
 

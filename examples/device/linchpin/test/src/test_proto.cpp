@@ -10,6 +10,7 @@
 
 #include <string>
 #include <algorithm>
+#include <deque>
 
 using ::testing::StartsWith;
 
@@ -26,7 +27,10 @@ struct serial_fixture : public ::testing::Test
     std::string input;
     std::string output;
     std::vector<std::tuple<int, bool>> pins_set;
+    std::deque<bool> tx_pin_values;
+    std::deque<bool> rx_pin_values;
     bool pin_set_success;
+    bool timer_started;
 
 
     ~serial_fixture()
@@ -44,6 +48,7 @@ struct serial_fixture : public ::testing::Test
         pin = -1;
         output_capacity = -1;
         pin_set_success = true;
+        timer_started = false;
 
         lp_init();
     }
@@ -60,6 +65,7 @@ struct serial_fixture : public ::testing::Test
         lp_cdc_task();
         input = "!R\n";
         lp_cdc_task();
+        output.clear();
     }
 
 };
@@ -73,20 +79,27 @@ serial_fixture* serial_fixture::self;
 #ifdef __cplusplus
 extern "C" {
 #endif
-LP_RAMFUNC bool lp_cdc_is_connected(void)
+
+bool test_cdc_is_connected(void)
 {
     return serial_fixture::self->connected;
 }
-LP_RAMFUNC uint32_t lp_cdc_rx_available(void)
+
+uint32_t test_cdc_rx_available(void)
 {
     return static_cast<uint32_t>(serial_fixture::self->input.size());
 }
-LP_RAMFUNC uint32_t lp_cdc_tx_available(void)
+
+uint32_t test_cdc_tx_available(void)
 {
-    return 0;
+    if (serial_fixture::self->output_capacity >= 0) {
+        return static_cast<uint32_t>(serial_fixture::self->output_capacity);
+    }
+
+    return ~0;
 }
 
-LP_RAMFUNC uint32_t lp_cdc_rx(uint8_t *ptr, uint32_t count)
+uint32_t test_cdc_rx(uint8_t *ptr, uint32_t count)
 {
     TEST_ASSERT(ptr);
 
@@ -100,7 +113,7 @@ LP_RAMFUNC uint32_t lp_cdc_rx(uint8_t *ptr, uint32_t count)
     return bytes;
 }
 
-LP_RAMFUNC uint32_t lp_cdc_tx(uint8_t const *ptr, uint32_t count)
+uint32_t test_cdc_tx(uint8_t const *ptr, uint32_t count)
 {
     TEST_ASSERT(ptr);
 
@@ -115,33 +128,49 @@ LP_RAMFUNC uint32_t lp_cdc_tx(uint8_t const *ptr, uint32_t count)
     return count;
 }
 
-LP_RAMFUNC void lp_cdc_tx_flush(void)
+void test_cdc_tx_flush(void)
 {
 
 }
 
-LP_RAMFUNC void lp_set_tx_pin(bool value)
-{
-    serial_fixture::self->pin = value;
-}
-
-LP_RAMFUNC void lp_start_counter(void)
-{
-
-}
-
-LP_RAMFUNC void lp_delay_ms(uint32_t ms)
+void lp_delay_ms(uint32_t ms)
 {
     (void)ms;
 }
 
-LP_RAMFUNC bool lp_pin_set(uint32_t pin, bool value)
+bool lp_pin_set(uint32_t pin, bool value)
 {
     serial_fixture::self->pins_set.emplace_back(decltype (serial_fixture::self->pins_set)::value_type{pin, value});
     return serial_fixture::self->pin_set_success;
 }
 
+void test_timer_stop(void)
+{
+    serial_fixture::self->timer_started = false;
+}
 
+void test_timer_start(void)
+{
+    serial_fixture::self->timer_started = true;
+}
+
+void lp_tx_pin_set(void)
+{
+    serial_fixture::self->tx_pin_values.emplace_back(true);
+}
+
+void lp_tx_pin_clear(void)
+{
+    serial_fixture::self->tx_pin_values.emplace_back(false);
+}
+
+bool lp_rx_pin_read(void)
+{
+    TEST_ASSERT(!serial_fixture::self->rx_pin_values.empty());
+    auto value = serial_fixture::self->rx_pin_values.front();
+    serial_fixture::self->rx_pin_values.pop_front();
+    return value;
+}
 
 #ifdef __cplusplus
 } // extern "C"
@@ -245,6 +274,22 @@ TEST_F(serial_fixture, connected_state_can_set_frequency)
     EXPECT_EQ(12345, f);
 }
 
+TEST_F(serial_fixture, connected_state_set_frequency_handles_invalid_args)
+{
+    connect();
+
+
+    input = "!F 0\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("-3 "));
+    output.clear();
+
+    input = "!F 1000000000\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("-3 "));
+    output.clear();
+}
+
 TEST_F(serial_fixture, connected_state_can_set_pin)
 {
     connect();
@@ -276,6 +321,135 @@ TEST_F(serial_fixture, connected_state_can_switch_to_running)
     EXPECT_THAT(output, StartsWith("0 "));
     EXPECT_EQ(LP_RUNNING, lp.state);
     EXPECT_EQ(LP_RUN_REQUESTED, lp.run_state);
+    EXPECT_EQ(false, timer_started);
+}
+
+TEST_F(serial_fixture, running_state_starts_with_first_base64_char)
+{
+    run();
+
+    input = "f";
+    lp_cdc_task();
+    EXPECT_EQ(LP_RUNNING, lp.state);
+    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
+    EXPECT_EQ(true, timer_started);
+    EXPECT_EQ(0, lp.output_flags);
+}
+
+TEST_F(serial_fixture, running_state_ignores_line_breaks)
+{
+    run();
+
+    input = "f";
+    lp_cdc_task();
+    EXPECT_EQ(LP_RUNNING, lp.state);
+    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
+    EXPECT_EQ(true, timer_started);
+
+    input = "\r\n";
+    EXPECT_EQ(LP_RUNNING, lp.state);
+    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
+    EXPECT_EQ(true, timer_started);
+}
+
+TEST_F(serial_fixture, running_state_finishes_on_invalid_chars)
+{
+    run();
+
+    input = "f";
+    lp_cdc_task();
+    EXPECT_EQ(LP_RUNNING, lp.state);
+    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
+    EXPECT_EQ(true, timer_started);
+
+    input = "\x80";
+    lp_cdc_task();
+    EXPECT_EQ(LP_CONNECTED, lp.state);
+    EXPECT_EQ(false, timer_started);
+    EXPECT_STREQ("\n-5 B64INV \n", output.c_str());
+}
+
+TEST_F(serial_fixture, running_state_finishes_on_tx_stall)
+{
+    run();
+
+    input = "f";
+    lp_cdc_task();
+    EXPECT_EQ(LP_RUNNING, lp.state);
+    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
+    EXPECT_EQ(true, timer_started);
+
+    lp.output_flags |= OUTPUT_FLAG_TX_STALLED;
+
+    lp_cdc_task();
+    EXPECT_EQ(LP_CONNECTED, lp.state);
+    EXPECT_EQ(false, timer_started);
+    EXPECT_STREQ("\n-5 TXSTALL \n", output.c_str());
+}
+
+TEST_F(serial_fixture, running_state_finishes_on_rx_overflow)
+{
+    run();
+
+    input = "f";
+    lp_cdc_task();
+    EXPECT_EQ(LP_RUNNING, lp.state);
+    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
+    EXPECT_EQ(true, timer_started);
+
+    lp.output_flags |= OUTPUT_FLAG_RX_OVERFLOW;
+
+    lp_cdc_task();
+    EXPECT_EQ(LP_CONNECTED, lp.state);
+    EXPECT_EQ(false, timer_started);
+    EXPECT_STREQ("\n-5 RXOVRFL \n", output.c_str());
+}
+
+TEST_F(serial_fixture, running_state_reads_input)
+{
+    run();
+
+    input = "f";
+    lp_cdc_task();
+    EXPECT_EQ(LP_RUNNING, lp.state);
+    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
+    EXPECT_EQ(true, timer_started);
+
+    lp.signal_rx_buffer_pi = 4;
+    lp.signal_rx_buffer_gi = 0;
+    lp.signal_rx_buffer[0] = 0xde;
+    lp.signal_rx_buffer[1] = 0xad;
+    lp.signal_rx_buffer[2] = 0xbe;
+    lp.signal_rx_buffer[3] = 0xef;
+
+    lp_cdc_task();
+    EXPECT_EQ(LP_RUNNING, lp.state);
+    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
+    EXPECT_STREQ("3q2+7", output.c_str());
+}
+
+TEST_F(serial_fixture, running_state_returns_to_connected_when_input_terminates)
+{
+    run();
+
+    input = "f\n";
+    lp_cdc_task();
+    EXPECT_EQ(LP_RUNNING, lp.state);
+    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
+    EXPECT_EQ(true, timer_started);
+
+    lp.signal_rx_buffer_pi = 4;
+    lp.signal_rx_buffer_gi = 0;
+    lp.signal_rx_buffer[0] = 0xde;
+    lp.signal_rx_buffer[1] = 0xad;
+    lp.signal_rx_buffer[2] = 0xbe;
+    lp.signal_rx_buffer[3] = 0xef;
+
+
+    lp_cdc_task();
+    EXPECT_EQ(LP_RUNNING, lp.state);
+    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
+    EXPECT_STREQ("3q2+7==\n0 \n", output.c_str());
 }
 
 

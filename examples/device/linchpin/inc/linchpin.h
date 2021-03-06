@@ -28,6 +28,23 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <tusb.h>
+#include <sam.h>
+
+
+#define LP_USB_BUFFER_SIZE 64
+#define lp_cdc_is_connected tud_cdc_connected
+#define lp_cdc_rx_available tud_cdc_available
+#define lp_cdc_tx_available tud_cdc_write_available
+#define lp_cdc_rx tud_cdc_read
+#define lp_cdc_tx tud_cdc_write
+#define lp_cdc_tx_flush tud_cdc_write_flush
+#define lp_rx_pin_read() ({ (PORT->Group[2].IN.reg & 0b100000) == 0b100000; })
+#define lp_tx_pin_set() PORT->Group[2].OUTSET.reg = 0b10000
+#define lp_tx_pin_clear() PORT->Group[2].OUTCLR.reg = 0b10000
+#define lp_timer_stop() TC0->COUNT32.CTRLA.bit.ENABLE = 0
+#define lp_timer_start() TC0->COUNT32.CTRLA.bit.ENABLE = 1
+
 
 #include <linchpin_misc.h>
 #include <linchpin_debug.h>
@@ -43,6 +60,9 @@
 
 #include <linchpin_api.h>
 #include <linchpin_state.h>
+
+
+
 
 #ifdef __cplusplus
 extern "C" {
