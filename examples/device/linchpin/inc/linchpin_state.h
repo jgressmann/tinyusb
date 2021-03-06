@@ -29,13 +29,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define BASE64_ASSERT LP_DEBUG_ASSERT
-#define base64_likely likely
-#define base64_unlikely unlikely
-#include <base64.h>
-#undef BASE64_ASSERT
-#undef base64_likely
-#undef base64_unlikely
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,17 +50,18 @@ union rle_bit {
 
 #define LP_USB_BUFFER_SIZE 64
 
+enum lp_state {
+	LP_DISCONNECTED,
+	LP_CONNECTED,
+	LP_RUNNING
+};
+
+enum lp_run_state {
+	LP_RUN_REQUESTED,
+	LP_RUN_STARTED,
+};
+
 struct linchpin {
-	// StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
-	// StaticTask_t usb_device_task_mem;
-	// StackType_t cdc_task_stack_mem[configMINIMAL_SECURE_STACK_SIZE];
-	// StaticTask_t cdc_task_mem;
-	// StackType_t lin_task_stack_mem[configMINIMAL_STACK_SIZE];
-	// StaticTask_t lin_task_mem;
-	// char error_message[64];
-	// int error_code;
-	// TaskHandle_t usb_task_handle;
-	volatile uint8_t state;
 	uint32_t signal_frequency;
 	uint8_t cmd_buffer[LP_USB_BUFFER_SIZE];
 	uint8_t usb_rx_buffer[LP_USB_BUFFER_SIZE];
@@ -77,28 +71,39 @@ struct linchpin {
 	uint8_t cmd_count;
 	uint8_t usb_rx_count;
 	uint8_t usb_tx_count;
+	uint8_t state;
+	uint8_t run_state;
 	struct base64_state usb_rx_base64_state;
+	struct base64_state usb_tx_base64_state;
 	volatile uint8_t signal_tx_buffer_pi;
 	volatile uint8_t signal_tx_buffer_gi;
 	volatile uint8_t signal_rx_buffer_pi;
 	volatile uint8_t signal_rx_buffer_gi;
-	bool running;
-	bool started;
-	bool finished;
 	bool tx_overflow;
 	volatile uint32_t output_count_total;
 	volatile uint32_t output_flags;
-	// union rle_bit input;
-	// union rle_bit output;
 	uint8_t input_bit;
 	uint8_t input_count;
-	// uint8_t output_bit;
 	uint8_t output_count;
 };
 
-#define OUTPUT_FLAG_STALLED     0x1
+#define OUTPUT_FLAG_TX_STALLED     0x1
 #define OUTPUT_FLAG_RX_OVERFLOW 0x2
 
+extern struct linchpin lp;
+void lp_init(void);
+void lp_cdc_task(void);
+LP_RAMFUNC void lp_output_next_bit(void);
+LP_RAMFUNC bool lp_cdc_is_connected(void);
+LP_RAMFUNC uint32_t lp_cdc_rx_available(void);
+LP_RAMFUNC uint32_t lp_cdc_tx_available(void);
+LP_RAMFUNC uint32_t lp_cdc_rx(uint8_t *ptr, uint32_t count);
+LP_RAMFUNC uint32_t lp_cdc_tx(uint8_t const *ptr, uint32_t count);
+LP_RAMFUNC void lp_cdc_tx_flush(void);
+LP_RAMFUNC void lp_set_tx_pin(bool value);
+LP_RAMFUNC void lp_start_counter(void);
+LP_RAMFUNC void lp_delay_ms(uint32_t ms);
+LP_RAMFUNC bool lp_pin_set(uint32_t pin, bool value);
 
 #ifdef __cplusplus
 } // extern "C"

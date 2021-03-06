@@ -35,13 +35,14 @@ extern "C" {
 #define LP_ERROR_UNKNOWN_CMD    -1
 #define LP_ERROR_INVALID_PARAM  -2
 #define LP_ERROR_OUT_OF_RANGE   -3
+#define LP_ERROR_MALFORMED      -4
 
-#define LP_ERROR_COUNT           4
+#define LP_ERROR_COUNT           5
 
 extern char const * const lp_error_messages[LP_ERROR_COUNT];
 
 static inline char const * lp_strerror(int code) {
-	if (code < 0) {
+	if (likely(code < 0)) {
 		code = -code;
 	}
 

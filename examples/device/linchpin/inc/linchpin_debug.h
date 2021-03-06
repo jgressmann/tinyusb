@@ -36,7 +36,7 @@
 #		define LINCHPIN_DEBUG_LOG_BUFFER_SIZE 128
 extern char lp_log_buffer[LINCHPIN_DEBUG_LOG_BUFFER_SIZE];
 
-#		define LOG(...) \
+#		define LP_LOG(...) \
 	do { \
 		int chars = usnprintf(lp_log_buffer, sizeof(lp_log_buffer), __VA_ARGS__); \
 		board_uart_write(lp_log_buffer, chars); \
@@ -46,7 +46,7 @@ extern char lp_log_buffer[LINCHPIN_DEBUG_LOG_BUFFER_SIZE];
 #	define LP_DEBUG_ASSERT LP_ASSERT
 
 #else
-#	define LOG(...)
+#	define LP_LOG(...)
 #	define LP_DEBUG_ASSERT(...)
 #endif
 
@@ -72,5 +72,14 @@ extern char lp_log_buffer[LINCHPIN_DEBUG_LOG_BUFFER_SIZE];
 	} while (0)
 
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 __attribute__((noreturn)) extern void lp_assert_failed(char const * const msg);
 extern void lp_dump_mem(void const * _ptr, size_t count);
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
+

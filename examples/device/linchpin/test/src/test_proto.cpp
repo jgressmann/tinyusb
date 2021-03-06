@@ -1,0 +1,281 @@
+#include <gtest/gtest.h>
+#include <gmock/gmock.h>
+
+
+#include <linchpin.h>
+
+
+#define BASE64_C
+#include <base64.h>
+
+#include <string>
+#include <algorithm>
+
+using ::testing::StartsWith;
+
+namespace
+{
+
+struct serial_fixture : public ::testing::Test
+{
+    static serial_fixture* self;
+
+    bool connected;
+    int pin;
+    int output_capacity;
+    std::string input;
+    std::string output;
+    std::vector<std::tuple<int, bool>> pins_set;
+    bool pin_set_success;
+
+
+    ~serial_fixture()
+    {
+        // ASSERT_EQ(self, this);
+        self = nullptr;
+    }
+
+    serial_fixture()
+    {
+        // ASSERT_EQ(self, nullptr);
+        self = this;
+
+        connected = false;
+        pin = -1;
+        output_capacity = -1;
+        pin_set_success = true;
+
+        lp_init();
+    }
+
+    void connect()
+    {
+        connected = true;
+        lp_cdc_task();
+    }
+
+    void run()
+    {
+        connected = true;
+        lp_cdc_task();
+        input = "!R\n";
+        lp_cdc_task();
+    }
+
+};
+
+serial_fixture* serial_fixture::self;
+
+
+
+} // anon
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+LP_RAMFUNC bool lp_cdc_is_connected(void)
+{
+    return serial_fixture::self->connected;
+}
+LP_RAMFUNC uint32_t lp_cdc_rx_available(void)
+{
+    return static_cast<uint32_t>(serial_fixture::self->input.size());
+}
+LP_RAMFUNC uint32_t lp_cdc_tx_available(void)
+{
+    return 0;
+}
+
+LP_RAMFUNC uint32_t lp_cdc_rx(uint8_t *ptr, uint32_t count)
+{
+    TEST_ASSERT(ptr);
+
+    uint32_t bytes = std::min<uint32_t>(count, serial_fixture::self->input.size());
+
+    if (bytes) {
+        memcpy(ptr, serial_fixture::self->input.c_str(), bytes);
+        serial_fixture::self->input.erase(0, bytes);
+    }
+
+    return bytes;
+}
+
+LP_RAMFUNC uint32_t lp_cdc_tx(uint8_t const *ptr, uint32_t count)
+{
+    TEST_ASSERT(ptr);
+
+    if (serial_fixture::self->output_capacity >= 0) {
+        count = std::min<uint32_t>(count, serial_fixture::self->output_capacity);
+    }
+
+    if (count) {
+        serial_fixture::self->output.append(reinterpret_cast<char const*>(ptr), count);
+    }
+
+    return count;
+}
+
+LP_RAMFUNC void lp_cdc_tx_flush(void)
+{
+
+}
+
+LP_RAMFUNC void lp_set_tx_pin(bool value)
+{
+    serial_fixture::self->pin = value;
+}
+
+LP_RAMFUNC void lp_start_counter(void)
+{
+
+}
+
+LP_RAMFUNC void lp_delay_ms(uint32_t ms)
+{
+    (void)ms;
+}
+
+LP_RAMFUNC bool lp_pin_set(uint32_t pin, bool value)
+{
+    serial_fixture::self->pins_set.emplace_back(decltype (serial_fixture::self->pins_set)::value_type{pin, value});
+    return serial_fixture::self->pin_set_success;
+}
+
+
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
+
+TEST_F(serial_fixture, init_sets_initial_state)
+{
+    EXPECT_EQ(1250000, lp.signal_frequency);
+    EXPECT_EQ(LP_DISCONNECTED, lp.state);
+}
+
+TEST_F(serial_fixture, after_the_host_connects_the_connected_state_is_active)
+{
+    connect();
+
+    EXPECT_EQ(LP_CONNECTED, lp.state);
+}
+
+TEST_F(serial_fixture, connected_state_accepts_input)
+{
+    connect();
+
+    input = "hello";
+    lp_cdc_task();
+    EXPECT_STREQ("", input.c_str());
+}
+
+TEST_F(serial_fixture, connected_state_processes_input_terminated_with_newline_or_carridge_return_as_command)
+{
+    connect();
+    EXPECT_EQ(0, output.size());
+
+    input = "hello\n";
+    lp_cdc_task();
+    EXPECT_LT(0, output.size());
+    output.clear();
+
+
+    input = "hello\r";
+    lp_cdc_task();
+    EXPECT_LT(0, output.size());
+}
+
+TEST_F(serial_fixture, connected_state_empty_commands_yield_no_result)
+{
+    connect();
+    EXPECT_EQ(0, output.size());
+
+    input = "\n";
+    lp_cdc_task();
+    EXPECT_EQ(0, output.size());
+
+    input = "\r";
+    lp_cdc_task();
+    EXPECT_EQ(0, output.size());
+}
+
+TEST_F(serial_fixture, connected_state_invalid_commands_return_error_code)
+{
+    connect();
+
+    input = "hello\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("-1 "));
+}
+
+TEST_F(serial_fixture, connected_state_can_get_frequency)
+{
+    connect();
+
+
+    input = "?F\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("0 "));
+
+    const char* start = output.c_str() + 2;
+    char* end = nullptr;
+    unsigned long f = std::strtoul(start, &end, 10);
+    EXPECT_TRUE(end != nullptr && end != start);
+    EXPECT_LT(0, f);
+}
+
+TEST_F(serial_fixture, connected_state_can_set_frequency)
+{
+    connect();
+
+
+    input = "!F 12345\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("0 "));
+    output.clear();
+
+    input = "?F\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("0 "));
+
+    const char* start = output.c_str() + 2;
+    char* end = nullptr;
+    unsigned long f = std::strtoul(start, &end, 10);
+    EXPECT_TRUE(end != nullptr && end != start);
+    EXPECT_EQ(12345, f);
+}
+
+TEST_F(serial_fixture, connected_state_can_set_pin)
+{
+    connect();
+
+
+    input = "!P 1 0\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("0 "));
+    output.clear();
+    ASSERT_EQ(1, pins_set.size());
+    EXPECT_EQ(1, std::get<0>(pins_set[0]));
+    EXPECT_EQ(false, std::get<1>(pins_set[0]));
+
+    input = "!P\t  2  \t1  \n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("0 "));
+    output.clear();
+    ASSERT_EQ(2, pins_set.size());
+    EXPECT_EQ(2, std::get<0>(pins_set[1]));
+    EXPECT_EQ(true, std::get<1>(pins_set[1]));
+}
+
+TEST_F(serial_fixture, connected_state_can_switch_to_running)
+{
+    connect();
+
+    input = "!R\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("0 "));
+    EXPECT_EQ(LP_RUNNING, lp.state);
+    EXPECT_EQ(LP_RUN_REQUESTED, lp.run_state);
+}
+
+

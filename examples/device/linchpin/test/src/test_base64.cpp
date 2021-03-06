@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
 #define BASE64_ASSERT(x) if (!(x)) throw 1
+#define BASE64_STATIC
+#define BASE64_H
+#define BASE64_C
 #include <base64.h>
-#include "../src/base64.c"
+
 
 namespace
 {

@@ -40,59 +40,32 @@
 
 
 #include <linchpin.h>
+
+
+#define BASE64_C
 #include <base64.h>
-
-// #ifndef likely
-// #define likely(x) __builtin_expect(!!(x),1)
-// #endif
-
-// #ifndef unlikely
-// #define unlikely(x) __builtin_expect(!!(x),0)
-// #endif
-
-// #define RAMFUNC __attribute__((section(".ramfunc")))
-
 
 
 
 static void tusb_device_task(void* param);
-RAMFUNC static void cdc_task(void* param);
-RAMFUNC static void lin_task(void* param);
-static void process_input(void);
+LP_RAMFUNC static void cdc_task(void* param);
+
 
 #define LIN_TX_PIN PIN_PC04
 #define LIN_RX_PIN PIN_PC05
 
-#define OP_ZRO 0x0
-#define OP_NOP 0x1
-#define OP_RES 0x2
-#define OP_ONE 0x3
-
-enum state {
-	IDLE, // no connection
-	READY, // connected, not running
-	RUNNING,
-};
 
 
-static struct linchpin lp;
-
+// static struct linchpin lp;
+struct linchpin lp;
 
 static struct tasks {
 	StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_device_task_mem;
 	StackType_t cdc_task_stack_mem[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t cdc_task_mem;
-	// StackType_t lin_task_stack_mem[configMINIMAL_STACK_SIZE];
-	// StaticTask_t lin_task_mem;
-	// char error_message[64];
-	// int error_code;
-	// TaskHandle_t usb_task_handle;
 } tasks;
 
-
-// #define OUTPUT_FLAG_STALLED     0x1
-// #define OUTPUT_FLAG_RX_OVERFLOW 0x2
 
 static inline void counter_stop(void)
 {
@@ -113,7 +86,7 @@ int main(void)
 {
 	board_init();
 
-	LOG("CONF_CPU_FREQUENCY=%lu\n", CONF_CPU_FREQUENCY);
+	LP_LOG("CONF_CPU_FREQUENCY=%lu\n", CONF_CPU_FREQUENCY);
 
 
 	// increase main clock to 200MHz
@@ -141,6 +114,7 @@ int main(void)
 	PORT->Group[2].CTRL.reg |= 0b100000;
 
 
+	NVIC_SetPriority(TC0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 	NVIC_EnableIRQ(TC0_IRQn);
 
 	MCLK->APBAMASK.bit.TC0_ = 1;
@@ -171,21 +145,22 @@ int main(void)
 	CMCC->CTRL.bit.CEN = 1;
 
 
-	lp.state = IDLE;
-	lp.signal_frequency = 1250000;
+	// lp.state = IDLE;
+	// lp.signal_frequency = 1250000;
 	// lp.signal_frequency = 100000000;
+	lp_init();
 
 
 
-	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(tasks.usb_device_stack), NULL, configMAX_PRIORITIES-1, tasks.usb_device_stack, &tasks.usb_device_task_mem);
-	(void) xTaskCreateStatic(&cdc_task, "cdc", TU_ARRAY_SIZE(tasks.cdc_task_stack_mem), NULL, configMAX_PRIORITIES-1, tasks.cdc_task_stack_mem, &tasks.cdc_task_mem);
-	// (void) xTaskCreateStatic(&lin_task, "lin", TU_ARRAY_SIZE(lp.lin_task_stack_mem), NULL, configMAX_PRIORITIES-2, lp.lin_task_stack_mem, &lp.lin_task_mem);
+	(void) xTaskCreateStatic(&tusb_device_task, "tusb", ARRAY_SIZE(tasks.usb_device_stack), NULL, configMAX_PRIORITIES-1, tasks.usb_device_stack, &tasks.usb_device_task_mem);
+	(void) xTaskCreateStatic(&cdc_task, "cdc", ARRAY_SIZE(tasks.cdc_task_stack_mem), NULL, configMAX_PRIORITIES-1, tasks.cdc_task_stack_mem, &tasks.cdc_task_mem);
+	// (void) xTaskCreateStatic(&lin_task, "lin", ARRAY_SIZE(lp.lin_task_stack_mem), NULL, configMAX_PRIORITIES-2, lp.lin_task_stack_mem, &lp.lin_task_mem);
 
-		gpio_set_pin_level(LIN_TX_PIN, true);
-		TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY / lp.signal_frequency;
+	gpio_set_pin_level(LIN_TX_PIN, true);
+	TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY;
 
 
-		restart_counter();
+	// restart_counter();
 
 	board_uart_write("start scheduler\n", -1);
 	// board_led_off();
@@ -201,110 +176,12 @@ static void tusb_device_task(void* param)
 	(void) param;
 
 	while (1) {
-		LOG("tud_task\n");
+		LP_LOG("tud_task\n");
 		tud_task();
 	}
 }
 
 
-#define BASE64_OP_CODE_BYTE
-
-// RAMFUNC static inline bool base64_try_decode(
-// 	char c,
-// 	uint8_t* bits,
-// 	uint8_t* op_code)
-// {
-// 	switch (c) {
-// 	case '\n':
-// 	case '\r':
-// 	case ' ':
-// 	case '\t':
-// 		*bits = 0;
-// 		op_code
-// 		break;
-// 	case '+':
-// 	case '/':
-// 		break;
-// 	}
-// }
-
-static inline void base64_decode_flush_dev(void)
-{
-	base64_decode_flush(
-		&lp.usb_rx_base64_state,
-		&lp.signal_tx_buffer_gi,
-		&lp.signal_tx_buffer_pi,
-		lp.signal_tx_buffer,
-		(uint8_t)ARRAY_SIZE(lp.signal_tx_buffer)
-	);
-	// if (unlikely(!lp.usb_rx_base64_bits)) {
-	// 	return;
-	// }
-
-	// uint8_t gi = __atomic_load_n(&lp.signal_tx_buffer_gi, __ATOMIC_ACQUIRE);
-	// uint8_t pi = lp.signal_tx_buffer_pi;
-	// uint8_t used = pi - gi;
-	// if (likely(used < TU_ARRAY_SIZE(lp.signal_tx_buffer))) {
-	// 	uint8_t index = pi & (TU_ARRAY_SIZE(lp.signal_tx_buffer)-1);
-	// 	// LOG("dec %#x\n", lp.usb_rx_base64_state);
-	// 	lp.signal_tx_buffer[index] = lp.usb_rx_base64_state;
-	// 	__atomic_store_n(&lp.signal_tx_buffer_pi, pi + 1, __ATOMIC_RELEASE);
-	// } else {
-	// 	lp.tx_overflow = true;
-	// }
-
-	// lp.usb_rx_base64_bits = 0;
-
-}
-
-static inline void base64_decode_shift_dev(uint8_t bits)
-{
-	base64_decode_shift(
-		bits,
-		&lp.usb_rx_base64_state,
-		&lp.signal_tx_buffer_gi,
-		&lp.signal_tx_buffer_pi,
-		lp.signal_tx_buffer,
-		(uint8_t)ARRAY_SIZE(lp.signal_tx_buffer)
-	);
-
-	// LP_DEBUG_ASSERT(!(bits & 0xc0));
-	// switch (lp.usb_rx_base64_bits) {
-	// case 0:
-	// 	lp.usb_rx_base64_bits = 6;
-	// 	lp.usb_rx_base64_state = bits;
-	// 	break;
-	// case 2:
-	// 	lp.usb_rx_base64_state <<= 6;
-	// 	lp.usb_rx_base64_state |= bits;
-	// 	base64_decode_flush();
-	// 	break;
-	// case 4:
-	// 	lp.usb_rx_base64_state <<= 4;
-	// 	lp.usb_rx_base64_state |= (bits >> 2) & 0xf;
-	// 	base64_decode_flush();
-	// 	lp.usb_rx_base64_bits = 2;
-	// 	lp.usb_rx_base64_state = bits & 0x3;
-	// 	break;
-	// case 6:
-	// 	lp.usb_rx_base64_state <<= 2;
-	// 	lp.usb_rx_base64_state |= (bits >> 4) & 0x3;
-	// 	base64_decode_flush();
-	// 	lp.usb_rx_base64_bits = 4;
-	// 	lp.usb_rx_base64_state = bits & 0xf;
-	// 	break;
-	// default:
-	// 	LP_ASSERT(false);
-	// 	break;
-	// }
-}
-
-
-
-static inline void place_unknown_cmd_response(void)
-{
-	lp.usb_tx_count = usnprintf((char*)lp.usb_tx_buffer, sizeof(lp.usb_tx_buffer), "%d %s\n", LP_ERROR_UNKNOWN_CMD, lp_strerror(LP_ERROR_UNKNOWN_CMD));
-}
 
 static void cdc_task(void* param)
 {
@@ -313,213 +190,211 @@ static void cdc_task(void* param)
 	while (1) {
 		// PORT->Group[2].OUTTGL.reg = 0b10000;
 
-		if (tud_cdc_n_connected(0)) {
-			bool more = false;
+		lp_cdc_task();
 
-			if (lp.running && lp.started) {
-				uint8_t flags = __atomic_load_n(&lp.output_flags, __ATOMIC_ACQUIRE);
-				if (lp.finished) {
-					if (flags) {
-						flags &= ~OUTPUT_FLAG_STALLED;
-						if (flags) {
-							// ouch!
-							LOG("ERROR: early abort %#x\n", flags);
-						} else if (lp.tx_overflow) {
-							LOG("ERROR: tx overflow\n");
-							lp.running = false;
-						} else {
-							// thread fence and send last datum
-							LOG("W00t!\n");
-						}
-					}
+		// if (lp_cdc_is_connected()) {
+		// 	bool more = false;
 
-					lp.running = false;
-				} else {
-					if (flags) {
-						// ouch!
-						LOG("ERROR: early abort %#x\n", flags);
-						lp.running = false;
-					} else if (lp.tx_overflow) {
-						LOG("ERROR: tx overflow\n");
-						lp.running = false;
-					} else {
-						// LOG("running\n");
+		// 	if (lp.running && lp.started) {
+		// 		uint8_t flags = __atomic_load_n(&lp.output_flags, __ATOMIC_ACQUIRE);
+		// 		if (lp.finished) {
+		// 			if (flags) {
+		// 				flags &= ~OUTPUT_FLAG_TX_STALLED;
+		// 				if (flags) {
+		// 					// ouch!
+		// 					LP_LOG("ERROR: early abort %#x\n", flags);
+		// 				} else if (lp.tx_overflow) {
+		// 					LP_LOG("ERROR: tx overflow\n");
+		// 					lp.running = false;
+		// 				} else {
+		// 					// thread fence and send last datum
+		// 					LP_LOG("W00t!\n");
+		// 				}
+		// 			}
 
-					}
-				}
-			}
+		// 			lp.running = false;
+		// 		} else {
+		// 			if (flags) {
+		// 				// ouch!
+		// 				LP_LOG("ERROR: early abort %#x\n", flags);
+		// 				lp.running = false;
+		// 			} else if (lp.tx_overflow) {
+		// 				LP_LOG("ERROR: tx overflow\n");
+		// 				lp.running = false;
+		// 			} else {
+		// 				// LP_LOG("running\n");
 
-			if (tud_cdc_n_available(0) && lp.usb_rx_count < TU_ARRAY_SIZE(lp.usb_rx_buffer)) {
-				uint8_t offset = lp.usb_rx_count;
-				lp.usb_rx_count += (uint8_t)tud_cdc_n_read(0, &lp.usb_rx_buffer[offset], TU_ARRAY_SIZE(lp.usb_rx_buffer) - offset);
-				// LOG("read: ");
-				// for (uint8_t i = offset; i < lp.usb_rx_count; ++i) {
-				// 	LOG("%c %#x", lp.usb_rx_buffer[i], lp.usb_rx_buffer[i]);
-				// }
-				// LOG("\n");
-				more = true;
-			}
+		// 			}
+		// 		}
+		// 	}
 
-			if (lp.usb_rx_count) {
-				if (lp.running) {
-					if (!lp.finished) {
-						char* p = (char*)lp.usb_rx_buffer;
-						for (uint8_t i = 0; i < lp.usb_rx_count; ++i) {
-							char c = p[i];
-							switch (c) {
-							case '\n':
-							case '\r':
-							case ' ':
-							case '\t':
-								break;
-							case '+':
-								base64_decode_shift_dev(62);
-								break;
-							case '/':
-								base64_decode_shift_dev(63);
-								break;
-							case '=':
-								base64_decode_flush_dev();
-								// lp.running = false;
-								// lp.started = false;
+		// 	if (tud_cdc_n_available(0) && lp.usb_rx_count < ARRAY_SIZE(lp.usb_rx_buffer)) {
+		// 		uint8_t offset = lp.usb_rx_count;
+		// 		lp.usb_rx_count += (uint8_t)lp_cdc_read(&lp.usb_rx_buffer[offset], ARRAY_SIZE(lp.usb_rx_buffer) - offset);
+		// 		// LP_LOG("read: ");
+		// 		// for (uint8_t i = offset; i < lp.usb_rx_count; ++i) {
+		// 		// 	LP_LOG("%c %#x", lp.usb_rx_buffer[i], lp.usb_rx_buffer[i]);
+		// 		// }
+		// 		// LP_LOG("\n");
+		// 		more = true;
+		// 	}
 
-								// wait for stall
-								lp.finished = true;
-								break;
-							default:
-								if (c >= 'A' && c <= 'Z') {
-									base64_decode_shift_dev(c - 'A');
-								} else if (c >= 'a' && c <= 'z') {
-									base64_decode_shift_dev((c - 'a') + 26);
-								} else if (c >= '0' && c <= '0') {
-									base64_decode_shift_dev((c - '0') + 52);
-								} else {
-									base64_decode_flush_dev();
-									// LOG("invalid char '%c'\n", c);
-									// lp.running = false;
-									lp.finished = true;
-								}
-								break;
-							}
-						}
-					}
+		// 	if (lp.usb_rx_count) {
+		// 		if (lp.running) {
+		// 			if (!lp.finished) {
+		// 				char* p = (char*)lp.usb_rx_buffer;
+		// 				for (uint8_t i = 0; i < lp.usb_rx_count; ++i) {
+		// 					char c = p[i];
+		// 					switch (c) {
+		// 					case '\n':
+		// 					case '\r':
+		// 					case ' ':
+		// 					case '\t':
+		// 						break;
+		// 					case '+':
+		// 						base64_decode_shift_dev(62);
+		// 						break;
+		// 					case '/':
+		// 						base64_decode_shift_dev(63);
+		// 						break;
+		// 					case '=':
+		// 						base64_decode_flush_dev();
+		// 						// lp.running = false;
+		// 						// lp.started = false;
 
-					lp.usb_rx_count = 0;
+		// 						// wait for stall
+		// 						lp.finished = true;
+		// 						break;
+		// 					default:
+		// 						if (c >= 'A' && c <= 'Z') {
+		// 							base64_decode_shift_dev(c - 'A');
+		// 						} else if (c >= 'a' && c <= 'z') {
+		// 							base64_decode_shift_dev((c - 'a') + 26);
+		// 						} else if (c >= '0' && c <= '0') {
+		// 							base64_decode_shift_dev((c - '0') + 52);
+		// 						} else {
+		// 							base64_decode_flush_dev();
+		// 							// LP_LOG("invalid char '%c'\n", c);
+		// 							// lp.running = false;
+		// 							lp.finished = true;
+		// 						}
+		// 						break;
+		// 					}
+		// 				}
+		// 			}
 
-					if (!lp.started) {
-						uint8_t gi = __atomic_load_n(&lp.signal_tx_buffer_gi, __ATOMIC_ACQUIRE);
-						uint8_t pi = lp.signal_tx_buffer_pi;
-						if (pi != gi) {
-							LOG("start\n");
+		// 			lp.usb_rx_count = 0;
 
-							lp.started = true;
-							lp.finished = false;
-							lp.tx_overflow = false;
-							lp.output_flags = 0;
-							// lp.output_bits = 0;
+		// 			if (!lp.started) {
+		// 				uint8_t gi = __atomic_load_n(&lp.signal_tx_buffer_gi, __ATOMIC_ACQUIRE);
+		// 				uint8_t pi = lp.signal_tx_buffer_pi;
+		// 				if (pi != gi) {
+		// 					LP_LOG("start\n");
 
-							lp.output_count_total = 0;
-							// lp.output.mux = 0;
-							// lp.input.mux = 0;
-							lp.output_count = 0;
-							lp.input_count = 0;
+		// 					lp.started = true;
+		// 					lp.finished = false;
+		// 					lp.tx_overflow = false;
+		// 					lp.output_flags = 0;
+		// 					// lp.output_bits = 0;
 
-
-							__atomic_thread_fence(__ATOMIC_RELEASE);
-
-							// set pin to high to start
-							gpio_set_pin_level(LIN_TX_PIN, true);
-							TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY / lp.signal_frequency;
+		// 					lp.output_count_total = 0;
+		// 					// lp.output.mux = 0;
+		// 					// lp.input.mux = 0;
+		// 					lp.output_count = 0;
+		// 					lp.input_count = 0;
 
 
-							restart_counter();
-						}
-					}
-				} else {
-					// LOG("1\n");
-					char* p = (char*)lp.usb_rx_buffer;
-					for (uint8_t i = 0; i < lp.usb_rx_count; ++i) {
-						char c = p[i];
-						switch (c) {
-						case '\n':
-						case '\r':
-							// while (i < lp.usb_rx_count && (p[i] == '\r' || p[i] == '\r'))) {
-							// 	++i;
-							// }
-							lp.cmd_buffer[lp.cmd_count] = 0;
-							// LOG("1.1: %s\n", lp.cmd_buffer);
-							process_input();
-							lp.cmd_count = 0;
-							break;
-						default:
-							// LOG("1.2\n");
-							if (lp.cmd_count + 1 == TU_ARRAY_SIZE(lp.cmd_buffer)) {
-								lp.cmd_count = 0;
-								place_unknown_cmd_response();
-							} else {
-								lp.cmd_buffer[lp.cmd_count++] = c;
-							}
-							break;
-						}
-					}
+		// 					__atomic_thread_fence(__ATOMIC_RELEASE);
 
-					lp.usb_rx_count = 0;
+		// 					// set pin to high to start
 
-					more = true;
-				}
-			}
+		// 					lp_set_tx_pin(true);
+		// 					lp_start_counter();
 
-			if (lp.usb_tx_count) {
-				// LOG("tx %s\n", lp.usb_tx_buffer);
-				uint32_t w = tud_cdc_n_write(0, lp.usb_tx_buffer, lp.usb_tx_count);
-				if (w) {
-					if (w < lp.usb_tx_count) {
-						memmove(&lp.usb_tx_buffer[0], &lp.usb_tx_buffer[w], lp.usb_tx_count - w);
-					}
 
-					lp.usb_tx_count -= w;
+		// 				}
+		// 			}
+		// 		} else {
+		// 			// LP_LOG("1\n");
+		// 			char* p = (char*)lp.usb_rx_buffer;
+		// 			for (uint8_t i = 0; i < lp.usb_rx_count; ++i) {
+		// 				char c = p[i];
+		// 				switch (c) {
+		// 				case '\n':
+		// 				case '\r':
+		// 					// while (i < lp.usb_rx_count && (p[i] == '\r' || p[i] == '\r'))) {
+		// 					// 	++i;
+		// 					// }
+		// 					lp.cmd_buffer[lp.cmd_count] = 0;
+		// 					// LP_LOG("1.1: %s\n", lp.cmd_buffer);
+		// 					process_input();
+		// 					lp.cmd_count = 0;
+		// 					break;
+		// 				default:
+		// 					// LP_LOG("1.2\n");
+		// 					if (lp.cmd_count + 1 == ARRAY_SIZE(lp.cmd_buffer)) {
+		// 						lp.cmd_count = 0;
+		// 						place_unknown_cmd_response();
+		// 					} else {
+		// 						lp.cmd_buffer[lp.cmd_count++] = c;
+		// 					}
+		// 					break;
+		// 				}
+		// 			}
 
-					more = true;
-				}
+		// 			lp.usb_rx_count = 0;
 
-				if (!lp.running) {
-					tud_cdc_n_write_flush(0);
-				}
-			}
+		// 			more = true;
+		// 		}
+		// 	}
 
-			if (!more) {
-				// board_uart_write("no more\n", -1);
-				vTaskDelay(pdMS_TO_TICKS(1));
-			}
-		} else {
-			// lp.usb_rx_count = 0;
-			// lp.usb_tx_count = 0;
-			// lp.usb_rx_base64_state = 0;
-			// lp.usb_rx_base64_bits = 0;
-			// counter_stop();
-			vTaskDelay(pdMS_TO_TICKS(10));
-		}
+		// 	if (lp.usb_tx_count) {
+		// 		// LP_LOG("tx %s\n", lp.usb_tx_buffer);
+		// 		uint32_t w = tud_cdc_n_write(0, lp.usb_tx_buffer, lp.usb_tx_count);
+		// 		if (w) {
+		// 			if (w < lp.usb_tx_count) {
+		// 				memmove(&lp.usb_tx_buffer[0], &lp.usb_tx_buffer[w], lp.usb_tx_count - w);
+		// 			}
+
+		// 			lp.usb_tx_count -= w;
+
+		// 			more = true;
+		// 		}
+
+		// 		if (!lp.running) {
+		// 			lp_cdc_tx_flush();
+
+		// 		}
+		// 	}
+
+		// 	if (!more) {
+		// 		// board_uart_write("no more\n", -1);
+		// 		lp_delay_ms(1);
+		// 	}
+		// } else {
+		// 	// lp.usb_rx_count = 0;
+		// 	// lp.usb_tx_count = 0;
+		// 	// lp.usb_rx_base64_state = 0;
+		// 	// lp.usb_rx_base64_bits = 0;
+		// 	// counter_stop();
+		// 	vTaskDelay(pdMS_TO_TICKS(10));
+		// 	lp_delay_ms(1);
+		// }
 	}
 }
 
-RAMFUNC static void lin_task(void* param)
-{
-	(void) param;
-
-
-}
 
 // @120 MHz 1.625 us, cache off
 // @200 MHz 1.250 us, cache off
 // @200 MHz 550-580 ns, cache on
 // @200 MHz 100 ns, cache on (pin toggle)
-RAMFUNC static void output_next_bit(void)
+LP_RAMFUNC void lp_output_next_bit(void)
 {
 	// clear interrupt
 	TC0->COUNT32.INTFLAG.reg = ~0;
 
-	PORT->Group[2].OUTTGL.reg = 0b10000;
-	goto out;
+	// PORT->Group[2].OUTTGL.reg = 0b10000;
+	// goto out;
 
 	if (likely(lp.output_count_total)) {
 		//
@@ -540,18 +415,18 @@ RAMFUNC static void output_next_bit(void)
 				uint8_t pi = lp.signal_rx_buffer_pi;
 				uint8_t gi = __atomic_load_n(&lp.signal_rx_buffer_gi, __ATOMIC_ACQUIRE);
 				uint8_t used = pi - gi;
-				if (unlikely(used == TU_ARRAY_SIZE(lp.signal_rx_buffer))) {
+				if (unlikely(used == ARRAY_SIZE(lp.signal_rx_buffer))) {
 					__atomic_or_fetch(&lp.output_flags, OUTPUT_FLAG_RX_OVERFLOW, __ATOMIC_RELEASE);
 					// stop timer
 					TC0->COUNT32.CTRLA.bit.ENABLE = 0;
 					goto out;
 				} else {
-					// LOG("IN pin=%u count=%u\n", lp.input.bit.value, lp.input.bit.count);
-					union rle_bit r;
-					uint8_t index = pi & (TU_ARRAY_SIZE(lp.signal_rx_buffer)-1);
-					r.bit.value = lp.input_bit;
-					r.bit.count = lp.input_count;
-					lp.signal_rx_buffer[index] = r.mux;
+					// LP_LOG("IN pin=%u count=%u\n", lp.input.bit.value, lp.input.bit.count);
+					union rle_bit rle;
+					uint8_t index = pi & (ARRAY_SIZE(lp.signal_rx_buffer)-1);
+					rle.bit.value = lp.input_bit;
+					rle.bit.count = lp.input_count;
+					lp.signal_rx_buffer[index] = rle.mux;
 					__atomic_store_n(&lp.signal_rx_buffer_pi, pi + 1, __ATOMIC_RELEASE);
 				}
 
@@ -572,12 +447,12 @@ fetch:
 		gi = lp.signal_tx_buffer_gi;
 
 		if (unlikely(pi == gi)) {
-			__atomic_or_fetch(&lp.output_flags, OUTPUT_FLAG_STALLED, __ATOMIC_RELEASE);
+			__atomic_or_fetch(&lp.output_flags, OUTPUT_FLAG_TX_STALLED, __ATOMIC_RELEASE);
 			// stop timer
 			TC0->COUNT32.CTRLA.bit.ENABLE = 0;
 			goto out;
 		} else {
-			uint8_t index = gi & (TU_ARRAY_SIZE(lp.signal_tx_buffer)-1);
+			uint8_t index = gi & (ARRAY_SIZE(lp.signal_tx_buffer)-1);
 			// lp.output.mux = lp.signal_tx_buffer[index];
 			union rle_bit r;
 			r.mux = lp.signal_tx_buffer[index];
@@ -590,7 +465,7 @@ fetch:
 				goto fetch;
 			}
 
-			// LOG("OUT pin=%u count=%u\n", r.value, r.bit.count);
+			// LP_LOG("OUT pin=%u count=%u\n", r.value, r.bit.count);
 
 			if (r.bit.value) {
 				PORT->Group[2].OUTSET.reg = 0b10000;
@@ -610,7 +485,7 @@ fetch:
 
 	// --lp.output.bit.count;
 	// ++lp.output_count_total;
-	// LOG("output count=%lu\n", lp.output_count_total);
+	// LP_LOG("output count=%lu\n", lp.output_count_total);
 
 
 	// PORT->Group[2].OUT.reg = 0b10000;
@@ -627,83 +502,52 @@ out:
 
 extern void TC0_Handler(void)
 {
-	output_next_bit();
+	lp_output_next_bit();
 }
 
-static void process_input()
+LP_RAMFUNC bool lp_cdc_is_connected(void)
 {
-	uint8_t *ptr = lp.cmd_buffer;
-	uint8_t count = lp.cmd_count;
-
-	if (count > 0) {
-		bool is_write = *ptr == '!';
-		bool is_read = *ptr == '?';
-		lp.usb_tx_count = 0;
-
-		if (is_write) {
-			if (count > 1)  {
-				switch (ptr[1]) {
-				case 'F': {
-					char* start = (char*)&ptr[2];
-					char* end = NULL;
-					uint32_t f = strtoul(start, &end, 10);
-					int error = LP_ERROR_NONE;
-					if (end == NULL || end == start) {
-						LOG("'%s' not integer\n", ptr);
-						error = LP_ERROR_INVALID_PARAM;
-						// lp.usb_tx_count = usnprintf(lp.usb_tx_buffer, sizeof(lp.usb_tx_buffer), "%d %s\n", LP_ERROR_INVALID_PARAM, lp_strerror(LP_ERROR_INVALID_PARAM));
-					} else if (f > CONF_CPU_FREQUENCY / 16) {
-						LOG("%lu > %lu / 16\n", f, CONF_CPU_FREQUENCY);
-						// lp.usb_tx_count = usnprintf(lp.usb_tx_buffer, sizeof(lp.usb_tx_buffer), "%d %s\n", LP_ERROR_INVALID_PARAM, lp_strerror(LP_ERROR_INVALID_PARAM));
-						error = LP_ERROR_OUT_OF_RANGE;
-					} else {
-						uint32_t cv = CONF_CPU_FREQUENCY / f;
-						if (cv > 0xffff) {
-							error = LP_ERROR_OUT_OF_RANGE;
-						} else {
-							LOG("set signal frequency to %lu [Hz]\n", f);
-							lp.signal_frequency = f;
-						}
-					}
-					lp.usb_tx_count = usnprintf((char*)lp.usb_tx_buffer, sizeof(lp.usb_tx_buffer), "%d %s\n", error, lp_strerror(error));
-				} break;
-				default:
-					place_unknown_cmd_response();
-					break;
-				}
-			} else {
-				place_unknown_cmd_response();
-			}
-		} else if (is_read) {
-			if (count > 1)  {
-				switch (ptr[1]) {
-				case 'F':
-					lp.usb_tx_count = usnprintf((char*)lp.usb_tx_buffer, sizeof(lp.usb_tx_buffer), "%d %lu\n", LP_ERROR_NONE, lp.signal_frequency);
-					break;
-				case 'S':
-					lp.usb_tx_count = usnprintf(
-						(char*)lp.usb_tx_buffer,
-						sizeof(lp.usb_tx_buffer),
-						"0 %s %s %s\n",
-						(lp.tx_overflow ? "TXOVR" : ""),
-						((lp.output_flags & OUTPUT_FLAG_RX_OVERFLOW) == OUTPUT_FLAG_RX_OVERFLOW ? "RXOVR" : ""),
-						((lp.output_flags & OUTPUT_FLAG_STALLED) == OUTPUT_FLAG_STALLED ? "STALLED" : "")
-						);
-					break;
-				default:
-					place_unknown_cmd_response();
-					break;
-				}
-			} else {
-				place_unknown_cmd_response();
-			}
-		} else {
-			if (count == 3) {
-				lp.running = true;
-				lp.started = false;
-			} else {
-				place_unknown_cmd_response();
-			}
-		}
-	}
+	return tud_cdc_n_connected(0) != 0;
 }
+
+LP_RAMFUNC void lp_set_tx_pin(bool value)
+{
+	gpio_set_pin_level(LIN_TX_PIN, value);
+}
+
+LP_RAMFUNC void lp_start_counter(void)
+{
+	TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY / lp.signal_frequency;
+	restart_counter();
+}
+
+LP_RAMFUNC void lp_cdc_tx_flush(void)
+{
+	tud_cdc_n_write_flush(0);
+}
+
+LP_RAMFUNC uint32_t lp_cdc_tx_available(void)
+{
+	return tud_cdc_n_write_available(0);
+}
+
+LP_RAMFUNC uint32_t lp_cdc_tx(uint8_t const *ptr, uint32_t count)
+{
+	return tud_cdc_n_write(0, ptr, count);
+}
+
+LP_RAMFUNC uint32_t lp_cdc_rx_available(void)
+{
+	return tud_cdc_n_available(0);
+}
+
+LP_RAMFUNC uint32_t lp_cdc_rx(uint8_t  *ptr, uint32_t count)
+{
+	return tud_cdc_n_read(0, ptr, count);
+}
+
+LP_RAMFUNC void lp_delay_ms(uint32_t ms)
+{
+	vTaskDelay(pdMS_TO_TICKS(ms));
+}
+

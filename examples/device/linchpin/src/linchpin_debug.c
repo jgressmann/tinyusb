@@ -25,6 +25,7 @@
 
 #include <linchpin_debug.h>
 #include <FreeRTOS.h>
+#include <bsp/board.h>
 
 #ifndef ARRAY_SIZE
 #	define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))

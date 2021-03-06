@@ -90,15 +90,21 @@ endif()
 enable_testing()
 
 set(SOURCES
-	src/test_base64.cpp)
+#	src/test_base64.cpp
+	src/test_proto.cpp
+	../src/linchpin_state.c
+	../src/usnprintf.c
+	../src/linchpin_error.c
+)
 
 add_executable(linchpin-tests ${SOURCES})
+target_compile_options(linchpin-tests PRIVATE -Wall -Wextra)
 target_include_directories(
 	linchpin-tests PRIVATE
 	${googletest_SOURCE_DIR}/googletest/include
 	inc
 	../inc)
 # target_link_directories(linchpin-tests PRIVATE gtest_main)
-target_link_libraries(linchpin-tests gtest_main)
+target_link_libraries(linchpin-tests gtest_main gmock)
 # gtest_add_tests(NAME "LINchPINTests" COMMAND linchpin-tests)
 gtest_add_tests(TARGET linchpin-tests)

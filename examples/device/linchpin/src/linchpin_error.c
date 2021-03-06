@@ -31,4 +31,5 @@ char const * const lp_error_messages[LP_ERROR_COUNT] = {
 	"unknown command",
 	"invalid parameter",
 	"out of range",
+	"malformed data",
 };

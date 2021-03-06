@@ -26,11 +26,32 @@
 #pragma once
 
 
+#include <stdint.h>
+#include <stdbool.h>
 
 #include <linchpin_misc.h>
-#include <linchpin_api.h>
 #include <linchpin_debug.h>
-#include <linchpin_state.h>
 #include <linchpin_error.h>
 
+#define BASE64_ASSERT LP_DEBUG_ASSERT
+#define base64_likely likely
+#define base64_unlikely unlikely
+#define BASE64_FUNC LP_RAMFUNC
+#define BASE64_H
+#include <base64.h>
+#undef BASE64_H
+
+#include <linchpin_api.h>
+#include <linchpin_state.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+
+
+#ifdef __cplusplus
+}
+#endif
 

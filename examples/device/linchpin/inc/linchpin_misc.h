@@ -38,9 +38,7 @@
 	#define unlikely(x) __builtin_expect(!!(x),0)
 #endif
 
-#ifndef RAMFUNC
-	#define RAMFUNC __attribute__((section(".ramfunc")))
-#endif
+#define LP_RAMFUNC __attribute__((section(".ramfunc")))
 
 
 
