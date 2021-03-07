@@ -295,12 +295,10 @@ static bool run_task(void)
         bool read_from_usb = usb_try_rx();
         more = more || read_from_usb;
 
+started:
         for (bool done = false; !done && lp.usb_rx_buffer_gi != lp.usb_rx_buffer_pi; ) {
             uint8_t c = 0;
 
-
-
-started:
             c = lp.usb_rx_buffer[lp.usb_rx_buffer_gi % ARRAY_SIZE(lp.usb_rx_buffer)];
             switch (c) {
             case '\n':
