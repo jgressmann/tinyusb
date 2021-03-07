@@ -26,8 +26,6 @@
 #pragma once
 
 
-#include <stdint.h>
-#include <stdbool.h>
 #include <tusb.h>
 #include <sam.h>
 
