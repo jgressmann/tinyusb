@@ -48,8 +48,6 @@ union rle_bit {
 #define RLE_BIT_MAX_COUNT 127
 
 
-//#define LP_USB_BUFFER_SIZE 64
-
 enum lp_state {
 	LP_DISCONNECTED,
 	LP_CONNECTED,

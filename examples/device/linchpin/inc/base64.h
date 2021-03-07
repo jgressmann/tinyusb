@@ -79,16 +79,6 @@ struct base64_state {
 	uint8_t flags:4;
 };
 
-//#if defined(BASE64_C)
-//	#if defined(BASE64_STATIC)
-//		static const char base64_to_ascii_table[64] = BASE64_TO_ASCII_TABLE_INITIALIZER;
-//	#else
-//		extern const char base64_to_ascii_table[64] = BASE64_TO_ASCII_TABLE_INITIALIZER;
-//	#endif
-//#else
-//	extern const char base64_to_ascii_table[64];
-//#endif
-
 #if defined(BASE64_C) && defined(BASE64_STATIC)
 	static const char base64_to_ascii_table[64] = BASE64_TO_ASCII_TABLE_INITIALIZER;
 #else

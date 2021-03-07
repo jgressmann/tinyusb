@@ -126,38 +126,21 @@ int main(void)
 	// TC0->COUNT32.CTRLBSET.reg = TC_CTRLBSET_DIR;
 	TC0->COUNT32.INTENSET.reg = TC_INTENSET_OVF;
 	TC0->COUNT32.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
-	// TC0->COUNT32.CC[0].reg = 40;
-	// TC0->COUNT32.COUNT.reg = 12000;
-	// TC0->COUNT32.CCBUF[0].reg = 12000;
-	// TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE;
-	// while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
 
-
-	// TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE;
-	// while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
-	// TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP;
-
-	// restart_counter();
 
 	CMCC->CTRL.bit.CEN = 1;
 
 
-	// lp.state = IDLE;
-	// lp.signal_frequency = 1250000;
-	// lp.signal_frequency = 100000000;
 	lp_init();
 
 
 
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", ARRAY_SIZE(tasks.usb_device_stack), NULL, configMAX_PRIORITIES-1, tasks.usb_device_stack, &tasks.usb_device_task_mem);
 	(void) xTaskCreateStatic(&cdc_task, "cdc", ARRAY_SIZE(tasks.cdc_task_stack_mem), NULL, configMAX_PRIORITIES-1, tasks.cdc_task_stack_mem, &tasks.cdc_task_mem);
-	// (void) xTaskCreateStatic(&lin_task, "lin", ARRAY_SIZE(lp.lin_task_stack_mem), NULL, configMAX_PRIORITIES-2, lp.lin_task_stack_mem, &lp.lin_task_mem);
 
 	gpio_set_pin_level(LIN_TX_PIN, true);
 	TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY;
 
-
-	// restart_counter();
 
 	board_uart_write("start scheduler\n", -1);
 	// board_led_off();
@@ -192,122 +175,6 @@ static void cdc_task(void* param)
 }
 
 
-//// @120 MHz 1.625 us, cache off
-//// @200 MHz 1.250 us, cache off
-//// @200 MHz 550-580 ns, cache on
-//// @200 MHz 100 ns, cache on (pin toggle)
-//LP_RAMFUNC void lp_output_next_bit(void)
-//{
-//	// clear interrupt
-//	TC0->COUNT32.INTFLAG.reg = ~0;
-
-//	// PORT->Group[2].OUTTGL.reg = 0b10000;
-//	// goto out;
-
-//	if (likely(lp.output_count_total)) {
-//		//
-//		uint32_t r = PORT->Group[2].IN.reg;
-//		bool value = (r & 0b100000) == 0b100000;
-
-
-//		if (likely(lp.input_count)) {
-//			bool store = true;
-//			if (value == lp.input_bit) {
-//				if (likely(lp.input_count != RLE_BIT_MAX_COUNT)) {
-//					++lp.input_count;
-//					store = false;
-//				}
-//			}
-
-//			if (store) {
-//				uint8_t pi = lp.signal_rx_buffer_pi;
-//				uint8_t gi = __atomic_load_n(&lp.signal_rx_buffer_gi, __ATOMIC_ACQUIRE);
-//				uint8_t used = pi - gi;
-//				if (unlikely(used == ARRAY_SIZE(lp.signal_rx_buffer))) {
-//					__atomic_or_fetch(&lp.output_flags, OUTPUT_FLAG_RX_OVERFLOW, __ATOMIC_RELEASE);
-//					// stop timer
-//					TC0->COUNT32.CTRLA.bit.ENABLE = 0;
-//					goto out;
-//				} else {
-//					// LP_LOG("IN pin=%u count=%u\n", lp.input.bit.value, lp.input.bit.count);
-//					union rle_bit rle;
-//					uint8_t index = pi & (ARRAY_SIZE(lp.signal_rx_buffer)-1);
-//					rle.bit.value = lp.input_bit;
-//					rle.bit.count = lp.input_count;
-//					lp.signal_rx_buffer[index] = rle.mux;
-//					__atomic_store_n(&lp.signal_rx_buffer_pi, pi + 1, __ATOMIC_RELEASE);
-//				}
-
-//				lp.input_count = 1;
-//				lp.input_bit = value;
-//			}
-//		} else {
-//			lp.input_count = 1;
-//			lp.input_bit = value;
-//		}
-//	}
-
-//	// if (!lp.output.bit.count) {
-//	if (unlikely(!lp.output_count)) {
-//		uint8_t pi, gi;
-//fetch:
-//		pi = __atomic_load_n(&lp.signal_tx_buffer_pi, __ATOMIC_ACQUIRE);
-//		gi = lp.signal_tx_buffer_gi;
-
-//		if (unlikely(pi == gi)) {
-//			__atomic_or_fetch(&lp.output_flags, OUTPUT_FLAG_TX_STALLED, __ATOMIC_RELEASE);
-//			// stop timer
-//			TC0->COUNT32.CTRLA.bit.ENABLE = 0;
-//			goto out;
-//		} else {
-//			uint8_t index = gi & (ARRAY_SIZE(lp.signal_tx_buffer)-1);
-//			// lp.output.mux = lp.signal_tx_buffer[index];
-//			union rle_bit r;
-//			r.mux = lp.signal_tx_buffer[index];
-//			__atomic_store_n(&lp.signal_tx_buffer_gi, gi + 1, __ATOMIC_RELEASE);
-
-//			// lp.output_bit = r.bit.value;
-//			lp.output_count = r.bit.count;
-
-//			if (unlikely(!lp.output_count)) {
-//				goto fetch;
-//			}
-
-//			// LP_LOG("OUT pin=%u count=%u\n", r.value, r.bit.count);
-
-//			if (r.bit.value) {
-//				PORT->Group[2].OUTSET.reg = 0b10000;
-//			} else {
-//				PORT->Group[2].OUTCLR.reg = 0b10000;
-//			}
-//		}
-//	}
-
-
-//	LP_ISR_ASSERT(lp.output_count);
-
-//	--lp.output_count;
-//	++lp.output_count_total;
-
-//	// LP_ISR_ASSERT(lp.output.bit.count);
-
-//	// --lp.output.bit.count;
-//	// ++lp.output_count_total;
-//	// LP_LOG("output count=%lu\n", lp.output_count_total);
-
-
-//	// PORT->Group[2].OUT.reg = 0b10000;
-
-
-//out:
-//	;
-
-//	// PORT->Group[2].OUTTGL.reg = 0b10000;
-
-//	// usnprintf(buf, sizeof(buf), "%#lx %#lx\n", (unsigned long)value, r);
-//	// board_uart_write(buf, -1);
-//}
-
 LP_RAMFUNC static void timer_interrupt(void)
 {
 	// clear interrupt
@@ -320,47 +187,6 @@ extern void TC0_Handler(void)
 {
 	timer_interrupt();
 }
-
-// LP_RAMFUNC bool lp_cdc_is_connected(void)
-// {
-// 	return tud_cdc_n_connected(0) != 0;
-// }
-
-// LP_RAMFUNC void lp_set_tx_pin(bool value)
-// {
-// 	gpio_set_pin_level(LIN_TX_PIN, value);
-// }
-
-// LP_RAMFUNC void lp_start_counter(void)
-// {
-// 	TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY / lp.signal_frequency;
-// 	restart_counter();
-// }
-
-// LP_RAMFUNC void lp_cdc_tx_flush(void)
-// {
-// 	tud_cdc_n_write_flush(0);
-// }
-
-// LP_RAMFUNC uint32_t lp_cdc_tx_available(void)
-// {
-// 	return tud_cdc_n_write_available(0);
-// }
-
-// LP_RAMFUNC uint32_t lp_cdc_tx(uint8_t const *ptr, uint32_t count)
-// {
-// 	return tud_cdc_n_write(0, ptr, count);
-// }
-
-// LP_RAMFUNC uint32_t lp_cdc_rx_available(void)
-// {
-// 	return tud_cdc_n_available(0);
-// }
-
-// LP_RAMFUNC uint32_t lp_cdc_rx(uint8_t  *ptr, uint32_t count)
-// {
-// 	return tud_cdc_n_read(0, ptr, count);
-// }
 
 LP_RAMFUNC void lp_delay_ms(uint32_t ms)
 {
