@@ -172,6 +172,14 @@ bool lp_rx_pin_read(void)
     return value;
 }
 
+void lp_version(char* ptr, uint32_t capacity)
+{
+    TEST_ASSERT(ptr);
+    TEST_ASSERT(capacity);
+
+    snprintf(ptr, capacity, "VERSION 42");
+}
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
@@ -248,6 +256,16 @@ TEST_F(serial_fixture, connected_state_invalid_commands_return_error_code)
     input = "hello\n";
     lp_cdc_task();
     EXPECT_THAT(output, StartsWith("-1 "));
+}
+
+TEST_F(serial_fixture, connected_state_can_get_version)
+{
+    connect();
+
+    input = "?V\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("0 "));
+    EXPECT_LT(2, output.size());
 }
 
 TEST_F(serial_fixture, connected_state_can_get_frequency)

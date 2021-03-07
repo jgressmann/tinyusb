@@ -55,7 +55,9 @@ LP_RAMFUNC static void cdc_task(void* param);
 #define LIN_RX_PIN PIN_PC05
 
 
-
+#define LP_VERSION_MAJOR 0
+#define LP_VERSION_MINOR 1
+#define LP_VERSION_PATCH 0
 static struct tasks {
 	StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_device_task_mem;
@@ -203,5 +205,10 @@ bool lp_pin_set(uint32_t pin, bool value)
 	}
 
 	return true;
+}
+
+void lp_version(char* ptr, uint32_t capacity)
+{
+	usnprintf(ptr, capacity, "linChPiN version %u.%u.%u\n", LP_VERSION_MAJOR, LP_VERSION_MINOR, LP_VERSION_PATCH);
 }
 

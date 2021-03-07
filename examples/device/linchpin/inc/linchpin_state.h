@@ -147,6 +147,7 @@ LP_RAMFUNC void lp_signal_next_bit(void);
 
 void lp_delay_ms(uint32_t ms);
 bool lp_pin_set(uint32_t pin, bool value);
+void lp_version(char* ptr, uint32_t capacity);
 
 #ifdef __cplusplus
 } // extern "C"

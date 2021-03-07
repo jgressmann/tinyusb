@@ -197,8 +197,15 @@ static void process_cmd(void)
                 switch (ptr[1]) {
                 case 'F':
                     lp.usb_tx_buffer_gi = 0;
-                    lp.usb_tx_buffer_pi = usnprintf((char*)lp.usb_tx_buffer, sizeof(lp.usb_tx_buffer), "%d %lu\n", LP_ERROR_NONE, lp.signal_frequency);
+                    lp.usb_tx_buffer_pi = usnprintf((char*)lp.usb_tx_buffer, sizeof(lp.usb_tx_buffer), "%d %" PRIu32 "\n", LP_ERROR_NONE, lp.signal_frequency);
                     break;
+                case 'V': {
+                    char buf[LP_USB_BUFFER_SIZE];
+                    memset(buf, 0, sizeof(buf));
+                    lp_version(buf, sizeof(buf)-1);
+                    lp.usb_tx_buffer_gi = 0;
+                    lp.usb_tx_buffer_pi = usnprintf((char*)lp.usb_tx_buffer, sizeof(lp.usb_tx_buffer), "0 %s\n", buf);
+                } break;
                 default:
                     place_unknown_cmd_response();
                     break;
