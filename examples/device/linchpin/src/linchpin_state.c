@@ -323,17 +323,17 @@ started:
                         ARRAY_SIZE(lp.signal_tx_buffer)
                     );
 
-                    ++lp.usb_rx_buffer_gi;
+                    if (lp.usb_rx_base64_state.flags & BASE64_FLAG_DONE) {
+                        __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
+                        lp.run_state = LP_RUN_STOPPING;
+                        lp.usb_rx_buffer_gi = lp.usb_rx_buffer_pi;
+                    } else {
+                        ++lp.usb_rx_buffer_gi;
+                    }
+
                     more = true;
                 } else {
                     done = true;
-                }
-
-                if (lp.usb_rx_base64_state.flags & BASE64_FLAG_DONE) {
-                    __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
-                    lp.run_state = LP_RUN_STOPPING;
-                    lp.usb_rx_buffer_gi = lp.usb_rx_buffer_pi;
-                    more = true;
                 }
             } break;
             }
@@ -461,6 +461,10 @@ started:
             lp.state = LP_CONNECTED;
             lp.usb_tx_buffer_gi = 0;
             lp.usb_tx_buffer_pi = (sizeof(lp.usb_tx_buffer) - left);
+
+            usb_try_tx();
+            lp_cdc_tx_flush();
+
             more = true;
         }
     } break;
@@ -506,18 +510,19 @@ void lp_cdc_task(void)
 
                     switch (c) {
                     case '\n':
-                    case '\r':
-                        // while (i < lp.usb_rx_count && (p[i] == '\r' || p[i] == '\r'))) {
-                        // 	++i;
-                        // }
+                    case '\r': {
                         lp.cmd_buffer[lp.cmd_count] = 0;
                         process_cmd();
                         lp.cmd_count = 0;
-                        break;
+
+                        usb_try_tx();
+                        lp_cdc_tx_flush();
+                    } break;
                     default:
                         if (lp.cmd_count + 1 == ARRAY_SIZE(lp.cmd_buffer)) {
                             lp.cmd_count = 0;
                             place_unknown_cmd_response();
+                            usb_try_tx();
                             lp_cdc_tx_flush();
                         } else {
                             lp.cmd_buffer[lp.cmd_count++] = c;
@@ -531,8 +536,6 @@ void lp_cdc_task(void)
                     more = true;
                 }
 
-                bool wrote_to_usb = usb_try_tx();
-                more = more || wrote_to_usb;
             } else {
                 usb_clear_rx_tx();
                 lp.state = LP_DISCONNECTED;

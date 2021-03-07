@@ -31,6 +31,7 @@ struct serial_fixture : public ::testing::Test
     std::deque<bool> rx_pin_values;
     bool pin_set_success;
     bool timer_started;
+    int flush_count;
 
 
     ~serial_fixture()
@@ -47,6 +48,7 @@ struct serial_fixture : public ::testing::Test
         output_capacity = -1;
         pin_set_success = true;
         timer_started = false;
+        flush_count = 0;
 
         lp_init();
     }
@@ -128,7 +130,7 @@ uint32_t test_cdc_tx(uint8_t const *ptr, uint32_t count)
 
 void test_cdc_tx_flush(void)
 {
-
+    ++serial_fixture::self->flush_count;
 }
 
 void lp_delay_ms(uint32_t ms)
@@ -194,6 +196,19 @@ TEST_F(serial_fixture, connected_state_accepts_input)
     input = "hello";
     lp_cdc_task();
     EXPECT_STREQ("", input.c_str());
+}
+
+TEST_F(serial_fixture, connected_state_flushes_usb_tx_buffer_on_lr_or_cr)
+{
+    connect();
+
+    input = "\n";
+    lp_cdc_task();
+    EXPECT_EQ(1, flush_count);
+
+    input = "\r";
+    lp_cdc_task();
+    EXPECT_EQ(2, flush_count);
 }
 
 TEST_F(serial_fixture, connected_state_processes_input_terminated_with_newline_or_carridge_return_as_command)
