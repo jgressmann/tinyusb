@@ -503,4 +503,38 @@ TEST_F(serial_fixture, running_state_returns_to_connected_when_input_terminates)
     EXPECT_EQ(true, tx_pin_values[3]);
 }
 
+TEST_F(serial_fixture, running_state_handles_more_that_one_usb_buffer_worth_of_data)
+{
+    run();
+
+    // 40x 0 -> 1 -> 0 ...
+    input = "AYEBgQGBAYEBgQGBAYEBgQGBAYEBgQGBAYEBgQGBAYEBgQGBAYEBgQ==";
+    lp_cdc_task();
+//    EXPECT_EQ(LP_RUNNING, lp.state);
+
+    const int runs = 40;
+
+    rx_pin_values.emplace_back(true);
+    for (int i = 0; i < runs; ++i) {
+        rx_pin_values.emplace_back(true);
+    }
+
+    lp_signal_next_bit(); // load run
+    lp_cdc_task();
+
+    for (int i = 0; i < runs; ++i) {
+        lp_signal_next_bit();
+        lp_cdc_task();
+    }
+
+
+    EXPECT_EQ(LP_CONNECTED, lp.state);
+    EXPECT_EQ(LP_RUN_STOPPED, lp.run_state);
+    EXPECT_STREQ("qA==\n0 \n", output.c_str());
+    ASSERT_EQ(40, tx_pin_values.size());
+    for (int i = 0; i < runs; ++i) {
+        EXPECT_EQ(i & 1, tx_pin_values[i]);
+    }
+}
+
 

@@ -56,9 +56,6 @@ LP_RAMFUNC static void cdc_task(void* param);
 
 
 
-// static struct linchpin lp;
-struct linchpin lp;
-
 static struct tasks {
 	StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_device_task_mem;

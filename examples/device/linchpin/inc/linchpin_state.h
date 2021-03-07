@@ -71,7 +71,8 @@ struct linchpin {
 	uint8_t signal_tx_buffer[LP_USB_BUFFER_SIZE];
 	uint8_t signal_rx_buffer[LP_USB_BUFFER_SIZE];
 	uint8_t cmd_count;
-	uint8_t usb_rx_count;
+	uint8_t usb_rx_buffer_gi;
+	uint8_t usb_rx_buffer_pi;
 	uint8_t usb_tx_buffer_gi;
 	uint8_t usb_tx_buffer_pi;
 	uint8_t state;

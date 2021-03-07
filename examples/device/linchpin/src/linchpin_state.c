@@ -31,9 +31,17 @@
 
 static bool usb_try_rx(void)
 {
-    if (lp_cdc_rx_available() && lp.usb_rx_count < ARRAY_SIZE(lp.usb_rx_buffer)) {
-        uint8_t offset = lp.usb_rx_count;
-        lp.usb_rx_count += (uint8_t)lp_cdc_rx(&lp.usb_rx_buffer[offset], ARRAY_SIZE(lp.usb_rx_buffer) - offset);
+    size_t used = lp.usb_rx_buffer_pi - lp.usb_rx_buffer_gi;
+
+    if (used < ARRAY_SIZE(lp.usb_rx_buffer) && lp_cdc_rx_available()) {
+        size_t count = ARRAY_SIZE(lp.usb_rx_buffer) - used;
+        size_t index = lp.usb_rx_buffer_pi % ARRAY_SIZE(lp.usb_rx_buffer);
+
+        if (index + count > ARRAY_SIZE(lp.usb_rx_buffer)) {
+            count = ARRAY_SIZE(lp.usb_rx_buffer) - index;
+        }
+
+        lp.usb_rx_buffer_pi += lp_cdc_rx(&lp.usb_rx_buffer[index], count);
         // LP_LOG("read: ");
         // for (uint8_t i = offset; i < lp.usb_rx_count; ++i) {
         // 	LP_LOG("%c %#x", lp.usb_rx_buffer[i], lp.usb_rx_buffer[i]);
@@ -67,6 +75,14 @@ static bool usb_try_tx(void)
     return false;
 }
 
+static inline void usb_clear_rx_tx(void)
+{
+    lp.usb_rx_buffer_gi = 0;
+    lp.usb_rx_buffer_pi = 0;
+    lp.usb_tx_buffer_gi = 0;
+    lp.usb_tx_buffer_pi = 0;
+}
+
 static inline void place_error_response(int code)
 {
     lp.usb_tx_buffer_gi = 0;
@@ -79,10 +95,7 @@ static inline void place_unknown_cmd_response(void)
 }
 
 
-static void run_abort(void)
-{
 
-}
 
 static void run_init(void)
 {
@@ -204,7 +217,7 @@ static bool try_base64_encode_input_data(void)
     bool more = false;
 
     for (;;) {
-        uint32_t usb_tx_available = ARRAY_SIZE(lp.usb_tx_buffer) - (lp.usb_tx_buffer_pi - lp.usb_tx_buffer_gi);
+        size_t usb_tx_available = ARRAY_SIZE(lp.usb_tx_buffer) - (lp.usb_tx_buffer_pi - lp.usb_tx_buffer_gi);
 
         if (usb_tx_available < 2) {
             break;
@@ -241,57 +254,68 @@ static bool try_base64_encode_input_data(void)
 static bool run_task(void)
 {
     bool more = false;
-    uint8_t i = 0;
 
     switch (lp.run_state) {
     case LP_RUN_REQUESTED: {
         bool read_from_usb = usb_try_rx();
         more = more || read_from_usb;
 
-        if (lp.usb_rx_count) {
+        while (lp.usb_rx_buffer_gi != lp.usb_rx_buffer_pi) {
+            uint8_t c = 0;
+
             more = true;
-            for (; i < lp.usb_rx_count; ++i) {
-                uint8_t c = lp.usb_rx_buffer[i];
-                switch (c) {
-                case ' ':
-                case '\t':
-                case '\n':
-                case '\r':
-                    break;
-                default:
-                    if (base64_is_base64_char(c)) {
+
+            c = lp.usb_rx_buffer[lp.usb_rx_buffer_gi % ARRAY_SIZE(lp.usb_rx_buffer)];
+
+            switch (c) {
+            case ' ':
+            case '\t':
+            case '\n':
+            case '\r':
+                break;
+            default:
+                if (base64_is_base64_char(c)) {
 //                        LP_LOG("start\n");
 //                        lp_tx_pin_set();
-                        lp_timer_start();
-                        lp.run_state = LP_RUN_STARTED;
-                        goto started;
-                    } else {
-                        place_error_response(LP_ERROR_MALFORMED);
-                        run_abort();
-                    }
+                    lp_timer_start();
+                    lp.run_state = LP_RUN_STARTED;
+                    goto started;
+                } else {
+                    place_error_response(LP_ERROR_MALFORMED);
+                    lp_timer_stop();
+                    lp.state = LP_CONNECTED;
                 }
+                break;
             }
 
-            lp.usb_rx_count = 0;
+            ++lp.usb_rx_buffer_gi;
         }
     } break;
     case LP_RUN_STARTED: {
         bool read_from_usb = usb_try_rx();
         more = more || read_from_usb;
 
-        if (lp.usb_rx_count) {
-            more = true;
+        for (bool done = false; !done && lp.usb_rx_buffer_gi != lp.usb_rx_buffer_pi; ) {
+            uint8_t c = 0;
+
+
+
 started:
-            for (; i < lp.usb_rx_count; ++i) {
-                uint8_t c = lp.usb_rx_buffer[i];
-                switch (c) {
-                case '\n':
-                case '\r':
-                    __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
-                    lp.run_state = LP_RUN_STOPPING;
-                    i = lp.usb_rx_count;
-                    break;
-                default:
+            c = lp.usb_rx_buffer[lp.usb_rx_buffer_gi % ARRAY_SIZE(lp.usb_rx_buffer)];
+            switch (c) {
+            case '\n':
+            case '\r':
+                __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
+                lp.run_state = LP_RUN_STOPPING;
+                lp.usb_rx_buffer_gi = lp.usb_rx_buffer_pi;
+                more = true;
+                break;
+            default: {
+                uint8_t pi = lp.signal_tx_buffer_pi;
+                uint8_t gi = __atomic_load_n(&lp.signal_tx_buffer_gi, __ATOMIC_ACQUIRE);
+                size_t used = pi - gi;
+
+                if (used < ARRAY_SIZE(lp.signal_tx_buffer)) {
                     base64_decode_shift(
                         c,
                         &lp.usb_rx_base64_state,
@@ -301,16 +325,20 @@ started:
                         ARRAY_SIZE(lp.signal_tx_buffer)
                     );
 
-                    if (lp.usb_rx_base64_state.flags & BASE64_FLAG_DONE) {
-                        __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
-                        lp.run_state = LP_RUN_STOPPING;
-                        i = lp.usb_rx_count;
-                    }
-                    break;
+                    ++lp.usb_rx_buffer_gi;
+                    more = true;
+                } else {
+                    done = true;
                 }
-            }
 
-            lp.usb_rx_count = 0;
+                if (lp.usb_rx_base64_state.flags & BASE64_FLAG_DONE) {
+                    __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
+                    lp.run_state = LP_RUN_STOPPING;
+                    lp.usb_rx_buffer_gi = lp.usb_rx_buffer_pi;
+                    more = true;
+                }
+            } break;
+            }
         }
 
         bool encoded = try_base64_encode_input_data();
@@ -338,11 +366,10 @@ started:
 
         if (flags & OUTPUT_FLAG_OUTPUT_DONE) {
             if (!encoded) {
-                // flush base64 encoder
                 base64_encode_finalize(
-                    &lp.usb_tx_base64_state,
-                    &lp.usb_tx_buffer_gi,
-                    &lp.usb_tx_buffer_pi,
+                            &lp.usb_tx_base64_state,
+                            &lp.usb_tx_buffer_gi,
+                            &lp.usb_tx_buffer_pi,
                             lp.usb_tx_buffer,
                             ARRAY_SIZE(lp.usb_tx_buffer));
 
@@ -471,13 +498,14 @@ void lp_cdc_task(void)
             }
             break;
         case LP_CONNECTED: {
-            bool read_from_usb = usb_try_rx();
-            more = more || read_from_usb;
+            if (connected) {
 
-            if (lp.usb_rx_count) {
-                char* p = (char*)lp.usb_rx_buffer;
-                for (uint8_t i = 0; i < lp.usb_rx_count; ++i) {
-                    char c = p[i];
+                bool read_from_usb = usb_try_rx();
+                more = more || read_from_usb;
+
+                while (lp.usb_rx_buffer_gi != lp.usb_rx_buffer_pi) {
+                    char c = lp.usb_rx_buffer[lp.usb_rx_buffer_gi % ARRAY_SIZE(lp.usb_rx_buffer)];
+
                     switch (c) {
                     case '\n':
                     case '\r':
@@ -498,22 +526,27 @@ void lp_cdc_task(void)
                         }
                         break;
                     }
+
+
+                    ++lp.usb_rx_buffer_gi;
+
+                    more = true;
                 }
 
-
-                lp.usb_rx_count = 0;
-
+                bool wrote_to_usb = usb_try_tx();
+                more = more || wrote_to_usb;
+            } else {
+                usb_clear_rx_tx();
+                lp.state = LP_DISCONNECTED;
                 more = true;
             }
-
-            bool wrote_to_usb = usb_try_tx();
-            more = more || wrote_to_usb;
         } break;
         case LP_RUNNING: {
             if (connected) {
                 more = run_task();
             } else {
-                run_abort();
+                usb_clear_rx_tx();
+                lp_timer_stop();
                 lp.state = LP_DISCONNECTED;
                 more = true;
             }
@@ -589,6 +622,7 @@ fetch:
     } else {
         size_t index = gi % ARRAY_SIZE(lp.signal_tx_buffer);
         union rle_bit r;
+
         r.mux = lp.signal_tx_buffer[index];
         __atomic_store_n(&lp.signal_tx_buffer_gi, gi + 1, __ATOMIC_RELEASE);
 
