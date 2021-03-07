@@ -35,13 +35,11 @@ struct serial_fixture : public ::testing::Test
 
     ~serial_fixture()
     {
-        // ASSERT_EQ(self, this);
         self = nullptr;
     }
 
     serial_fixture()
     {
-        // ASSERT_EQ(self, nullptr);
         self = this;
 
         connected = false;
@@ -288,6 +286,21 @@ TEST_F(serial_fixture, connected_state_set_frequency_handles_invalid_args)
     lp_cdc_task();
     EXPECT_THAT(output, StartsWith("-3 "));
     output.clear();
+
+    input = "!F foo\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("-2 "));
+    output.clear();
+
+    input = "!F\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("-4 "));
+    output.clear();
+
+    input = "!F\t\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("-4 "));
+    output.clear();
 }
 
 TEST_F(serial_fixture, connected_state_can_set_pin)
@@ -310,7 +323,32 @@ TEST_F(serial_fixture, connected_state_can_set_pin)
     ASSERT_EQ(2, pins_set.size());
     EXPECT_EQ(2, std::get<0>(pins_set[1]));
     EXPECT_EQ(true, std::get<1>(pins_set[1]));
+
+
 }
+
+TEST_F(serial_fixture, connected_state_set_pin_handles_invalid_args)
+{
+    connect();
+
+
+    input = "!P foo\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("-2 "));
+    output.clear();
+
+    input = "!P\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("-4 "));
+    output.clear();
+
+    input = "!P\t\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("-4 "));
+    output.clear();
+}
+
+
 
 TEST_F(serial_fixture, connected_state_can_switch_to_running)
 {
@@ -333,7 +371,7 @@ TEST_F(serial_fixture, running_state_starts_with_first_base64_char)
     EXPECT_EQ(LP_RUNNING, lp.state);
     EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
     EXPECT_EQ(true, timer_started);
-    EXPECT_EQ(0, lp.output_flags);
+    EXPECT_EQ(0, lp.signal_flags);
 }
 
 TEST_F(serial_fixture, running_state_ignores_line_breaks)
@@ -366,7 +404,7 @@ TEST_F(serial_fixture, running_state_finishes_on_invalid_chars)
     lp_cdc_task();
     EXPECT_EQ(LP_CONNECTED, lp.state);
     EXPECT_EQ(false, timer_started);
-    EXPECT_STREQ("\n-5 B64INV \n", output.c_str());
+    EXPECT_STREQ("\n-5 USBRXB64INV \n", output.c_str());
 }
 
 TEST_F(serial_fixture, running_state_finishes_on_tx_stall)
@@ -379,12 +417,12 @@ TEST_F(serial_fixture, running_state_finishes_on_tx_stall)
     EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
     EXPECT_EQ(true, timer_started);
 
-    lp.output_flags |= OUTPUT_FLAG_TX_STALLED;
+    lp.signal_flags |= OUTPUT_FLAG_TX_STALLED;
 
     lp_cdc_task();
     EXPECT_EQ(LP_CONNECTED, lp.state);
     EXPECT_EQ(false, timer_started);
-    EXPECT_STREQ("\n-5 TXSTALL \n", output.c_str());
+    EXPECT_STREQ("\n-5 SIGTXSTALL \n", output.c_str());
 }
 
 TEST_F(serial_fixture, running_state_finishes_on_rx_overflow)
@@ -397,12 +435,12 @@ TEST_F(serial_fixture, running_state_finishes_on_rx_overflow)
     EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
     EXPECT_EQ(true, timer_started);
 
-    lp.output_flags |= OUTPUT_FLAG_RX_OVERFLOW;
+    lp.signal_flags |= OUTPUT_FLAG_RX_OVERFLOW;
 
     lp_cdc_task();
     EXPECT_EQ(LP_CONNECTED, lp.state);
     EXPECT_EQ(false, timer_started);
-    EXPECT_STREQ("\n-5 RXOVRFL \n", output.c_str());
+    EXPECT_STREQ("\n-5 SIGRXOVRFL \n", output.c_str());
 }
 
 TEST_F(serial_fixture, running_state_reads_input)
@@ -432,24 +470,37 @@ TEST_F(serial_fixture, running_state_returns_to_connected_when_input_terminates)
 {
     run();
 
-    input = "f\n";
+    input = "AYEBgQ==\n";
     lp_cdc_task();
     EXPECT_EQ(LP_RUNNING, lp.state);
-    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
+//    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
     EXPECT_EQ(true, timer_started);
+    EXPECT_TRUE(lp.signal_flags & OUTPUT_FLAG_INPUT_DONE);
 
-    lp.signal_rx_buffer_pi = 4;
-    lp.signal_rx_buffer_gi = 0;
-    lp.signal_rx_buffer[0] = 0xde;
-    lp.signal_rx_buffer[1] = 0xad;
-    lp.signal_rx_buffer[2] = 0xbe;
-    lp.signal_rx_buffer[3] = 0xef;
+    const int runs = 4;
 
+    rx_pin_values.emplace_back(true);
+    for (int i = 0; i < runs; ++i) {
+        rx_pin_values.emplace_back(true);
+    }
 
+    lp_signal_next_bit(); // load run
     lp_cdc_task();
-    EXPECT_EQ(LP_RUNNING, lp.state);
-    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
-    EXPECT_STREQ("3q2+7==\n0 \n", output.c_str());
+
+    for (int i = 0; i < runs; ++i) {
+        lp_signal_next_bit();
+        lp_cdc_task();
+    }
+
+
+    EXPECT_EQ(LP_CONNECTED, lp.state);
+    EXPECT_EQ(LP_RUN_STOPPED, lp.run_state);
+    EXPECT_STREQ("hA==\n0 \n", output.c_str());
+    ASSERT_EQ(4, tx_pin_values.size());
+    EXPECT_EQ(false, tx_pin_values[0]);
+    EXPECT_EQ(true, tx_pin_values[1]);
+    EXPECT_EQ(false, tx_pin_values[2]);
+    EXPECT_EQ(true, tx_pin_values[3]);
 }
 
 

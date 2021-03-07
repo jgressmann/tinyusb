@@ -82,12 +82,11 @@ struct linchpin {
 	volatile uint8_t signal_tx_buffer_gi;
 	volatile uint8_t signal_rx_buffer_pi;
 	volatile uint8_t signal_rx_buffer_gi;
-	bool tx_overflow;
-	volatile uint32_t output_count_total;
-	volatile uint32_t output_flags;
-	uint8_t input_bit;
-	uint8_t input_count;
-	uint8_t output_count;
+	uint8_t signal_priv_input_bit;
+	uint8_t signal_priv_input_count;
+	volatile uint8_t signal_flags;
+	uint8_t signal_priv_output_count;
+	uint8_t signal_priv_output_value;
 };
 
 #define OUTPUT_FLAG_TX_STALLED  0x1
@@ -99,7 +98,7 @@ struct linchpin {
 extern struct linchpin lp;
 void lp_init(void);
 LP_RAMFUNC void lp_cdc_task(void);
-LP_RAMFUNC void lp_output_next_bit(void);
+LP_RAMFUNC void lp_signal_next_bit(void);
 
 
 #ifndef lp_rx_pin_read

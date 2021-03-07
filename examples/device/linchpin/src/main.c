@@ -316,7 +316,7 @@ LP_RAMFUNC static void timer_interrupt(void)
 	// clear interrupt
 	TC0->COUNT32.INTFLAG.reg = ~0;
 
-	lp_output_next_bit();
+	lp_signal_next_bit();
 }
 
 extern void TC0_Handler(void)

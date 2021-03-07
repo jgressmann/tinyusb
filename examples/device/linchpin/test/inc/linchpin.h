@@ -31,15 +31,23 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define LP_USB_BUFFER_SIZE 16
+#define LP_USB_BUFFER_SIZE 32
 
 #define CONF_CPU_FREQUENCY 200000000
 
-#define TEST_ASSERT(x) do { if (!(x)) exit(42); } while (0)
+#define LP_LOG(...) fprintf(stdout, __VA_ARGS__)
+#define TEST_ASSERT(x) \
+    do { \
+        if (!(x)) { \
+            LP_LOG("%s failed\n", #x); \
+            exit(42); \
+        } \
+    } while (0)
+
 #define LP_ASSERT TEST_ASSERT
 #define LP_ISR_ASSERT TEST_ASSERT
 #define LP_DEBUG_ASSERT TEST_ASSERT
-#define LP_LOG(...) fprintf(stdout, __VA_ARGS__)
+
 
 #define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
 #define likely(x) x

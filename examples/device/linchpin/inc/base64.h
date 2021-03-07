@@ -127,7 +127,7 @@ BASE64_FUNC static inline void base64_flush(
 	uint8_t pi = *pi_ptr;
 	uint8_t used = pi - gi;
 	if (base64_likely(used < buf_size)) {
-		uint8_t index = pi % buf_size;
+		size_t index = pi % buf_size;
 		buf_ptr[index] = state->state;
 		__atomic_store_n(pi_ptr, pi + 1, __ATOMIC_RELEASE);
 	} else {
