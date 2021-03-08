@@ -180,6 +180,11 @@ void lp_version(char* ptr, uint32_t capacity)
     snprintf(ptr, capacity, "VERSION 42");
 }
 
+void test_cdc_rx_clear(void)
+{
+
+}
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
@@ -569,5 +574,29 @@ TEST_F(serial_fixture, running_state_handles_more_that_one_usb_buffer_worth_of_d
         EXPECT_EQ(i & 1, tx_pin_values[i]);
     }
 }
+
+//TEST_F(serial_fixture, a_new_run_can_started_after_tx_stall)
+//{
+//    run();
+
+//    // must be larger than size of USB rx buffer
+//    input = "dead0000000000000000000000000000000000000000000000000000000000";
+//    lp_cdc_task();
+//    EXPECT_EQ(LP_RUNNING, lp.state);
+//    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
+//    EXPECT_EQ(true, timer_started);
+//    EXPECT_STREQ("", input.c_str());
+
+//    lp.signal_flags |= OUTPUT_FLAG_TX_STALLED;
+
+//    lp_cdc_task();
+//    EXPECT_EQ(LP_CONNECTED, lp.state);
+//    EXPECT_EQ(false, timer_started);
+//    EXPECT_STREQ("\n-5 SIGTXSTALL \n", output.c_str());
+
+//    input = "!R\n";
+//    lp_cdc_task();
+//    EXPECT_EQ(LP_RUNNING, lp.state);
+//}
 
 

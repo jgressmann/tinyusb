@@ -29,6 +29,16 @@
 #include <usnprintf.h>
 #include <inttypes.h>
 
+static inline bool usb_try_rx_clear(void)
+{
+    if (lp_cdc_rx_available()) {
+        lp_cdc_rx_clear();
+        return true;
+    }
+
+    return false;
+}
+
 static bool usb_try_rx(void)
 {
     size_t used = lp.usb_rx_buffer_pi - lp.usb_rx_buffer_gi;

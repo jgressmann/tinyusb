@@ -75,6 +75,7 @@
 #define lp_cdc_rx test_cdc_rx
 #define lp_cdc_tx test_cdc_tx
 #define lp_cdc_tx_flush test_cdc_tx_flush
+#define lp_cdc_rx_clear test_cdc_rx_clear
 
 #ifdef __cplusplus
 extern "C" {
