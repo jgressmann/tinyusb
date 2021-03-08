@@ -62,25 +62,25 @@ enum lp_run_state {
 };
 
 struct linchpin {
+	size_t usb_rx_buffer_gi;
+	size_t usb_rx_buffer_pi;
+	size_t usb_tx_buffer_gi;
+	size_t usb_tx_buffer_pi;
+	volatile size_t signal_tx_buffer_pi;
+	volatile size_t signal_tx_buffer_gi;
+	volatile size_t signal_rx_buffer_pi;
+	volatile size_t signal_rx_buffer_gi;
 	uint32_t signal_frequency;
 	uint8_t cmd_buffer[LP_USB_BUFFER_SIZE];
-	uint8_t usb_rx_buffer[LP_USB_BUFFER_SIZE];
-	uint8_t usb_tx_buffer[LP_USB_BUFFER_SIZE];
-	uint8_t signal_tx_buffer[LP_USB_BUFFER_SIZE];
-	uint8_t signal_rx_buffer[LP_USB_BUFFER_SIZE];
+	uint8_t usb_rx_buffer[LP_SIGNAL_BUFFER_SIZE];
+	uint8_t usb_tx_buffer[LP_SIGNAL_BUFFER_SIZE];
+	uint8_t signal_tx_buffer[LP_SIGNAL_BUFFER_SIZE];
+	uint8_t signal_rx_buffer[LP_SIGNAL_BUFFER_SIZE];
 	uint8_t cmd_count;
-	uint8_t usb_rx_buffer_gi;
-	uint8_t usb_rx_buffer_pi;
-	uint8_t usb_tx_buffer_gi;
-	uint8_t usb_tx_buffer_pi;
 	uint8_t state;
 	uint8_t run_state;
 	struct base64_state usb_rx_base64_state;
 	struct base64_state usb_tx_base64_state;
-	volatile uint8_t signal_tx_buffer_pi;
-	volatile uint8_t signal_tx_buffer_gi;
-	volatile uint8_t signal_rx_buffer_pi;
-	volatile uint8_t signal_rx_buffer_gi;
 	uint8_t signal_priv_input_bit;
 	uint8_t signal_priv_input_count;
 	volatile uint8_t signal_flags;
@@ -142,6 +142,10 @@ LP_RAMFUNC void lp_signal_next_bit(void);
 
 #ifndef lp_cdc_tx_flush
 	#error Define void lp_cdc_tx_flush(void);
+#endif
+
+#ifndef lp_cdc_rx_clear
+	#error Define void lp_cdc_rx_clear(void);
 #endif
 
 

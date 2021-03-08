@@ -29,7 +29,8 @@
 #include <tusb.h>
 #include <sam.h>
 
-
+#define LP_FASTLZ_HASH_LOG 6
+#define LP_SIGNAL_BUFFER_SIZE (1u<<12)
 #define LP_USB_BUFFER_SIZE 64
 #define lp_cdc_is_connected tud_cdc_connected
 #define lp_cdc_rx_available tud_cdc_available

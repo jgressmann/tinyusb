@@ -53,6 +53,7 @@
 #define likely(x) x
 #define unlikely(x) x
 #define LP_RAMFUNC
+#define LP_FASTLZ_HASH_LOG 14
 
 #include <linchpin_error.h>
 
@@ -92,6 +93,7 @@ extern uint32_t test_cdc_tx_available(void);
 extern uint32_t test_cdc_rx(uint8_t *ptr, uint32_t count);
 extern uint32_t test_cdc_tx(uint8_t const *ptr, uint32_t count);
 extern void test_cdc_tx_flush(void);
+extern void test_cdc_rx_clear(void);
 
 #include <linchpin_api.h>
 #include <linchpin_state.h>

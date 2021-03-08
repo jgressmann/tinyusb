@@ -16,8 +16,8 @@ struct base64_fixture : public ::testing::Test
     struct base64_state d;
 
     uint8_t buf[64];
-    volatile uint8_t pi;
-    volatile uint8_t gi;
+    volatile size_t pi;
+    volatile size_t gi;
 
     ~base64_fixture()
     {
@@ -72,11 +72,11 @@ TEST(base64, base64_to_ascii)
 
 TEST_F(base64_fixture, encode_shift_asserts_arguments)
 {
-    EXPECT_ANY_THROW(base64_encode_shift(0, NULL, (volatile uint8_t*)buf, (volatile uint8_t*)buf, buf, sizeof(buf)));
-    EXPECT_ANY_THROW(base64_encode_shift(0, &e, NULL, (volatile uint8_t*)buf, buf, sizeof(buf)));
-    EXPECT_ANY_THROW(base64_encode_shift(0, &e, (volatile uint8_t*)buf, NULL, buf, sizeof(buf)));
-    EXPECT_ANY_THROW(base64_encode_shift(0, &e, (volatile uint8_t*)buf, (volatile uint8_t*)buf, NULL, sizeof(buf)));
-    EXPECT_ANY_THROW(base64_encode_shift(0, &e, (volatile uint8_t*)buf, (volatile uint8_t*)buf, buf, 0));
+    EXPECT_ANY_THROW(base64_encode_shift(0, NULL, (volatile size_t*)buf, (volatile size_t*)buf, buf, sizeof(buf)));
+    EXPECT_ANY_THROW(base64_encode_shift(0, &e, NULL, (volatile size_t*)buf, buf, sizeof(buf)));
+    EXPECT_ANY_THROW(base64_encode_shift(0, &e, (volatile size_t*)buf, NULL, buf, sizeof(buf)));
+    EXPECT_ANY_THROW(base64_encode_shift(0, &e, (volatile size_t*)buf, (volatile size_t*)buf, NULL, sizeof(buf)));
+    EXPECT_ANY_THROW(base64_encode_shift(0, &e, (volatile size_t*)buf, (volatile size_t*)buf, buf, 0));
 }
 
 TEST_F(base64_fixture, encode_sets_overflow_if_no_space_left_in_output_buffer)
@@ -117,11 +117,11 @@ TEST_F(base64_fixture, encode_shifts_in_bytes)
 
 TEST_F(base64_fixture, encode_finalize_asserts_arguments)
 {
-    EXPECT_ANY_THROW(base64_encode_finalize(NULL, (volatile uint8_t*)buf, (volatile uint8_t*)buf, buf, sizeof(buf)));
-    EXPECT_ANY_THROW(base64_encode_finalize(&e, NULL, (volatile uint8_t*)buf, buf, sizeof(buf)));
-    EXPECT_ANY_THROW(base64_encode_finalize(&e, (volatile uint8_t*)buf, NULL, buf, sizeof(buf)));
-    EXPECT_ANY_THROW(base64_encode_finalize(&e, (volatile uint8_t*)buf, (volatile uint8_t*)buf, NULL, sizeof(buf)));
-    EXPECT_ANY_THROW(base64_encode_finalize(&e, (volatile uint8_t*)buf, (volatile uint8_t*)buf, buf, 0));
+    EXPECT_ANY_THROW(base64_encode_finalize(NULL, (volatile size_t*)buf, (volatile size_t*)buf, buf, sizeof(buf)));
+    EXPECT_ANY_THROW(base64_encode_finalize(&e, NULL, (volatile size_t*)buf, buf, sizeof(buf)));
+    EXPECT_ANY_THROW(base64_encode_finalize(&e, (volatile size_t*)buf, NULL, buf, sizeof(buf)));
+    EXPECT_ANY_THROW(base64_encode_finalize(&e, (volatile size_t*)buf, (volatile size_t*)buf, NULL, sizeof(buf)));
+    EXPECT_ANY_THROW(base64_encode_finalize(&e, (volatile size_t*)buf, (volatile size_t*)buf, buf, 0));
 }
 
 
@@ -178,11 +178,11 @@ TEST_F(base64_fixture, encode_finalize1_sets_overflow_if_no_space_left_in_output
 
 TEST_F(base64_fixture, decode_shift_asserts_arguments)
 {
-    EXPECT_ANY_THROW(base64_decode_shift(0, NULL, (volatile uint8_t*)buf, (volatile uint8_t*)buf, buf, sizeof(buf)));
-    EXPECT_ANY_THROW(base64_decode_shift(0, &d, NULL, (volatile uint8_t*)buf, buf, sizeof(buf)));
-    EXPECT_ANY_THROW(base64_decode_shift(0, &d, (volatile uint8_t*)buf, NULL, buf, sizeof(buf)));
-    EXPECT_ANY_THROW(base64_decode_shift(0, &d, (volatile uint8_t*)buf, (volatile uint8_t*)buf, NULL, sizeof(buf)));
-    EXPECT_ANY_THROW(base64_decode_shift(0, &d, (volatile uint8_t*)buf, (volatile uint8_t*)buf, buf, 0));
+    EXPECT_ANY_THROW(base64_decode_shift(0, NULL, (volatile size_t*)buf, (volatile size_t*)buf, buf, sizeof(buf)));
+    EXPECT_ANY_THROW(base64_decode_shift(0, &d, NULL, (volatile size_t*)buf, buf, sizeof(buf)));
+    EXPECT_ANY_THROW(base64_decode_shift(0, &d, (volatile size_t*)buf, NULL, buf, sizeof(buf)));
+    EXPECT_ANY_THROW(base64_decode_shift(0, &d, (volatile size_t*)buf, (volatile size_t*)buf, NULL, sizeof(buf)));
+    EXPECT_ANY_THROW(base64_decode_shift(0, &d, (volatile size_t*)buf, (volatile size_t*)buf, buf, 0));
 }
 
 TEST_F(base64_fixture, decode_sets_overflow_if_no_space_left_in_output_buffer)

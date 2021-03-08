@@ -25,6 +25,7 @@
 
 #include <string.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #if defined(BASE64_STATIC)
 	#define BASE64_EXTERN static inline
@@ -100,10 +101,10 @@ BASE64_FUNC static inline void base64_init(struct base64_state* state)
 
 BASE64_FUNC static inline void base64_flush(
 	struct base64_state* state,
-	uint8_t volatile* gi_ptr,
-	uint8_t volatile* pi_ptr,
+	size_t volatile* gi_ptr,
+	size_t volatile* pi_ptr,
 	uint8_t* buf_ptr,
-	uint8_t buf_size,
+	size_t buf_size,
 	uint8_t expected_bits)
 {
 	BASE64_ASSERT(state);
@@ -113,9 +114,9 @@ BASE64_FUNC static inline void base64_flush(
 	BASE64_ASSERT(buf_size > 0);
 	BASE64_ASSERT(state->bits == expected_bits);
 
-	uint8_t gi = __atomic_load_n(gi_ptr, __ATOMIC_ACQUIRE);
-	uint8_t pi = *pi_ptr;
-	uint8_t used = pi - gi;
+	size_t gi = __atomic_load_n(gi_ptr, __ATOMIC_ACQUIRE);
+	size_t pi = *pi_ptr;
+	size_t used = pi - gi;
 	if (base64_likely(used < buf_size)) {
 		size_t index = pi % buf_size;
 		buf_ptr[index] = state->state;
@@ -127,10 +128,10 @@ BASE64_FUNC static inline void base64_flush(
 
 BASE64_FUNC static inline void base64_encode_flush(
 	struct base64_state* state,
-	uint8_t volatile* gi_ptr,
-	uint8_t volatile* pi_ptr,
+	size_t volatile* gi_ptr,
+	size_t volatile* pi_ptr,
 	uint8_t* buf_ptr,
-	uint8_t buf_size)
+	size_t buf_size)
 {
 	base64_flush(state, gi_ptr, pi_ptr, buf_ptr, buf_size, 6);
 }
@@ -139,10 +140,10 @@ BASE64_FUNC static inline void base64_encode_flush(
 BASE64_FUNC static inline void base64_encode_shift(
 	uint8_t bits,
 	struct base64_state* state,
-	uint8_t volatile* gi_ptr,
-	uint8_t volatile* pi_ptr,
+	size_t volatile* gi_ptr,
+	size_t volatile* pi_ptr,
 	uint8_t* buf_ptr,
-	uint8_t buf_size)
+	size_t buf_size)
 {
 	BASE64_ASSERT(state);
 	BASE64_ASSERT(gi_ptr);
@@ -189,10 +190,10 @@ BASE64_FUNC static inline void base64_encode_shift(
 
 BASE64_FUNC static inline void base64_encode_finalize(
 	struct base64_state* state,
-	uint8_t volatile* gi_ptr,
-	uint8_t volatile* pi_ptr,
+	size_t volatile* gi_ptr,
+	size_t volatile* pi_ptr,
 	uint8_t* buf_ptr,
-	uint8_t buf_size)
+	size_t buf_size)
 {
 	BASE64_ASSERT(state);
 	BASE64_ASSERT(gi_ptr);
@@ -234,10 +235,10 @@ BASE64_FUNC static inline void base64_encode_finalize(
 
 BASE64_FUNC static inline void base64_decode_flush(
 	struct base64_state* state,
-	uint8_t volatile* gi_ptr,
-	uint8_t volatile* pi_ptr,
+	size_t volatile* gi_ptr,
+	size_t volatile* pi_ptr,
 	uint8_t* buf_ptr,
-	uint8_t buf_size)
+	size_t buf_size)
 {
 	base64_flush(state, gi_ptr, pi_ptr, buf_ptr, buf_size, 8);
 }
@@ -246,10 +247,10 @@ BASE64_FUNC static inline void base64_decode_flush(
 BASE64_FUNC BASE64_EXTERN void base64_decode_shift(
 	uint8_t c,
 	struct base64_state* state,
-	uint8_t volatile* gi_ptr,
-	uint8_t volatile* pi_ptr,
+	size_t volatile* gi_ptr,
+	size_t volatile* pi_ptr,
 	uint8_t* buf_ptr,
-	uint8_t buf_size);
+	size_t buf_size);
 
 #endif // defined(BASE64_H)
 
@@ -263,10 +264,10 @@ const char base64_to_ascii_table[64] = BASE64_TO_ASCII_TABLE_INITIALIZER;
 BASE64_EXTERN void base64_decode_shift(
 	uint8_t c,
 	struct base64_state* state,
-	uint8_t volatile* gi_ptr,
-	uint8_t volatile* pi_ptr,
+	size_t volatile* gi_ptr,
+	size_t volatile* pi_ptr,
 	uint8_t* buf_ptr,
-	uint8_t buf_size)
+	size_t buf_size)
 {
 	uint8_t bits = 0;
 
