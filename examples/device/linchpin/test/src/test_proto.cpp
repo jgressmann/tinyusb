@@ -3,6 +3,7 @@
 
 
 #include <linchpin.h>
+#include "../inc/fastlz.h"
 
 
 #define BASE64_C
@@ -11,6 +12,8 @@
 #include <string>
 #include <algorithm>
 #include <deque>
+#include <vector>
+#include <cstring>
 
 using ::testing::StartsWith;
 
@@ -68,6 +71,47 @@ struct serial_fixture : public ::testing::Test
         output.clear();
     }
 
+    static std::string make_input(const char* str)
+    {
+        std::vector<char> str_vec(str, str + std::strlen(str));
+        if (str_vec.size() & 15) {
+            str_vec.reserve(str_vec.size() + 16);
+
+            while (str_vec.size() & 15) {
+                str_vec.emplace_back(0);
+            }
+        }
+
+        std::vector<char> compressed;
+        compressed.resize(str_vec.size() * 2);
+        auto bytes = fastlz_compress(str_vec.data(), str_vec.size(), compressed.data());
+        compressed.resize(bytes);
+
+        str_vec.resize(2*compressed.size());
+        struct base64_state s;
+        base64_init(&s);
+        size_t gi = 0;
+        size_t pi = 0;
+        for (auto it = begin(compressed), e = end(compressed); it != e; ++it) {
+            base64_encode_shift(
+                *it,
+                &s,
+                &gi,
+                &pi,
+                (uint8_t*)str_vec.data(),
+                str_vec.size());
+        }
+
+        base64_encode_finalize(
+            &s,
+            &gi,
+            &pi,
+            (uint8_t*)str_vec.data(),
+            str_vec.size());
+
+        return std::string(str_vec.data(), pi);
+    }
+
 };
 
 serial_fixture* serial_fixture::self;
@@ -106,7 +150,7 @@ uint32_t test_cdc_rx(uint8_t *ptr, uint32_t count)
     uint32_t bytes = std::min<uint32_t>(count, serial_fixture::self->input.size());
 
     if (bytes) {
-        memcpy(ptr, serial_fixture::self->input.c_str(), bytes);
+        memcpy(ptr, serial_fixture::self->input.data(), bytes);
         serial_fixture::self->input.erase(0, bytes);
     }
 
@@ -400,14 +444,14 @@ TEST_F(serial_fixture, connected_state_can_switch_to_running)
     EXPECT_EQ(false, timer_started);
 }
 
-TEST_F(serial_fixture, running_state_starts_with_first_base64_char)
+TEST_F(serial_fixture, running_state_starts_with_first_data_packet)
 {
     run();
 
-    input = "f";
+    input = make_input("f") + "\n";
+    fprintf(stdout, "%s\n", input.c_str());
     lp_cdc_task();
     EXPECT_EQ(LP_RUNNING, lp.state);
-    EXPECT_EQ(LP_RUN_STARTED, lp.run_state);
     EXPECT_EQ(true, timer_started);
     EXPECT_EQ(0, lp.signal_flags);
 }

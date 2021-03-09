@@ -32,6 +32,7 @@
 #include <stdio.h>
 
 #define LP_USB_BUFFER_SIZE 32
+#define LP_SIGNAL_BUFFER_SIZE (1u<<16)
 
 #define CONF_CPU_FREQUENCY 200000000
 
@@ -58,7 +59,6 @@
 #include <linchpin_error.h>
 
 #define BASE64_ASSERT TEST_ASSERT
-// #define BASE64_STATIC
 #define BASE64_H
 #include <base64.h>
 #undef BASE64_H

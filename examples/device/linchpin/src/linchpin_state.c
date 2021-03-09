@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <usnprintf.h>
 #include <inttypes.h>
+#include <fastlz.h>
 
 static inline bool usb_try_rx_clear(void)
 {
@@ -119,6 +120,14 @@ static void run_init(void)
     lp.signal_flags = 0;
     lp.signal_priv_output_count = 0;
     lp.signal_priv_output_value = 0;
+//    lp.usb_rx_buffer_gi = 0;
+//    lp.usb_rx_buffer_pi = 0;
+//    lp.usb_tx_buffer_gi = 0;
+//    lp.usb_tx_buffer_pi = 0;
+    lp.usb_tx_compressed_gi = 0;
+    lp.usb_tx_compressed_pi = 0;
+    lp.usb_base64_decoded_offset = 0;
+
     base64_init(&lp.usb_rx_base64_state);
     base64_init(&lp.usb_tx_base64_state);
 
@@ -229,7 +238,7 @@ static void process_cmd(void)
     }
 }
 
-static bool try_base64_encode_input_data(void)
+static bool run_try_base64_encode_input_data(void)
 {
     bool more = false;
 
@@ -240,17 +249,14 @@ static bool try_base64_encode_input_data(void)
             break;
         }
 
-        uint8_t pi = __atomic_load_n(&lp.signal_rx_buffer_pi, __ATOMIC_ACQUIRE);
-        uint8_t gi = lp.signal_rx_buffer_gi;
-        uint32_t input_available = pi - gi;
-        if (!input_available) {
+        if (lp.usb_tx_compressed_gi == lp.usb_tx_compressed_pi) {
             break;
         }
 
         more = true;
 
-        size_t index = gi % ARRAY_SIZE(lp.signal_rx_buffer);
-        uint8_t byte = lp.signal_rx_buffer[index];
+        size_t index = lp.usb_tx_compressed_gi++ % ARRAY_SIZE(lp.usb_tx_compressed_buffer);
+        uint8_t byte = lp.usb_tx_compressed_buffer[index];
         base64_encode_shift(
             byte,
             &lp.usb_tx_base64_state,
@@ -259,14 +265,167 @@ static bool try_base64_encode_input_data(void)
             lp.usb_tx_buffer,
             ARRAY_SIZE(lp.usb_tx_buffer)
         );
-
-        __atomic_store_n(&lp.signal_rx_buffer_gi, gi + 1, __ATOMIC_RELEASE);
     }
 
 
     return more;
 }
 
+static inline void run_abort_error(int code)
+{
+    place_error_response(code);
+    lp_timer_stop();
+    lp.state = LP_CONNECTED;
+}
+
+static bool run_try_decompress(void)
+{
+    size_t gi = 0;
+
+    base64_decode_flush(
+        &lp.usb_rx_base64_state,
+        &gi,
+        &lp.usb_base64_decoded_offset,
+        lp.usb_base64_decoded_buffer,
+        ARRAY_SIZE(lp.usb_base64_decoded_buffer));
+
+    if ((lp.usb_rx_base64_state.flags & ~BASE64_FLAG_DONE)) {
+        // something broken
+        run_abort_error(LP_ERROR_MALFORMED);
+//        return false;
+    } else if (lp.usb_rx_base64_state.flags & BASE64_FLAG_DONE) {
+        if (lp.usb_base64_decoded_offset) {
+            size_t gi = __atomic_load_n(&lp.signal_tx_buffer_gi, __ATOMIC_ACQUIRE);
+            size_t pi = lp.signal_tx_buffer_pi;
+            size_t used = pi - gi;
+            size_t available = ARRAY_SIZE(lp.signal_tx_buffer) - used;
+
+            if (available >= LP_SIGNAL_BUFFER_SIZE) {
+                int bytes_out = fastlz_decompress(
+                            lp.usb_base64_decoded_buffer,
+                            lp.usb_base64_decoded_offset,
+                            lp.fastlz_buffer,
+                            ARRAY_SIZE(lp.fastlz_buffer));
+
+                lp.usb_base64_decoded_offset = 0;
+
+                if (bytes_out > 0) {
+                    LP_DEBUG_ASSERT((size_t)bytes_out <= LP_SIGNAL_BUFFER_SIZE);
+
+                    size_t offset = 0;
+                    size_t count = bytes_out;
+                    size_t index = pi % ARRAY_SIZE(lp.signal_tx_buffer);
+                    LP_ASSERT(count <= LP_SIGNAL_BUFFER_SIZE);
+
+                    if (index + count > ARRAY_SIZE(lp.signal_tx_buffer)) {
+                        size_t count1 = ARRAY_SIZE(lp.signal_tx_buffer) - index;
+                        memcpy(&lp.signal_tx_buffer[index], &lp.fastlz_buffer[offset], count1);
+                        index = 0;
+                        count -= count1;
+                        offset += count1;
+                    }
+
+                    memcpy(&lp.signal_tx_buffer[index], &lp.fastlz_buffer[offset], count);
+
+                    // update tx pi
+                    __atomic_store_n(&lp.signal_tx_buffer_pi, lp.signal_tx_buffer_pi + bytes_out, __ATOMIC_RELEASE);
+
+                    return true;
+                } else {
+                    // decompression failed
+                    run_abort_error(LP_ERROR_MALFORMED);
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+static bool run_try_add_base64_char(uint8_t c)
+{
+    if (lp.usb_base64_decoded_offset == ARRAY_SIZE(lp.usb_base64_decoded_buffer)) {
+        // whoopsie, expect at packets that fit in buffer
+        run_abort_error(LP_ERROR_MALFORMED);
+
+    } else {
+        size_t gi = 0;
+
+        base64_decode_shift(
+            c,
+            &lp.usb_rx_base64_state,
+            &gi,
+            &lp.usb_base64_decoded_offset,
+            lp.usb_base64_decoded_buffer,
+            ARRAY_SIZE(lp.usb_base64_decoded_buffer));
+
+        if (lp.usb_rx_base64_state.flags & BASE64_FLAG_DONE) {
+            __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
+            lp.run_state = LP_RUN_STOPPING;
+//            lp.usb_rx_buffer_gi = lp.usb_rx_buffer_pi;
+//            return false;
+        } else {
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool run_try_compress_input_data(bool pad)
+{
+    if (lp.usb_tx_compressed_gi == lp.usb_tx_compressed_pi
+        /*lp.usb_tx_buffer_gi == lp.usb_tx_buffer_pi*/) {
+
+        size_t gi = lp.signal_rx_buffer_gi;
+        size_t pi = __atomic_load_n(&lp.signal_rx_buffer_pi, __ATOMIC_ACQUIRE);
+        size_t used = pi - gi;
+
+        if (used && (used >= 16 || pad)) {
+            size_t count = used;
+            const size_t LIMIT = LP_SIGNAL_BUFFER_SIZE - (LP_SIGNAL_BUFFER_SIZE / 10 + 16);
+            if (count > LIMIT) {
+                count = LIMIT;
+            }
+
+            size_t index = gi % ARRAY_SIZE(lp.signal_rx_buffer);
+            size_t offset = 0;
+            size_t count2 = count;
+            if (index + count > ARRAY_SIZE(lp.signal_rx_buffer)) {
+                size_t count1 = ARRAY_SIZE(lp.signal_rx_buffer) - index;
+                memcpy(&lp.fastlz_buffer[offset], &lp.signal_rx_buffer[index], count1);
+                offset += count1;
+                index = 0;
+                count2 = count - count1;
+            }
+
+            memcpy(&lp.fastlz_buffer[offset], &lp.signal_rx_buffer[index], count2);
+
+            __atomic_store_n(&lp.signal_rx_buffer_gi, gi + count, __ATOMIC_RELEASE);
+
+            while (count < 16) {
+                lp.fastlz_buffer[count++] = 0;
+            }
+
+            int compressed = fastlz_compress_level(
+                        1,
+                        lp.fastlz_buffer,
+                        count,
+                        lp.usb_tx_compressed_buffer);
+
+            if (compressed > 0) {
+                lp.usb_tx_compressed_gi = 0;
+                lp.usb_tx_compressed_pi = compressed;
+                return true;
+            } else {
+                // whoopsie!
+            }
+        }
+    }
+
+    return false;
+}
 
 static bool run_task(void)
 {
@@ -277,86 +436,139 @@ static bool run_task(void)
         bool read_from_usb = usb_try_rx();
         more = more || read_from_usb;
 
-        while (lp.usb_rx_buffer_gi != lp.usb_rx_buffer_pi) {
-            uint8_t c = 0;
+        for (bool done = false; !done && lp.usb_rx_buffer_gi != lp.usb_rx_buffer_pi; ) {
+            char c = 0;
 
             more = true;
 
             c = lp.usb_rx_buffer[lp.usb_rx_buffer_gi % ARRAY_SIZE(lp.usb_rx_buffer)];
 
             switch (c) {
-            case ' ':
-            case '\t':
             case '\n':
             case '\r':
+                lp.usb_rx_buffer_gi = lp.usb_rx_buffer_pi;
+                if (lp.usb_base64_decoded_offset) { // base64 chars were added
+                    __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
+                    if (run_try_decompress()) {
+                        lp_timer_start();
+                        lp.run_state = LP_RUN_STARTED;
+                    } else {
+                        run_abort_error(LP_ERROR_MALFORMED);
+                    }
+                } else {
+                    lp.run_state = LP_CONNECTED;
+                }
+                done = true;
                 break;
-            default:
-                if (base64_is_base64_char(c)) {
-//                        LP_LOG("start\n");
-//                        lp_tx_pin_set();
+            case '!': {
+                ++lp.usb_rx_buffer_gi;
+                if (run_try_decompress()) {
                     lp_timer_start();
                     lp.run_state = LP_RUN_STARTED;
-                    goto started;
                 } else {
-                    place_error_response(LP_ERROR_MALFORMED);
-                    lp_timer_stop();
-                    lp.state = LP_CONNECTED;
+                    run_abort_error(LP_ERROR_MALFORMED);
+                }
+                done = true;
+            } break;
+            default:
+                ++lp.usb_rx_buffer_gi;
+                if (lp.usb_base64_decoded_offset == ARRAY_SIZE(lp.usb_base64_decoded_buffer)) {
+                    // whoopsie, expect at packets that fit in buffer
+                    run_abort_error(LP_ERROR_MALFORMED);
+                    done = true;
+                } else {
+                    size_t gi = 0;
+
+                    base64_decode_shift(
+                        c,
+                        &lp.usb_rx_base64_state,
+                        &gi,
+                        &lp.usb_base64_decoded_offset,
+                        lp.usb_base64_decoded_buffer,
+                        ARRAY_SIZE(lp.usb_base64_decoded_buffer));
+
+                    if (lp.usb_rx_base64_state.flags & ~BASE64_FLAG_DONE) {
+                        // some decode error
+                        run_abort_error(LP_ERROR_MALFORMED);
+                        done = true;
+                    } else {
+                        if (lp.usb_rx_base64_state.flags & BASE64_FLAG_DONE) {
+                            __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
+
+                            if (run_try_decompress()) {
+                                lp_timer_start();
+                                lp.run_state = LP_RUN_STARTED;
+                            } else {
+                                run_abort_error(LP_ERROR_MALFORMED);
+                            }
+
+                            done = true;
+                        }
+                    }
                 }
                 break;
             }
-
-            ++lp.usb_rx_buffer_gi;
         }
     } break;
     case LP_RUN_STARTED: {
         bool read_from_usb = usb_try_rx();
         more = more || read_from_usb;
 
-started:
         for (bool done = false; !done && lp.usb_rx_buffer_gi != lp.usb_rx_buffer_pi; ) {
-            uint8_t c = 0;
+            char c = 0;
+
+            more = true;
 
             c = lp.usb_rx_buffer[lp.usb_rx_buffer_gi % ARRAY_SIZE(lp.usb_rx_buffer)];
             switch (c) {
             case '\n':
             case '\r':
-                __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
-                lp.run_state = LP_RUN_STOPPING;
                 lp.usb_rx_buffer_gi = lp.usb_rx_buffer_pi;
-                more = true;
+                __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
+                run_try_decompress();
                 break;
+            case '!': { // buffer separator
+                ++lp.usb_rx_buffer_gi;
+                run_try_decompress();
+            } break;
             default: {
-                uint8_t pi = lp.signal_tx_buffer_pi;
-                uint8_t gi = __atomic_load_n(&lp.signal_tx_buffer_gi, __ATOMIC_ACQUIRE);
-                size_t used = pi - gi;
 
-                if (used < ARRAY_SIZE(lp.signal_tx_buffer)) {
-                    base64_decode_shift(
-                        c,
-                        &lp.usb_rx_base64_state,
-                        &lp.signal_tx_buffer_gi,
-                        &lp.signal_tx_buffer_pi,
-                        lp.signal_tx_buffer,
-                        ARRAY_SIZE(lp.signal_tx_buffer)
-                    );
+                done = !run_try_add_base64_char(c);
 
-                    if (lp.usb_rx_base64_state.flags & BASE64_FLAG_DONE) {
-                        __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
-                        lp.run_state = LP_RUN_STOPPING;
-                        lp.usb_rx_buffer_gi = lp.usb_rx_buffer_pi;
-                    } else {
-                        ++lp.usb_rx_buffer_gi;
-                    }
+//                uint8_t pi = lp.signal_tx_buffer_pi;
+//                uint8_t gi = __atomic_load_n(&lp.signal_tx_buffer_gi, __ATOMIC_ACQUIRE);
+//                size_t used = pi - gi;
 
-                    more = true;
-                } else {
-                    done = true;
-                }
+//                if (used < ARRAY_SIZE(lp.signal_tx_buffer)) {
+//                    base64_decode_shift(
+//                        c,
+//                        &lp.usb_rx_base64_state,
+//                        &lp.signal_tx_buffer_gi,
+//                        &lp.signal_tx_buffer_pi,
+//                        lp.signal_tx_buffer,
+//                        ARRAY_SIZE(lp.signal_tx_buffer)
+//                    );
+
+//                    if (lp.usb_rx_base64_state.flags & BASE64_FLAG_DONE) {
+//                        __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
+//                        lp.run_state = LP_RUN_STOPPING;
+//                        lp.usb_rx_buffer_gi = lp.usb_rx_buffer_pi;
+//                    } else {
+//                        ++lp.usb_rx_buffer_gi;
+//                    }
+
+//                    more = true;
+//                } else {
+//                    done = true;
+//                }
             } break;
             }
         }
 
-        bool encoded = try_base64_encode_input_data();
+        bool compressed = run_try_compress_input_data(false);
+        more = more || compressed;
+
+        bool encoded = run_try_base64_encode_input_data();
         more = more || encoded;
 
         bool wrote_to_usb = usb_try_tx();
@@ -371,7 +583,10 @@ started:
         }
     } break;
     case LP_RUN_STOPPING: {
-        bool encoded = try_base64_encode_input_data();
+        bool compressed = run_try_compress_input_data(false);
+        more = more || compressed;
+
+        bool encoded = run_try_base64_encode_input_data();
         more = more || encoded;
 
         bool wrote_to_usb = usb_try_tx();
@@ -380,23 +595,36 @@ started:
         uint8_t flags = __atomic_load_n(&lp.signal_flags, __ATOMIC_ACQUIRE);
 
         if (flags & OUTPUT_FLAG_OUTPUT_DONE) {
-            if (!encoded) {
-                base64_encode_finalize(
-                            &lp.usb_tx_base64_state,
-                            &lp.usb_tx_buffer_gi,
-                            &lp.usb_tx_buffer_pi,
-                            lp.usb_tx_buffer,
-                            ARRAY_SIZE(lp.usb_tx_buffer));
+            lp.run_state = LP_RUN_STOPPING2;
+            more = true;
+        }
+    } break;
+    case LP_RUN_STOPPING2: {
+        bool compressed = run_try_compress_input_data(true);
+        more = more || compressed;
 
-                // finish with newline
-                if ((size_t)(lp.usb_tx_buffer_pi - lp.usb_tx_buffer_gi) < ARRAY_SIZE(lp.usb_tx_buffer)) {
-                    lp.usb_tx_buffer[lp.usb_tx_buffer_pi % ARRAY_SIZE(lp.usb_tx_buffer)] = '\n';
-                    ++lp.usb_tx_buffer_pi;
-                }
+        bool encoded = run_try_base64_encode_input_data();
+        more = more || encoded;
 
-                lp.run_state = LP_RUN_STOPPED;
-                more = true;
+        bool wrote_to_usb = usb_try_tx();
+        more = more || wrote_to_usb;
+
+        if (!compressed && !encoded) {
+            base64_encode_finalize(
+                        &lp.usb_tx_base64_state,
+                        &lp.usb_tx_buffer_gi,
+                        &lp.usb_tx_buffer_pi,
+                        lp.usb_tx_buffer,
+                        ARRAY_SIZE(lp.usb_tx_buffer));
+
+            // finish with newline
+            if ((size_t)(lp.usb_tx_buffer_pi - lp.usb_tx_buffer_gi) < ARRAY_SIZE(lp.usb_tx_buffer)) {
+                lp.usb_tx_buffer[lp.usb_tx_buffer_pi % ARRAY_SIZE(lp.usb_tx_buffer)] = '\n';
+                ++lp.usb_tx_buffer_pi;
             }
+
+            lp.run_state = LP_RUN_STOPPED;
+            more = true;
         }
     } break;
     case LP_RUN_STOPPED: {

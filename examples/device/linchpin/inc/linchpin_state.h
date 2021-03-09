@@ -58,24 +58,33 @@ enum lp_run_state {
 	LP_RUN_REQUESTED,
 	LP_RUN_STARTED,
 	LP_RUN_STOPPING,
+	LP_RUN_STOPPING2,
 	LP_RUN_STOPPED,
 };
+
+#define LP_CMD_BUFFER_SIZE 64
 
 struct linchpin {
 	size_t usb_rx_buffer_gi;
 	size_t usb_rx_buffer_pi;
 	size_t usb_tx_buffer_gi;
 	size_t usb_tx_buffer_pi;
+	size_t usb_tx_compressed_gi;
+	size_t usb_tx_compressed_pi;
 	volatile size_t signal_tx_buffer_pi;
 	volatile size_t signal_tx_buffer_gi;
 	volatile size_t signal_rx_buffer_pi;
 	volatile size_t signal_rx_buffer_gi;
+	size_t usb_base64_decoded_offset;
 	uint32_t signal_frequency;
-	uint8_t cmd_buffer[LP_USB_BUFFER_SIZE];
+	uint8_t cmd_buffer[LP_CMD_BUFFER_SIZE];
 	uint8_t usb_rx_buffer[LP_SIGNAL_BUFFER_SIZE];
 	uint8_t usb_tx_buffer[LP_SIGNAL_BUFFER_SIZE];
-	uint8_t signal_tx_buffer[LP_SIGNAL_BUFFER_SIZE];
-	uint8_t signal_rx_buffer[LP_SIGNAL_BUFFER_SIZE];
+	uint8_t signal_tx_buffer[2*LP_SIGNAL_BUFFER_SIZE];
+	uint8_t signal_rx_buffer[2*LP_SIGNAL_BUFFER_SIZE];
+	uint8_t usb_base64_decoded_buffer[LP_SIGNAL_BUFFER_SIZE];
+	uint8_t usb_tx_compressed_buffer[LP_SIGNAL_BUFFER_SIZE];
+	uint8_t fastlz_buffer[LP_SIGNAL_BUFFER_SIZE];
 	uint8_t cmd_count;
 	uint8_t state;
 	uint8_t run_state;
