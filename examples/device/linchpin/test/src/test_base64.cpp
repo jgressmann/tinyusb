@@ -15,7 +15,7 @@ struct base64_fixture : public ::testing::Test
     struct base64_state e;
     struct base64_state d;
 
-    uint8_t buf[64];
+    uint8_t buf[256];
     volatile size_t pi;
     volatile size_t gi;
 
@@ -223,30 +223,15 @@ TEST_F(base64_fixture, decode_works)
     EXPECT_EQ(0x83, buf[2]);
 }
 
-// TEST_F(base64_fixture, decode_short3)
-// {
-// 	base64_decode_shift('/', &d, &gi, &pi, buf, sizeof(buf));
-// 	base64_decode_shift('=', &d, &gi, &pi, buf, sizeof(buf));
-// 	EXPECT_EQ(0, d.flags);
-// 	EXPECT_EQ(0, d.bits);
-// 	// EXPECT_EQ(0x00, d.state);
-// 	EXPECT_EQ(1, pi);
-// 	EXPECT_EQ(0xfc, buf[0]);
-// 	base64_decode_shift('=', &d, &gi, &pi, buf, sizeof(buf));
-// 	EXPECT_EQ(0, d.flags);
-// 	EXPECT_EQ(0, d.bits);
-// 	// EXPECT_EQ(0x00, d.state);
-// 	EXPECT_EQ(1, pi);
-// 	EXPECT_EQ(0xfc, buf[0]);
+TEST_F(base64_fixture, decode_accepts_all_valid_input_characters)
+{
+    for (size_t i = 0; i < 64; ++i) {
+        base64_decode_shift(base64_to_ascii_table[i], &d, &gi, &pi, buf, sizeof(buf));
+        EXPECT_EQ(0, d.flags);
+    }
 
-// 	// extra = does nothing
-// 	base64_decode_shift('=', &d, &gi, &pi, buf, sizeof(buf));
-// 	EXPECT_EQ(0, d.flags);
-// 	EXPECT_EQ(0, d.bits);
-// 	// EXPECT_EQ(0x00, d.state);
-// 	EXPECT_EQ(1, pi);
-// 	EXPECT_EQ(0xfc, buf[0]);
-// }
+}
+
 
 TEST_F(base64_fixture, decode_short2)
 {

@@ -281,7 +281,7 @@ BASE64_EXTERN void base64_decode_shift(
 		bits = c - 'A';
 	} else if (c >= 'a' && c <= 'z') {
 		bits = (c - 'a') + 26;
-	} else if (c >= '0' && c <= '0') {
+	} else if (c >= '0' && c <= '9') {
 		bits = (c - '0') + 52;
 	} else if (c == '+') {
 		bits = 62;
