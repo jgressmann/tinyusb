@@ -63,9 +63,10 @@
 }
 
 
-#define BASE64_FLAG_OVERFLOW     0x1
-#define BASE64_FLAG_INVALID_CHAR 0x2
-#define BASE64_FLAG_DONE         0x4
+#define BASE64_FLAG_INVALID_CHAR 0x1
+#define BASE64_FLAG_OVERFLOW     0x2
+#define BASE64_FLAG_UNDERFLOW    0x4
+#define BASE64_FLAG_DONE         0x8
 
 #ifdef __cplusplus
 extern "C" {
@@ -76,7 +77,7 @@ extern "C" {
 struct base64_state {
 	uint8_t state;
 	uint8_t bits;
-	uint8_t rem:2;
+	uint8_t rem:4;
 	uint8_t flags:4;
 };
 
@@ -277,6 +278,14 @@ BASE64_EXTERN void base64_decode_shift(
 	BASE64_ASSERT(buf_ptr);
 	BASE64_ASSERT(buf_size > 0);
 
+	state->rem = (state->rem + 1) % 4;
+
+	if (state->rem) {
+		state->flags |= BASE64_FLAG_UNDERFLOW;
+	} else {
+		state->flags &= ~BASE64_FLAG_UNDERFLOW;
+	}
+
 	if (c >= 'A' && c <= 'Z') {
 		bits = c - 'A';
 	} else if (c >= 'a' && c <= 'z') {
@@ -290,9 +299,11 @@ BASE64_EXTERN void base64_decode_shift(
 	} else if (c == '=') {
 		state->bits = 0;
 		state->flags |= BASE64_FLAG_DONE;
-		return;
 	} else {
 		state->flags |= BASE64_FLAG_INVALID_CHAR;
+	}
+
+	if (state->flags & (BASE64_FLAG_DONE | BASE64_FLAG_INVALID_CHAR)) {
 		return;
 	}
 
