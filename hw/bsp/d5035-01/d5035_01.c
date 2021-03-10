@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -186,7 +186,7 @@ static inline void uart_init(void)
 		PORT_WRCONFIG_PMUXEN;
 
 	MCLK->APBAMASK.bit.SERCOM0_ = 1;
-	GCLK->PCHCTRL[SERCOM0_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK2 -> 80MHz */
+	GCLK->PCHCTRL[SERCOM0_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
 
 	SERCOM0->USART.CTRLA.reg = 0x00; /* disable SERCOM -> enable config */
 	while(SERCOM0->USART.SYNCBUSY.bit.ENABLE);
