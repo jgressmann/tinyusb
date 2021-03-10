@@ -153,7 +153,7 @@ static inline void uart_init(void)
 		PORT_WRCONFIG_PMUXEN;
 
 	MCLK->APBDMASK.bit.SERCOM5_ = 1;
-	GCLK->PCHCTRL[SERCOM5_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK0 -> 80MHz */
+	GCLK->PCHCTRL[SERCOM5_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
 
 	SERCOM5->USART.CTRLA.reg = 0x00; /* disable SERCOM -> enable config */
 	while(SERCOM5->USART.SYNCBUSY.bit.ENABLE);
@@ -172,11 +172,10 @@ static inline void uart_init(void)
 	// 21.701388889 @ baud rate of 230400 bit/s, table 33-2, p 918 of DS60001507E
 	SERCOM5->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(7) | SERCOM_USART_BAUD_FRAC_BAUD(21);
 
-//  SERCOM5->USART.INTENSET.reg = SERCOM_USART_INTENSET_TXC;
-	SERCOM5->SPI.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
+	SERCOM5->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
 	while(SERCOM5->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
 #else
-/* configure SERCOM0 on PA08 */
+	/* configure SERCOM0 on PA08 */
 	PORT->Group[0].WRCONFIG.reg =
 		PORT_WRCONFIG_WRPINCFG |
 		PORT_WRCONFIG_WRPMUX |
@@ -205,8 +204,7 @@ static inline void uart_init(void)
 	// 21.701388889 @ baud rate of 230400 bit/s, table 33-2, p 918 of DS60001507E
 	SERCOM0->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(7) | SERCOM_USART_BAUD_FRAC_BAUD(21);
 
-//  SERCOM0->USART.INTENSET.reg = SERCOM_USART_INTENSET_TXC;
-	SERCOM0->SPI.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
+	SERCOM0->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
 	while(SERCOM0->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
 #endif
 }
@@ -215,7 +213,7 @@ static inline void uart_send_buffer(uint8_t const *text, size_t len)
 {
 	for (size_t i = 0; i < len; ++i) {
 		BOARD_SERCOM->USART.DATA.reg = text[i];
-		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_SPI_INTFLAG_TXC) == 0);
+		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_TXC) == 0);
 	}
 }
 
@@ -223,7 +221,7 @@ static inline void uart_send_str(const char* text)
 {
 	while (*text) {
 		BOARD_SERCOM->USART.DATA.reg = *text++;
-		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_SPI_INTFLAG_TXC) == 0);
+		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_TXC) == 0);
 	}
 }
 
