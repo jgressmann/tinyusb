@@ -31,8 +31,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define LP_USB_BUFFER_SIZE 32
-#define LP_SIGNAL_BUFFER_SIZE (1u<<16)
+#define LP_USB_BUFFER_SIZE 16
+#define LP_SIGNAL_BUFFER_SIZE 32
 
 #define CONF_CPU_FREQUENCY 200000000
 

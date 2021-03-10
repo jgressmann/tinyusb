@@ -32,6 +32,8 @@
 
 #define FASTLZ_VERSION_STRING "0.5.0"
 
+#define FASTLZ_MIN_INPUT_SIZE 16
+
 #if defined(__cplusplus)
 extern "C" {
 #endif
