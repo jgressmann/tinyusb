@@ -76,10 +76,9 @@ static inline void init_clock(void)
 
 
 	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(2) | OSCCTRL_DPLLCTRLB_REFCLK_XOSC1; /* 12MHz / 6 = 2Mhz, input = XOSC1 */
-	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(59); /* multiply to get 120MHz */
+	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR((CONF_CPU_FREQUENCY / 1000000 / 2) - 1); /* multiply to get CONF_CPU_FREQUENCY (default = 120MHz) */
 	OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
 	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
-
 
 	/* configure clock-generator 0 to use DPLL0 as source -> GCLK0 is used for the core */
 	GCLK->GENCTRL[0].reg =
@@ -263,8 +262,8 @@ uint32_t board_button_read(void)
 
 int board_uart_read(uint8_t* buf, int len)
 {
-  (void) buf; (void) len;
-  return 0;
+	(void) buf; (void) len;
+	return 0;
 }
 
 int board_uart_write(void const * buf, int len)
@@ -277,7 +276,7 @@ int board_uart_write(void const * buf, int len)
 	return len;
 }
 
-#if CFG_TUSB_OS  == OPT_OS_NONE
+#if CFG_TUSB_OS == OPT_OS_NONE
 volatile uint32_t system_ticks = 0;
 
 void SysTick_Handler(void)
