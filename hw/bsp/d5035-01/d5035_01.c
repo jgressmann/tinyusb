@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -89,15 +89,20 @@ static inline void init_clock(void)
 		OSCCTRL_XOSCCTRL_ENABLE;
 	while(0 == OSCCTRL->STATUS.bit.XOSCRDY1);
 
-	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC1_Val); /* pre-scaler = 8, input = XOSC1 */
-	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(39); /* multiply by 40 -> 80 MHz */
+	/* pre-scaler = 8, input = XOSC1, input = 2 MHz, ouput = 160 MHz (>= 96 MHz DS60001507E, page 763) */
+	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC1_Val);
+	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(79);
 	OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
 	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
 
-	OSCCTRL->Dpll[1].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(7) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC1_Val); /* pre-scaler = 16, input = XOSC1 */
-	OSCCTRL->Dpll[1].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(47); /* multiply by 48 -> 48 MHz */
-	OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
-	while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL1 to be ready */
+	// configure GCLK2 for 16MHz from XOSC1
+	GCLK->GENCTRL[2].reg =
+		GCLK_GENCTRL_DIV(0) |
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_XOSC1 |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
 #else // HWREV >= 1
 	/* configure XOSC0 for a 16MHz crystal connected to XIN0/XOUT0 */
 	OSCCTRL->XOSCCTRL[0].reg =
@@ -110,34 +115,55 @@ static inline void init_clock(void)
 		OSCCTRL_XOSCCTRL_ENABLE;
 	while(0 == OSCCTRL->STATUS.bit.XOSCRDY0);
 
-	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC0_Val); /* pre-scaler = 8, input = XOSC1 */
-	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(39); /* multiply by 40 -> 80 MHz */
+	/* pre-scaler = 8, input = XOSC0, ouput 2 MHz, ouput = 160 MHz (>= 96 MHz DS60001507E, page 763) */
+	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC0_Val);
+	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(79);
 	OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
 	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
 
-	OSCCTRL->Dpll[1].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(7) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC0_Val); /* pre-scaler = 16, input = XOSC1 */
-	OSCCTRL->Dpll[1].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(47); /* multiply by 48 -> 48 MHz */
-	OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
-	while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL1 to be ready */
+	// configure GCLK2 for 16MHz from XOSC0
+	GCLK->GENCTRL[2].reg =
+		GCLK_GENCTRL_DIV(0) |
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_XOSC0 |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
 #endif // HWREV
 
-	/* configure clock-generator 0 to use DPLL0 as source -> GCLK0 is used for the core */
+	/* 80 MHz core clock */
 	GCLK->GENCTRL[0].reg =
-		GCLK_GENCTRL_DIV(0) |
+		GCLK_GENCTRL_DIV(2) |
 		GCLK_GENCTRL_RUNSTDBY |
 		GCLK_GENCTRL_GENEN |
 		GCLK_GENCTRL_SRC_DPLL0 |  /* DPLL0 */
 		GCLK_GENCTRL_IDC ;
 	while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
 
-	/* configure clock-generator 1 to use DPLL1 as source -> for use with some peripheral */
-	GCLK->GENCTRL[1].reg =
+
+	/* USB 48 MHz clock */
+	/* setup DFLL48M to use GLCK2 (16 MHz) */
+	GCLK->PCHCTRL[OSCCTRL_GCLK_ID_DFLL48].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN;
+
+	OSCCTRL->DFLLCTRLA.reg = 0;
+	while(1 == OSCCTRL->DFLLSYNC.bit.ENABLE);
+
+	OSCCTRL->DFLLCTRLB.reg = OSCCTRL_DFLLCTRLB_MODE | OSCCTRL_DFLLCTRLB_WAITLOCK;
+	OSCCTRL->DFLLMUL.bit.MUL = 3; // 3 * 16 MHz -> 48 MHz
+
+	OSCCTRL->DFLLCTRLA.reg =
+		OSCCTRL_DFLLCTRLA_ENABLE |
+		OSCCTRL_DFLLCTRLA_RUNSTDBY;
+	while(1 == OSCCTRL->DFLLSYNC.bit.ENABLE);
+
+	// setup 48 MHz GCLK3 from DFLL48M
+	GCLK->GENCTRL[3].reg =
 		GCLK_GENCTRL_DIV(0) |
 		GCLK_GENCTRL_RUNSTDBY |
 		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DPLL1 |
-		GCLK_GENCTRL_IDC ;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL1); /* wait for the synchronization between clock domains to be complete */
+		GCLK_GENCTRL_SRC_DFLL |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL3);
 }
 
 static inline void uart_init(void)
@@ -173,7 +199,7 @@ static inline void uart_init(void)
 	SERCOM5->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(7) | SERCOM_USART_BAUD_FRAC_BAUD(21);
 
 //  SERCOM5->USART.INTENSET.reg = SERCOM_USART_INTENSET_TXC;
-	SERCOM5->SPI.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
+	SERCOM5->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
 	while(SERCOM5->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
 #else
 /* configure SERCOM0 on PA08 */
@@ -186,7 +212,7 @@ static inline void uart_init(void)
 		PORT_WRCONFIG_PMUXEN;
 
 	MCLK->APBAMASK.bit.SERCOM0_ = 1;
-	GCLK->PCHCTRL[SERCOM0_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK2 -> 80MHz */
+	GCLK->PCHCTRL[SERCOM0_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK2 -> 80MHz */
 
 	SERCOM0->USART.CTRLA.reg = 0x00; /* disable SERCOM -> enable config */
 	while(SERCOM0->USART.SYNCBUSY.bit.ENABLE);
@@ -206,7 +232,7 @@ static inline void uart_init(void)
 	SERCOM0->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(7) | SERCOM_USART_BAUD_FRAC_BAUD(21);
 
 //  SERCOM0->USART.INTENSET.reg = SERCOM_USART_INTENSET_TXC;
-	SERCOM0->SPI.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
+	SERCOM0->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
 	while(SERCOM0->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
 #endif
 }
@@ -215,7 +241,7 @@ static inline void uart_send_buffer(uint8_t const *text, size_t len)
 {
 	for (size_t i = 0; i < len; ++i) {
 		BOARD_SERCOM->USART.DATA.reg = text[i];
-		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_SPI_INTFLAG_TXC) == 0);
+		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_TXC) == 0);
 	}
 }
 
@@ -223,7 +249,7 @@ static inline void uart_send_str(const char* text)
 {
 	while (*text) {
 		BOARD_SERCOM->USART.DATA.reg = *text++;
-		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_SPI_INTFLAG_TXC) == 0);
+		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_TXC) == 0);
 	}
 }
 
@@ -244,9 +270,9 @@ void board_init(void)
 	tu_printf(BOARD_NAME " reset cause %#02x\n", RSTC->RCAUSE.reg);
 #endif
 
-	// Led init
+	// LED init
 	gpio_set_pin_direction(LED_PIN, GPIO_DIRECTION_OUT);
-	gpio_set_pin_level(LED_PIN, 0);
+	board_led_off();
 
 #if CFG_TUSB_DEBUG >= 2
 	uart_send_str(BOARD_NAME " LED pin configured\n");
@@ -269,7 +295,7 @@ void board_init(void)
 	/* USB clock init
 	 * The USB module requires a GCLK_USB of 48 MHz ~ 0.25% clock
 	 * for low speed and full speed operation. */
-	hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK1_Val | GCLK_PCHCTRL_CHEN);
+	hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK3_Val | GCLK_PCHCTRL_CHEN);
 	hri_mclk_set_AHBMASK_USB_bit(MCLK);
 	hri_mclk_set_APBBMASK_USB_bit(MCLK);
 
