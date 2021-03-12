@@ -79,13 +79,15 @@ extern void sc_board_can_init_pins(void)
 
 extern void sc_board_can_init_clock(void) // controller and hardware specific setup of clock for the m_can module
 {
-	OSCCTRL->Dpll[1].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(2) | OSCCTRL_DPLLCTRLB_REFCLK_XOSC1; /* 12MHz / 6 = 2Mhz, input = XOSC1 */
-	OSCCTRL->Dpll[1].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(39); /* multiply to get 80MHz */
+	// PLL output must be >= 96 MHz, see DS60001507E, p. 763
+	OSCCTRL->Dpll[1].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(2) | OSCCTRL_DPLLCTRLB_REFCLK_XOSC1; /* 12 MHz / 6 = 2 Mhz, input = XOSC1 */
+	OSCCTRL->Dpll[1].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(79);
 	OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
 	while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL to be ready */
 
+	// Setup GCLK4 to provide 80 MHz
 	GCLK->GENCTRL[4].reg =
-		GCLK_GENCTRL_DIV(0) |
+		GCLK_GENCTRL_DIV(2) |
 		GCLK_GENCTRL_RUNSTDBY |
 		GCLK_GENCTRL_GENEN |
 		GCLK_GENCTRL_SRC_DPLL1 |

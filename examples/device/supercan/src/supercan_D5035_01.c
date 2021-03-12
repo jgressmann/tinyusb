@@ -92,10 +92,10 @@ static struct led leds[] = {
 	LED_STATIC_INITIALIZER("green", PIN_PB16),
 	LED_STATIC_INITIALIZER("blue", PIN_PB17),
 #if HWREV >= 3
-	LED_STATIC_INITIALIZER("can0_green", PIN_PB03),
-	LED_STATIC_INITIALIZER("can0_red", PIN_PB02),
-	LED_STATIC_INITIALIZER("can1_green", PIN_PB01),
 	LED_STATIC_INITIALIZER("can1_red", PIN_PB00),
+	LED_STATIC_INITIALIZER("can1_green", PIN_PB01),
+	LED_STATIC_INITIALIZER("can0_red", PIN_PB02),
+	LED_STATIC_INITIALIZER("can0_green", PIN_PB03),
 #endif
 };
 
@@ -293,15 +293,6 @@ extern void sc_board_usb_led_burst(uint16_t duration_ms)
 
 extern void sc_board_counter_1MHz_init(void)
 {
-	/* configure clock-generator 2 to use DPLL0 as source */
-	GCLK->GENCTRL[2].reg =
-		GCLK_GENCTRL_DIV(3) |	/* 48Mhz -> 16MHz */
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DPLL1 |
-		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
-
 	// TC0 and TC1 pair to form a single 32 bit counter
 	// TC1 is enslaved to TC0 and doesn't need to be configured.
 	// DS60001507E-page 1716, 48.6.2.4 Counter Mode

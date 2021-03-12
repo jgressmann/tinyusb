@@ -72,10 +72,9 @@ static inline void init_clock(void)
 
 
 	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(2) | OSCCTRL_DPLLCTRLB_REFCLK_XOSC1; /* 12MHz / 6 = 2Mhz, input = XOSC1 */
-	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR((CONF_CPU_FREQUENCY / 1000000 / 2) - 1);
+	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR((CONF_CPU_FREQUENCY / 1000000 / 2) - 1); /* multiply to get CONF_CPU_FREQUENCY (default = 120MHz) */
 	OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
 	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
-
 
 	/* configure clock-generator 0 to use DPLL0 as source -> GCLK0 is used for the core */
 	GCLK->GENCTRL[0].reg =
@@ -148,7 +147,7 @@ static inline void uart_init(void)
 	// BOARD_SERCOM->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(0) | SERCOM_USART_BAUD_FRAC_BAUD(26); /* 48000000/(16*115200) = 26.041666667 */
 	BOARD_SERCOM->USART.BAUD.reg = SERCOM_USART_BAUD_BAUD(63019); /* 65536*(1−16*115200/48000000) */
 
-	BOARD_SERCOM->SPI.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
+	BOARD_SERCOM->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
 	while (BOARD_SERCOM->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
 }
 
@@ -156,7 +155,7 @@ static inline void uart_send_buffer(uint8_t const *text, size_t len)
 {
 	for (size_t i = 0; i < len; ++i) {
 		BOARD_SERCOM->USART.DATA.reg = text[i];
-		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_SPI_INTFLAG_TXC) == 0);
+		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_TXC) == 0);
 	}
 }
 
@@ -164,7 +163,7 @@ static inline void uart_send_str(const char* text)
 {
 	while (*text) {
 		BOARD_SERCOM->USART.DATA.reg = *text++;
-		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_SPI_INTFLAG_TXC) == 0);
+		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_TXC) == 0);
 	}
 }
 
@@ -260,8 +259,8 @@ uint32_t board_button_read(void)
 
 int board_uart_read(uint8_t* buf, int len)
 {
-  (void) buf; (void) len;
-  return 0;
+	(void) buf; (void) len;
+	return 0;
 }
 
 int board_uart_write(void const * buf, int len)
@@ -274,7 +273,7 @@ int board_uart_write(void const * buf, int len)
 	return len;
 }
 
-#if CFG_TUSB_OS  == OPT_OS_NONE
+#if CFG_TUSB_OS == OPT_OS_NONE
 volatile uint32_t system_ticks = 0;
 
 void SysTick_Handler(void)
