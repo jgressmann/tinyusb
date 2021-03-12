@@ -476,15 +476,6 @@ static inline void can_inc_sat_rx_lost(uint8_t index)
 
 static inline void counter_1MHz_init_clock(void)
 {
-	/* configure clock-generator 2 to use DPLL0 as source */
-	GCLK->GENCTRL[2].reg =
-		GCLK_GENCTRL_DIV(5) |	/* 80Mhz -> 16MHz */
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DPLL0 |
-		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
-
 	// TC0 and TC1 pair to form a single 32 bit counter
 	// TC1 is enslaved to TC0 and doesn't need to be configured.
 	// DS60001507E-page 1716, 48.6.2.4 Counter Mode
@@ -924,7 +915,7 @@ static inline void cans_led_status_set(int status)
 
 #define MAJOR 0
 #define MINOR 3
-#define PATCH 16
+#define PATCH 17
 
 
 #if SUPERDFU_APP
