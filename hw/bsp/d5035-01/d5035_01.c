@@ -77,6 +77,30 @@ void USB_3_Handler (void)
 static inline void init_clock(void)
 {
 	/* AUTOWS is enabled by default in REG_NVMCTRL_CTRLA - no need to change the number of wait states when changing the core clock */
+
+	// We may be starting from an older bootloader that
+	// configured the clocks differently than what we want them.
+	//
+	// Before we can start changing the PLLs, we need to ensure
+	// we are running off the 48 MHz FLL. The FLL might be off,
+	// so we first need to turn it on.
+	OSCCTRL->DFLLCTRLA.reg =
+		OSCCTRL_DFLLCTRLA_ENABLE |
+		OSCCTRL_DFLLCTRLA_RUNSTDBY;
+	while(1 == OSCCTRL->DFLLSYNC.bit.ENABLE);
+
+	// Now that the FLL is running, we can change the
+	// the main clock. This ensures we continue to run.
+	GCLK->GENCTRL[0].reg =
+		GCLK_GENCTRL_DIV(0) |
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_DFLL |
+		GCLK_GENCTRL_IDC ;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
+
+	// Here we are running of the FLL and can safely modify the PLLs.
+
 #if HWREV == 1
 	/* configure XOSC1 for a 16MHz crystal connected to XIN1/XOUT1 */
 	OSCCTRL->XOSCCTRL[1].reg =
