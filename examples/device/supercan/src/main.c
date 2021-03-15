@@ -944,12 +944,10 @@ static void dfu_timer_expired(TimerHandle_t t)
 struct usb_can {
 	CFG_TUSB_MEM_ALIGN uint8_t tx_buffers[2][MSG_BUFFER_SIZE];
 	CFG_TUSB_MEM_ALIGN uint8_t rx_buffers[2][MSG_BUFFER_SIZE];
-	uint8_t rx_reassembly_buffer[2 * MSG_BUFFER_SIZE];
 	StaticSemaphore_t mutex_mem;
 	SemaphoreHandle_t mutex_handle;
 	uint16_t tx_offsets[2];
-	uint16_t rx_reassembly_count;
-	uint8_t tx_bank;
+	    uint8_t tx_bank;
 	uint8_t rx_bank;
 	uint8_t pipe;
 };
@@ -1001,7 +999,6 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 	}
 
 	usb_can->tx_bank = 0;
-	usb_can->rx_reassembly_count = 0;
 }
 
 static inline void can_reset_interrupt_state_unsafe(uint8_t index)
@@ -1601,36 +1598,16 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 	// LOG("ch%u %s: chunk %u\n", index, func, i);
 	// sc_dump_mem(data_ptr, data_size);
 
-	if (usb_can->rx_reassembly_count) {
-		SC_DEBUG_ASSERT(usb_can->rx_reassembly_count + xferred_bytes <= TU_ARRAY_SIZE(usb_can->rx_reassembly_buffer));
-		memcpy(&usb_can->rx_reassembly_buffer[usb_can->rx_reassembly_count], in_ptr, xferred_bytes);
-
-		in_beg = usb_can->rx_reassembly_buffer;
-		in_end = in_beg + xferred_bytes + usb_can->rx_reassembly_count;
-		in_ptr = in_beg;
-
-		usb_can->rx_reassembly_count = 0;
-	}
-
 	// process messages
 	while (in_ptr + SC_MSG_HEADER_LEN <= in_end) {
 		struct sc_msg_header const *msg = (struct sc_msg_header const *)in_ptr;
-		if (in_ptr + msg->len > in_beg) {
-			uint16_t left = (uint16_t)(in_end - in_ptr);
-			// LOG("ch%u save %u bytes\n", index, left);
-			if (in_beg == usb_can->rx_reassembly_buffer) {
-				memmove(usb_can->rx_reassembly_buffer, in_end - left, left);
-			} else {
-				memcpy(usb_can->rx_reassembly_buffer, in_end - left, left);
-			}
-
-			usb_can->rx_reassembly_count = left;
-			// sc_dump_mem(reassembly_buffer, left);
+		if (in_ptr + msg->len > in_end) {
+			LOG("ch%u offset=%u len=%u exceeds buffer size=%u\n", index, (unsigned)(in_ptr - in_beg), msg->len, (unsigned)xferred_bytes);
 			break;
 		}
 
 		if (!msg->id || !msg->len) {
-			LOG("ch%u unexpected zero id/len msg\n", index);
+			LOG("ch%u offset=%u unexpected zero id/len msg\n", index, (unsigned)(in_ptr - in_beg));
 			in_ptr = in_end;
 			break;
 		}
