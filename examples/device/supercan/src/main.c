@@ -1153,6 +1153,7 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 	// LOG("ch%u %s: send %u bytes\n", index, func, can->tx_offsets[can->tx_bank]);
 	if (can->tx_offsets[can->tx_bank] > MSG_BUFFER_SIZE) {
 		LOG("ch%u %s: msg buffer size %u out of bounds\n", index, func, can->tx_offsets[can->tx_bank]);
+		SC_DEBUG_ASSERT(false);
 		can->tx_offsets[can->tx_bank] = 0;
 		return;
 	}
@@ -1579,9 +1580,9 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 	const uint8_t rx_bank = usb_can->rx_bank;
 	(void)rx_bank;
-	uint8_t * const in_beg = usb_can->rx_buffers[usb_can->rx_bank];
+	uint8_t *in_beg = usb_can->rx_buffers[usb_can->rx_bank];
 	uint8_t *in_ptr = in_beg;
-	uint8_t * const in_end = in_ptr + xferred_bytes;
+	uint8_t *in_end = in_ptr + xferred_bytes;
 
 
 	// start new transfer right away
@@ -1597,10 +1598,6 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 	// LOG("ch%u: bulk out %u bytes\n", index, (unsigned)(in_end - in_beg));
 
 
-	uint8_t const *sptr = in_ptr;
-	uint8_t const *eptr = in_end;
-	uint8_t const *ptr = sptr;
-
 	// LOG("ch%u %s: chunk %u\n", index, func, i);
 	// sc_dump_mem(data_ptr, data_size);
 
@@ -1608,23 +1605,23 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 		SC_DEBUG_ASSERT(usb_can->rx_reassembly_count + xferred_bytes <= TU_ARRAY_SIZE(usb_can->rx_reassembly_buffer));
 		memcpy(&usb_can->rx_reassembly_buffer[usb_can->rx_reassembly_count], in_ptr, xferred_bytes);
 
-		sptr = usb_can->rx_reassembly_buffer;
-		eptr = sptr + xferred_bytes + usb_can->rx_reassembly_count;
-		ptr = sptr;
+		in_beg = usb_can->rx_reassembly_buffer;
+		in_end = in_beg + xferred_bytes + usb_can->rx_reassembly_count;
+		in_ptr = in_beg;
 
 		usb_can->rx_reassembly_count = 0;
 	}
 
 	// process messages
-	while (ptr + SC_MSG_HEADER_LEN <= eptr) {
-		struct sc_msg_header const *msg = (struct sc_msg_header const *)ptr;
-		if (ptr + msg->len > eptr) {
-			uint16_t left = (uint16_t)(eptr - ptr);
+	while (in_ptr + SC_MSG_HEADER_LEN <= in_end) {
+		struct sc_msg_header const *msg = (struct sc_msg_header const *)in_ptr;
+		if (in_ptr + msg->len > in_beg) {
+			uint16_t left = (uint16_t)(in_end - in_ptr);
 			// LOG("ch%u save %u bytes\n", index, left);
-			if (sptr == usb_can->rx_reassembly_buffer) {
-				memmove(usb_can->rx_reassembly_buffer, eptr - left, left);
+			if (in_beg == usb_can->rx_reassembly_buffer) {
+				memmove(usb_can->rx_reassembly_buffer, in_end - left, left);
 			} else {
-				memcpy(usb_can->rx_reassembly_buffer, eptr - left, left);
+				memcpy(usb_can->rx_reassembly_buffer, in_end - left, left);
 			}
 
 			usb_can->rx_reassembly_count = left;
@@ -1634,11 +1631,11 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 		if (!msg->id || !msg->len) {
 			LOG("ch%u unexpected zero id/len msg\n", index);
-			ptr = eptr;
+			in_ptr = in_end;
 			break;
 		}
 
-		ptr += msg->len;
+		in_ptr += msg->len;
 
 		switch (msg->id) {
 		case SC_MSG_CAN_TX:
@@ -2281,9 +2278,12 @@ static void can_usb_task(void *param)
 					send_can_status = 0;
 					counter_1MHz_request_current_value_lazy();
 
-					usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
+
 
 					msg = (struct sc_msg_can_status *)tx_ptr;
+					usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
+					tx_ptr += sizeof(*msg);
+
 
 					uint16_t rx_lost = __sync_fetch_and_and(&can->rx_lost, 0);
 					uint16_t tx_dropped = can->tx_dropped;
@@ -2340,9 +2340,11 @@ static void can_usb_task(void *param)
 					if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
 						counter_1MHz_request_current_value_lazy();
 
-						usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
-
 						msg = (struct sc_msg_can_error *)tx_ptr;
+						usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
+						tx_ptr += sizeof(*msg);
+
+
 						msg->id = SC_MSG_CAN_ERROR;
 						msg->len = sizeof(*msg);
 						msg->error = queue_item.payload;
@@ -2402,10 +2404,12 @@ static void can_usb_task(void *param)
 				if ((size_t)(tx_end - tx_ptr) >= bytes) {
 					done = false;
 
-					usb_can->tx_offsets[usb_can->tx_bank] += bytes;
-
 					// LOG("rx %u bytes\n", bytes);
 					struct sc_msg_can_rx *msg = (struct sc_msg_can_rx *)tx_ptr;
+					usb_can->tx_offsets[usb_can->tx_bank] += bytes;
+					tx_ptr += bytes;
+
+
 					msg->id = SC_MSG_CAN_RX;
 					msg->len = bytes;
 					msg->dlc = r1.bit.DLC;
@@ -2487,9 +2491,10 @@ static void can_usb_task(void *param)
 					__atomic_thread_fence(__ATOMIC_ACQUIRE);
 					done = false;
 
-					usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
 
 					msg = (struct sc_msg_can_txr *)tx_ptr;
+					usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
+					tx_ptr += sizeof(*msg);
 
 					CAN_TXEFE_0_Type t0 = can->tx_frames[get_index].T0;
 					CAN_TXEFE_1_Type t1 = can->tx_frames[get_index].T1;
