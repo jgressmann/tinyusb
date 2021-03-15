@@ -92,20 +92,6 @@ static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(va
 #define unlikely(x) __builtin_expect(!!(x),0)
 #endif
 
-#define CHUNKY_LIKELY likely
-#define CHUNKY_UNLIKELY unlikely
-#define CHUNKY_ASSERT SC_DEBUG_ASSERT
-#define CHUNKY_CHUNK_SIZE_TYPE uint16_t
-#define CHUNKY_BUFFER_SIZE_TYPE uint16_t
-
-#include <chunky.h>
-
-#undef CHUNKY_BUFFER_SIZE_TYPE
-#undef CHUNKY_CHUNK_SIZE
-#undef CHUNKY_ASSERT
-#undef CHUNKY_LIKELY
-#undef CHUNKY_UNLIKELY
-
 #define CMD_BUFFER_SIZE 64
 #define MSG_BUFFER_SIZE 512
 
@@ -914,8 +900,8 @@ static inline void cans_led_status_set(int status)
 }
 
 #define MAJOR 0
-#define MINOR 3
-#define PATCH 17
+#define MINOR 4
+#define PATCH 0
 
 
 #if SUPERDFU_APP
@@ -958,9 +944,7 @@ static void dfu_timer_expired(TimerHandle_t t)
 struct usb_can {
 	CFG_TUSB_MEM_ALIGN uint8_t tx_buffers[2][MSG_BUFFER_SIZE];
 	CFG_TUSB_MEM_ALIGN uint8_t rx_buffers[2][MSG_BUFFER_SIZE];
-	uint8_t rx_reassembly_buffer[3 * SC_M1_EP_SIZE];
-	chunky_writer w;
-	chunky_reader r;
+	uint8_t rx_reassembly_buffer[2 * MSG_BUFFER_SIZE];
 	StaticSemaphore_t mutex_mem;
 	SemaphoreHandle_t mutex_handle;
 	uint16_t tx_offsets[2];
@@ -1016,13 +1000,7 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 		//memset(usb_can->tx_buffers[j], 0, sizeof(usb_can->tx_buffers[j]));
 	}
 
-	chunky_writer_init(&usb_can->w, SC_M1_EP_SIZE);
 	usb_can->tx_bank = 0;
-	chunky_writer_set(&usb_can->w, usb_can->tx_buffers[usb_can->tx_bank], MSG_BUFFER_SIZE);
-
-	LOG("ch%u reader init\n", index);
-	chunky_reader_init(&usb_can->r);
-	SC_DEBUG_ASSERT(usb_can->r.seq_no == 0);
 	usb_can->rx_reassembly_count = 0;
 }
 
@@ -1163,17 +1141,12 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 	SC_DEBUG_ASSERT(sc_can_bulk_in_ep_ready(index));
 	struct usb_can *can = &usb.can[index];
 	SC_DEBUG_ASSERT(can->tx_bank < 2);
-	SC_DEBUG_ASSERT(chunky_writer_any(&can->w));
-
+	SC_DEBUG_ASSERT(can->tx_offsets[can->tx_bank] > 0);
+	// SC_DEBUG_ASSERT(can->tx_offsets[can->tx_bank] <= MSG_BUFFER_SIZE);
 
 	(void)func;
 
-	can->tx_offsets[can->tx_bank] = chunky_writer_finalize(&can->w);
 	// LOG("ch%u %s: %u bytes\n", index, func, can->tx_offsets[can->tx_bank]);
-	SC_DEBUG_ASSERT(can->tx_offsets[can->tx_bank] > 0);
-	SC_DEBUG_ASSERT(can->tx_offsets[can->tx_bank] <= MSG_BUFFER_SIZE);
-	SC_DEBUG_ASSERT(!(can->tx_offsets[can->tx_bank] % SC_M1_EP_SIZE));
-
 
 #if SUPERCAN_DEBUG
 
@@ -1184,101 +1157,50 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 		return;
 	}
 
-	if (can->tx_offsets[can->tx_bank] % SC_M1_EP_SIZE) {
-		LOG("ch%u %s: msg buffer size %u not multiple of %u\n", index, func, can->tx_offsets[can->tx_bank], SC_M1_EP_SIZE);
-		can->tx_offsets[can->tx_bank] = 0;
-		return;
-	}
+	uint8_t const *sptr = can->tx_buffers[can->tx_bank];
+	uint8_t const *eptr = sptr + can->tx_offsets[can->tx_bank];
+	uint8_t const *ptr = sptr;
 
-	uint8_t reassembly_buffer[SC_M1_EP_SIZE * 3];
-	uint16_t reassembly_count = 0;
-	uint8_t chunks = can->tx_offsets[can->tx_bank] / SC_M1_EP_SIZE;
-	uint8_t *chunk_ptr = can->tx_buffers[can->tx_bank];
-	chunky_reader r;
-	chunky_reader_init(&r);
-	chunky_reader_set_seq_no(&r, ((struct chunky_chunk_hdr*)chunk_ptr)->seq_no - 1);
-	for (uint8_t i = 0; i < chunks; ++i, chunk_ptr += SC_M1_EP_SIZE) {
-		uint8_t * data_ptr = NULL;
-		uint16_t data_size = 0;
-		int error = chunky_reader_chunk_process(&r, chunk_ptr, &data_ptr, &data_size);
-		if (error) {
-			LOG("ch%u %s: chunky_reader_chunk_process error %d\n", index, func, error);
+	// LOG("ch%u %s: chunk %u\n", index, func, i);
+	// sc_dump_mem(data_ptr, data_size);
+
+	for (; ptr + SC_MSG_HEADER_LEN <= eptr; ) {
+		struct sc_msg_header *hdr = (struct sc_msg_header *)ptr;
+		if (!hdr->id || !hdr->len) {
+			LOG("ch%u %s msg offset %u zero id/len msg\n", index, func, ptr - sptr);
+			// sc_dump_mem(sptr, eptr - sptr);
+			SC_DEBUG_ASSERT(false);
 			can->tx_offsets[can->tx_bank] = 0;
 			return;
 		}
 
-		SC_DEBUG_ASSERT(data_ptr);
-		SC_DEBUG_ASSERT(data_size);
-		SC_DEBUG_ASSERT(data_size < SC_M1_EP_SIZE);
-
-		uint8_t const *sptr = data_ptr;
-		uint8_t const *eptr = sptr + data_size;
-		uint8_t const *ptr = sptr;
-
-		// LOG("ch%u %s: chunk %u\n", index, func, i);
-		// sc_dump_mem(data_ptr, data_size);
-
-		if (reassembly_count) {
-			SC_DEBUG_ASSERT(reassembly_count + data_size <= sizeof(reassembly_buffer));
-			memcpy(&reassembly_buffer[reassembly_count], data_ptr, data_size);
-
-			sptr = reassembly_buffer;
-			eptr = sptr + data_size + reassembly_count;
-			ptr = sptr;
-
-			reassembly_count = 0;
+		if (hdr->len < SC_MSG_HEADER_LEN) {
+			LOG("ch%u %s msg offset %u msg header len %u\n", index, func, ptr - sptr, hdr->len);
+			SC_DEBUG_ASSERT(false);
+			can->tx_offsets[can->tx_bank] = 0;
+			return;
 		}
 
-		for (; ptr + SC_MSG_HEADER_LEN <= eptr; ) {
-			struct sc_msg_header *hdr = (struct sc_msg_header *)ptr;
-			if (!hdr->id || !hdr->len) {
-				LOG("ch%u %s msg offset %u zero id/len msg\n", index, func, ptr - sptr);
-				// sc_dump_mem(sptr, eptr - sptr);
-				SC_DEBUG_ASSERT(false);
-				can->tx_offsets[can->tx_bank] = 0;
-				return;
-			}
-
-			if (hdr->len < SC_MSG_HEADER_LEN) {
-				LOG("ch%u %s msg offset %u msg header len %u\n", index, func, ptr - sptr, hdr->len);
-				can->tx_offsets[can->tx_bank] = 0;
-				return;
-			}
-
-			if (ptr + hdr->len > eptr) {
-				uint16_t left = (uint16_t)(eptr - ptr);
-				// LOG("ch%u %s save %u bytes\n", index, func, left);
-				if (sptr == reassembly_buffer) {
-					memmove(reassembly_buffer, eptr - left, left);
-				} else {
-					memcpy(reassembly_buffer, eptr - left, left);
-				}
-
-				reassembly_count = left;
-				// sc_dump_mem(reassembly_buffer, left);
-				break;
-			}
-
-			switch (hdr->id) {
-			case SC_MSG_CAN_STATUS:
-			case SC_MSG_CAN_RX:
-			case SC_MSG_CAN_TXR:
-			case SC_MSG_CAN_ERROR:
-				break;
-			default:
-				LOG("ch%u %s msg offset %u non-device msg id %#02x\n", index, func, ptr - sptr, hdr->id);
-				can->tx_offsets[can->tx_bank] = 0;
-				return;
-			}
-
-			ptr += hdr->len;
+		if (ptr + hdr->len > eptr) {
+			LOG("ch%u %s msg offset=%u len=%u exceeds buffer len=%u\n", index, func, ptr - sptr, hdr->len, MSG_BUFFER_SIZE);
+			SC_DEBUG_ASSERT(false);
+			can->tx_offsets[can->tx_bank] = 0;
+			return;
 		}
-	}
 
-	if (reassembly_count) {
-		LOG("ch%u %s %u bytes left\n", index, func, reassembly_count);
-		can->tx_offsets[can->tx_bank] = 0;
-		return;
+		switch (hdr->id) {
+		case SC_MSG_CAN_STATUS:
+		case SC_MSG_CAN_RX:
+		case SC_MSG_CAN_TXR:
+		case SC_MSG_CAN_ERROR:
+			break;
+		default:
+			LOG("ch%u %s msg offset %u non-device msg id %#02x\n", index, func, ptr - sptr, hdr->id);
+			can->tx_offsets[can->tx_bank] = 0;
+			return;
+		}
+
+		ptr += hdr->len;
 	}
 
 
@@ -1288,7 +1210,6 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 	(void)dcd_edpt_xfer(usb.port, 0x80 | can->pipe, can->tx_buffers[can->tx_bank], can->tx_offsets[can->tx_bank]);
 	can->tx_bank = !can->tx_bank;
 	SC_DEBUG_ASSERT(!can->tx_offsets[can->tx_bank]);
-	chunky_writer_set(&can->w, can->tx_buffers[can->tx_bank], MSG_BUFFER_SIZE);
 	// memset(can->tx_buffers[can->tx_bank], 0, MSG_BUFFER_SIZE);
 	// LOG("ch%u %s sent\n", index, func);
 }
@@ -1613,28 +1534,27 @@ static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header const *msg
 
 		can->m_can->TXBAR.reg = UINT32_C(1) << put_index;
 	} else {
-		struct sc_msg_can_txr render_buffer;
+		uint8_t * const tx_beg = usb_can->tx_buffers[usb_can->tx_bank];
+		uint8_t * const tx_end = tx_beg + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
+		uint8_t *tx_ptr = NULL;
 		struct sc_msg_can_txr* rep = NULL;
+
+
 		++can->tx_dropped;
 		counter_1MHz_request_current_value_lazy();
 
 send_txr:
-		if (chunky_writer_available(&usb_can->w) >= sizeof(*rep)) {
-			rep = chunky_writer_chunk_reserve(&usb_can->w, sizeof(*rep));
-			if (!rep) {
-				rep = &render_buffer;
-			}
+		tx_ptr = tx_beg + usb_can->tx_offsets[usb_can->tx_bank];
+		if ((size_t)(tx_end - tx_ptr) >= sizeof(*rep)) {
+			usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*rep);
 
+			rep = (struct sc_msg_can_txr*)tx_ptr;
 			rep->id = SC_MSG_CAN_TXR;
 			rep->len = sizeof(*rep);
 			rep->track_id = tmsg->track_id;
 			rep->flags = SC_CAN_FRAME_FLAG_DRP;
 			uint32_t ts = counter_1MHz_wait_for_current_value();
 			rep->timestamp_us = ts;
-
-			if (rep == &render_buffer) {
-				chunky_writer_write(&usb_can->w, rep, sizeof(*rep));
-			}
 		} else {
 			if (sc_can_bulk_in_ep_ready(index)) {
 				sc_can_bulk_in_submit(index, __func__);
@@ -1676,86 +1596,64 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 	// LOG("ch%u: bulk out %u bytes\n", index, (unsigned)(in_end - in_beg));
 
-	while (in_ptr + SC_M1_EP_SIZE <= in_end) {
-		uint8_t * data_ptr = NULL;
-		uint16_t data_size = 0;
-		int error = chunky_reader_chunk_process(&usb_can->r, in_ptr, &data_ptr, &data_size);
-		if (unlikely(CHUNKYE_NONE != error)) {
-			switch (error) {
-			case CHUNKYE_SEQ:
-				LOG("ch%u: sequence error, expect=%u have=%u\n", index, usb_can->r.seq_no, ((struct chunky_chunk_hdr*)in_ptr)->seq_no);
-				break;
-			default:
-				LOG("ch%u: chunky_reader_chunk_process error %d\n", index, error);
-				break;
+
+	uint8_t const *sptr = in_ptr;
+	uint8_t const *eptr = in_end;
+	uint8_t const *ptr = sptr;
+
+	// LOG("ch%u %s: chunk %u\n", index, func, i);
+	// sc_dump_mem(data_ptr, data_size);
+
+	if (usb_can->rx_reassembly_count) {
+		SC_DEBUG_ASSERT(usb_can->rx_reassembly_count + xferred_bytes <= TU_ARRAY_SIZE(usb_can->rx_reassembly_buffer));
+		memcpy(&usb_can->rx_reassembly_buffer[usb_can->rx_reassembly_count], in_ptr, xferred_bytes);
+
+		sptr = usb_can->rx_reassembly_buffer;
+		eptr = sptr + xferred_bytes + usb_can->rx_reassembly_count;
+		ptr = sptr;
+
+		usb_can->rx_reassembly_count = 0;
+	}
+
+	// process messages
+	while (ptr + SC_MSG_HEADER_LEN <= eptr) {
+		struct sc_msg_header const *msg = (struct sc_msg_header const *)ptr;
+		if (ptr + msg->len > eptr) {
+			uint16_t left = (uint16_t)(eptr - ptr);
+			// LOG("ch%u save %u bytes\n", index, left);
+			if (sptr == usb_can->rx_reassembly_buffer) {
+				memmove(usb_can->rx_reassembly_buffer, eptr - left, left);
+			} else {
+				memcpy(usb_can->rx_reassembly_buffer, eptr - left, left);
 			}
+
+			usb_can->rx_reassembly_count = left;
+			// sc_dump_mem(reassembly_buffer, left);
 			break;
 		}
 
-		in_ptr += SC_M1_EP_SIZE;
-
-		SC_DEBUG_ASSERT(data_ptr);
-		SC_DEBUG_ASSERT(data_size);
-		SC_DEBUG_ASSERT(data_size < SC_M1_EP_SIZE);
-
-		uint8_t const *sptr = data_ptr;
-		uint8_t const *eptr = sptr + data_size;
-		uint8_t const *ptr = sptr;
-
-		// LOG("ch%u %s: chunk %u\n", index, func, i);
-		// sc_dump_mem(data_ptr, data_size);
-
-		if (usb_can->rx_reassembly_count) {
-			SC_DEBUG_ASSERT(usb_can->rx_reassembly_count + data_size <= sizeof(usb_can->rx_reassembly_buffer));
-			memcpy(&usb_can->rx_reassembly_buffer[usb_can->rx_reassembly_count], data_ptr, data_size);
-
-			sptr = usb_can->rx_reassembly_buffer;
-			eptr = sptr + data_size + usb_can->rx_reassembly_count;
-			ptr = sptr;
-
-			usb_can->rx_reassembly_count = 0;
+		if (!msg->id || !msg->len) {
+			LOG("ch%u unexpected zero id/len msg\n", index);
+			ptr = eptr;
+			break;
 		}
 
-		// process messages
-		while (ptr + SC_MSG_HEADER_LEN <= eptr) {
-			struct sc_msg_header const *msg = (struct sc_msg_header const *)ptr;
-			if (ptr + msg->len > eptr) {
-				uint16_t left = (uint16_t)(eptr - ptr);
-				// LOG("ch%u save %u bytes\n", index, left);
-				if (sptr == usb_can->rx_reassembly_buffer) {
-					memmove(usb_can->rx_reassembly_buffer, eptr - left, left);
-				} else {
-					memcpy(usb_can->rx_reassembly_buffer, eptr - left, left);
-				}
+		ptr += msg->len;
 
-				usb_can->rx_reassembly_count = left;
-				// sc_dump_mem(reassembly_buffer, left);
-				break;
-			}
+		switch (msg->id) {
+		case SC_MSG_CAN_TX:
+			sc_process_msg_can_tx(index, msg);
+			break;
 
-			if (!msg->id || !msg->len) {
-				LOG("ch%u unexpected zero id/len msg\n", index);
-				ptr = eptr;
-				break;
-			}
-
-			ptr += msg->len;
-
-			switch (msg->id) {
-			case SC_MSG_CAN_TX:
-				sc_process_msg_can_tx(index, msg);
-				break;
-
-			default:
+		default:
 #if SUPERCAN_DEBUG
-				sc_dump_mem(msg, msg->len);
+			sc_dump_mem(msg, msg->len);
 #endif
-				break;
-			}
+			break;
 		}
 	}
 
-	if (sc_can_bulk_in_ep_ready(index) && chunky_writer_any(&usb_can->w)) {
+	if (sc_can_bulk_in_ep_ready(index) && usb_can->tx_offsets[usb_can->tx_bank]) {
 		sc_can_bulk_in_submit(index, __func__);
 	}
 
@@ -1790,7 +1688,7 @@ static void sc_can_bulk_in(uint8_t index)
 
 	usb_can->tx_offsets[!usb_can->tx_bank] = 0;
 
-	if (chunky_writer_any(&usb_can->w)) {
+	if (usb_can->tx_offsets[usb_can->tx_bank]) {
 		sc_can_bulk_in_submit(index, __func__);
 	}
 
@@ -2326,8 +2224,6 @@ static void can_usb_task(void *param)
 	bool had_bus_error = false;
 	bool send_can_status = 0;
 	struct can_queue_item queue_item;
-	uint8_t render_buffer[96];
-
 
 
 	while (42) {
@@ -2374,22 +2270,20 @@ static void can_usb_task(void *param)
 // 				}
 // 			}
 // #endif
+			uint8_t * const tx_beg = usb_can->tx_buffers[usb_can->tx_bank];
+			uint8_t * const tx_end = tx_beg + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
+			uint8_t *tx_ptr = tx_beg + usb_can->tx_offsets[usb_can->tx_bank];
 
 			if (send_can_status) {
 				struct sc_msg_can_status *msg = NULL;
-				if (chunky_writer_available(&usb_can->w) >= sizeof(*msg)) {
+				if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
 					done = false;
 					send_can_status = 0;
 					counter_1MHz_request_current_value_lazy();
 
+					usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
 
-					msg = chunky_writer_chunk_reserve(&usb_can->w, sizeof(*msg));
-					if (msg) {
-						// LOG("status reserve\n");
-					} else {
-						// LOG("status fallback\n");
-						msg = (struct sc_msg_can_status *)render_buffer;
-					}
+					msg = (struct sc_msg_can_status *)tx_ptr;
 
 					uint16_t rx_lost = __sync_fetch_and_and(&can->rx_lost, 0);
 					uint16_t tx_dropped = can->tx_dropped;
@@ -2416,9 +2310,6 @@ static void can_usb_task(void *param)
 					msg->rx_fifo_size = can->m_can->RXF0S.bit.F0FL;
 					msg->timestamp_us = counter_1MHz_wait_for_current_value();
 
-					if (msg == (void*)render_buffer) {
-						chunky_writer_write(&usb_can->w, msg, sizeof(*msg));
-					}
 
 					// LOG("status store %u bytes\n", (unsigned)sizeof(*msg));
 					// sc_dump_mem(msg, sizeof(*msg));
@@ -2446,17 +2337,14 @@ static void can_usb_task(void *param)
 				case CAN_QUEUE_ITEM_TYPE_BUS_ERROR: {
 					has_bus_error = SC_CAN_ERROR_NONE != queue_item.payload;
 					struct sc_msg_can_error *msg = NULL;
-					if (chunky_writer_available(&usb_can->w) >= sizeof(*msg)) {
+					if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
 						counter_1MHz_request_current_value_lazy();
 
-						msg = chunky_writer_chunk_reserve(&usb_can->w, sizeof(*msg));
-						if (!msg) {
-							msg = (void*)render_buffer;
-						}
+						usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
 
+						msg = (struct sc_msg_can_error *)tx_ptr;
 						msg->id = SC_MSG_CAN_ERROR;
 						msg->len = sizeof(*msg);
-
 						msg->error = queue_item.payload;
 						msg->flags = 0;
 						if (queue_item.tx) {
@@ -2468,10 +2356,6 @@ static void can_usb_task(void *param)
 
 						uint32_t ts = counter_1MHz_wait_for_current_value();
 						msg->timestamp_us = ts;
-
-						if (msg == (void*)render_buffer) {
-							chunky_writer_write(&usb_can->w, msg, sizeof(*msg));
-						}
 					} else {
 						if (sc_can_bulk_in_ep_ready(index)) {
 							sc_can_bulk_in_submit(index, __func__);
@@ -2514,15 +2398,14 @@ static void can_usb_task(void *param)
 					bytes += SC_MSG_CAN_LEN_MULTIPLE - (bytes & (SC_MSG_CAN_LEN_MULTIPLE-1));
 				}
 
-				if (chunky_writer_available(&usb_can->w) >= bytes) {
+
+				if ((size_t)(tx_end - tx_ptr) >= bytes) {
 					done = false;
 
-					// LOG("rx %u bytes\n", bytes);
-					struct sc_msg_can_rx *msg = chunky_writer_chunk_reserve(&usb_can->w, bytes);
-					if (!msg) {
-						msg = (void*)render_buffer;
-					}
+					usb_can->tx_offsets[usb_can->tx_bank] += bytes;
 
+					// LOG("rx %u bytes\n", bytes);
+					struct sc_msg_can_rx *msg = (struct sc_msg_can_rx *)tx_ptr;
 					msg->id = SC_MSG_CAN_RX;
 					msg->len = bytes;
 					msg->dlc = r1.bit.DLC;
@@ -2577,10 +2460,6 @@ static void can_usb_task(void *param)
 						}
 					}
 
-					if (msg == (void*)render_buffer) {
-						chunky_writer_write(&usb_can->w, msg, bytes);
-					}
-
 					// LOG("rx store %u bytes\n", bytes);
 					// sc_dump_mem(msg, bytes);
 
@@ -2603,15 +2482,14 @@ static void can_usb_task(void *param)
 				bus_activity_tc = xTaskGetTickCount();
 				uint8_t get_index = can->tx_get_index & (CAN_TX_FIFO_SIZE-1);
 				struct sc_msg_can_txr *msg = NULL;
-				if (chunky_writer_available(&usb_can->w) >= sizeof(*msg)) {
+				if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
 					// LOG("1\n");
 					__atomic_thread_fence(__ATOMIC_ACQUIRE);
 					done = false;
 
-					msg = chunky_writer_chunk_reserve(&usb_can->w, sizeof(*msg));
-					if (!msg) {
-						msg = (void*)render_buffer;
-					}
+					usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
+
+					msg = (struct sc_msg_can_txr *)tx_ptr;
 
 					CAN_TXEFE_0_Type t0 = can->tx_frames[get_index].T0;
 					CAN_TXEFE_1_Type t1 = can->tx_frames[get_index].T1;
@@ -2663,10 +2541,6 @@ static void can_usb_task(void *param)
 						}
 					}
 
-					if (msg == (void*)render_buffer) {
-						chunky_writer_write(&usb_can->w, msg, sizeof(*msg));
-					}
-
 					// LOG("2\n");
 
 					__atomic_store_n(&can->tx_get_index, can->tx_get_index+1, __ATOMIC_RELEASE);
@@ -2685,7 +2559,7 @@ static void can_usb_task(void *param)
 			}
 		}
 
-		if (sc_can_bulk_in_ep_ready(index) && chunky_writer_any(&usb_can->w)) {
+		if (sc_can_bulk_in_ep_ready(index) && usb_can->tx_offsets[usb_can->tx_bank]) {
 			sc_can_bulk_in_submit(index, __func__);
 		}
 
