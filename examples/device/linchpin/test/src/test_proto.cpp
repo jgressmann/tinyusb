@@ -422,6 +422,13 @@ TEST_F(serial_fixture, connected_state_can_set_pin)
     EXPECT_EQ(true, std::get<1>(pins_set[1]));
 
 
+    input = "!P 104 1\n";
+    lp_cdc_task();
+    EXPECT_THAT(output, StartsWith("0 "));
+    output.clear();
+    ASSERT_EQ(3u, pins_set.size());
+    EXPECT_EQ(104, std::get<0>(pins_set[2]));
+    EXPECT_EQ(true, std::get<1>(pins_set[2]));
 }
 
 TEST_F(serial_fixture, connected_state_set_pin_handles_invalid_args)

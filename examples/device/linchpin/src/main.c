@@ -141,7 +141,7 @@ int main(void)
 	(void) xTaskCreateStatic(&cdc_task, "cdc", ARRAY_SIZE(tasks.cdc_task_stack_mem), NULL, configMAX_PRIORITIES-1, tasks.cdc_task_stack_mem, &tasks.cdc_task_mem);
 
 	gpio_set_pin_level(LIN_TX_PIN, true);
-	TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY;
+	// TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY;
 
 
 	board_uart_write("start scheduler\n", -1);
@@ -197,11 +197,17 @@ LP_RAMFUNC void lp_delay_ms(uint32_t ms)
 
 bool lp_pin_set(uint32_t pin, bool value)
 {
+	uint32_t pin_no = pin & 0x1f;
+	uint32_t pin_mask = UINT32_C(1) << pin_no;
+
+	LP_LOG("pin=%u value=%u\n", (unsigned)pin, value);
+
 	PortGroup* group = &PORT->Group[(pin >> 5) & 0x3];
+	group->DIRSET.reg = pin_mask;
 	if (value) {
-		group->OUTSET.reg = UINT32_C(1) << (pin & 0x1f);
+		group->OUTSET.reg = pin_mask;
 	} else {
-		group->OUTCLR.reg = UINT32_C(1) << (pin & 0x1f);
+		group->OUTCLR.reg = pin_mask;
 	}
 
 	return true;
