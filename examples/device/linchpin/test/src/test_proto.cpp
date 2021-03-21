@@ -250,7 +250,7 @@ void test_cdc_rx_clear(void)
 
 TEST_F(serial_fixture, init_sets_initial_state)
 {
-    EXPECT_EQ(1250000, lp.signal_frequency);
+    EXPECT_EQ(1250000u, lp.signal_frequency);
     EXPECT_EQ(LP_DISCONNECTED, lp.state);
 }
 
@@ -286,31 +286,31 @@ TEST_F(serial_fixture, connected_state_flushes_usb_tx_buffer_on_lr_or_cr)
 TEST_F(serial_fixture, connected_state_processes_input_terminated_with_newline_or_carridge_return_as_command)
 {
     connect();
-    EXPECT_EQ(0, output.size());
+    EXPECT_EQ(0u, output.size());
 
     input = "hello\n";
     lp_cdc_task();
-    EXPECT_LT(0, output.size());
+    EXPECT_LT(0u, output.size());
     output.clear();
 
 
     input = "hello\r";
     lp_cdc_task();
-    EXPECT_LT(0, output.size());
+    EXPECT_LT(0u, output.size());
 }
 
 TEST_F(serial_fixture, connected_state_empty_commands_yield_no_result)
 {
     connect();
-    EXPECT_EQ(0, output.size());
+    EXPECT_EQ(0u, output.size());
 
     input = "\n";
     lp_cdc_task();
-    EXPECT_EQ(0, output.size());
+    EXPECT_EQ(0u, output.size());
 
     input = "\r";
     lp_cdc_task();
-    EXPECT_EQ(0, output.size());
+    EXPECT_EQ(0u, output.size());
 }
 
 TEST_F(serial_fixture, connected_state_invalid_commands_return_error_code)
@@ -329,7 +329,7 @@ TEST_F(serial_fixture, connected_state_can_get_version)
     input = "?V\n";
     lp_cdc_task();
     EXPECT_THAT(output, StartsWith("0 "));
-    EXPECT_LT(2, output.size());
+    EXPECT_LT(2u, output.size());
 }
 
 TEST_F(serial_fixture, connected_state_can_get_frequency)
@@ -345,7 +345,7 @@ TEST_F(serial_fixture, connected_state_can_get_frequency)
     char* end = nullptr;
     unsigned long f = std::strtoul(start, &end, 10);
     EXPECT_TRUE(end != nullptr && end != start);
-    EXPECT_LT(0, f);
+    EXPECT_LT(0u, f);
 }
 
 TEST_F(serial_fixture, connected_state_can_set_frequency)
@@ -366,7 +366,7 @@ TEST_F(serial_fixture, connected_state_can_set_frequency)
     char* end = nullptr;
     unsigned long f = std::strtoul(start, &end, 10);
     EXPECT_TRUE(end != nullptr && end != start);
-    EXPECT_EQ(12345, f);
+    EXPECT_EQ(12345u, f);
 }
 
 TEST_F(serial_fixture, connected_state_set_frequency_handles_invalid_args)
@@ -409,7 +409,7 @@ TEST_F(serial_fixture, connected_state_can_set_pin)
     lp_cdc_task();
     EXPECT_THAT(output, StartsWith("0 "));
     output.clear();
-    ASSERT_EQ(1, pins_set.size());
+    ASSERT_EQ(1u, pins_set.size());
     EXPECT_EQ(1, std::get<0>(pins_set[0]));
     EXPECT_EQ(false, std::get<1>(pins_set[0]));
 
@@ -417,7 +417,7 @@ TEST_F(serial_fixture, connected_state_can_set_pin)
     lp_cdc_task();
     EXPECT_THAT(output, StartsWith("0 "));
     output.clear();
-    ASSERT_EQ(2, pins_set.size());
+    ASSERT_EQ(2u, pins_set.size());
     EXPECT_EQ(2, std::get<0>(pins_set[1]));
     EXPECT_EQ(true, std::get<1>(pins_set[1]));
 
@@ -620,7 +620,7 @@ TEST_F(serial_fixture, running_state_outputs_the_expected_bits)
 
     EXPECT_EQ(LP_CONNECTED, lp.state);
     EXPECT_EQ(LP_RUN_STOPPED, lp.run_state);
-    ASSERT_EQ(14, tx_pin_values.size());
+    ASSERT_EQ(14u, tx_pin_values.size());
     EXPECT_EQ(true, tx_pin_values[0]);
     EXPECT_EQ(true, tx_pin_values[1]);
     EXPECT_EQ(true, tx_pin_values[2]);
@@ -664,7 +664,7 @@ TEST_F(serial_fixture, running_state_handles_more_that_one_packet_worth_of_data)
     EXPECT_EQ(LP_CONNECTED, lp.state);
     EXPECT_EQ(LP_RUN_STOPPED, lp.run_state);
     EXPECT_TRUE(!output.empty());
-    ASSERT_EQ(2, tx_pin_values.size());
+    ASSERT_EQ(2u, tx_pin_values.size());
     EXPECT_EQ(true, tx_pin_values[0]);
     EXPECT_EQ(false, tx_pin_values[1]);
 }
