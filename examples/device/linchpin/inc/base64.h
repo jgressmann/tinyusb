@@ -105,15 +105,13 @@ BASE64_FUNC static inline void base64_flush(
 	size_t volatile* gi_ptr,
 	size_t volatile* pi_ptr,
 	uint8_t* buf_ptr,
-	size_t buf_size,
-	uint8_t expected_bits)
+	size_t buf_size)
 {
 	BASE64_ASSERT(state);
 	BASE64_ASSERT(gi_ptr);
 	BASE64_ASSERT(pi_ptr);
 	BASE64_ASSERT(buf_ptr);
 	BASE64_ASSERT(buf_size > 0);
-	BASE64_ASSERT(state->bits == expected_bits);
 
 	size_t gi = __atomic_load_n(gi_ptr, __ATOMIC_ACQUIRE);
 	size_t pi = *pi_ptr;
@@ -134,7 +132,8 @@ BASE64_FUNC static inline void base64_encode_flush(
 	uint8_t* buf_ptr,
 	size_t buf_size)
 {
-	base64_flush(state, gi_ptr, pi_ptr, buf_ptr, buf_size, 6);
+	BASE64_ASSERT(state->bits == 6);
+	base64_flush(state, gi_ptr, pi_ptr, buf_ptr, buf_size);
 }
 
 
@@ -241,7 +240,8 @@ BASE64_FUNC static inline void base64_decode_flush(
 	uint8_t* buf_ptr,
 	size_t buf_size)
 {
-	base64_flush(state, gi_ptr, pi_ptr, buf_ptr, buf_size, 8);
+	BASE64_ASSERT(state->bits == 8);
+	base64_flush(state, gi_ptr, pi_ptr, buf_ptr, buf_size);
 }
 
 
