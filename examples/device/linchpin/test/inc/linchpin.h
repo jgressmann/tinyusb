@@ -48,7 +48,7 @@
 #define LP_ASSERT TEST_ASSERT
 #define LP_ISR_ASSERT TEST_ASSERT
 #define LP_DEBUG_ASSERT TEST_ASSERT
-
+#define lp_dump_mem(a, b)
 
 #define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
 #define likely(x) x
@@ -77,6 +77,7 @@
 #define lp_cdc_tx test_cdc_tx
 #define lp_cdc_tx_flush test_cdc_tx_flush
 #define lp_cdc_rx_clear test_cdc_rx_clear
+#define lp_cdc_tx_clear test_cdc_tx_clear
 
 #ifdef __cplusplus
 extern "C" {
@@ -94,6 +95,7 @@ extern uint32_t test_cdc_rx(uint8_t *ptr, uint32_t count);
 extern uint32_t test_cdc_tx(uint8_t const *ptr, uint32_t count);
 extern void test_cdc_tx_flush(void);
 extern void test_cdc_rx_clear(void);
+extern void test_cdc_tx_clear(void);
 
 #include <linchpin_api.h>
 #include <linchpin_state.h>

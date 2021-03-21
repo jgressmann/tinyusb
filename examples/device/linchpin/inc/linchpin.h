@@ -39,6 +39,7 @@
 #define lp_cdc_tx tud_cdc_write
 #define lp_cdc_tx_flush tud_cdc_write_flush
 #define lp_cdc_rx_clear tud_cdc_read_flush
+#define lp_cdc_tx_clear tud_cdc_write_flush
 #define lp_rx_pin_read() ({ (PORT->Group[2].IN.reg & 0b100000) == 0b100000; })
 #define lp_tx_pin_set() PORT->Group[2].OUTSET.reg = 0b10000
 #define lp_tx_pin_clear() PORT->Group[2].OUTCLR.reg = 0b10000

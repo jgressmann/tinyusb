@@ -835,8 +835,10 @@ void lp_cdc_task(void)
                 }
 
             } else {
-                usb_clear_rx_tx();
                 lp.state = LP_DISCONNECTED;
+                usb_clear_rx_tx();
+                lp_cdc_rx_clear();
+                lp_cdc_tx_clear();
                 more = true;
             }
         } break;
@@ -844,9 +846,11 @@ void lp_cdc_task(void)
             if (connected) {
                 more = run_task();
             } else {
-                usb_clear_rx_tx();
                 lp_timer_stop();
                 lp.state = LP_DISCONNECTED;
+                usb_clear_rx_tx();
+                lp_cdc_rx_clear();
+                lp_cdc_tx_clear();
                 more = true;
             }
         } break;

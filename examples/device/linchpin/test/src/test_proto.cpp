@@ -35,6 +35,8 @@ struct serial_fixture : public ::testing::Test
     bool pin_set_success;
     bool timer_started;
     int flush_count;
+    int rx_clear_count;
+    int tx_clear_count;
 
 
     ~serial_fixture()
@@ -52,6 +54,8 @@ struct serial_fixture : public ::testing::Test
         pin_set_success = true;
         timer_started = false;
         flush_count = 0;
+        rx_clear_count = 0;
+        tx_clear_count = 0;
 
         lp_init();
     }
@@ -241,7 +245,12 @@ void lp_version(char* ptr, uint32_t capacity)
 
 void test_cdc_rx_clear(void)
 {
+    ++serial_fixture::self->rx_clear_count;
+}
 
+void test_cdc_tx_clear(void)
+{
+    ++serial_fixture::self->tx_clear_count;
 }
 
 #ifdef __cplusplus
@@ -330,6 +339,23 @@ TEST_F(serial_fixture, connected_state_can_get_version)
     lp_cdc_task();
     EXPECT_THAT(output, StartsWith("0 "));
     EXPECT_LT(2u, output.size());
+}
+
+TEST_F(serial_fixture, disconnect_in_command_mode_clears_any_pending_output_message)
+{
+    connect();
+
+    output_capacity = 0;
+    input = "hi\n";
+    lp_cdc_task();
+    EXPECT_EQ(0, tx_clear_count);
+
+    output_capacity = -1;
+    connected = 0;
+    lp_cdc_task();
+    EXPECT_EQ(LP_DISCONNECTED, lp.state);
+    EXPECT_EQ(1, tx_clear_count);
+    EXPECT_EQ(0u, output.size());
 }
 
 TEST_F(serial_fixture, connected_state_can_get_frequency)
@@ -450,6 +476,17 @@ TEST_F(serial_fixture, connected_state_set_pin_handles_invalid_args)
     lp_cdc_task();
     EXPECT_THAT(output, StartsWith("-4 "));
     output.clear();
+}
+
+
+TEST_F(serial_fixture, connected_state_can_query_size_of_signal_buffer)
+{
+    connect();
+
+
+    input = "?SB\n";
+    lp_cdc_task();
+    EXPECT_STREQ("0 32\n", output.c_str());
 }
 
 
@@ -674,6 +711,32 @@ TEST_F(serial_fixture, running_state_handles_more_that_one_packet_worth_of_data)
     ASSERT_EQ(2u, tx_pin_values.size());
     EXPECT_EQ(true, tx_pin_values[0]);
     EXPECT_EQ(false, tx_pin_values[1]);
+}
+
+TEST_F(serial_fixture, disconnect_in_run_mode_clears_any_pending_output_message)
+{
+    run();
+
+    input = make_input("\x81") + "!" + make_input("\x01") + "\n";
+    lp_cdc_task();
+    EXPECT_EQ(LP_RUNNING, lp.state);
+
+    const int runs = 2;
+
+    rx_pin_values.emplace_back(true);
+    for (int i = 0; i < runs; ++i) {
+        rx_pin_values.emplace_back(true);
+    }
+
+    lp_signal_next_bit(); // load run
+    lp_cdc_task();
+    EXPECT_EQ(0, tx_clear_count);
+
+    connected = false;
+    lp_cdc_task();
+    EXPECT_EQ(LP_DISCONNECTED, lp.state);
+    EXPECT_EQ(1, tx_clear_count);
+
 }
 
 TEST_F(serial_fixture, running_state_aborts_on_some_packet_being_too_large)

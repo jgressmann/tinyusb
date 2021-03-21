@@ -157,6 +157,10 @@ LP_RAMFUNC void lp_signal_next_bit(void);
 	#error Define void lp_cdc_rx_clear(void);
 #endif
 
+#ifndef lp_cdc_tx_clear
+	#error Define void lp_cdc_tx_clear(void);
+#endif
+
 
 void lp_delay_ms(uint32_t ms);
 bool lp_pin_set(uint32_t pin, bool value);
