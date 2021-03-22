@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,8 +28,10 @@
 #define SC_PACKED __packed
 #include <supercan.h>
 #include <supercan_m1.h>
+#include <supercan_debug.h>
 #include <usb_descriptors.h>
 #include <mcu.h>
+#include <device.h>
 
 
 
@@ -275,26 +277,17 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 		chr_count = 1;
 		break;
 	case 3: {
-		// Section 9.6, p. 60
-		chr_count = 32;
-		uint32_t serial_number[4];
-		same51_get_serial_number(serial_number);
-		TU_LOG2(
-			"chip serial number %08lx%08lx%08lx%08lx\n",
-			serial_number[0],
-			serial_number[1],
-			serial_number[2],
-			serial_number[3]);
-		for (unsigned i = 0, k = 1; i < 4; ++i) {
-			uint32_t x = serial_number[i];
-			for (unsigned j = 0, shift = 24; j < 4; ++j, shift -= 8, k += 2) {
-				uint8_t y = (x >> shift) & 0xff;
-				uint8_t hi = (y >> 4) & 0xf;
-				uint8_t lo = (y >> 0) & 0xf;
-				_desc_str[k] = hex_map[hi];
-				_desc_str[k+1] = hex_map[lo];
-			}
+		uint32_t x = serial_buffer[0];
+		SC_DEBUG_ASSERT(serial_length <= 4);
+		for (unsigned j = 0, k = 1, shift = 0; j < serial_length; ++j, shift += 8, k += 2) {
+			uint8_t y = (x >> shift) & 0xff;
+			uint8_t hi = (y >> 4) & 0xf;
+			uint8_t lo = (y >> 0) & 0xf;
+			_desc_str[k] = hex_map[hi];
+			_desc_str[k+1] = hex_map[lo];
 		}
+
+		chr_count = serial_length * 2;
 	} break;
 	default: {
 		// Convert ASCII string into UTF-16
