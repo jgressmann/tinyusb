@@ -53,6 +53,8 @@
 #include <dfu_ram.h>
 #include <dfu_app.h>
 #include <leds.h>
+#include <crc32.h>
+#include <device.h>
 
 
 
@@ -1311,17 +1313,9 @@ send_dev_info:
 				if (rep->name_len <= TU_ARRAY_SIZE(rep->name_bytes)) {
 					rep->name_bytes[rep->name_len-1] = '0' + index;
 				}
-				rep->sn_len = 16;
+				rep->sn_len = serial_length;
 				static_assert(sizeof(rep->sn_bytes) >= 16, "expect at least 16 of buffer for serial number");
-				uint32_t serial[4];
-				same51_get_serial_number(serial);
-				for (unsigned i = 0, j = 0; i < 4; ++i) {
-					uint32_t w = serial[i];
-					rep->sn_bytes[j++] = (w >> 24) & 0xff;
-					rep->sn_bytes[j++] = (w >> 16) & 0xff;
-					rep->sn_bytes[j++] = (w >> 8) & 0xff;
-					rep->sn_bytes[j++] = (w >> 0) & 0xff;
-				}
+				memcpy(rep->sn_bytes, serial_buffer, serial_length);
 			} else {
 				if (sc_cmd_bulk_in_ep_ready(index)) {
 					sc_cmd_bulk_in_submit(index);
@@ -1697,9 +1691,12 @@ send:
 	}
 }
 
+static void init_serial(void);
+
 int main(void)
 {
 	board_init();
+	init_serial();
 
 #if SUPERDFU_APP
 	LOG(
@@ -2939,4 +2936,21 @@ static bool can_poll(
 	//__atomic_thread_fence(__ATOMIC_RELEASE);
 
 	return more;
+}
+
+static void init_serial(void)
+{
+	uint32_t serial_number[4];
+	int error = CRC32E_NONE;
+
+	same51_get_serial_number(serial_number);
+	error = crc32f((uint32_t)serial_number, 16, CRC32E_FLAG_UNLOCK, serial_buffer);
+	if (unlikely(error)) {
+		serial_buffer[0] = serial_number[0];
+		LOG("ERROR: failed to compute CRC32: %d. Using fallback serial\n", error);
+	}
+
+	LOG("serial number %08lx\n", serial_buffer[0]);
+
+	serial_length = 4;
 }

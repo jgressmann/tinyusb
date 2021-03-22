@@ -164,6 +164,8 @@ static inline bool nvm_write_main_page(void *addr, void const *ptr)
 }
 
 static void start_app_prepare(void);
+
+// adapted from http://www.keil.com/support/docs/3913.htm
 static void start_app_prepare(void)
 {
 #if 0
@@ -208,18 +210,6 @@ static void start_app_prepare(void)
 #endif
 }
 
-
-// adapted from http://www.keil.com/support/docs/3913.htm
-__attribute__((naked, noreturn)) static void app_jump(uint32_t sp, uint32_t rh)
-{
-	(void)sp;
-	(void)rh;
-	__asm__(
-		"MSR MSP, r0\n"
-		"BX  r1\n"
-	);
-}
-
 __attribute__((noreturn)) static void start_app_jump(uint32_t addr)
 {
 	// Load the vector table address of the user application into SCB->VTOR register. Make sure the address meets the alignment requirements.
@@ -231,7 +221,14 @@ __attribute__((noreturn)) static void start_app_jump(uint32_t addr)
 
 	uint32_t* base = (uint32_t*)(uintptr_t)addr;
 	// LOG("stack @ %p reset @ %p\n", (void*)base[0], (void*)base[1]);
-	app_jump(base[0], base[1]);
+
+	__asm__ (
+		"MSR MSP, %0\n"
+		"BX  %1\n"
+		: : "r" (base[0]), "r" (base[1])
+	);
+
+	__unreachable();
 }
 
 static inline void watchdog_timeout(uint8_t seconds_in, uint8_t* wdt_reg, uint8_t* seconds_out)
@@ -256,7 +253,7 @@ static inline void watchdog_timeout(uint8_t seconds_in, uint8_t* wdt_reg, uint8_
 
 #define SUPERDFU_VERSION_MAJOR 0
 #define SUPERDFU_VERSION_MINOR 2
-#define SUPERDFU_VERSION_PATCH 2
+#define SUPERDFU_VERSION_PATCH 3
 #define STR2(x) #x
 #define STR(x) STR2(x)
 #define NAME "SuperDFU"
@@ -349,7 +346,7 @@ int main(void)
 
 		start_app_prepare();
 
-		// Setup watchdog timer in case app hangs, we'll now
+		// setup watchdog timer in case app hangs, we'll know
 		// by the counter value.
 		uint8_t per, timeout;
 		watchdog_timeout(app_hdr->app_watchdog_timeout_s, &per, &timeout);
