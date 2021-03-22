@@ -346,7 +346,7 @@ int main(void)
 
 		start_app_prepare();
 
-		// Setup watchdog timer in case app hangs, we'll now
+		// setup watchdog timer in case app hangs, we'll know
 		// by the counter value.
 		uint8_t per, timeout;
 		watchdog_timeout(app_hdr->app_watchdog_timeout_s, &per, &timeout);
