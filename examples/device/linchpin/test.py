@@ -2,10 +2,15 @@
 
 import asyncio
 import base64
+import fastlz
 import serial
 import serial_asyncio
+import sys
+import time
 
 
+
+import linchpin
 
 if __name__ == "__main__":
 	import argparse
@@ -21,6 +26,66 @@ if __name__ == "__main__":
 	serialPort = serial.Serial(
 		port=args.device,
 		baudrate=115200)
+
+	def lp_run_cmd(cmd: str) -> str:
+		serialPort.write(bytes(cmd, 'utf-8'))
+		time.sleep(0.1)
+		data = serialPort.read_all()
+		return str(data,'utf-8')
+		# SerialTimeoutException
+
+	r = lp_run_cmd('?V\n')
+	(e, r) = linchpin.lp_parse_cmd_reply(r)
+	print(f'version: {r}')
+
+	r = lp_run_cmd('?SB\n')
+	(e, r) = linchpin.lp_parse_cmd_reply(r)
+	signal_buffer_size = int(r)
+	print(f'signal buffer size: {signal_buffer_size}')
+
+	r = lp_run_cmd('!R\n')
+	(e, r) = linchpin.lp_parse_cmd_reply(r)
+
+	if linchpin.LinchpinError.NONE == e:
+		print(f'run started')
+
+
+	e = linchpin.LinchpinRleEncoder()
+
+	with open("/dev/urandom", "rb") as f:
+		# while True:
+		input = f.read(int(signal_buffer_size / 4))
+		for i in input:
+			byte_value = i
+			for _ in range(8):
+				bit_value = (byte_value & 0x1) == 0x1
+				e.push(bit_value)
+				byte_value >>= 1
+
+		rle_data = e.read()
+		compressed_data = fastlz.compress(bytes(rle_data), level=1)
+		decompressed_data = fastlz.decompress(bytes(bytearray(compressed_data)))
+		if rle_data != decompressed_data:
+			raise ValueError("FastLZ is broken")
+
+		# compressed_data2 = fastlz.compress(bytes(input))
+		print(f'compressed {len(compressed_data)} bytes')
+		print(f'compressed[0] {compressed_data[0]:02x}')
+		# print(compressed_data.hex())
+		b64e = base64.b64encode(compressed_data)
+		end = b64e[-3:].decode('utf-8')
+		print(f'b64 {len(b64e)} bytes end with {end}')
+		# print(f'{len(compressed_data2)} bytes')
+
+		w = serialPort.write(b64e)
+		print(f'wrote {w} bytes')
+		serialPort.write(b'\n')
+
+		input = serialPort.read_all()
+			# break
+		print(f'input {len(input)} bytes')
+
+	sys.exit(0)
 
 	def blocking_io():
 		import sys

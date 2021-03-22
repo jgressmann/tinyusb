@@ -188,7 +188,7 @@ static void process_cmd(void)
                             end = NULL;
                             value = strtoul(start, &end, 10) != 0;
                             if (end != NULL && end != start) {
-                                //LP_LOG("set pin=%#" PRIx32 " value=%u\n", pin, value);
+//                                LP_LOG("set pin=%#" PRIx32 " value=%u\n", pin, value);
                                 if (lp_pin_set(pin, value)) {
                                     error = LP_ERROR_NONE;
                                 }
@@ -201,6 +201,7 @@ static void process_cmd(void)
                     }
                 } break;
                 case 'R': {
+                    LP_LOG("run start\n");
                     lp.state = LP_RUNNING;
                     run_init();
                     place_error_response(LP_ERROR_NONE);
@@ -218,6 +219,10 @@ static void process_cmd(void)
                 case 'F':
                     lp.usb_tx_buffer_gi = 0;
                     lp.usb_tx_buffer_pi = usnprintf((char*)lp.usb_tx_buffer, sizeof(lp.usb_tx_buffer), "%d %" PRIu32 "\n", LP_ERROR_NONE, lp.signal_frequency);
+                    break;
+                case 'S':
+                    lp.usb_tx_buffer_gi = 0;
+                    lp.usb_tx_buffer_pi = usnprintf((char*)lp.usb_tx_buffer, sizeof(lp.usb_tx_buffer), "%d %" PRIu32 "\n", LP_ERROR_NONE, (uint32_t)LP_SIGNAL_BUFFER_SIZE);
                     break;
                 case 'V': {
                     char buf[LP_USB_BUFFER_SIZE];
@@ -274,6 +279,7 @@ static bool run_try_base64_encode_input_data(void)
 
 static inline void run_abort_error(int code)
 {
+    LP_LOG("run abort code=%d\n", code);
     lp_timer_stop();
 
     usb_clear_rx_tx();
@@ -310,6 +316,7 @@ static bool run_try_decompress(void)
             size_t available = ARRAY_SIZE(lp.signal_tx_buffer) - used;
 
             if (available >= LP_SIGNAL_BUFFER_SIZE) {
+                LP_LOG("try decompress %" PRIu32 " bytes\n", (uint32_t)lp.usb_rx_compressed_offset);
                 int bytes_out = fastlz_decompress(
                             lp.usb_rx_compressed_buffer,
                             lp.usb_rx_compressed_offset,
@@ -319,6 +326,7 @@ static bool run_try_decompress(void)
                 lp.usb_rx_compressed_offset = 0;
 
                 if (bytes_out > 0) {
+                    LP_LOG("decompressed to %" PRIu32 " bytes\n", (uint32_t)bytes_out);
                     LP_DEBUG_ASSERT((size_t)bytes_out <= LP_SIGNAL_BUFFER_SIZE);
 
                     size_t offset = 0;
@@ -455,25 +463,33 @@ static bool run_task(void)
             switch (c) {
             case '\n':
             case '\r':
-            case '!':
+            case '!': {
+//                LP_LOG("%c (%#x)\n", c, c);
                 ++lp.usb_rx_buffer_gi;
                 if (lp.usb_rx_base64_state.flags == BASE64_FLAG_DONE) {
                     if (c != '!') {
                         __atomic_or_fetch(&lp.signal_flags, OUTPUT_FLAG_INPUT_DONE, __ATOMIC_ACQ_REL);
                     }
 
+                    LP_LOG("decompress input of %" PRIu32 " bytes\n", (uint32_t)lp.usb_rx_compressed_offset);
+                    LP_LOG("first byte=\n");
+                    lp_dump_mem(lp.usb_rx_compressed_buffer, 1);
+//                    lp_dump_mem(lp.usb_rx_compressed_buffer, lp.usb_rx_compressed_offset);
                     if (run_try_decompress()) {
+                        LP_LOG("decompressed\n");
                         lp_timer_start();
                         lp.run_state = LP_RUN_STARTED;
                         base64_init(&lp.usb_rx_base64_state); // ! only
                     } else {
+                        LP_LOG("decomp failed\n");
                         run_abort_error(LP_ERROR_MALFORMED);
                     }
                 } else {
+                    LP_LOG("base64 flags=%#x\n", lp.usb_rx_base64_state.flags);
                     run_abort_error(LP_ERROR_MALFORMED);
                 }
                 done = true;
-                break;
+            } break;
 //            case '!': {
 //                ++lp.usb_rx_buffer_gi;
 //                if (lp.usb_rx_base64_state.flags == BASE64_FLAG_DONE) {
