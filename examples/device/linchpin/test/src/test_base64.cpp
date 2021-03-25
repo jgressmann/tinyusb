@@ -94,7 +94,7 @@ TEST_F(base64_fixture, encode_shifts_in_bytes)
     EXPECT_EQ(1, e.rem);
     // EXPECT_EQ(0x03, e.state);
     EXPECT_EQ(2, e.bits);
-    EXPECT_EQ(1, pi);
+    EXPECT_EQ(1u, pi);
     EXPECT_EQ('/', buf[0]);
 
     base64_encode_shift(0x00, &e, &gi, &pi, buf, sizeof(buf));
@@ -102,7 +102,7 @@ TEST_F(base64_fixture, encode_shifts_in_bytes)
     EXPECT_EQ(2, e.rem);
     // EXPECT_EQ(0x00, e.state);
     EXPECT_EQ(4, e.bits);
-    EXPECT_EQ(2, pi);
+    EXPECT_EQ(2u, pi);
     EXPECT_EQ('w', buf[1]);
 
     base64_encode_shift(0x55, &e, &gi, &pi, buf, sizeof(buf));
@@ -110,7 +110,7 @@ TEST_F(base64_fixture, encode_shifts_in_bytes)
     EXPECT_EQ(0, e.rem);
     // EXPECT_EQ(0x00, e.state);
     EXPECT_EQ(0, e.bits);
-    EXPECT_EQ(4, pi);
+    EXPECT_EQ(4u, pi);
     EXPECT_EQ('B', buf[2]);
     EXPECT_EQ('V', buf[3]);
 }
