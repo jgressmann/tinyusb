@@ -200,26 +200,18 @@ RLE_FUNC static inline int rle_encode_push_bit(struct rle *rle, int bit)
 	return RLEE_NONE;
 }
 
-RLE_FUNC RLE_EXTERN void rle_load(
+RLE_FUNC static void rle_load(
 		struct rle *rle,
 		void* ctx,
 		rle_read_bits_t callback);
 
 RLE_FUNC static inline void rle_decode_bit(
 		struct rle *rle,
-//		volatile RLE_INT_TYPE* gi_ptr,
-//		volatile RLE_INT_TYPE* pi_ptr,
-//		uint8_t* buf_ptr,
-//		RLE_INT_TYPE buf_size,
 		void* ctx,
 		rle_read_bits_t callback,
 		int* bit)
 {
 	RLE_ASSERT(rle);
-//	RLE_ASSERT(gi_ptr);
-//	RLE_ASSERT(pi_ptr);
-//	RLE_ASSERT(buf_ptr);
-//	RLE_ASSERT(buf_size);
 	RLE_ASSERT(callback);
 	RLE_ASSERT(bit);
 
@@ -245,13 +237,14 @@ available:
 
 #ifdef RLE_C
 
-RLE_EXTERN void rle_load(
+RLE_FUNC static void rle_load(
 		struct rle *rle,
 		void* ctx,
 		rle_read_bits_t callback)
 {
-//		RLE_INT_TYPE gi = *gi_ptr;
-//		RLE_INT_TYPE pi = __atomic_load_n(pi_ptr, __ATOMIC_ACQUIRE);
+	RLE_ASSERT(rle);
+	RLE_ASSERT(callback);
+
 	uint8_t byte;
 	int r = callback(ctx, &byte, 1);
 	if (rle_unlikely(r < 0)) {
@@ -321,86 +314,10 @@ RLE_EXTERN void rle_load(
 		}
 	}
 
-
-
-//		if (rle_unlikely(gi == pi)) {
-//			rle->flags |= RLE_FLAG_DEC_UNDERFLOW;
-//			return;
-//		}
-
-//		RLE_INT_TYPE index = gi % buf_size;
-//		uint8_t byte = buf_ptr[index];
-
-//		unsigned value;
-//		unsigned bit_offset = rle->bit_offset;
-//		unsigned bit_count = -1;
-
-//		// first bit
-//		value = (byte & (1u << (7 - rle->bit_offset))) != 0;
-//		unsigned next_bit = value;
-
-//		// find first inverted bit
-//		do {
-//			if (bit_offset) {
-//				--bit_offset;
-//			} else {
-//				++gi;
-//				if (rle_unlikely(gi == pi)) {
-//					rle->flags |= RLE_FLAG_DEC_UNDERFLOW;
-//					return;
-//				} else {
-//					index = gi % buf_size;
-//					byte = buf_ptr[index];
-//					bit_offset = 7;
-//				}
-//			}
-
-//			next_bit = (byte & (1u << (7 - bit_offset))) != 0;
-
-//			if (rle_likely(bit_count < RLE_MAX_BIT_COUNT)) {
-//				++bit_count;
-//			} else {
-//				rle->flags |= RLE_FLAG_DEC_BAD;
-//				return;
-//			}
-//		} while (next_bit == value);
-
-//		RLE_INT_TYPE count = ((RLE_INT_TYPE)1) << bit_count;
-//		RLE_INT_TYPE rem = 0;
-
-//		// read out n-bit counter
-//		while (bit_count) {
-//			unsigned bits_left = bit_offset + 1;
-//			if (bit_count >= bits_left) {
-//				rem <<= bit_offset + 1;
-//				rem |= byte & ((1u << bits_left)-1);
-//				bit_count -= bits_left;
-
-//				// load next
-//				++gi;
-//				if (rle_unlikely(gi == pi)) {
-//					rle->flags |= RLE_FLAG_DEC_UNDERFLOW;
-//					return;
-//				} else {
-//					index = gi % buf_size;
-//					byte = buf_ptr[index];
-//					bit_offset = 7;
-//				}
-//			} else {
-//				rem <<= bit_count;
-//				rem |= (byte >> (bit_offset - bit_count)) & ((1u << bit_count)-1);
-//				bit_offset -= bit_count;
-//				bit_count = 0;
-//			}
-//		}
-
 	count += rem;
 	rle->value = value;
 	rle->count = count;
-//		rle->bit_offset = bit_offset;
 	rle->flags |= RLE_FLAG_DEC_AVAILABLE;
-
-//		__atomic_store_n(gi_ptr, gi, __ATOMIC_RELEASE);
 }
 
 #endif // #ifdef RLE_C
