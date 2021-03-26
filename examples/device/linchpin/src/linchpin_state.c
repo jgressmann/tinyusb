@@ -795,7 +795,7 @@ void lp_init(void)
     lp.state = LP_DISCONNECTED;
 }
 
-void lp_cdc_task(void)
+void lp_cdc_cmd_task(void)
 {
     for (bool more = true; more; ) {
         more = false;

@@ -105,7 +105,8 @@ struct linchpin {
 
 extern struct linchpin lp;
 void lp_init(void);
-LP_RAMFUNC void lp_cdc_task(void);
+void lp_cdc_cmd_task(void);
+LP_RAMFUNC void lp_cdc_lin_task(void);
 LP_RAMFUNC void lp_signal_next_bit(void);
 
 
