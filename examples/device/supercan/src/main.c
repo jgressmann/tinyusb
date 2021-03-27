@@ -1206,6 +1206,20 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 
 #endif
 
+	// Required to immediately send URBs when buffer size > endpoint size
+	// and the transfer size is a multiple of the endpoint size, and the
+	// tranfer size is smaller than the buffer size, we can either send a zlp
+	// or increase the payload size.
+	if (MSG_BUFFER_SIZE > SC_M1_EP_SIZE) {
+		uint16_t offset = can->tx_offsets[can->tx_bank];
+		bool need_to_send_zlp = offset < MSG_BUFFER_SIZE && 0 == (offset % SC_M1_EP_SIZE);
+		if (need_to_send_zlp) {
+			LOG("zlpfix\n");
+			*((uint32_t*)&can->tx_buffers[can->tx_bank][offset]) = 0;
+			can->tx_offsets[can->tx_bank] += 4;
+		}
+	}
+
 	// LOG("ch%u %s bytes=%u\n", index, func, can->tx_offsets[can->tx_bank]);
 	(void)dcd_edpt_xfer(usb.port, 0x80 | can->pipe, can->tx_buffers[can->tx_bank], can->tx_offsets[can->tx_bank]);
 	can->tx_bank = !can->tx_bank;
@@ -1601,7 +1615,8 @@ static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 		}
 
 		if (!msg->id || !msg->len) {
-			LOG("ch%u offset=%u unexpected zero id/len msg\n", index, (unsigned)(in_ptr - in_beg));
+			// Allow empty message to work around having to zend ZLP
+			// LOG("ch%u offset=%u unexpected zero id/len msg\n", index, (unsigned)(in_ptr - in_beg));
 			in_ptr = in_end;
 			break;
 		}
@@ -1896,11 +1911,11 @@ bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf,
 	SC_ASSERT(success_cmd);
 	SC_ASSERT(success_can);
 
-	// Required to immediately send URBs when buffer size > endpoint size
-	// and transfers are multiple of enpoint size.
-	if (MSG_BUFFER_SIZE > SC_M1_EP_SIZE) {
-		dcd_auto_zlp(rhport, usb_can->pipe | 0x80, true);
-	}
+	// // Required to immediately send URBs when buffer size > endpoint size
+	// // and transfers are multiple of enpoint size.
+	// if (MSG_BUFFER_SIZE > SC_M1_EP_SIZE) {
+	// 	dcd_auto_zlp(rhport, usb_can->pipe | 0x80, true);
+	// }
 
 	*p_length = 9+eps*7;
 
