@@ -1214,7 +1214,7 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 		uint16_t offset = can->tx_offsets[can->tx_bank];
 		bool need_to_send_zlp = offset < MSG_BUFFER_SIZE && 0 == (offset % SC_M1_EP_SIZE);
 		if (need_to_send_zlp) {
-			LOG("zlpfix\n");
+			// LOG("zlpfix\n");
 			*((uint32_t*)&can->tx_buffers[can->tx_bank][offset]) = 0;
 			can->tx_offsets[can->tx_bank] += 4;
 		}
