@@ -57,7 +57,8 @@
 #include <device.h>
 
 
-
+#define CLOCK_MAX 0xffffffff
+#define SPAM 0
 
 
 #if TU_BIG_ENDIAN == TU_BYTE_ORDER
@@ -512,7 +513,7 @@ static inline bool counter_1MHz_is_current_value_ready(void)
 
 static inline uint32_t counter_1MHz_read_unsafe(void)
 {
-	return TC0->COUNT32.COUNT.reg;
+	return TC0->COUNT32.COUNT.reg & CLOCK_MAX;
 }
 
 static inline void counter_1MHz_reset(void)
@@ -949,7 +950,7 @@ struct usb_can {
 	StaticSemaphore_t mutex_mem;
 	SemaphoreHandle_t mutex_handle;
 	uint16_t tx_offsets[2];
-	    uint8_t tx_bank;
+	uint8_t tx_bank;
 	uint8_t rx_bank;
 	uint8_t pipe;
 };
@@ -1135,6 +1136,7 @@ static inline bool sc_can_bulk_in_ep_ready(uint8_t index)
 	struct usb_can *can = &usb.can[index];
 	return 0 == can->tx_offsets[!can->tx_bank];
 }
+
 static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 {
 	SC_DEBUG_ASSERT(sc_can_bulk_in_ep_ready(index));
@@ -1148,6 +1150,11 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 	// LOG("ch%u %s: %u bytes\n", index, func, can->tx_offsets[can->tx_bank]);
 
 #if SUPERCAN_DEBUG
+
+	uint32_t rx_ts_last = 0;
+	uint32_t tx_ts_last = 0;
+
+
 
 	// LOG("ch%u %s: send %u bytes\n", index, func, can->tx_offsets[can->tx_bank]);
 	if (can->tx_offsets[can->tx_bank] > MSG_BUFFER_SIZE) {
@@ -1190,8 +1197,37 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 
 		switch (hdr->id) {
 		case SC_MSG_CAN_STATUS:
-		case SC_MSG_CAN_RX:
-		case SC_MSG_CAN_TXR:
+			break;
+		case SC_MSG_CAN_RX: {
+			struct sc_msg_can_rx const *msg = (struct sc_msg_can_rx const *)hdr;
+			uint32_t ts = msg->timestamp_us;
+			if (rx_ts_last) {
+				uint32_t delta = (ts - rx_ts_last) & CLOCK_MAX;
+				bool rx_ts_ok = delta <= CLOCK_MAX / 4;
+				if (unlikely(!rx_ts_ok)) {
+					LOG("ch%u rx ts=%lx prev=%lx\n", index, ts, rx_ts_last);
+					SC_ASSERT(false);
+					can->tx_offsets[can->tx_bank] = 0;
+					return;
+				}
+			}
+			rx_ts_last = ts;
+		} break;
+		case SC_MSG_CAN_TXR: {
+			struct sc_msg_can_txr const *msg = (struct sc_msg_can_txr const *)hdr;
+			uint32_t ts = msg->timestamp_us;
+			if (tx_ts_last) {
+				uint32_t delta = (ts - tx_ts_last) & CLOCK_MAX;
+				bool tx_ts_ok = delta <= CLOCK_MAX / 4;
+				if (unlikely(!tx_ts_ok)) {
+					LOG("ch%u tx ts=%lx prev=%lx\n", index, ts, tx_ts_last);
+					SC_ASSERT(false);
+					can->tx_offsets[can->tx_bank] = 0;
+					return;
+				}
+			}
+			tx_ts_last = ts;
+		} break;
 		case SC_MSG_CAN_ERROR:
 			break;
 		default:
@@ -2186,6 +2222,98 @@ bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
 //--------------------------------------------------------------------+
 // CAN TASK
 //--------------------------------------------------------------------+
+#if SPAM
+static void can_usb_task(void *param)
+{
+	const uint8_t index = (uint8_t)(uintptr_t)param;
+	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+
+	LOG("ch%u task start\n", index);
+
+	struct can *can = &cans.can[index];
+	struct usb_can *usb_can = &usb.can[index];
+
+	unsigned next_dlc = 0;
+	uint32_t counter = 0;
+	uint32_t can_id = 0x42;
+
+
+	while (42) {
+		// LOG("CAN%u task wait\n", index);
+		(void)ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
+
+		// LOG("CAN%u task loop\n", index);
+		if (unlikely(!usb.mounted)) {
+			continue;
+		}
+
+		if (unlikely(!can->enabled)) {
+			next_dlc = 0;
+			counter = 0;
+			LOG("ch%u usb state reset\n", index);
+			continue;
+		}
+
+		led_burst(can->led_traffic, LED_BURST_DURATION_MS);
+
+		while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
+
+		uint8_t * const tx_beg = usb_can->tx_buffers[usb_can->tx_bank];
+		uint8_t * const tx_end = tx_beg + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
+		uint8_t *tx_ptr = tx_beg + usb_can->tx_offsets[usb_can->tx_bank];
+
+		for (;;) {
+
+			// consume all input
+			__atomic_store_n(&can->rx_get_index, __atomic_load_n(&can->rx_put_index, __ATOMIC_ACQUIRE), __ATOMIC_RELEASE);
+
+			uint8_t bytes = sizeof(struct sc_msg_can_rx);
+
+
+			uint8_t dlc = next_dlc & 0xf;
+			if (!dlc) {
+				++dlc;
+			}
+			uint8_t can_frame_len = dlc_to_len(dlc);
+			bytes += can_frame_len;
+			if (bytes & (SC_MSG_CAN_LEN_MULTIPLE-1)) {
+				bytes += SC_MSG_CAN_LEN_MULTIPLE - (bytes & (SC_MSG_CAN_LEN_MULTIPLE-1));
+			}
+
+			if ((size_t)(tx_end - tx_ptr) >= bytes) {
+				counter_1MHz_request_current_value_lazy();
+				struct sc_msg_can_rx *msg = (struct sc_msg_can_rx *)tx_ptr;
+				usb_can->tx_offsets[usb_can->tx_bank] += bytes;
+				tx_ptr += bytes;
+
+
+				msg->id = SC_MSG_CAN_RX;
+				msg->len = bytes;
+				msg->dlc = dlc;
+				msg->flags = SC_CAN_FRAME_FLAG_FDF | SC_CAN_FRAME_FLAG_BRS;
+				msg->can_id = can_id;
+				memset(msg->data, 0, can_frame_len);
+				memcpy(&msg->data, &counter, sizeof(counter));
+				msg->timestamp_us = counter_1MHz_wait_for_current_value();
+				// LOG("ts=%lx\n", msg->timestamp_us);
+
+				++next_dlc;
+				++counter;
+
+			} else {
+				break;
+			}
+		}
+
+		if (sc_can_bulk_in_ep_ready(index) && usb_can->tx_offsets[usb_can->tx_bank]) {
+			sc_can_bulk_in_submit(index, __func__);
+		}
+
+		xSemaphoreGive(usb_can->mutex_handle);
+	}
+}
+#else
 static void can_usb_task(void *param)
 {
 	const unsigned BUS_ACTIVITY_TIMEOUT_MS = 256;
@@ -2414,14 +2542,14 @@ static void can_usb_task(void *param)
 
 					uint32_t ts = can->rx_frames[get_index].ts;
 // #if SUPERCAN_DEBUG
-// 					uint32_t delta = ts - rx_ts_last;
-// 					bool rx_ts_ok = delta <= 0x3FFFFFFF;
+// 					uint32_t delta = (ts - rx_ts_last) & CLOCK_MAX;
+// 					bool rx_ts_ok = delta <= CLOCK_MAX / 4;
 // 					if (unlikely(!rx_ts_ok)) {
 // 						taskDISABLE_INTERRUPTS();
 // 						// m_can_init_begin(can);
 // 						LOG("ch%u rx gi=%u ts=%lx prev=%lx\n", index, get_index, ts, rx_ts_last);
 // 						for (unsigned i = 0; i < CAN_RX_FIFO_SIZE; ++i) {
-// 							LOG("ch%u rx gi=%u ts=%lx\n", index, i, can->rx_frames[get_index].ts);
+// 							LOG("ch%u rx gi=%u ts=%lx\n", index, i, can->rx_frames[i].ts);
 // 						}
 
 // 					}
@@ -2495,14 +2623,14 @@ static void can_usb_task(void *param)
 					uint32_t ts = can->tx_frames[get_index].ts;
 // #if SUPERCAN_DEBUG
 // 					// bool tx_ts_ok = ts >= tx_ts_last || (TS_HI(tx_ts_last) == 0xffff && TS_HI(ts) == 0);
-// 					uint32_t delta = ts - tx_ts_last;
-// 					bool tx_ts_ok = delta <= 0x3FFFFFFF;
+// 					uint32_t delta = (ts - tx_ts_last) & CLOCK_MAX;
+// 					bool tx_ts_ok = delta <= CLOCK_MAX / 4;
 // 					if (unlikely(!tx_ts_ok)) {
 // 						taskDISABLE_INTERRUPTS();
 // 						// m_can_init_begin(can);
 // 						LOG("ch%u tx gi=%u ts=%lx prev=%lx\n", index, get_index, ts, tx_ts_last);
 // 						for (unsigned i = 0; i < CAN_TX_FIFO_SIZE; ++i) {
-// 							LOG("ch%u tx gi=%u ts=%lx\n", index, i, can->tx_frames[get_index].ts);
+// 							LOG("ch%u tx gi=%u ts=%lx\n", index, i, can->tx_frames[i].ts);
 // 						}
 
 // 					}
@@ -2586,6 +2714,8 @@ static void can_usb_task(void *param)
 		xSemaphoreGive(usb_can->mutex_handle);
 	}
 }
+#endif // !SPAM
+
 
 static inline void can_frame_bits(
 	uint32_t xtd,
@@ -2810,7 +2940,7 @@ static bool can_poll(
 			get_index = (gio + count - 1 - i) & (CAN_RX_FIFO_SIZE-1);
 			// LOG("ch%u ts rx count=%u gi=%u\n", index, count, get_index);
 
-			tsv[get_index] = ts;
+			tsv[get_index] = ts & CLOCK_MAX;
 
 			uint32_t nmbr_bits, dtbr_bits;
 			can_frame_bits(
@@ -2897,7 +3027,7 @@ static bool can_poll(
 			get_index = (gio + count - 1 - i) & (CAN_TX_FIFO_SIZE-1);
 			// LOG("ch%u poll tx count=%u gi=%u\n", index, count, get_index);
 
-			tsv[get_index] = ts;
+			tsv[get_index] = ts & CLOCK_MAX;
 
 			uint32_t nmbr_bits, dtbr_bits;
 			can_frame_bits(
