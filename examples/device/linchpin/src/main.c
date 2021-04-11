@@ -23,27 +23,22 @@
  *
  */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <ctype.h>
+
 
 #include <FreeRTOS.h>
 #include <task.h>
-#include <semphr.h>
-#include <timers.h>
 
 #include <bsp/board.h>
 #include <tusb.h>
 #include <hal/include/hal_gpio.h>
-#include <sam.h>
+// #include <sam.h>
 
 
 #include <linchpin.h>
 
 
-#define BASE64_C
-#include <base64.h>
+#define RLE_C
+#include <rle.h>
 
 
 
@@ -168,26 +163,22 @@ static void tusb_device_task(void* param)
 	}
 }
 
-
-
 static void cdc_cmd_task(void* param)
 {
 	(void) param;
 
 	while (1) {
-		// PORT->Group[2].OUTTGL.reg = 0b10000;
-
 		lp_cdc_cmd_task();
 	}
 }
 
-static void cdc_lin_task(void* param)
+LP_RAMFUNC static void cdc_lin_task(void* param)
 {
 	(void) param;
 
 	while (1) {
 		// PORT->Group[2].OUTTGL.reg = 0b10000;
-
+		// (void)ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
 		lp_cdc_lin_task();
 	}
 }
@@ -201,7 +192,7 @@ LP_RAMFUNC static void timer_interrupt(void)
 	lp_signal_next_bit();
 }
 
-extern void TC0_Handler(void)
+LP_RAMFUNC extern void TC0_Handler(void)
 {
 	timer_interrupt();
 }

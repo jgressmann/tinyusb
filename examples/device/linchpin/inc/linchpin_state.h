@@ -30,77 +30,77 @@
 #include <stdbool.h>
 
 
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-
-
-union rle_bit {
-	uint8_t mux;
-	struct {
-		uint8_t count:7;
-		uint8_t value:1;
-	} bit;
+enum lp_lin_mode {
+	LP_LIN_MODE_OFF,
+	LP_LIN_MODE_RELAXED,
+	LP_LIN_MODE_STRICT,
 };
 
 
-#define RLE_BIT_MAX_COUNT 127
 
-
-enum lp_state {
-	LP_DISCONNECTED,
-	LP_CONNECTED,
-	LP_RUNNING
+enum lp_lin_state {
+	LP_LIN_DISCONNECTED,
+	LP_LIN_CONNECTED,
+//	LP_LIN_RUNNING,
+//	LP_LIN_STOPPED,
 };
 
-enum lp_run_state {
-	LP_RUN_REQUESTED,
-	LP_RUN_STARTED,
-	LP_RUN_STOPPING,
-//	LP_RUN_STOPPING2,
-	LP_RUN_STOPPED,
+enum lp_cmd_state {
+	LP_CMD_DISCONNECTED,
+	LP_CMD_CONNECTED,
 };
+
 
 #define LP_CMD_BUFFER_SIZE 64
 
-struct linchpin {
-	size_t usb_rx_buffer_gi;
-	size_t usb_rx_buffer_pi;
-	size_t usb_tx_buffer_gi;
-	size_t usb_tx_buffer_pi;
-	size_t usb_tx_compressed_gi;
-	size_t usb_tx_compressed_pi;
+
+
+
+struct lin_task_state {
+	uint8_t signal_tx_buffer[LP_SIGNAL_BUFFER_SIZE];
+	uint8_t signal_rx_buffer[LP_SIGNAL_BUFFER_SIZE];
 	volatile size_t signal_tx_buffer_pi;
 	volatile size_t signal_tx_buffer_gi;
 	volatile size_t signal_rx_buffer_pi;
 	volatile size_t signal_rx_buffer_gi;
-	size_t usb_rx_compressed_offset;
 	uint32_t signal_frequency;
-	uint8_t cmd_buffer[LP_CMD_BUFFER_SIZE];
-	uint8_t usb_rx_buffer[LP_SIGNAL_BUFFER_SIZE];
-	uint8_t usb_tx_buffer[LP_SIGNAL_BUFFER_SIZE];
-	uint8_t signal_tx_buffer[2*LP_SIGNAL_BUFFER_SIZE];
-	uint8_t signal_rx_buffer[2*LP_SIGNAL_BUFFER_SIZE];
-	uint8_t usb_rx_compressed_buffer[LP_SIGNAL_BUFFER_SIZE];
-	uint8_t usb_tx_compressed_buffer[LP_SIGNAL_BUFFER_SIZE];
-	uint8_t fastlz_buffer[LP_SIGNAL_BUFFER_SIZE];
-	uint8_t cmd_count;
-	uint8_t state;
-	uint8_t run_state;
-	struct base64_state usb_rx_base64_state;
-	struct base64_state usb_tx_base64_state;
-	uint8_t signal_priv_input_bit;
-	uint8_t signal_priv_input_count;
+	enum lp_lin_state state;
 	volatile uint8_t signal_flags;
-	uint8_t signal_priv_output_count;
-	uint8_t signal_priv_output_value;
+	volatile uint8_t mode;
+	struct rle decoder;
+	struct rle encoder;
+	struct bitstream bs;
 };
 
-#define OUTPUT_FLAG_TX_STALLED  0x1
-#define OUTPUT_FLAG_RX_OVERFLOW 0x2
-#define OUTPUT_FLAG_OUTPUT_DONE 0x4
-#define OUTPUT_FLAG_INPUT_DONE  0x8
+struct cmd_task_state {
+	uint8_t usb_rx_buffer[LP_CMD_BUFFER_SIZE];
+	uint8_t usb_tx_buffer[LP_CMD_BUFFER_SIZE];
+	size_t usb_rx_buffer_gi;
+	size_t usb_rx_buffer_pi;
+	size_t usb_tx_buffer_gi;
+	size_t usb_tx_buffer_pi;
+
+	uint8_t cmd_count;
+	uint8_t state;
+};
+
+struct linchpin {
+	struct cmd_task_state cmd;
+	struct lin_task_state lin;
+};
+
+#define OUTPUT_FLAG_INPUT_BAD   0x01
+#define OUTPUT_FLAG_ERROR       0x02
+#define OUTPUT_FLAG_INPUT_DONE  0x04
+#define OUTPUT_FLAG_TX_STALLED  0x08
+#define OUTPUT_FLAG_RX_OVERFLOW 0x10
+#define OUTPUT_FLAG_OUTPUT_DONE 0x20
+
 
 
 extern struct linchpin lp;
@@ -131,36 +131,44 @@ LP_RAMFUNC void lp_signal_next_bit(void);
 #endif
 
 #ifndef lp_cdc_is_connected
-	#error Define bool lp_cdc_is_connected(void);
+	#error Define bool lp_cdc_is_connected(uint8_t itf);
 #endif
 
 #ifndef lp_cdc_rx_available
-	#error Define uint32_t lp_cdc_rx_available(void);
+	#error Define uint32_t lp_cdc_rx_available(uint8_t itf);
 #endif
 
 #ifndef lp_cdc_tx_available
-	#error Define uint32_t lp_cdc_tx_available(void);
+	#error Define uint32_t lp_cdc_tx_available(uint8_t itf);
 #endif
 
 #ifndef lp_cdc_rx
-	#error Define uint32_t lp_cdc_rx(uint8_t *ptr, uint32_t count);
+	#error Define uint32_t lp_cdc_rx(uint8_t itf, uint8_t *ptr, uint32_t count);
 #endif
 
 #ifndef lp_cdc_rx
-	#error Define uint32_t lp_cdc_tx(uint8_t const *ptr, uint32_t count);
+	#error Define uint32_t lp_cdc_tx(uint8_t itf, uint8_t const *ptr, uint32_t count);
 #endif
 
 #ifndef lp_cdc_tx_flush
-	#error Define void lp_cdc_tx_flush(void);
+	#error Define void lp_cdc_tx_flush(uint8_t itf);
 #endif
 
 #ifndef lp_cdc_rx_clear
-	#error Define void lp_cdc_rx_clear(void);
+	#error Define void lp_cdc_rx_clear(uint8_t itf);
 #endif
 
 #ifndef lp_cdc_tx_clear
-	#error Define void lp_cdc_tx_clear(void);
+	#error Define void lp_cdc_tx_clear(uint8_t itf);
 #endif
+
+// #ifndef lp_state_lock
+// 	#error Define void lp_state_lock(void);
+// #endif
+
+// #ifndef lp_state_unlock
+// 	#error Define void lp_state_unlock(void);
+// #endif
 
 
 void lp_delay_ms(uint32_t ms);

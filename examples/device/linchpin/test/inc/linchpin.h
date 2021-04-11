@@ -54,14 +54,18 @@
 #define likely(x) x
 #define unlikely(x) x
 #define LP_RAMFUNC
-#define LP_FASTLZ_HASH_LOG 14
 
 #include <linchpin_error.h>
 
-#define BASE64_ASSERT TEST_ASSERT
-#define BASE64_H
-#include <base64.h>
-#undef BASE64_H
+
+#define RLE_ASSERT TEST_ASSERT
+#define RLE_H
+#define RLE_INT_TYPE size_t
+#include <rle.h>
+#undef RLE_H
+
+#define BS_ASSERT TEST_ASSERT
+#include <bitstream.h>
 
 
 
@@ -88,16 +92,15 @@ extern void test_tx_pin_set(void);
 extern void test_tx_pin_clear(void);
 extern void test_timer_stop(void);
 extern void test_timer_start(void);
-extern bool test_cdc_is_connected(void);
-extern uint32_t test_cdc_rx_available(void);
-extern uint32_t test_cdc_tx_available(void);
-extern uint32_t test_cdc_rx(uint8_t *ptr, uint32_t count);
-extern uint32_t test_cdc_tx(uint8_t const *ptr, uint32_t count);
-extern void test_cdc_tx_flush(void);
-extern void test_cdc_rx_clear(void);
-extern void test_cdc_tx_clear(void);
+extern bool test_cdc_is_connected(uint8_t itf);
+extern uint32_t test_cdc_rx_available(uint8_t itf);
+extern uint32_t test_cdc_tx_available(uint8_t itf);
+extern uint32_t test_cdc_rx(uint8_t itf, uint8_t *ptr, uint32_t count);
+extern uint32_t test_cdc_tx(uint8_t itf, uint8_t const *ptr, uint32_t count);
+extern void test_cdc_tx_flush(uint8_t itf);
+extern void test_cdc_rx_clear(uint8_t itf);
+extern void test_cdc_tx_clear(uint8_t itf);
 
-#include <linchpin_api.h>
 #include <linchpin_state.h>
 
 

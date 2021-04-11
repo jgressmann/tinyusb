@@ -28,10 +28,10 @@ set(SOURCES
 	src/test_base64.cpp
 	src/test_proto.cpp
 	src/test_rle.cpp
+	src/test_bitstream.cpp
 	../src/linchpin_state.c
 	../src/usnprintf.c
 	../src/linchpin_error.c
-	../src/fastlz.c
 )
 
 add_executable(linchpin-tests ${SOURCES})

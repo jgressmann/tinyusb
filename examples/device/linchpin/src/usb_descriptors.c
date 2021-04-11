@@ -64,15 +64,17 @@ uint8_t const * tud_descriptor_device_cb(void)
 //--------------------------------------------------------------------+
 // Configuration Descriptor
 //--------------------------------------------------------------------+
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + CFG_TUD_CDC * TUD_CDC_DESC_LEN)
+// #define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
 
 uint8_t const desc_configuration[] =
 {
 	// Config number, interface count, string index, total length, attribute, power in mA
-	TUD_CONFIG_DESCRIPTOR(1, 2, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+	TUD_CONFIG_DESCRIPTOR(1, 4, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
 
 	// 1st CDC: Interface number, string index, EP notification address and size, EP data address (out, in) and size.
-	TUD_CDC_DESCRIPTOR(0, 4, 0x81, 8, 0x02, 0x82, 64)
+	TUD_CDC_DESCRIPTOR(0, 4, 0x81, 8, 0x02, 0x82, 64),
+	TUD_CDC_DESCRIPTOR(2, 5, 0x83, 8, 0x04, 0x84, 64),
 };
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
@@ -95,7 +97,8 @@ char const* string_desc_arr [] =
 	"Jean Gressmann",              // 1: Manufacturer
 	"linChPiN",                    // 2: Product
 	"",                            // 3: Serials, should use chip ID
-	"TinyUSB CDC",                 // 4: CDC Interface
+	"CMD",                         // 4: CDC Interface
+	"LIN",                         // 5: CDC Interface
 };
 
 static uint16_t _desc_str[32];
