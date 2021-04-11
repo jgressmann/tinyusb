@@ -31,7 +31,6 @@
 
 
 #define LP_SIGNAL_BUFFER_SIZE (1u<<12)
-#define LP_USB_BUFFER_SIZE 64
 #define lp_cdc_is_connected tud_cdc_n_connected
 #define lp_cdc_rx_available tud_cdc_n_available
 #define lp_cdc_tx_available tud_cdc_n_write_available
@@ -43,11 +42,17 @@
 #define lp_rx_pin_read() ({ (PORT->Group[2].IN.reg & 0b100000) == 0b100000; })
 #define lp_tx_pin_set() PORT->Group[2].OUTSET.reg = 0b10000
 #define lp_tx_pin_clear() PORT->Group[2].OUTCLR.reg = 0b10000
-#define lp_timer_stop() TC0->COUNT32.CTRLA.bit.ENABLE = 0
+#define lp_timer_stop() \
+	do { \
+		TC0->COUNT32.CTRLA.bit.ENABLE = 0; \
+		LP_LOG("timer stopped\n"); \
+	} while (0)
+
 #define lp_timer_start() \
 	do { \
 		TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY / lp.lin.signal_frequency; \
 		TC0->COUNT32.CTRLA.bit.ENABLE = 1; \
+		LP_LOG("timer started\n"); \
 	} while (0)
 
 

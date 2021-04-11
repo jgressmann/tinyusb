@@ -31,8 +31,6 @@
 #include <bsp/board.h>
 #include <tusb.h>
 #include <hal/include/hal_gpio.h>
-// #include <sam.h>
-
 
 #include <linchpin.h>
 
@@ -140,11 +138,8 @@ int main(void)
 	(void) xTaskCreateStatic(&cdc_lin_task, "cdc_lin", ARRAY_SIZE(tasks.cdc_lin_task_stack_mem), NULL, configMAX_PRIORITIES-1, tasks.cdc_lin_task_stack_mem, &tasks.cdc_lin_task_mem);
 
 
-	gpio_set_pin_level(LIN_TX_PIN, true);
-	// TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY;
 
-
-	board_uart_write("start scheduler\n", -1);
+	// board_uart_write("start scheduler\n", -1);
 	// board_led_off();
 	vTaskStartScheduler();
 	NVIC_SystemReset();
@@ -184,17 +179,19 @@ LP_RAMFUNC static void cdc_lin_task(void* param)
 }
 
 
-LP_RAMFUNC static void timer_interrupt(void)
+// LP_RAMFUNC static void timer_interrupt(void)
+// {
+
+// }
+
+LP_RAMFUNC extern void TC0_Handler(void)
 {
 	// clear interrupt
 	TC0->COUNT32.INTFLAG.reg = ~0;
 
-	lp_signal_next_bit();
-}
+	// LP_LOG("timer int\n");
 
-LP_RAMFUNC extern void TC0_Handler(void)
-{
-	timer_interrupt();
+	lp_timer_callback();
 }
 
 LP_RAMFUNC void lp_delay_ms(uint32_t ms)

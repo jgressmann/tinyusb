@@ -103,11 +103,13 @@ struct linchpin {
 
 
 
+typedef void (*lp_timer_callback_t)(void);
+extern lp_timer_callback_t lp_timer_callback;
 extern struct linchpin lp;
 void lp_init(void);
 void lp_cdc_cmd_task(void);
 LP_RAMFUNC void lp_cdc_lin_task(void);
-LP_RAMFUNC void lp_signal_next_bit(void);
+// LP_RAMFUNC void lp_signal_next_bit(void);
 
 
 #ifndef lp_rx_pin_read

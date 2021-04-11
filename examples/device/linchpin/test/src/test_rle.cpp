@@ -24,6 +24,8 @@ struct rle_fixture : public ::testing::Test
 
     std::string output;
     std::deque<char> input;
+    int write_error;
+    int read_error;
 
 
     ~rle_fixture()
@@ -34,6 +36,8 @@ struct rle_fixture : public ::testing::Test
     rle_fixture()
     {
         rle_init(&r);
+        write_error = std::numeric_limits<int>::min();
+        read_error = std::numeric_limits<int>::min();
     }
 
     void set_input(char const *str)
@@ -49,6 +53,10 @@ struct rle_fixture : public ::testing::Test
 
     int read(uint8_t * ptr, unsigned count)
     {
+        if (read_error != std::numeric_limits<int>::min()) {
+            return read_error;
+        }
+
         count = std::min<size_t>(count, input.size());
 
         unsigned bits_left_in_byte = 8;
@@ -69,6 +77,8 @@ struct rle_fixture : public ::testing::Test
 
         *ptr <<= bits_left_in_byte;
 
+
+
         return count;
     }
 
@@ -79,6 +89,10 @@ struct rle_fixture : public ::testing::Test
 
     int write(uint8_t const* ptr, unsigned bit_count)
     {
+        if (write_error != std::numeric_limits<int>::min()) {
+            return write_error;
+        }
+
         int r = bit_count;
         size_t index = 0;
         size_t x = ptr[index++];
@@ -94,6 +108,8 @@ struct rle_fixture : public ::testing::Test
         for (unsigned i = sizeof(*ptr) * 8 - 1; bit_count && i < sizeof(*ptr) * 8; --i, --bit_count) {
             output += (x & (static_cast<decltype (*ptr)>(1) << i)) ? '1' : '0';
         }
+
+
 
         return r;
     }
@@ -263,6 +279,81 @@ TEST_F(rle_fixture, encode_0x0x14_yields_expected_output)
     EXPECT_STREQ("000000000000000111111111111111", output.c_str());
 }
 
+TEST_F(rle_fixture, encode_sets_overflow_flag_if_output_cannot_be_written)
+{
+    rle_encode_bit(&r, this, &static_write, 0);
+
+    EXPECT_EQ(0u, r.value);
+    EXPECT_EQ(1u, r.count);
+    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+
+    write_error = 0;
+
+    rle_encode_flush(&r, this, &static_write);
+    EXPECT_EQ(RLE_FLAG_ENC_OVERFLOW | RLE_FLAG_ENC_VALUE, r.flags);
+}
+
+
+
+TEST_F(rle_fixture, encode_keeps_a_set_overflow_flag)
+{
+    rle_encode_bit(&r, this, &static_write, 0);
+
+    EXPECT_EQ(0u, r.value);
+    EXPECT_EQ(1u, r.count);
+    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+
+    write_error = 0;
+
+    rle_encode_flush(&r, this, &static_write);
+    EXPECT_EQ(RLE_FLAG_ENC_OVERFLOW | RLE_FLAG_ENC_VALUE, r.flags);
+
+    write_error = std::numeric_limits<int>::min();
+
+    rle_encode_bit(&r, this, &static_write, 1);
+    EXPECT_EQ(RLE_FLAG_ENC_OVERFLOW | RLE_FLAG_ENC_VALUE, r.flags);
+
+    rle_encode_flush(&r, this, &static_write);
+    EXPECT_EQ(RLE_FLAG_ENC_OVERFLOW | RLE_FLAG_ENC_VALUE, r.flags);
+}
+
+
+TEST_F(rle_fixture, encode_sets_error_flag_on_error)
+{
+    rle_encode_bit(&r, this, &static_write, 0);
+
+    EXPECT_EQ(0u, r.value);
+    EXPECT_EQ(1u, r.count);
+    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+
+    write_error = -1;
+
+    rle_encode_flush(&r, this, &static_write);
+    EXPECT_EQ(RLE_FLAG_ENC_ERROR | RLE_FLAG_ENC_VALUE, r.flags);
+}
+
+TEST_F(rle_fixture, encode_keeps_a_set_error_flag)
+{
+    rle_encode_bit(&r, this, &static_write, 0);
+
+    EXPECT_EQ(0u, r.value);
+    EXPECT_EQ(1u, r.count);
+    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+
+    write_error = -1;
+
+    rle_encode_flush(&r, this, &static_write);
+    EXPECT_EQ(RLE_FLAG_ENC_ERROR | RLE_FLAG_ENC_VALUE, r.flags);
+
+    write_error = std::numeric_limits<int>::min();
+
+    rle_encode_bit(&r, this, &static_write, 1);
+    EXPECT_EQ(RLE_FLAG_ENC_ERROR | RLE_FLAG_ENC_VALUE, r.flags);
+
+    rle_encode_flush(&r, this, &static_write);
+    EXPECT_EQ(RLE_FLAG_ENC_ERROR | RLE_FLAG_ENC_VALUE, r.flags);
+}
+
 
 TEST_F(rle_fixture, rle_decode_bit_asserts_params)
 {
@@ -414,4 +505,62 @@ TEST_F(rle_fixture, rle_decode_bit_decodes_8_bit_counter_properly)
     rle_decode_bit(&r, this, &static_read, &bit);
     EXPECT_EQ(RLE_FLAG_DEC_UNDERFLOW, r.flags);
 }
+
+TEST_F(rle_fixture, rle_decode_keeps_underflow_flag)
+{
+    int bit;
+    set_input("000000000100000000");
+
+    EXPECT_EQ(0u, r.flags);
+    read_error = 0;
+
+    rle_decode_bit(&r, this, &static_read, &bit);
+    EXPECT_EQ(RLE_FLAG_DEC_UNDERFLOW, r.flags);
+
+    read_error = std::numeric_limits<int>::min();
+
+    rle_decode_bit(&r, this, &static_read, &bit);
+    EXPECT_EQ(RLE_FLAG_DEC_UNDERFLOW, r.flags);
+}
+
+TEST_F(rle_fixture, rle_decode_keeps_error_flag)
+{
+    int bit;
+    set_input("000000000100000000");
+
+    EXPECT_EQ(0u, r.flags);
+    read_error = -1;
+
+    rle_decode_bit(&r, this, &static_read, &bit);
+    EXPECT_EQ(RLE_FLAG_DEC_ERROR, r.flags);
+
+    read_error = std::numeric_limits<int>::min();
+
+    rle_decode_bit(&r, this, &static_read, &bit);
+    EXPECT_EQ(RLE_FLAG_DEC_ERROR, r.flags);
+}
+
+
+
+TEST_F(rle_fixture, rle_decode_keeps_eos_flag)
+{
+    EXPECT_EQ(0u, r.flags);
+    set_input("011011111111111111111000000");
+
+    int bit;
+    rle_decode_bit(&r, this, &static_read, &bit);
+    EXPECT_EQ(0, bit);
+    EXPECT_EQ(0u, r.flags);
+
+    rle_decode_bit(&r, this, &static_read, &bit);
+    EXPECT_EQ(1, bit);
+    EXPECT_EQ(0u, r.flags);
+
+    rle_decode_bit(&r, this, &static_read, &bit);
+    EXPECT_EQ(RLE_FLAG_DEC_EOS, r.flags);
+
+    rle_decode_bit(&r, this, &static_read, &bit);
+    EXPECT_EQ(RLE_FLAG_DEC_EOS, r.flags);
+}
+
 

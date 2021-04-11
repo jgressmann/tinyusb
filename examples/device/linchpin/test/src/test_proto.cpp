@@ -20,9 +20,14 @@
 
 using ::testing::StartsWith;
 
+
+
 namespace
 {
-
+static inline void lp_signal_next_bit()
+{
+    lp_timer_callback();
+}
 
 
 

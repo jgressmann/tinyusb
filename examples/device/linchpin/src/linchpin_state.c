@@ -29,8 +29,10 @@
 #include <usnprintf.h>
 #include <inttypes.h>
 
+LP_RAMFUNC static void lp_next_bit_relaxed(void);
+LP_RAMFUNC static void lp_next_bit_strict(void);
 
-
+lp_timer_callback_t lp_timer_callback;
 struct linchpin lp;
 
 static inline void lp_lin_clear_rx_tx(void)
@@ -59,6 +61,7 @@ void lp_init(void)
     memset(&lp, 0, sizeof(lp));
     lp.lin.signal_frequency = 1250000;
     lp_lin_reset();
+    lp_timer_callback = &lp_next_bit_relaxed;
 }
 
 
@@ -254,19 +257,28 @@ static void process_cmd(uint8_t *ptr, uint8_t count)
                     switch (ptr[3]) {
                     case 'o':
                     case 'O':
+                        LP_LOG("LIN mode off\n");
                         place_error_response(LP_ERROR_NONE);
                         break;
                     case 'r':
                     case 'R':
-                        __atomic_store_n(&lp.lin.mode, LP_LIN_MODE_RELAXED, __ATOMIC_RELEASE);
-                        lp_timer_start();
+                        LP_LOG("LIN mode relaxed\n");
+                        lp_timer_callback = &lp_next_bit_relaxed;
+                        lp.lin.mode = LP_LIN_MODE_RELAXED;
+                        __atomic_thread_fence(__ATOMIC_RELEASE);
                         place_error_response(LP_ERROR_NONE);
+                        lp_timer_start();
+                        LP_LOG("LIN timer started\n");
                         break;
                     case 's':
                     case 'S':
-                        __atomic_store_n(&lp.lin.mode, LP_LIN_MODE_STRICT, __ATOMIC_RELEASE);
-                        lp_timer_start();
+                        LP_LOG("LIN mode strict\n");
+                        lp_timer_callback = &lp_next_bit_strict;
+                        lp.lin.mode = LP_LIN_MODE_STRICT;
+                        __atomic_thread_fence(__ATOMIC_RELEASE);
                         place_error_response(LP_ERROR_NONE);
+                        lp_timer_start();
+                        LP_LOG("LIN timer started\n");
                         break;
                     default:
                         place_error_response(LP_ERROR_MALFORMED);
@@ -317,6 +329,7 @@ static void process_cmd(uint8_t *ptr, uint8_t count)
                 lp.cmd.usb_tx_buffer_gi = 0;
                 lp.cmd.usb_tx_buffer_pi = usnprintf((char*)lp.cmd.usb_tx_buffer, sizeof(lp.cmd.usb_tx_buffer), "%d %" PRIu32 "\n", LP_ERROR_NONE, lp.lin.signal_frequency);
                 break;
+            case 'l':
             case 'L': {
                 place_signal_flags();
             } break;
@@ -489,7 +502,7 @@ LP_RAMFUNC void lp_cdc_lin_task(void)
     lp_delay_ms(1);
 }
 
-LP_RAMFUNC static int bs_read_byte(void* ctx, uint8_t* byte)
+LP_RAMFUNC static inline int bs_read_byte(void* ctx, uint8_t* byte)
 {
     (void)ctx;
 
@@ -540,8 +553,10 @@ LP_RAMFUNC static int rle_read_bits(void* ctx, uint8_t* ptr, unsigned count)
 
 }
 
-LP_RAMFUNC static int bs_write_byte(void* ctx, uint8_t byte)
+LP_RAMFUNC static inline int bs_write_byte(void* ctx, uint8_t byte)
 {
+    LP_LOG("bs 1 byte\n");
+
     size_t gi = __atomic_load_n(&lp.lin.signal_rx_buffer_gi, __ATOMIC_ACQUIRE);
     size_t pi = lp.lin.signal_rx_buffer_pi;
     size_t used = pi - gi;
@@ -561,6 +576,8 @@ LP_RAMFUNC static int bs_write_byte(void* ctx, uint8_t byte)
 LP_RAMFUNC static int rle_write_bits(void* ctx, uint8_t const* ptr, unsigned count)
 {
     (void)ctx;
+
+    LP_LOG("rle %u bits\n", count);
 
     for (unsigned i = 0; i < count; ++i) {
         unsigned bo = 7 - (i & 7);
@@ -625,59 +642,72 @@ LP_RAMFUNC static void lp_signal_load_error(unsigned lin_dec_flags)
     }
 }
 
-
-
-// @120 MHz 1.625 us, cache off
-// @200 MHz 1.250 us, cache off
-// @200 MHz 550-580 ns, cache on
-// @200 MHz 100 ns, cache on (pin toggle)
-LP_RAMFUNC void lp_signal_next_bit(void)
+LP_RAMFUNC static void lp_next_bit_relaxed(void)
 {
-    // PORT->Group[2].OUTTGL.reg = 0b10000;
-    // goto out;
     int output_bit = 0;
     int input_bit = lp_rx_pin_read();
-    uint8_t mode = __atomic_load_n(&lp.lin.mode, __ATOMIC_RELAXED);
 
-    if (LP_LIN_MODE_RELAXED == mode) {
-        rle_decode_bit(&lp.lin.decoder, NULL, &rle_read_bits, &output_bit);
-        if (lp.lin.decoder.flags & (RLE_FLAG_DEC_UNDERFLOW | RLE_FLAG_DEC_EOS | RLE_FLAG_DEC_ERROR)) {
-            lp.lin.decoder.flags = 0;
+    // rle_decode_bit(&lp.lin.decoder, NULL, &rle_read_bits, &output_bit);
+    lp.lin.decoder.flags = RLE_FLAG_DEC_UNDERFLOW;
+    if (lp.lin.decoder.flags & (RLE_FLAG_DEC_UNDERFLOW | RLE_FLAG_DEC_EOS | RLE_FLAG_DEC_ERROR)) {
+        lp.lin.decoder.flags = 0;
+        lp_tx_pin_set();
+    } else {
+        if (output_bit) {
             lp_tx_pin_set();
         } else {
-            if (output_bit) {
-                lp_tx_pin_set();
-            } else {
-                lp_tx_pin_clear();
-            }
-        }
-
-        rle_encode_bit(&lp.lin.encoder, NULL, &rle_write_bits, input_bit);
-        lp.lin.encoder.flags &= ~RLE_FLAG_ENC_VALUE;
-    } else {
-        rle_decode_bit(&lp.lin.decoder, NULL, &rle_read_bits, &output_bit);
-        uint8_t lin_dec_flags = lp.lin.decoder.flags & ~RLE_FLAG_DEC_AVAILABLE;
-        if (unlikely(lin_dec_flags)) {
-            lp_signal_load_error(lin_dec_flags);
-        } else {
-            if (output_bit) {
-                lp_tx_pin_set();
-            } else {
-                lp_tx_pin_clear();
-            }
-
-            rle_encode_bit(&lp.lin.encoder, NULL, &rle_write_bits, input_bit);
-            uint8_t lin_enc_flags = lp.lin.encoder.flags & ~RLE_FLAG_ENC_VALUE;
-            if (unlikely(lin_enc_flags)) {
-                lp_signal_store_error(lin_enc_flags);
-            }
+            lp_tx_pin_clear();
         }
     }
 
-    goto out; // prevent compiler warning
+    rle_encode_bit(&lp.lin.encoder, NULL, &rle_write_bits, input_bit);
+    lp.lin.encoder.flags &= RLE_FLAG_ENC_VALUE;
 
-
-
-out:
-    ;
+    if (!(lp.lin.encoder.count & 0xffff)) {
+        LP_LOG("lin rx 16K\n");
+    }
 }
+
+LP_RAMFUNC static void lp_next_bit_strict(void)
+{
+    int output_bit = 0;
+    int input_bit = lp_rx_pin_read();
+
+    rle_decode_bit(&lp.lin.decoder, NULL, &rle_read_bits, &output_bit);
+    uint8_t lin_dec_flags = lp.lin.decoder.flags & ~RLE_FLAG_DEC_AVAILABLE;
+    if (unlikely(lin_dec_flags)) {
+        lp_signal_load_error(lin_dec_flags);
+    } else {
+        if (output_bit) {
+            lp_tx_pin_set();
+        } else {
+            lp_tx_pin_clear();
+        }
+
+        rle_encode_bit(&lp.lin.encoder, NULL, &rle_write_bits, input_bit);
+        uint8_t lin_enc_flags = lp.lin.encoder.flags & ~RLE_FLAG_ENC_VALUE;
+        if (unlikely(lin_enc_flags)) {
+            lp_signal_store_error(lin_enc_flags);
+        }
+    }
+}
+
+
+// // @120 MHz 1.625 us, cache off
+// // @200 MHz 1.250 us, cache off
+// // @200 MHz 550-580 ns, cache on
+// // @200 MHz 100 ns, cache on (pin toggle)
+// LP_RAMFUNC void lp_signal_next_bit(void)
+// {
+//     // PORT->Group[2].OUTTGL.reg = 0b10000;
+//     // goto out;
+//     timer_callback();
+
+
+//     goto out; // prevent compiler warning
+
+
+
+// out:
+//     ;
+// }

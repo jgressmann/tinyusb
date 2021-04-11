@@ -124,6 +124,10 @@ RLE_FUNC static inline void rle_encode_bit(
 	RLE_ASSERT(rle);
 	RLE_ASSERT(callback);
 
+	if (rle_unlikely(rle->flags & (RLE_FLAG_ENC_ERROR | RLE_FLAG_ENC_OVERFLOW))) {
+		return;
+	}
+
 	if (rle_likely(rle->flags & RLE_FLAG_ENC_VALUE)) {
 		if (rle_likely((unsigned)bit == rle->value)) {
 			if (rle_unlikely(rle->count == RLE_MAX_COUNT)) {
@@ -156,6 +160,10 @@ RLE_FUNC static inline void rle_decode_bit(
 	RLE_ASSERT(rle);
 	RLE_ASSERT(callback);
 	RLE_ASSERT(bit);
+
+	if (rle_unlikely(rle->flags & (RLE_FLAG_DEC_ERROR | RLE_FLAG_DEC_EOS | RLE_FLAG_DEC_UNDERFLOW))) {
+		return;
+	}
 
 	if (rle_likely(rle->flags & RLE_FLAG_DEC_AVAILABLE)) {
 available:
@@ -192,6 +200,10 @@ RLE_FUNC RLE_EXTERN void rle_encode_flush(
 	RLE_ASSERT(callback);
 
 	if (rle_unlikely(!rle->count)) {
+		return;
+	}
+
+	if (rle_unlikely(rle->flags & (RLE_FLAG_ENC_ERROR | RLE_FLAG_ENC_OVERFLOW))) {
 		return;
 	}
 
@@ -272,12 +284,11 @@ RLE_FUNC RLE_EXTERN void rle_encode_flush(
 		}
 	}
 
-	unsigned align_shift = 0;
 	if ((sizeof(RLE_INT_TYPE) * 8 - left) & 7) {
-		align_shift = 8 - ((sizeof(RLE_INT_TYPE) * 8 - left) & 7);
-	}
+		unsigned align_shift = 8 - ((sizeof(RLE_INT_TYPE) * 8 - left) & 7);
 
-	value <<= align_shift;
+		value <<= align_shift;
+	}
 
 	switch ((sizeof(RLE_INT_TYPE) * 8 - left + 7) / 8) {
 	case 8:
@@ -306,11 +317,6 @@ RLE_FUNC RLE_EXTERN void rle_encode_flush(
 		break;
 	}
 
-
-
-	rle->count = 0;
-	rle->flags = 0;
-
 	int w = callback(ctx, byte_buf, total_bit_count);
 	if (rle_unlikely((unsigned)w != total_bit_count)) {
 		if (w < 0) {
@@ -318,6 +324,9 @@ RLE_FUNC RLE_EXTERN void rle_encode_flush(
 		} else {
 			rle->flags |= RLE_FLAG_ENC_OVERFLOW;
 		}
+	} else {
+		rle->count = 0;
+		rle->flags = 0;
 	}
 }
 
