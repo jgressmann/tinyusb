@@ -33,3 +33,7 @@ dfu: $(BUILD)/$(BOARD)-firmware.dfu $(BUILD)/$(BOARD)-firmware.superdfu.hex
 dfu-upload: $(BUILD)/$(BOARD)-firmware.dfu
 	#sudo dfu-tool write $(BUILD)/$(BOARD)-firmware.dfu
 	sudo dfu-util -R -D $(BUILD)/$(BOARD)-firmware.dfu
+
+# flash using edbg from https://github.com/ataradov/edbg
+edbg-dfu: $(BUILD)/$(BOARD)-firmware.superdfu.bin
+	edbg --verbose -t same51 -pv -o $(OFFSET) -f $<
