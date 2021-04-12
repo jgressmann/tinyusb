@@ -658,9 +658,9 @@ LP_RAMFUNC static void lp_next_bit_relaxed(void)
     unsigned input_bit = lp_rx_pin_read();
 
     // 306 -> 91
-    // rle_decode_bit(&lp.lin.decoder, NULL, &rle_read_bits, &output_bit);
-    lp.lin.decoder.flags = RLE_FLAG_DEC_UNDERFLOW;
-    if (lp.lin.decoder.flags & (RLE_FLAG_DEC_UNDERFLOW | RLE_FLAG_DEC_EOS | RLE_FLAG_DEC_ERROR)) {
+    rle_decode_bit(&lp.lin.decoder, NULL, &rle_read_bits, &output_bit);
+    // lp.lin.decoder.flags = RLE_FLAG_DEC_UNDERFLOW;
+    if (lp.lin.decoder.flags) {
         lp.lin.decoder.flags = 0;
         lp_tx_pin_set();
     } else {
@@ -673,7 +673,7 @@ LP_RAMFUNC static void lp_next_bit_relaxed(void)
 
     // 81
     rle_encode_bit(&lp.lin.encoder, NULL, &rle_write_bits, input_bit);
-    lp.lin.encoder.flags &= RLE_FLAG_ENC_VALUE;
+    lp.lin.encoder.flags = 0;
 
     // uint32_t end = CMCC->MSR.reg;
     // lp_next_bit_relaxed_sum += end - start;

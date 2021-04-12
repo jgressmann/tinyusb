@@ -414,7 +414,6 @@ RLE_FUNC RLE_EXTERN void rle_load(
 	count += rem;
 	rle->value = value;
 	rle->count = count;
-	rle->flags |= RLE_FLAG_DEC_AVAILABLE;
 }
 
 #pragma GCC diagnostic pop
