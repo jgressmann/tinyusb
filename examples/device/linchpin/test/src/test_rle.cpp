@@ -357,7 +357,7 @@ TEST_F(rle_fixture, encode_keeps_a_set_error_flag)
 
 TEST_F(rle_fixture, rle_decode_bit_asserts_params)
 {
-    int bit;
+    unsigned bit;
     EXPECT_ANY_THROW(rle_decode_bit(NULL, this, &static_read, &bit));
     EXPECT_ANY_THROW(rle_decode_bit(&r, this, NULL, &bit));
     EXPECT_ANY_THROW(rle_decode_bit(&r, this, &static_read, NULL));
@@ -367,7 +367,7 @@ TEST_F(rle_fixture, rle_decode_bit_underflows_if_no_input_is_available)
 {
     EXPECT_EQ(0u, r.flags);
 
-    int bit;
+    unsigned bit;
     rle_decode_bit(&r, this, &static_read, &bit);
     EXPECT_EQ(RLE_FLAG_DEC_UNDERFLOW, r.flags);
 }
@@ -377,7 +377,7 @@ TEST_F(rle_fixture, rle_decode_bit_underflows_if_insufficient_insufficient_input
     EXPECT_EQ(0u, r.flags);
     set_input("0");
 
-    int bit;
+    unsigned bit;
     rle_decode_bit(&r, this, &static_read, &bit);
     EXPECT_EQ(RLE_FLAG_DEC_UNDERFLOW, r.flags);
 }
@@ -387,7 +387,7 @@ TEST_F(rle_fixture, rle_decode_bit_underflows_if_insufficient_input_is_available
     EXPECT_EQ(0u, r.flags);
     set_input("00");
 
-    int bit;
+    unsigned bit;
     rle_decode_bit(&r, this, &static_read, &bit);
     EXPECT_EQ(RLE_FLAG_DEC_UNDERFLOW, r.flags);
 }
@@ -397,7 +397,7 @@ TEST_F(rle_fixture, rle_decode_bit_underflows_if_insufficient_input_is_available
     EXPECT_EQ(0u, r.flags);
     set_input("001");
 
-    int bit;
+    unsigned bit;
     rle_decode_bit(&r, this, &static_read, &bit);
     EXPECT_EQ(RLE_FLAG_DEC_UNDERFLOW, r.flags);
 }
@@ -407,13 +407,13 @@ TEST_F(rle_fixture, rle_decode_bit_ends_after_sizeof_int_len_of_0)
     EXPECT_EQ(0u, r.flags);
     set_input("01100000000000000000");
 
-    int bit;
+    unsigned bit;
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(0, bit);
+    EXPECT_EQ(0u, bit);
     EXPECT_EQ(0u, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(1, bit);
+    EXPECT_EQ(1u, bit);
     EXPECT_EQ(0u, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
@@ -425,13 +425,13 @@ TEST_F(rle_fixture, rle_decode_bit_ends_after_sizeof_int_len_of_1)
     EXPECT_EQ(0u, r.flags);
     set_input("01101111111111111111");
 
-    int bit;
+    unsigned bit;
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(0, bit);
+    EXPECT_EQ(0u, bit);
     EXPECT_EQ(0u, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(1, bit);
+    EXPECT_EQ(1u, bit);
     EXPECT_EQ(0u, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
@@ -443,13 +443,13 @@ TEST_F(rle_fixture, rle_decode_bit_decodes_0_bit_counter_properly)
     EXPECT_EQ(0u, r.flags);
     set_input("0110");
 
-    int bit;
+    unsigned bit;
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(0, bit);
+    EXPECT_EQ(0u, bit);
     EXPECT_EQ(0u, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(1, bit);
+    EXPECT_EQ(1u, bit);
     EXPECT_EQ(0u, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
@@ -461,25 +461,25 @@ TEST_F(rle_fixture, rle_decode_bit_decodes_1_bit_counter_properly)
     EXPECT_EQ(0u, r.flags);
     set_input("00101101");
 
-    int bit;
+    unsigned bit;
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(0, bit);
+    EXPECT_EQ(0u, bit);
     EXPECT_EQ(RLE_FLAG_DEC_AVAILABLE, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(0, bit);
+    EXPECT_EQ(0u, bit);
     EXPECT_EQ(0, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(1, bit);
+    EXPECT_EQ(1u, bit);
     EXPECT_EQ(RLE_FLAG_DEC_AVAILABLE, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(1, bit);
+    EXPECT_EQ(1u, bit);
     EXPECT_EQ(RLE_FLAG_DEC_AVAILABLE, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(1, bit);
+    EXPECT_EQ(1u, bit);
     EXPECT_EQ(0, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
@@ -491,15 +491,15 @@ TEST_F(rle_fixture, rle_decode_bit_decodes_8_bit_counter_properly)
     EXPECT_EQ(0u, r.flags);
     set_input("000000000100000000");
 
-    int bit;
+    unsigned bit;
     for (size_t i = 0; i < 255; ++i) {
         rle_decode_bit(&r, this, &static_read, &bit);
-        EXPECT_EQ(0, bit);
+        EXPECT_EQ(0u, bit);
         EXPECT_EQ(RLE_FLAG_DEC_AVAILABLE, r.flags);
     }
 
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(0, bit);
+    EXPECT_EQ(0u, bit);
     EXPECT_EQ(0u, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
@@ -508,7 +508,7 @@ TEST_F(rle_fixture, rle_decode_bit_decodes_8_bit_counter_properly)
 
 TEST_F(rle_fixture, rle_decode_keeps_underflow_flag)
 {
-    int bit;
+    unsigned bit;
     set_input("000000000100000000");
 
     EXPECT_EQ(0u, r.flags);
@@ -525,7 +525,7 @@ TEST_F(rle_fixture, rle_decode_keeps_underflow_flag)
 
 TEST_F(rle_fixture, rle_decode_keeps_error_flag)
 {
-    int bit;
+    unsigned bit;
     set_input("000000000100000000");
 
     EXPECT_EQ(0u, r.flags);
@@ -547,13 +547,13 @@ TEST_F(rle_fixture, rle_decode_keeps_eos_flag)
     EXPECT_EQ(0u, r.flags);
     set_input("011011111111111111111000000");
 
-    int bit;
+    unsigned bit;
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(0, bit);
+    EXPECT_EQ(0u, bit);
     EXPECT_EQ(0u, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
-    EXPECT_EQ(1, bit);
+    EXPECT_EQ(1u, bit);
     EXPECT_EQ(0u, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);

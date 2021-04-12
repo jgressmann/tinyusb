@@ -53,15 +53,15 @@ TEST(base64, init_sets_default_values)
 TEST(base64, base64_to_ascii)
 {
     for (unsigned i = 0; i < 26; ++i) {
-        EXPECT_EQ('A' + i, base64_to_ascii(i));
+        EXPECT_EQ((char)('A' + i), (char)base64_to_ascii(i));
     }
 
     for (unsigned i = 26; i < 52; ++i) {
-        EXPECT_EQ('a' + i - 26, base64_to_ascii(i));
+        EXPECT_EQ((char)('a' + i - 26), (char)base64_to_ascii(i));
     }
 
     for (unsigned i = 52; i < 62; ++i) {
-        EXPECT_EQ('0' + i - 52, base64_to_ascii(i));
+        EXPECT_EQ((char)('0' + i - 52), (char)base64_to_ascii(i));
     }
 
     EXPECT_EQ('+', base64_to_ascii(62));
@@ -133,7 +133,7 @@ TEST_F(base64_fixture, encode_finalize2)
     EXPECT_EQ(0, e.rem);
     // EXPECT_EQ(0x00, e.state);
     // EXPECT_EQ(4, e.bits);
-    EXPECT_EQ(4, pi);
+    EXPECT_EQ(4u, pi);
     EXPECT_EQ('/', buf[0]);
     EXPECT_EQ('w', buf[1]);
     EXPECT_EQ('=', buf[2]);
@@ -159,7 +159,7 @@ TEST_F(base64_fixture, encode_finalize1)
     EXPECT_EQ(0, e.rem);
     // EXPECT_EQ(0x00, e.state);
     // EXPECT_EQ(4, e.bits);
-    EXPECT_EQ(4, pi);
+    EXPECT_EQ(4u, pi);
     EXPECT_EQ('8', buf[0]);
     EXPECT_EQ('A', buf[1]);
     EXPECT_EQ('8', buf[2]);
@@ -202,24 +202,24 @@ TEST_F(base64_fixture, decode_works)
     EXPECT_EQ(BASE64_FLAG_UNDERFLOW, d.flags);
     EXPECT_EQ(6, d.bits);
     // EXPECT_EQ(0x00, d.state);
-    EXPECT_EQ(0, pi);
+    EXPECT_EQ(0u, pi);
     base64_decode_shift('B', &d, &gi, &pi, buf, sizeof(buf));
     EXPECT_EQ(BASE64_FLAG_UNDERFLOW, d.flags);
     EXPECT_EQ(4, d.bits);
     // EXPECT_EQ(0x00, d.state);
-    EXPECT_EQ(1, pi);
+    EXPECT_EQ(1u, pi);
     EXPECT_EQ(0x00, buf[0]);
     base64_decode_shift('C', &d, &gi, &pi, buf, sizeof(buf));
     EXPECT_EQ(BASE64_FLAG_UNDERFLOW, d.flags);
     EXPECT_EQ(2, d.bits);
     // EXPECT_EQ(0x00, d.state);
-    EXPECT_EQ(2, pi);
+    EXPECT_EQ(2u, pi);
     EXPECT_EQ(0x10, buf[1]);
     base64_decode_shift('D', &d, &gi, &pi, buf, sizeof(buf));
     EXPECT_EQ(0, d.flags);
     EXPECT_EQ(0, d.bits);
     // EXPECT_EQ(0x00, d.state);
-    EXPECT_EQ(3, pi);
+    EXPECT_EQ(3u, pi);
     EXPECT_EQ(0x83, buf[2]);
 }
 
@@ -242,14 +242,14 @@ TEST_F(base64_fixture, decode_short2)
     EXPECT_EQ(BASE64_FLAG_DONE | BASE64_FLAG_UNDERFLOW, d.flags);
     EXPECT_EQ(0, d.bits);
     // EXPECT_EQ(0x00, d.state);
-    EXPECT_EQ(1, pi);
+    EXPECT_EQ(1u, pi);
     EXPECT_EQ(0xfc, buf[0]);
     // EXPECT_EQ(0x10, buf[1]);
     base64_decode_shift('=', &d, &gi, &pi, buf, sizeof(buf));
     EXPECT_EQ(BASE64_FLAG_DONE, d.flags);
     // EXPECT_EQ(0, d.bits);
     // EXPECT_EQ(0x00, d.state);
-    EXPECT_EQ(1, pi);
+    EXPECT_EQ(1u, pi);
     EXPECT_EQ(0xfc, buf[0]);
     // EXPECT_EQ(0x10, buf[1]);
 }
@@ -264,7 +264,7 @@ TEST_F(base64_fixture, decode_short1)
     EXPECT_EQ(BASE64_FLAG_DONE, d.flags);
     EXPECT_EQ(0, d.bits);
     // EXPECT_EQ(0x00, d.state);
-    EXPECT_EQ(2, pi);
+    EXPECT_EQ(2u, pi);
     EXPECT_EQ(0xfc, buf[0]);
     EXPECT_EQ(0x10, buf[1]);
 }

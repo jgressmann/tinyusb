@@ -53,8 +53,8 @@ typedef int (*bs_read_t)(void* ctx, uint8_t* byte);
 struct bitstream {
 	uint8_t incoming_byte;
 	uint8_t outgoing_byte;
-	uint8_t incoming_count : 4;
-	uint8_t outgoing_count : 4;
+	uint8_t incoming_count;
+	uint8_t outgoing_count;
 };
 
 static inline void bs_init(struct bitstream *s)
@@ -67,7 +67,7 @@ static inline int bs_write(
 		struct bitstream* s,
 		void* ctx,
 		bs_write_t callback,
-		int bit)
+		unsigned bit)
 {
 	BS_ASSERT(s);
 	BS_ASSERT(callback);
@@ -117,9 +117,9 @@ static inline int bs_read(
 		struct bitstream* s,
 		void* ctx,
 		bs_read_t callback,
-		int *bit)
+		unsigned *bit)
 {
-	uint8_t mask = 0;
+	unsigned mask = 0;
 
 	BS_ASSERT(s);
 	BS_ASSERT(callback);

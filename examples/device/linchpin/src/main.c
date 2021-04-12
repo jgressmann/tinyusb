@@ -127,6 +127,7 @@ int main(void)
 
 
 	CMCC->CTRL.bit.CEN = 1;
+	CMCC->MEN.bit.MENABLE = 1;
 
 
 	lp_init();
@@ -162,7 +163,7 @@ static void cdc_cmd_task(void* param)
 {
 	(void) param;
 
-	while (1) {
+	for (;;) {
 		lp_cdc_cmd_task();
 	}
 }
@@ -179,12 +180,7 @@ LP_RAMFUNC static void cdc_lin_task(void* param)
 }
 
 
-// LP_RAMFUNC static void timer_interrupt(void)
-// {
-
-// }
-
-LP_RAMFUNC extern void TC0_Handler(void)
+LP_RAMFUNC static void timer_interrupt(void)
 {
 	// clear interrupt
 	TC0->COUNT32.INTFLAG.reg = ~0;
@@ -194,7 +190,12 @@ LP_RAMFUNC extern void TC0_Handler(void)
 	lp_timer_callback();
 }
 
-LP_RAMFUNC void lp_delay_ms(uint32_t ms)
+void TC0_Handler(void)
+{
+	timer_interrupt();
+}
+
+void lp_delay_ms(uint32_t ms)
 {
 	vTaskDelay(pdMS_TO_TICKS(ms));
 }

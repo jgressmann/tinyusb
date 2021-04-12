@@ -61,7 +61,7 @@
 #include <linchpin_error.h>
 
 
-#define RLE_ASSERT LP_DEBUG_ASSERT
+#define RLE_ASSERT(...)
 #define rle_likely likely
 #define rle_unlikely unlikely
 #define RLE_FUNC LP_RAMFUNC

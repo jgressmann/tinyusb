@@ -64,7 +64,7 @@ __attribute__((noreturn)) extern void lp_assert_failed(char const * const msg);
 #define configUSE_PREEMPTION                    1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 1
 #define configCPU_CLOCK_HZ                      SystemCoreClock
-#define configTICK_RATE_HZ                      ( 10000 )
+#define configTICK_RATE_HZ                      ( 1000 )
 #define configMAX_PRIORITIES                    ( 5 )
 #define configMINIMAL_STACK_SIZE                ( 128 )
 #define configTOTAL_HEAP_SIZE                   ( 0*1024 ) // dynamic is not used
@@ -108,7 +108,7 @@ __attribute__((noreturn)) extern void lp_assert_failed(char const * const msg);
 #define INCLUDE_vTaskPrioritySet               0
 #define INCLUDE_uxTaskPriorityGet              0
 #define INCLUDE_vTaskDelete                    0
-#define INCLUDE_vTaskSuspend                   0 // required for queue, semaphore, mutex to be blocked indefinitely with portMAX_DELAY
+#define INCLUDE_vTaskSuspend                   1 // required for queue, semaphore, mutex to be blocked indefinitely with portMAX_DELAY
 #define INCLUDE_xResumeFromISR                 0
 #define INCLUDE_vTaskDelayUntil                0
 #define INCLUDE_vTaskDelay                     1

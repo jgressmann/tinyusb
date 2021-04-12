@@ -26,6 +26,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 
 #if defined(RLE_STATIC)
 	#define RLE_EXTERN static
@@ -87,8 +88,8 @@ typedef int (*rle_read_bits_t)(void* ctx, uint8_t* ptr, unsigned count);
 
 
 #define RLE_FLAG_ENC_ERROR     0x01
-#define RLE_FLAG_ENC_VALUE     0x02
-#define RLE_FLAG_ENC_OVERFLOW  0x04
+#define RLE_FLAG_ENC_OVERFLOW  0x02
+#define RLE_FLAG_ENC_VALUE     0x04
 
 
 #define RLE_FLAG_DEC_ERROR     0x01
@@ -100,6 +101,7 @@ struct rle {
 	RLE_INT_TYPE count;
 	uint8_t value;
 	uint8_t flags;
+	uint8_t priv;
 };
 
 RLE_FUNC static inline void rle_init(struct rle *rle)
@@ -119,31 +121,33 @@ RLE_FUNC static inline void rle_encode_bit(
 		struct rle *rle,
 		void* ctx,
 		rle_write_bits_t callback,
-		int bit)
+		unsigned bit)
 {
 	RLE_ASSERT(rle);
 	RLE_ASSERT(callback);
 
-	if (rle_unlikely(rle->flags & (RLE_FLAG_ENC_ERROR | RLE_FLAG_ENC_OVERFLOW))) {
+	if (rle_unlikely(rle->flags)) {
 		return;
 	}
 
-	if (rle_likely(rle->flags & RLE_FLAG_ENC_VALUE)) {
-		if (rle_likely((unsigned)bit == rle->value)) {
-			if (rle_unlikely(rle->count == RLE_MAX_COUNT)) {
-				rle_encode_flush(rle, ctx, callback);
-			} else {
-				++rle->count;
-				return;
-			}
+	if (rle_likely(rle->priv)) {
+		if (rle_likely((bit == rle->value) & (rle->count < RLE_MAX_COUNT))) {
+			++rle->count;
 		} else {
 			rle_encode_flush(rle, ctx, callback);
+			if (rle_likely(!rle->flags)) {
+				// goto increases by 4 cycles
+				rle->count = 1;
+				rle->value = bit;
+				// goto store;
+			}
 		}
+	} else {
+		rle->priv = 1;
+// store:
+		rle->count = 1;
+		rle->value = bit;
 	}
-
-	rle->count = 1;
-	rle->value = bit;
-	rle->flags = RLE_FLAG_ENC_VALUE;
 }
 
 RLE_FUNC RLE_EXTERN void rle_load(
@@ -155,17 +159,17 @@ RLE_FUNC static inline void rle_decode_bit(
 		struct rle *rle,
 		void* ctx,
 		rle_read_bits_t callback,
-		int* bit)
+		unsigned *bit)
 {
 	RLE_ASSERT(rle);
 	RLE_ASSERT(callback);
 	RLE_ASSERT(bit);
 
-	if (rle_unlikely(rle->flags & (RLE_FLAG_DEC_ERROR | RLE_FLAG_DEC_EOS | RLE_FLAG_DEC_UNDERFLOW))) {
+	if (rle_unlikely(rle->flags)) {
 		return;
 	}
 
-	if (rle_likely(rle->flags & RLE_FLAG_DEC_AVAILABLE)) {
+	if (rle_likely(rle->priv)) {
 available:
 		if (rle_likely(rle->count > 1)) {
 			*bit = rle->value;
@@ -173,11 +177,12 @@ available:
 		} else {
 			RLE_ASSERT(rle->count == 1);
 			*bit = rle->value;
-			rle->flags &= ~RLE_FLAG_DEC_AVAILABLE;
+			rle->priv = 0;
 		}
 	} else {
 		rle_load(rle, ctx, callback);
-		if (rle_likely(rle->flags == RLE_FLAG_DEC_AVAILABLE)) {
+		if (rle_likely(!rle->flags)) {
+			rle->priv = 1;
 			goto available;
 		}
 	}
@@ -284,13 +289,13 @@ RLE_FUNC RLE_EXTERN void rle_encode_flush(
 		}
 	}
 
-	if ((sizeof(RLE_INT_TYPE) * 8 - left) & 7) {
-		unsigned align_shift = 8 - ((sizeof(RLE_INT_TYPE) * 8 - left) & 7);
+	if ((sizeof(RLE_INT_TYPE) * 8u - left) & 7u) {
+		unsigned align_shift = 8u - ((sizeof(RLE_INT_TYPE) * 8u - left) & 7u);
 
 		value <<= align_shift;
 	}
 
-	switch ((sizeof(RLE_INT_TYPE) * 8 - left + 7) / 8) {
+	switch ((sizeof(RLE_INT_TYPE) * 8u - left + 7u) / 8u) {
 	case 8:
 		byte_buf[byte_offset++] = (uint8_t)(value >> 56);
 		__attribute__ ((fallthrough));

@@ -528,7 +528,7 @@ LP_RAMFUNC static int rle_read_bits(void* ctx, uint8_t* ptr, unsigned count)
 
 
     for (unsigned i = 0; i < count; ++i) {
-        int bit;
+        unsigned bit;
         int e = bs_read(&lp.lin.bs, NULL, &bs_read_byte, &bit);
         if (unlikely(e)) {
             return 0;
@@ -579,11 +579,15 @@ LP_RAMFUNC static int rle_write_bits(void* ctx, uint8_t const* ptr, unsigned cou
 
     LP_LOG("rle %u bits\n", count);
 
+    // if (!count || count > sizeof(RLE_INT_TYPE) * 8u) {
+    //     __builtin_unreachable();
+    // }
+
     for (unsigned i = 0; i < count; ++i) {
         unsigned bo = 7 - (i & 7);
-        int bit = ((*ptr) & (1u << bo)) == bo;
+        unsigned bit = ((*ptr) & (1u << bo)) == bo;
         int e = bs_write(&lp.lin.bs, NULL, &bs_write_byte, bit);
-        if (e) {
+        if (unlikely(e)) {
             return 0;
         }
 
@@ -624,7 +628,7 @@ LP_RAMFUNC static void lp_signal_load_error(unsigned lin_dec_flags)
         } else {
             // terminate input
             size_t eos[2] = {0, 0};
-            int w = rle_write_bits(NULL, (uint8_t*)eos, sizeof(eos) * 8);
+            int w = rle_write_bits(NULL, (uint8_t*)eos, sizeof(eos) * 8u);
             if (unlikely((unsigned)w != sizeof(eos) * 8)) {
                 if (w < 0) {
                     __atomic_or_fetch(&lp.lin.signal_flags, OUTPUT_FLAG_OUTPUT_DONE | OUTPUT_FLAG_ERROR, __ATOMIC_ACQ_REL);
@@ -642,11 +646,18 @@ LP_RAMFUNC static void lp_signal_load_error(unsigned lin_dec_flags)
     }
 }
 
+static uint32_t lp_next_bit_relaxed_sum;
+// static uint32_t lp_next_bit_relaxed_count;
+
 LP_RAMFUNC static void lp_next_bit_relaxed(void)
 {
-    int output_bit = 0;
-    int input_bit = lp_rx_pin_read();
+    CMCC->MCTRL.bit.SWRST = 1;
+    // uint32_t start = CMCC->MSR.reg;
 
+    unsigned output_bit = 0;
+    unsigned input_bit = lp_rx_pin_read();
+
+    // 306 -> 91
     // rle_decode_bit(&lp.lin.decoder, NULL, &rle_read_bits, &output_bit);
     lp.lin.decoder.flags = RLE_FLAG_DEC_UNDERFLOW;
     if (lp.lin.decoder.flags & (RLE_FLAG_DEC_UNDERFLOW | RLE_FLAG_DEC_EOS | RLE_FLAG_DEC_ERROR)) {
@@ -660,18 +671,27 @@ LP_RAMFUNC static void lp_next_bit_relaxed(void)
         }
     }
 
+    // 81
     rle_encode_bit(&lp.lin.encoder, NULL, &rle_write_bits, input_bit);
     lp.lin.encoder.flags &= RLE_FLAG_ENC_VALUE;
 
+    // uint32_t end = CMCC->MSR.reg;
+    // lp_next_bit_relaxed_sum += end - start;
+    lp_next_bit_relaxed_sum += CMCC->MSR.reg;
+
     if (!(lp.lin.encoder.count & 0xffff)) {
-        LP_LOG("lin rx 16K\n");
+        unsigned x = lp_next_bit_relaxed_sum >> 16;
+        lp_next_bit_relaxed_sum = 0;
+        LP_LOG("lin rx 16K %lu ticks\n", x);
+
+        // board_uart_write("lin rx 16K\n", -1);
     }
 }
 
 LP_RAMFUNC static void lp_next_bit_strict(void)
 {
-    int output_bit = 0;
-    int input_bit = lp_rx_pin_read();
+    unsigned output_bit = 0;
+    unsigned input_bit = lp_rx_pin_read();
 
     rle_decode_bit(&lp.lin.decoder, NULL, &rle_read_bits, &output_bit);
     uint8_t lin_dec_flags = lp.lin.decoder.flags & ~RLE_FLAG_DEC_AVAILABLE;

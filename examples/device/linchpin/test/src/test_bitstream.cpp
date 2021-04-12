@@ -29,7 +29,7 @@ TEST(bitstream, init_asserts_pointers)
 
 TEST(bitstream, read_asserts_pointers)
 {
-    int bit;
+    unsigned bit;
     struct bitstream s;
 
     bs_init(&s);
@@ -41,7 +41,7 @@ TEST(bitstream, read_asserts_pointers)
 
 TEST(bitstream, read_returns_the_error_code_from_the_callback)
 {
-    int bit;
+    unsigned bit;
     struct bitstream s;
     bs_init(&s);
 
@@ -55,7 +55,7 @@ TEST(bitstream, read_returns_the_error_code_from_the_callback)
 
 TEST(bitstream, read_unpacks_bytes)
 {
-    int bit;
+    unsigned bit;
     struct bitstream s;
     bs_init(&s);
 
@@ -64,21 +64,21 @@ TEST(bitstream, read_unpacks_bytes)
 
 
     EXPECT_EQ(0, bs_read(&s, nullptr, &read_byte, &bit));
-    EXPECT_EQ(1, bit);
+    EXPECT_EQ(1u, bit);
     EXPECT_EQ(0, bs_read(&s, nullptr, &read_byte, &bit));
-    EXPECT_EQ(1, bit);
+    EXPECT_EQ(1u, bit);
     EXPECT_EQ(0, bs_read(&s, nullptr, &read_byte, &bit));
-    EXPECT_EQ(1, bit);
+    EXPECT_EQ(1u, bit);
     EXPECT_EQ(0, bs_read(&s, nullptr, &read_byte, &bit));
-    EXPECT_EQ(0, bit);
+    EXPECT_EQ(0u, bit);
     EXPECT_EQ(0, bs_read(&s, nullptr, &read_byte, &bit));
-    EXPECT_EQ(0, bit);
+    EXPECT_EQ(0u, bit);
     EXPECT_EQ(0, bs_read(&s, nullptr, &read_byte, &bit));
-    EXPECT_EQ(0, bit);
+    EXPECT_EQ(0u, bit);
     EXPECT_EQ(0, bs_read(&s, nullptr, &read_byte, &bit));
-    EXPECT_EQ(1, bit);
+    EXPECT_EQ(1u, bit);
     EXPECT_EQ(0, bs_read(&s, nullptr, &read_byte, &bit));
-    EXPECT_EQ(0, bit);
+    EXPECT_EQ(0u, bit);
     error_code = 22;
     EXPECT_EQ(22, bs_read(&s, nullptr, &read_byte, &bit));
     error_code = 0;
