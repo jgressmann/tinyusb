@@ -159,7 +159,7 @@ TEST_F(rle_fixture, encode_0_yields_expected_output)
 
     EXPECT_EQ(0u, r.value);
     EXPECT_EQ(1u, r.count);
-    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     rle_encode_flush(&r, this, &static_write);
     EXPECT_EQ(0u, r.count);
@@ -173,7 +173,7 @@ TEST_F(rle_fixture, encode_1_yields_expected_output)
 
     EXPECT_EQ(1u, r.value);
     EXPECT_EQ(1u, r.count);
-    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(0, r.flags);
 
     rle_encode_flush(&r, this, &static_write);
     EXPECT_EQ(0u, r.count);
@@ -188,7 +188,7 @@ TEST_F(rle_fixture, encode_00_yields_expected_output)
 
     EXPECT_EQ(0u, r.value);
     EXPECT_EQ(2u, r.count);
-    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     rle_encode_flush(&r, this, &static_write);
     EXPECT_EQ(0u, r.count);
@@ -204,7 +204,7 @@ TEST_F(rle_fixture, encode_11_yields_expected_output)
 
     EXPECT_EQ(1u, r.value);
     EXPECT_EQ(2u, r.count);
-    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     rle_encode_flush(&r, this, &static_write);
     EXPECT_EQ(0u, r.count);
@@ -220,7 +220,7 @@ TEST_F(rle_fixture, encode_000_yields_expected_output)
 
     EXPECT_EQ(0u, r.value);
     EXPECT_EQ(3u, r.count);
-    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     rle_encode_flush(&r, this, &static_write);
     EXPECT_EQ(0u, r.count);
@@ -236,7 +236,7 @@ TEST_F(rle_fixture, encode_0000_yields_expected_output)
 
     EXPECT_EQ(0u, r.value);
     EXPECT_EQ(4u, r.count);
-    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     rle_encode_flush(&r, this, &static_write);
     EXPECT_EQ(0u, r.count);
@@ -253,7 +253,7 @@ TEST_F(rle_fixture, encode_0000000_yields_expected_output)
 
     EXPECT_EQ(0u, r.value);
     EXPECT_EQ(LIMIT, r.count);
-    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     rle_encode_flush(&r, this, &static_write);
     EXPECT_EQ(0u, r.count);
@@ -271,7 +271,7 @@ TEST_F(rle_fixture, encode_0x0x14_yields_expected_output)
 
     EXPECT_EQ(0u, r.value);
     EXPECT_EQ(LIMIT, r.count);
-    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     rle_encode_flush(&r, this, &static_write);
     EXPECT_EQ(0u, r.count);
@@ -285,12 +285,12 @@ TEST_F(rle_fixture, encode_sets_overflow_flag_if_output_cannot_be_written)
 
     EXPECT_EQ(0u, r.value);
     EXPECT_EQ(1u, r.count);
-    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     write_error = 0;
 
     rle_encode_flush(&r, this, &static_write);
-    EXPECT_EQ(RLE_FLAG_ENC_OVERFLOW | RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(RLE_FLAG_ENC_OVERFLOW, r.flags);
 }
 
 
@@ -301,20 +301,20 @@ TEST_F(rle_fixture, encode_keeps_a_set_overflow_flag)
 
     EXPECT_EQ(0u, r.value);
     EXPECT_EQ(1u, r.count);
-    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     write_error = 0;
 
     rle_encode_flush(&r, this, &static_write);
-    EXPECT_EQ(RLE_FLAG_ENC_OVERFLOW | RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(RLE_FLAG_ENC_OVERFLOW, r.flags);
 
     write_error = std::numeric_limits<int>::min();
 
     rle_encode_bit(&r, this, &static_write, 1);
-    EXPECT_EQ(RLE_FLAG_ENC_OVERFLOW | RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(RLE_FLAG_ENC_OVERFLOW, r.flags);
 
     rle_encode_flush(&r, this, &static_write);
-    EXPECT_EQ(RLE_FLAG_ENC_OVERFLOW | RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(RLE_FLAG_ENC_OVERFLOW, r.flags);
 }
 
 
@@ -324,12 +324,12 @@ TEST_F(rle_fixture, encode_sets_error_flag_on_error)
 
     EXPECT_EQ(0u, r.value);
     EXPECT_EQ(1u, r.count);
-    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     write_error = -1;
 
     rle_encode_flush(&r, this, &static_write);
-    EXPECT_EQ(RLE_FLAG_ENC_ERROR | RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(RLE_FLAG_ENC_ERROR, r.flags);
 }
 
 TEST_F(rle_fixture, encode_keeps_a_set_error_flag)
@@ -338,20 +338,20 @@ TEST_F(rle_fixture, encode_keeps_a_set_error_flag)
 
     EXPECT_EQ(0u, r.value);
     EXPECT_EQ(1u, r.count);
-    EXPECT_EQ(RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     write_error = -1;
 
     rle_encode_flush(&r, this, &static_write);
-    EXPECT_EQ(RLE_FLAG_ENC_ERROR | RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(RLE_FLAG_ENC_ERROR, r.flags);
 
     write_error = std::numeric_limits<int>::min();
 
     rle_encode_bit(&r, this, &static_write, 1);
-    EXPECT_EQ(RLE_FLAG_ENC_ERROR | RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(RLE_FLAG_ENC_ERROR, r.flags);
 
     rle_encode_flush(&r, this, &static_write);
-    EXPECT_EQ(RLE_FLAG_ENC_ERROR | RLE_FLAG_ENC_VALUE, r.flags);
+    EXPECT_EQ(RLE_FLAG_ENC_ERROR, r.flags);
 }
 
 
@@ -464,7 +464,7 @@ TEST_F(rle_fixture, rle_decode_bit_decodes_1_bit_counter_properly)
     unsigned bit;
     rle_decode_bit(&r, this, &static_read, &bit);
     EXPECT_EQ(0u, bit);
-    EXPECT_EQ(RLE_FLAG_DEC_AVAILABLE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
     EXPECT_EQ(0u, bit);
@@ -472,11 +472,11 @@ TEST_F(rle_fixture, rle_decode_bit_decodes_1_bit_counter_properly)
 
     rle_decode_bit(&r, this, &static_read, &bit);
     EXPECT_EQ(1u, bit);
-    EXPECT_EQ(RLE_FLAG_DEC_AVAILABLE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
     EXPECT_EQ(1u, bit);
-    EXPECT_EQ(RLE_FLAG_DEC_AVAILABLE, r.flags);
+    EXPECT_EQ(0u, r.flags);
 
     rle_decode_bit(&r, this, &static_read, &bit);
     EXPECT_EQ(1u, bit);
@@ -495,7 +495,7 @@ TEST_F(rle_fixture, rle_decode_bit_decodes_8_bit_counter_properly)
     for (size_t i = 0; i < 255; ++i) {
         rle_decode_bit(&r, this, &static_read, &bit);
         EXPECT_EQ(0u, bit);
-        EXPECT_EQ(RLE_FLAG_DEC_AVAILABLE, r.flags);
+        EXPECT_EQ(0u, r.flags);
     }
 
     rle_decode_bit(&r, this, &static_read, &bit);

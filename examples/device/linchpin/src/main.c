@@ -43,7 +43,7 @@
 static void tusb_device_task(void* param);
 static void cdc_cmd_task(void* param);
 LP_RAMFUNC static void cdc_lin_task(void* param);
-
+LP_RAMFUNC static void rle_task(void* param);
 
 #define LIN_TX_PIN PIN_PC04
 #define LIN_RX_PIN PIN_PC05
@@ -59,6 +59,9 @@ static struct tasks {
 	StaticTask_t cdc_cmd_task_mem;
 	StackType_t cdc_lin_task_stack_mem[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t cdc_lin_task_mem;
+	StackType_t rle_task_stack_mem[configMINIMAL_STACK_SIZE];
+	StaticTask_t rle_task_mem;
+	TaskHandle_t rle_task_handle;
 } tasks;
 
 
@@ -137,6 +140,7 @@ int main(void)
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", ARRAY_SIZE(tasks.usb_device_stack), NULL, configMAX_PRIORITIES-1, tasks.usb_device_stack, &tasks.usb_device_task_mem);
 	(void) xTaskCreateStatic(&cdc_cmd_task, "cdc_cmd", ARRAY_SIZE(tasks.cdc_cmd_task_stack_mem), NULL, configMAX_PRIORITIES-1, tasks.cdc_cmd_task_stack_mem, &tasks.cdc_cmd_task_mem);
 	(void) xTaskCreateStatic(&cdc_lin_task, "cdc_lin", ARRAY_SIZE(tasks.cdc_lin_task_stack_mem), NULL, configMAX_PRIORITIES-1, tasks.cdc_lin_task_stack_mem, &tasks.cdc_lin_task_mem);
+	//tasks.rle_task_handle = xTaskCreateStatic(&rle_task, "rle", ARRAY_SIZE(tasks.rle_task_stack_mem), NULL, configMAX_PRIORITIES-1, tasks.rle_task_stack_mem, &tasks.rle_task_mem);
 
 
 
@@ -179,6 +183,15 @@ LP_RAMFUNC static void cdc_lin_task(void* param)
 	}
 }
 
+LP_RAMFUNC static void rle_task(void* param)
+{
+	(void) param;
+
+	while (1) {
+		lp_rle_task();
+	}
+}
+
 
 LP_RAMFUNC static void timer_interrupt(void)
 {
@@ -188,6 +201,8 @@ LP_RAMFUNC static void timer_interrupt(void)
 	// LP_LOG("timer int\n");
 
 	lp_timer_callback();
+
+	// vTaskNotifyGiveFromISR(tasks.rle_task_handle, NULL);
 }
 
 void TC0_Handler(void)

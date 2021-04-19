@@ -61,13 +61,20 @@ enum lp_cmd_state {
 
 
 
+
 struct lin_task_state {
-	uint8_t signal_tx_buffer[LP_SIGNAL_BUFFER_SIZE];
-	uint8_t signal_rx_buffer[LP_SIGNAL_BUFFER_SIZE];
+	uint8_t signal_tx_buffer[LP_SIGNAL_BUFFER_SIZE] __attribute__ ((aligned (64)));
+	uint8_t signal_rx_buffer[LP_SIGNAL_BUFFER_SIZE] __attribute__ ((aligned (64)));
+//	uint8_t rle_tx_buffer[LP_RLE_BUFFER_SIZE] __attribute__ ((aligned (64)));
+//	uint8_t rle_rx_buffer[LP_RLE_BUFFER_SIZE] __attribute__ ((aligned (64)));
 	volatile size_t signal_tx_buffer_pi;
 	volatile size_t signal_tx_buffer_gi;
 	volatile size_t signal_rx_buffer_pi;
 	volatile size_t signal_rx_buffer_gi;
+//	size_t rle_tx_buffer_pi;
+//	size_t rle_tx_buffer_gi;
+//	size_t rle_rx_buffer_pi;
+//	size_t rle_rx_buffer_gi;
 	uint32_t signal_frequency;
 	enum lp_lin_state state;
 	volatile uint8_t signal_flags;
@@ -109,6 +116,7 @@ extern struct linchpin lp;
 void lp_init(void);
 void lp_cdc_cmd_task(void);
 LP_RAMFUNC void lp_cdc_lin_task(void);
+LP_RAMFUNC void lp_rle_task(void);
 // LP_RAMFUNC void lp_signal_next_bit(void);
 
 

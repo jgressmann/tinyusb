@@ -29,6 +29,10 @@
 #include <usnprintf.h>
 #include <inttypes.h>
 
+#ifndef SAME54XPLAINEDPRO
+    #define SAME54XPLAINEDPRO 0
+#endif
+
 LP_RAMFUNC static void lp_next_bit_relaxed(void);
 LP_RAMFUNC static void lp_next_bit_strict(void);
 
@@ -509,9 +513,9 @@ LP_RAMFUNC static inline int bs_read_byte(void* ctx, uint8_t* byte)
     size_t gi = lp.lin.signal_tx_buffer_gi;
     size_t pi = __atomic_load_n(&lp.lin.signal_tx_buffer_pi, __ATOMIC_ACQUIRE);
 
-    if (pi == gi) {
-        return 1;
-    }
+    // if (pi == gi) {
+    //     return 1;
+    // }
 
     *byte = lp.lin.signal_tx_buffer[gi % ARRAY_SIZE(lp.lin.signal_tx_buffer)];
 
@@ -520,34 +524,46 @@ LP_RAMFUNC static inline int bs_read_byte(void* ctx, uint8_t* byte)
     return 0;
 }
 
+static uint32_t rle_read_bits_sum;
+
 LP_RAMFUNC static int rle_read_bits(void* ctx, uint8_t* ptr, unsigned count)
 {
+    uint_fast8_t byte = 0;
     unsigned out_bits_left = 8;
 
     (void)ctx;
 
 
-    for (unsigned i = 0; i < count; ++i) {
-        unsigned bit;
-        int e = bs_read(&lp.lin.bs, NULL, &bs_read_byte, &bit);
-        if (unlikely(e)) {
-            return 0;
-        }
+    return 0;
+    // LP_LOG("rler %u bits\n", count);
 
-        *ptr <<= 1;
-        *ptr |= bit & 1;
+
+    for (unsigned i = 0; i < count; ++i) {
+        unsigned bit = 0;
+        // int e = bs_read(&lp.lin.bs, NULL, &bs_read_byte, &bit);
+        // if (unlikely(e)) {
+        //     return 0;
+        // }
+
+        byte <<= 1;
+        byte |= bit;
 
         --out_bits_left;
 
         if (out_bits_left == 0) {
+            *ptr = byte;
             if (i + 1 < count) {
                 out_bits_left = 8;
                 ++ptr;
+                byte = 0;
             }
         }
     }
 
-    *ptr <<= out_bits_left;
+    byte <<= out_bits_left;
+
+    *ptr = byte;
+
 
     return count;
 
@@ -555,7 +571,7 @@ LP_RAMFUNC static int rle_read_bits(void* ctx, uint8_t* ptr, unsigned count)
 
 LP_RAMFUNC static inline int bs_write_byte(void* ctx, uint8_t byte)
 {
-    LP_LOG("bs 1 byte\n");
+    LP_LOG("bsw 1 byte\n");
 
     size_t gi = __atomic_load_n(&lp.lin.signal_rx_buffer_gi, __ATOMIC_ACQUIRE);
     size_t pi = lp.lin.signal_rx_buffer_pi;
@@ -599,6 +615,16 @@ LP_RAMFUNC static int rle_write_bits(void* ctx, uint8_t const* ptr, unsigned cou
     return count;
 }
 
+// LP_RAMFUNC void lp_rle_task(void)
+// {
+//     for (;;) {
+//         // BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+// 			// vTaskNotifyGiveFromISR(can->usb_task_handle, &xHigherPriorityTaskWoken);
+
+//         (void)ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
+
+//     }
+// }
 
 
 LP_RAMFUNC static void lp_signal_store_error(unsigned lin_enc_flags)
@@ -622,9 +648,8 @@ LP_RAMFUNC static void lp_signal_load_error(unsigned lin_dec_flags)
 
     if (lin_dec_flags & RLE_FLAG_DEC_EOS) {
         rle_encode_flush(&lp.lin.encoder, NULL, &rle_write_bits);
-        uint8_t lin_enc_flags = lp.lin.encoder.flags & ~RLE_FLAG_ENC_VALUE;
-        if (unlikely(lin_enc_flags)) {
-            lp_signal_store_error(lin_enc_flags);
+        if (unlikely(lp.lin.encoder.flags)) {
+            lp_signal_store_error(lp.lin.encoder.flags);
         } else {
             // terminate input
             size_t eos[2] = {0, 0};
@@ -651,9 +676,10 @@ static uint32_t lp_next_bit_relaxed_sum;
 
 LP_RAMFUNC static void lp_next_bit_relaxed(void)
 {
+#if SAME54XPLAINEDPRO
     CMCC->MCTRL.bit.SWRST = 1;
     // uint32_t start = CMCC->MSR.reg;
-
+#endif
     unsigned output_bit = 0;
     unsigned input_bit = lp_rx_pin_read();
 
@@ -675,6 +701,7 @@ LP_RAMFUNC static void lp_next_bit_relaxed(void)
     rle_encode_bit(&lp.lin.encoder, NULL, &rle_write_bits, input_bit);
     lp.lin.encoder.flags = 0;
 
+#if SAME54XPLAINEDPRO
     // uint32_t end = CMCC->MSR.reg;
     // lp_next_bit_relaxed_sum += end - start;
     lp_next_bit_relaxed_sum += CMCC->MSR.reg;
@@ -686,6 +713,7 @@ LP_RAMFUNC static void lp_next_bit_relaxed(void)
 
         // board_uart_write("lin rx 16K\n", -1);
     }
+#endif
 }
 
 LP_RAMFUNC static void lp_next_bit_strict(void)
@@ -694,9 +722,8 @@ LP_RAMFUNC static void lp_next_bit_strict(void)
     unsigned input_bit = lp_rx_pin_read();
 
     rle_decode_bit(&lp.lin.decoder, NULL, &rle_read_bits, &output_bit);
-    uint8_t lin_dec_flags = lp.lin.decoder.flags & ~RLE_FLAG_DEC_AVAILABLE;
-    if (unlikely(lin_dec_flags)) {
-        lp_signal_load_error(lin_dec_flags);
+    if (unlikely(lp.lin.decoder.flags)) {
+        lp_signal_load_error(lp.lin.decoder.flags);
     } else {
         if (output_bit) {
             lp_tx_pin_set();
@@ -705,9 +732,8 @@ LP_RAMFUNC static void lp_next_bit_strict(void)
         }
 
         rle_encode_bit(&lp.lin.encoder, NULL, &rle_write_bits, input_bit);
-        uint8_t lin_enc_flags = lp.lin.encoder.flags & ~RLE_FLAG_ENC_VALUE;
-        if (unlikely(lin_enc_flags)) {
-            lp_signal_store_error(lin_enc_flags);
+        if (unlikely(lp.lin.encoder.flags)) {
+            lp_signal_store_error(lp.lin.encoder.flags);
         }
     }
 }

@@ -89,13 +89,12 @@ typedef int (*rle_read_bits_t)(void* ctx, uint8_t* ptr, unsigned count);
 
 #define RLE_FLAG_ENC_ERROR     0x01
 #define RLE_FLAG_ENC_OVERFLOW  0x02
-#define RLE_FLAG_ENC_VALUE     0x04
 
 
 #define RLE_FLAG_DEC_ERROR     0x01
 #define RLE_FLAG_DEC_EOS       0x02
 #define RLE_FLAG_DEC_UNDERFLOW 0x04
-#define RLE_FLAG_DEC_AVAILABLE 0x08
+
 
 struct rle {
 	RLE_INT_TYPE count;

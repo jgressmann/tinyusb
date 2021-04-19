@@ -30,7 +30,8 @@
 #include <sam.h>
 
 
-#define LP_SIGNAL_BUFFER_SIZE (1u<<12)
+#define LP_SIGNAL_BUFFER_SIZE (1u<<10)
+#define LP_RLE_BUFFER_SIZE (64)
 #define lp_cdc_is_connected tud_cdc_n_connected
 #define lp_cdc_rx_available tud_cdc_n_available
 #define lp_cdc_tx_available tud_cdc_n_write_available

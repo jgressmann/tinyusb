@@ -333,7 +333,7 @@ void test_cdc_tx_clear(uint8_t itf)
 } // extern "C"
 #endif
 
-#if 1
+#if 0
 TEST_F(serial_fixture, init_sets_initial_state)
 {
     EXPECT_EQ(1250000u, lp.lin.signal_frequency);
