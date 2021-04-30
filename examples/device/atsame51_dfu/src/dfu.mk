@@ -1,3 +1,6 @@
+VID ?= ffff
+PID ?= ffff
+
 $(BUILD)/$(BOARD)-firmware.superdfu.elf: $(BUILD)/$(BOARD)-firmware.elf
 	@echo CREATE $@
 	@$(CP) $^ $@
@@ -25,14 +28,14 @@ $(BUILD)/$(BOARD)-firmware.dfu: $(BUILD)/$(BOARD)-firmware.superdfu.bin
 	@echo CREATE $@
 	#dfu-tool convert dfu $^ $@
 	cp $^ $@
-	dfu-suffix -a $@
+	dfu-suffix -v $(VID) -p $(PID) -a $@
 
 # depend on dfu and hex so we can have both in one build
 dfu: $(BUILD)/$(BOARD)-firmware.dfu $(BUILD)/$(BOARD)-firmware.superdfu.hex
 
 dfu-upload: $(BUILD)/$(BOARD)-firmware.dfu
 	#sudo dfu-tool write $(BUILD)/$(BOARD)-firmware.dfu
-	sudo dfu-util -R -D $(BUILD)/$(BOARD)-firmware.dfu
+	sudo dfu-util -d $(VID):$(PID) -R -D $(BUILD)/$(BOARD)-firmware.dfu
 
 # flash using edbg from https://github.com/ataradov/edbg
 edbg-dfu: $(BUILD)/$(BOARD)-firmware.superdfu.bin

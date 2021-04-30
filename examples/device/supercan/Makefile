@@ -1,4 +1,6 @@
 BOARD=d5035-01
+VID=1d50
+PID=5035
 
 include ../../../tools/top.mk
 include ../../make.mk
