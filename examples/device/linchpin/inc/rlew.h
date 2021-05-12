@@ -143,6 +143,41 @@ RLEW_FUNC static inline unsigned int rlew_lz(RLEW_INT_TYPE value)
 	return lz;
 }
 
+RLEW_FUNC static inline unsigned int rlew_clrsb(RLEW_INT_TYPE value)
+{
+	unsigned int r;
+
+	if (sizeof(RLEW_INT_TYPE) < sizeof(int)) {
+		r = __builtin_clrsb(value << ((sizeof(int) - sizeof(RLEW_INT_TYPE)) * 8));
+	} else if (sizeof(RLEW_INT_TYPE) == sizeof(int)) {
+		r = __builtin_clrsb(value);
+	} else if (sizeof(RLEW_INT_TYPE) == sizeof(long)) {
+		r = __builtin_clrsbl(value);
+	} else {
+		r = __builtin_clrsbll(value);
+	}
+
+	switch (sizeof(RLEW_INT_TYPE)) {
+	case 8:
+		r &= 63;
+		break;
+	case 4:
+		r &= 31;
+		break;
+	case 2:
+		r &= 15;
+		break;
+	case 1:
+		r &= 7;
+		break;
+	default:
+		RLEW_ASSERT(0 && "sizeof(RLEW_INT_TYPE) unhandled");
+		break;
+	}
+
+	return r;
+}
+
 
 
 RLEW_FUNC RLEW_EXTERN void rlew_enc_flush(
@@ -182,6 +217,27 @@ RLEW_FUNC static inline void rlew_enc_bit(
 // store:
 		rle->count = 1;
 		rle->value = bit;
+	}
+}
+
+RLEW_FUNC static inline void rlew_enc_finish(
+		struct rlew_encoder *rle,
+		void* ctx,
+		rlew_store_t callback)
+{
+	RLEW_ASSERT(rle);
+	RLEW_ASSERT(callback);
+
+	if (rlew_unlikely(rle->flags)) {
+		return;
+	}
+
+	if (rle->used) {
+		rle->state <<= sizeof(RLEW_INT_TYPE) * 8 - rle->used;
+		int e = callback(ctx, rle->state);
+		if (rlew_unlikely(e)) {
+			rle->flags |= RLEW_FLAG_ENC_OVERFLOW;
+		}
 	}
 }
 
@@ -319,11 +375,10 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 		rle->used = sizeof(RLEW_INT_TYPE) * 8;
 	}
 
-	RLEW_INT_TYPE bit = ((RLEW_INT_TYPE)1) << (rle->used-1);
-	RLEW_INT_TYPE prefix;
-	unsigned value = (rle->state & bit) == bit;
-	unsigned prefix_bits = 1;
-	rle->state &= bit - 1;
+	RLEW_INT_TYPE bit = ((RLEW_INT_TYPE)1) << (sizeof(RLEW_INT_TYPE) * 8 - 1);
+	RLEW_INT_TYPE count = 1;
+	unsigned first = (rle->state & bit) == bit;
+	rle->state <<= 1;
 	--rle->used;
 
 	if (!rle->used) {
@@ -336,19 +391,69 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 		rle->used = sizeof(RLEW_INT_TYPE) * 8;
 	}
 
-	prefix = rle->state;
+	unsigned second = (rle->state & bit) == bit;
 
-	if (value) {
-		prefix = rle->state;
+	if (second == first) {
+		unsigned count_bits = 0;
 
-		if (prefix & (bit-1)) {
-			unsigned lz = rlew_lz(prefix);
-			unsigned rem_prefix_bits = lz - (sizeof(RLEW_INT_TYPE) * 8 - rle->used) + 1;
-			prefix_bits += rem_prefix_bits;
-			rle->used -= rem_prefix_bits;
-			rle->state &= (((RLEW_INT_TYPE)1) << rle->used) - 1;
+		unsigned same = rlew_clrsb(rle->state) + 1;
+
+		// remove 'second'
+		--rle->used;
+		rle->state <<= 1;
+
+		if (same > rle->used) {
+			same = rle->used;
+		}
+
+		if (same == rle->used) {
+			int e = callback(ctx, &rle->state);
+			if (rlew_unlikely(e)) {
+				if (same + 2 >= sizeof(RLEW_INT_TYPE) * 8) {
+					rle->flags |= RLEW_FLAG_DEC_EOS;
+				} else {
+					rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
+				}
+				return;
+			}
+
+			rle->used = sizeof(RLEW_INT_TYPE) * 8;
+
+			RLEW_ASSERT(rle->used);
+
+			if (first == ((rle->state & bit) == bit)) {
+				unsigned more_same = rlew_clrsb(rle->state) + 1;
+
+				if (more_same> rle->used) {
+					more_same = rle->used;
+				}
+
+				same += more_same;
+
+				if (same + 2 >= sizeof(RLEW_INT_TYPE) * 8) {
+					rle->flags |= RLEW_FLAG_DEC_EOS;
+					return;
+				}
+
+				rle->used -= more_same;
+				rle->state <<= more_same;
+			}
+
+			count_bits = same;
 		} else {
-			prefix_bits += rle->used;
+			count_bits = same;
+			rle->state <<= same;
+			rle->used -= same;
+		}
+
+
+		RLEW_INT_TYPE rem = 0;
+		count = (((RLEW_INT_TYPE)1) << count_bits);
+
+		if (count_bits > rle->used) {
+			rem = (rle->state >> (sizeof(RLEW_INT_TYPE) * 8 - count_bits)) << (count_bits - rle->used);
+			count_bits -= rle->used;
+
 			int e = callback(ctx, &rle->state);
 			if (rlew_unlikely(e)) {
 				rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
@@ -356,96 +461,168 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 			}
 
 			rle->used = sizeof(RLEW_INT_TYPE) * 8;
-
-			if (value) {
-				prefix = rle->state;
-			} else {
-				prefix = ~rle->state;
-			}
-
-			if (rlew_likely(rle->state)) {
-				unsigned lz = rlew_lz(rle->state);
-				prefix_bits += lz + 1;
-				rle->used -= lz + 1;
-				rle->state &= (((RLEW_INT_TYPE)1) << rle->used) - 1;
-
-				if (rlew_unlikely(prefix_bits > sizeof(RLEW_INT_TYPE) * 8)) {
-					rle->flags |= RLEW_FLAG_DEC_EOS;
-					return;
-				}
-			} else {
-				rle->flags |= RLEW_FLAG_DEC_EOS;
-				return;
-			}
 		}
+
+		rem |= rle->state >> (sizeof(RLEW_INT_TYPE) * 8 - count_bits);
+		rle->used -= count_bits;
+		rle->state <<= count_bits;
+
+		count += rem;
 	} else {
-		prefix = ~rle->state & (bit-1);
+		rle->state <<= 1;
+		--rle->used;
 	}
 
-	if (prefix & (bit-1)) {
-		unsigned lz = rlew_lz(prefix);
-		unsigned rem_prefix_bits = lz - (sizeof(RLEW_INT_TYPE) * 8 - rle->used) + 1;
-		prefix_bits += rem_prefix_bits;
-		rle->used -= rem_prefix_bits;
-		rle->state &= (((RLEW_INT_TYPE)1) << rle->used) - 1;
-	} else {
-		prefix_bits += rle->used;
-		int e = callback(ctx, &rle->state);
-		if (rlew_unlikely(e)) {
-			rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
-			return;
-		}
-
-		rle->used = sizeof(RLEW_INT_TYPE) * 8;
-
-		if (value) {
-			prefix = rle->state;
-		} else {
-			prefix = ~rle->state;
-		}
-
-		if (rlew_likely(rle->state)) {
-			unsigned lz = rlew_lz(rle->state);
-			prefix_bits += lz + 1;
-			rle->used -= lz + 1;
-			rle->state &= (((RLEW_INT_TYPE)1) << rle->used) - 1;
-
-			if (rlew_unlikely(prefix_bits > sizeof(RLEW_INT_TYPE) * 8)) {
-				rle->flags |= RLEW_FLAG_DEC_EOS;
-				return;
-			}
-		} else {
-			rle->flags |= RLEW_FLAG_DEC_EOS;
-			return;
-		}
-	}
-
-	RLEW_ASSERT(prefix_bits >= 2);
-	unsigned count_bits = prefix_bits - 2;
-	RLEW_INT_TYPE rem = 0;
-	RLEW_INT_TYPE count = (((RLEW_INT_TYPE)1) << count_bits);
-
-	if (count_bits > rle->used) {
-		rem = rle->state << (count_bits - rle->used);
-		count_bits -= rle->used;
-
-		int e = callback(ctx, &rle->state);
-		if (rlew_unlikely(e)) {
-			rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
-			return;
-		}
-
-		rle->used = sizeof(RLEW_INT_TYPE) * 8;
-	}
-
-	rem |= (rle->state >> (rle->used - count_bits)) & (count-1);
-	rle->used -= count_bits;
-	rle->state &= (((RLEW_INT_TYPE)1) << rle->used) - 1;
-
-	count += rem;
-	rle->value = value;
+	rle->value = first;
 	rle->count = count;
 }
+
+
+//RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
+//		struct rlew_decoder *rle,
+//		void* ctx,
+//		rlew_load_t callback)
+//{
+//	RLEW_ASSERT(rle);
+//	RLEW_ASSERT(callback);
+
+//	if (!rle->used) {
+//		int e = callback(ctx, &rle->state);
+//		if (rlew_unlikely(e)) {
+//			rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
+//			return;
+//		}
+
+//		rle->used = sizeof(RLEW_INT_TYPE) * 8;
+//	}
+
+//	RLEW_INT_TYPE bit = ((RLEW_INT_TYPE)1) << (rle->used-1);
+//	RLEW_INT_TYPE prefix;
+//	unsigned value = (rle->state & bit) == bit;
+//	unsigned prefix_bits = 1;
+//	rle->state &= bit - 1;
+//	--rle->used;
+
+//	if (!rle->used) {
+//		int e = callback(ctx, &rle->state);
+//		if (rlew_unlikely(e)) {
+//			rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
+//			return;
+//		}
+
+//		rle->used = sizeof(RLEW_INT_TYPE) * 8;
+//	}
+
+//	prefix = rle->state;
+
+//	if (value) {
+//		prefix = rle->state;
+
+//		if (prefix & (bit-1)) {
+//			unsigned lz = rlew_lz(prefix);
+//			unsigned rem_prefix_bits = lz - (sizeof(RLEW_INT_TYPE) * 8 - rle->used) + 1;
+//			prefix_bits += rem_prefix_bits;
+//			rle->used -= rem_prefix_bits;
+//			rle->state &= (((RLEW_INT_TYPE)1) << rle->used) - 1;
+//		} else {
+//			prefix_bits += rle->used;
+//			int e = callback(ctx, &rle->state);
+//			if (rlew_unlikely(e)) {
+//				rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
+//				return;
+//			}
+
+//			rle->used = sizeof(RLEW_INT_TYPE) * 8;
+
+//			if (value) {
+//				prefix = rle->state;
+//			} else {
+//				prefix = ~rle->state;
+//			}
+
+//			if (rlew_likely(rle->state)) {
+//				unsigned lz = rlew_lz(rle->state);
+//				prefix_bits += lz + 1;
+//				rle->used -= lz + 1;
+//				rle->state &= (((RLEW_INT_TYPE)1) << rle->used) - 1;
+
+//				if (rlew_unlikely(prefix_bits > sizeof(RLEW_INT_TYPE) * 8)) {
+//					rle->flags |= RLEW_FLAG_DEC_EOS;
+//					return;
+//				}
+//			} else {
+//				rle->flags |= RLEW_FLAG_DEC_EOS;
+//				return;
+//			}
+//		}
+//	} else {
+//		prefix = ~rle->state & (bit-1);
+//	}
+
+//	if (prefix & (bit-1)) {
+//		unsigned lz = rlew_lz(prefix);
+//		unsigned rem_prefix_bits = lz - (sizeof(RLEW_INT_TYPE) * 8 - rle->used) + 1;
+//		prefix_bits += rem_prefix_bits;
+//		rle->used -= rem_prefix_bits;
+//		rle->state &= (((RLEW_INT_TYPE)1) << rle->used) - 1;
+//	} else {
+//		prefix_bits += rle->used;
+//		int e = callback(ctx, &rle->state);
+//		if (rlew_unlikely(e)) {
+//			rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
+//			return;
+//		}
+
+//		rle->used = sizeof(RLEW_INT_TYPE) * 8;
+
+//		if (value) {
+//			prefix = rle->state;
+//		} else {
+//			prefix = ~rle->state;
+//		}
+
+//		if (rlew_likely(rle->state)) {
+//			unsigned lz = rlew_lz(rle->state);
+//			prefix_bits += lz + 1;
+//			rle->used -= lz + 1;
+//			rle->state &= (((RLEW_INT_TYPE)1) << rle->used) - 1;
+
+//			if (rlew_unlikely(prefix_bits > sizeof(RLEW_INT_TYPE) * 8)) {
+//				rle->flags |= RLEW_FLAG_DEC_EOS;
+//				return;
+//			}
+//		} else {
+//			rle->flags |= RLEW_FLAG_DEC_EOS;
+//			return;
+//		}
+//	}
+
+//	RLEW_ASSERT(prefix_bits >= 2);
+//	unsigned count_bits = prefix_bits - 2;
+//	RLEW_INT_TYPE rem = 0;
+//	RLEW_INT_TYPE count = (((RLEW_INT_TYPE)1) << count_bits);
+
+//	if (count_bits > rle->used) {
+//		rem = rle->state << (count_bits - rle->used);
+//		count_bits -= rle->used;
+
+//		int e = callback(ctx, &rle->state);
+//		if (rlew_unlikely(e)) {
+//			rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
+//			return;
+//		}
+
+//		rle->used = sizeof(RLEW_INT_TYPE) * 8;
+//	}
+
+//	rem |= (rle->state >> (rle->used - count_bits)) & (count-1);
+//	rle->used -= count_bits;
+//	rle->state &= (((RLEW_INT_TYPE)1) << rle->used) - 1;
+
+//	count += rem;
+//	rle->value = value;
+//	rle->count = count;
+//}
 
 //#pragma GCC diagnostic pop
 
