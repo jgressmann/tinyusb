@@ -365,7 +365,7 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 	RLEW_ASSERT(rle);
 	RLEW_ASSERT(callback);
 
-	if (!rle->used) {
+	if (rlew_unlikely(!rle->used)) {
 		int e = callback(ctx, &rle->state);
 		if (rlew_unlikely(e)) {
 			rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
@@ -381,7 +381,7 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 	rle->state <<= 1;
 	--rle->used;
 
-	if (!rle->used) {
+	if (rlew_unlikely(!rle->used)) {
 		int e = callback(ctx, &rle->state);
 		if (rlew_unlikely(e)) {
 			rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
@@ -393,10 +393,10 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 
 	unsigned second = (rle->state & bit) == bit;
 
-	if (second == first) {
+	if (rlew_likely(second == first)) {
 		unsigned count_bits = 0;
 
-		unsigned same = rlew_clrsb(rle->state) + 1;
+		unsigned same = rlew_clrsb(rle->state);
 
 		// remove 'second'
 		--rle->used;
@@ -407,9 +407,12 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 		}
 
 		if (same == rle->used) {
+			// account for second
+			++same;
+
 			int e = callback(ctx, &rle->state);
 			if (rlew_unlikely(e)) {
-				if (same + 2 >= sizeof(RLEW_INT_TYPE) * 8) {
+				if (same + 1 >= sizeof(RLEW_INT_TYPE) * 8) {
 					rle->flags |= RLEW_FLAG_DEC_EOS;
 				} else {
 					rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
@@ -419,18 +422,17 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 
 			rle->used = sizeof(RLEW_INT_TYPE) * 8;
 
-			RLEW_ASSERT(rle->used);
 
 			if (first == ((rle->state & bit) == bit)) {
 				unsigned more_same = rlew_clrsb(rle->state) + 1;
 
-				if (more_same> rle->used) {
+				if (more_same > rle->used) {
 					more_same = rle->used;
 				}
 
 				same += more_same;
 
-				if (same + 2 >= sizeof(RLEW_INT_TYPE) * 8) {
+				if (rlew_unlikely(same + 1 >= sizeof(RLEW_INT_TYPE) * 8)) {
 					rle->flags |= RLEW_FLAG_DEC_EOS;
 					return;
 				}
@@ -441,11 +443,22 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 
 			count_bits = same;
 		} else {
+			// account for second
+			++same;
 			count_bits = same;
 			rle->state <<= same;
 			rle->used -= same;
-		}
 
+			if (rlew_unlikely(!rle->used)) {
+				int e = callback(ctx, &rle->state);
+				if (rlew_unlikely(e)) {
+					rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
+					return;
+				}
+
+				rle->used = sizeof(RLEW_INT_TYPE) * 8;
+			}
+		}
 
 		RLEW_INT_TYPE rem = 0;
 		count = (((RLEW_INT_TYPE)1) << count_bits);
