@@ -54,7 +54,6 @@ static inline void lp_lin_reset(void)
 
     rlew_dec_init(&lp.lin.dec);
     rlew_enc_init(&lp.lin.enc);
-    lp_lin_clear_rx_tx();
     lp.lin.signal_flags = 0;
     lp.lin.mode = LP_LIN_MODE_OFF;
 
@@ -282,6 +281,7 @@ static void process_cmd(uint8_t *ptr, uint8_t count)
                     case 'o':
                     case 'O':
                         LP_LOG("LIN mode off\n");
+                        lp_lin_clear_rx_tx();
                         place_error_response(LP_ERROR_NONE);
                         break;
                     case 'r':
@@ -588,18 +588,6 @@ LP_RAMFUNC static int rlew_load(void* ctx, uint32_t *value)
 
     return 1;
 }
-
-// LP_RAMFUNC void lp_rle_task(void)
-// {
-//     for (;;) {
-//         // BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-// 			// vTaskNotifyGiveFromISR(can->usb_task_handle, &xHigherPriorityTaskWoken);
-
-//         (void)ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
-
-//     }
-// }
-
 
 LP_RAMFUNC static void lp_signal_store_error(unsigned lin_enc_flags)
 {
