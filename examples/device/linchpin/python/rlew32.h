@@ -23,15 +23,38 @@
  *
  */
 
-#include <linchpin.h>
+
+#pragma once
 
 
-char const * const lp_error_messages[] = {
-    "OK",
-    "unknown command",
-    "invalid parameter",
-    "out of range",
-    "malformed",
-    "failed",
-    "unknown"
-};
+#include <stdint.h>
+
+#define RLEW_ASSERT(...)
+#define RLEW_H
+#define RLEW_INT_TYPE uint32_t
+#include <rlew.h>
+#undef RLEW_INT_TYPE
+#undef RLEW_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+typedef struct rlew_encoder rlew32_encoder;
+typedef struct rlew_decoder rlew32_decoder;
+
+extern rlew32_decoder* rlew32_dec_new();
+extern void rlew32_dec_free(rlew32_decoder* d);
+extern void rlew32_dec_init(rlew32_decoder* d);
+extern int rlew32_dec_bit(rlew32_decoder* d, void* ctx, rlew_load_t callback);
+
+extern rlew32_encoder* rlew32_enc_new();
+extern void rlew32_enc_free(rlew32_encoder* e);
+extern void rlew32_enc_bit(rlew32_encoder* e, void* ctx, rlew_store_t callback, unsigned int bit);
+//extern void rlew32_enc_flush(rlew32_encoder* e, void* ctx, rlew_store_t callback);
+extern void rlew32_enc_finish(rlew32_encoder* e, void* ctx, rlew_store_t callback);
+
+#ifdef __cplusplus
+} // extern "C"
+#endif

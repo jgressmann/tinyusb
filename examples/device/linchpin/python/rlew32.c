@@ -23,15 +23,66 @@
  *
  */
 
-#include <linchpin.h>
+
+#include <stdlib.h>
+#include "rlew32.h"
+
+#define RLEW_C
+#define RLEW_INT_TYPE uint32_t
+#include <rlew.h>
 
 
-char const * const lp_error_messages[] = {
-    "OK",
-    "unknown command",
-    "invalid parameter",
-    "out of range",
-    "malformed",
-    "failed",
-    "unknown"
-};
+extern rlew32_decoder* rlew32_dec_new()
+{
+    rlew32_decoder* d = malloc(sizeof(*d));
+    if (d) {
+        rlew_dec_init(d);
+    }
+
+    return d;
+}
+
+extern void rlew32_dec_free(rlew32_decoder* d)
+{
+    free(d);
+}
+
+extern void rlew32_dec_init(rlew32_decoder* d)
+{
+    rlew_dec_init(d);
+}
+
+extern int rlew32_dec_bit(rlew32_decoder* d, void* ctx, rlew_load_t callback)
+{
+    return rlew_dec_bit(d, ctx, callback);
+}
+
+extern rlew32_encoder* rlew32_enc_new()
+{
+    rlew32_encoder* e = malloc(sizeof(*e));
+    if (e) {
+        rlew_enc_init(e);
+    }
+
+    return e;
+}
+
+extern void rlew32_enc_free(rlew32_encoder* e)
+{
+    free(e);
+}
+
+extern void rlew32_enc_bit(rlew32_encoder* e, void* ctx, rlew_store_t callback, unsigned int bit)
+{
+    rlew_enc_bit(e, ctx, callback, bit);
+}
+
+//extern void rlew32_enc_flush(rlew32_encoder* e, void* ctx, rlew_store_t callback)
+//{
+//    rlew_enc_flush(e, ctx, callback);
+//}
+
+extern void rlew32_enc_finish(rlew32_encoder* e, void* ctx, rlew_store_t callback)
+{
+    rlew_enc_finish(e, ctx, callback);
+}

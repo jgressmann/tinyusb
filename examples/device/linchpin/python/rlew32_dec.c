@@ -23,15 +23,34 @@
  *
  */
 
-#include <linchpin.h>
+
+#include <stdlib.h>
+#include "rlew32.h"
+
+#define RLEW_C
+#define RLEW_INT_TYPE uint32_t
+#include <rlew.h>
+
+#include <stdio.h>
+
+void usage(FILE* f, char const *name)
+{
+	fprintf("%s [OPTIONS] NUMBER...\n\n", name);
+}
 
 
-char const * const lp_error_messages[] = {
-    "OK",
-    "unknown command",
-    "invalid parameter",
-    "out of range",
-    "malformed",
-    "failed",
-    "unknown"
-};
+int main(int argc, char** argv)
+{
+	rlew32_decoder dec;
+
+	rlew32_dec_init(&dec);
+
+	if (argc == 1) {
+		usage(stderr);
+		return 1;
+	}
+
+	for (int i = 1; i < argc; ++i) {
+		char* arg = argv[i];
+	}
+}

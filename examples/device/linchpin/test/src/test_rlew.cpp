@@ -93,6 +93,22 @@ struct rlew_fixture : public ::testing::Test
 
         return 0;
     }
+
+    void dump_ints()
+    {
+        size_t int_count = output.size() / 32;
+        size_t offset = 0;
+        for (size_t i = 0; i < int_count; ++i) {
+            uint32_t value = 0;
+            for (size_t j = 0; j < 32; ++j, ++offset) {
+                uint32_t bit = output[offset] == '1';
+                bit <<= 31 - j;
+                value |= bit;
+            }
+
+            fprintf(stdout, "%u. %08x %u\n", (unsigned)i, value, value);
+        }
+    }
 };
 
 
@@ -306,6 +322,53 @@ TEST_F(rlew_fixture, encode_finish_aligns_and_stores_current_state_then_terminat
     EXPECT_EQ(0u, e.flags);
     EXPECT_EQ(0u, e.used);
     EXPECT_STREQ("10000000000000000000000000000000", output.c_str());
+}
+
+TEST_F(rlew_fixture, encode_break_sync)
+{
+    const int oversampling = 16;
+
+    // break
+    for (int i = 0; i < 13; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, 0);
+        }
+    }
+
+    // break delim
+    for (int i = 0; i < 1; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, 1);
+        }
+    }
+
+    // sync start bit
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 0);
+    }
+
+    for (int i = 0; i < 8; ++i) {
+        int bit = (1 << i);
+        int value = (0x55 & bit) == bit;
+
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, value);
+        }
+    }
+
+    // sync stop bit
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 1);
+    }
+
+    rlew_enc_finish(&e, this, &static_write);
+    EXPECT_EQ(0u, e.flags);
+    EXPECT_EQ(0u, e.used);
+    EXPECT_STREQ(
+                "000000001101000011111000000000010000111110000000000100001111100000000001000011111000000000010000111110000000000100001111100000000000000000000000",
+                output.c_str());
+
+    dump_ints();
 }
 
 

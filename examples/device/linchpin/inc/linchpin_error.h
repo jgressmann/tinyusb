@@ -39,7 +39,7 @@ extern "C" {
 #define LP_ERROR_FAILED         -5
 #define LP_ERROR_UNKNOWN        -6
 
-#define LP_ERROR_COUNT           5
+#define LP_ERROR_COUNT           7
 
 extern char const * const lp_error_messages[LP_ERROR_COUNT];
 

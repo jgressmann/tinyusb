@@ -99,21 +99,9 @@ LP_RAMFUNC static bool usb_try_rx2(
 
         if (count) {
             (void)lp_cdc_rx(itf, ((uint8_t*)buf_ptr) + index * element_size, count * element_size);
-
-            // LP_LOG("read: ");
-            // for (uint8_t i = offset; i < lp.cmd.usb_rx_count; ++i) {
-            // 	LP_LOG("%c %#x", lp.cmd.usb_rx_buffer[i], lp.cmd.usb_rx_buffer[i]);
-            // }
-            // LP_LOG("\n");
             __atomic_store_n(pi_ptr, pi + count, __ATOMIC_RELEASE);
             return true;
         }
-
-
-//        uint32_t r = lp_cdc_rx(itf, ((uint8_t*)buf_ptr) + index * element_size, count * element_size) / element_size;
-//        if (r) {
-
-//        }
     }
 
     return false;
@@ -145,6 +133,7 @@ LP_RAMFUNC static bool usb_try_tx2(
         }
 
         if (count) {
+            LP_LOG("lp_cdc_tx itf=%u count=%lu\n", itf, count);
             (void)lp_cdc_tx(itf, ((uint8_t*)buf_ptr) + index * element_size, count * element_size);
             __atomic_store_n(gi_ptr, gi + count, __ATOMIC_RELEASE);
             return true;
@@ -525,6 +514,14 @@ LP_RAMFUNC void lp_cdc_lin_task(void)
 
                 more = more || read_from_usb;
 
+
+                // size_t count = lp.lin.signal_rx_buffer_pi - lp.lin.signal_rx_buffer_gi;
+                // if (count < ARRAY_SIZE(lp.lin.signal_rx_buffer)) {
+                //     lp.lin.signal_rx_buffer[lp.lin.signal_rx_buffer_pi++ % ARRAY_SIZE(lp.lin.signal_rx_buffer)] = '\n';
+                // } else {
+                //     LP_LOG("no space\n");
+                // }
+
                 bool wrote_to_usb = usb_try_tx2(
                     index,
                     &lp.lin.signal_rx_buffer_gi,
@@ -533,7 +530,10 @@ LP_RAMFUNC void lp_cdc_lin_task(void)
                     4,
                     ARRAY_SIZE(lp.lin.signal_rx_buffer));
 
-                more = more || wrote_to_usb;
+                if (wrote_to_usb) {
+                    lp_cdc_tx_flush(index);
+                    more = true;
+                }
             } else {
                 lp_cdc_rx_clear(index);
                 lp_cdc_tx_clear(index);
@@ -554,14 +554,13 @@ LP_RAMFUNC static int rlew_store(void* ctx, uint32_t value)
 {
     (void)ctx;
 
-    LP_LOG("rlew store\n");
-
     size_t gi = __atomic_load_n(&lp.lin.signal_rx_buffer_gi, __ATOMIC_ACQUIRE);
     size_t pi = lp.lin.signal_rx_buffer_pi;
     size_t count = pi - gi;
     LP_ISR_ASSERT(count <= ARRAY_SIZE(lp.lin.signal_rx_buffer));
 
     if (likely(count < ARRAY_SIZE(lp.lin.signal_rx_buffer))) {
+        // LP_LOG("rlew store\n");
         lp.lin.signal_rx_buffer[pi % ARRAY_SIZE(lp.lin.signal_rx_buffer)] = value;
         __atomic_store_n(&lp.lin.signal_rx_buffer_pi, pi + 1, __ATOMIC_RELEASE);
         return 0;
@@ -573,8 +572,6 @@ LP_RAMFUNC static int rlew_store(void* ctx, uint32_t value)
 LP_RAMFUNC static int rlew_load(void* ctx, uint32_t *value)
 {
     (void)ctx;
-
-
 
     size_t gi = lp.lin.signal_tx_buffer_gi;
     size_t pi = __atomic_load_n(&lp.lin.signal_tx_buffer_pi, __ATOMIC_ACQUIRE);
@@ -592,6 +589,7 @@ LP_RAMFUNC static int rlew_load(void* ctx, uint32_t *value)
 LP_RAMFUNC static void lp_signal_store_error(unsigned lin_enc_flags)
 {
     lp_timer_stop();
+    // LP_LOG("%s\n", __func__);
 
     uint8_t flags = OUTPUT_FLAG_OUTPUT_DONE;
 
@@ -607,8 +605,10 @@ LP_RAMFUNC static void lp_signal_store_error(unsigned lin_enc_flags)
 LP_RAMFUNC static void lp_signal_load_error(unsigned lin_dec_flags)
 {
     lp_timer_stop();
+    // LP_LOG("%s\n", __func__);
 
     if (lin_dec_flags & RLEW_FLAG_DEC_EOS) {
+        LP_LOG("eos\n");
         rlew_enc_finish(&lp.lin.enc, NULL, &rlew_store);
         if (unlikely(lp.lin.enc.flags)) {
             lp_signal_store_error(lp.lin.enc.flags);
@@ -626,11 +626,13 @@ LP_RAMFUNC static void lp_signal_load_error(unsigned lin_dec_flags)
 
 LP_RAMFUNC static void lp_next_bit_strict(void)
 {
+    // static unsigned ib = 0;
     int output_bit = 0;
     unsigned input_bit = lp_rx_pin_read();
+    // unsigned input_bit = ib++ & 1;
 
     output_bit = rlew_dec_bit(&lp.lin.dec, NULL, &rlew_load);
-    if (output_bit < 0) {
+    if (unlikely(output_bit < 0)) {
         lp_signal_load_error(lp.lin.dec.flags);
     } else {
         if (output_bit) {

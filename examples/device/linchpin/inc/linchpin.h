@@ -30,8 +30,7 @@
 #include <sam.h>
 
 
-#define LP_SIGNAL_BUFFER_SIZE (1u<<10)
-#define LP_RLE_BUFFER_SIZE (64)
+#define LP_SIGNAL_BUFFER_SIZE (1u<<6)
 #define lp_cdc_is_connected tud_cdc_n_connected
 #define lp_cdc_rx_available tud_cdc_n_available
 #define lp_cdc_tx_available tud_cdc_n_write_available
@@ -46,14 +45,14 @@
 #define lp_timer_stop() \
 	do { \
 		TC0->COUNT32.CTRLA.bit.ENABLE = 0; \
-		LP_LOG("timer stopped\n"); \
+		/*LP_LOG("timer stopped\n");*/ \
 	} while (0)
 
 #define lp_timer_start() \
 	do { \
 		TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY / lp.lin.signal_frequency; \
 		TC0->COUNT32.CTRLA.bit.ENABLE = 1; \
-		LP_LOG("timer started\n"); \
+		/*LP_LOG("timer started\n");*/ \
 	} while (0)
 
 
