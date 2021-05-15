@@ -63,8 +63,8 @@ enum lp_cmd_state {
 
 
 struct lin_task_state {
-	uint8_t signal_tx_buffer[LP_SIGNAL_BUFFER_SIZE] __attribute__ ((aligned (64)));
-	uint8_t signal_rx_buffer[LP_SIGNAL_BUFFER_SIZE] __attribute__ ((aligned (64)));
+	uint32_t signal_tx_buffer[LP_SIGNAL_BUFFER_SIZE];
+	uint32_t signal_rx_buffer[LP_SIGNAL_BUFFER_SIZE];
 //	uint8_t rle_tx_buffer[LP_RLE_BUFFER_SIZE] __attribute__ ((aligned (64)));
 //	uint8_t rle_rx_buffer[LP_RLE_BUFFER_SIZE] __attribute__ ((aligned (64)));
 	volatile size_t signal_tx_buffer_pi;
@@ -79,9 +79,8 @@ struct lin_task_state {
 	enum lp_lin_state state;
 	volatile uint8_t signal_flags;
 	volatile uint8_t mode;
-	struct rle decoder;
-	struct rle encoder;
-	struct bitstream bs;
+	struct rlew_decoder dec;
+	struct rlew_encoder enc;
 };
 
 struct cmd_task_state {

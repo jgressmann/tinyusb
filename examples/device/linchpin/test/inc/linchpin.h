@@ -58,14 +58,14 @@
 #include <linchpin_error.h>
 
 
-#define RLE_ASSERT TEST_ASSERT
-#define RLE_H
-#define RLE_INT_TYPE size_t
-#include <rle.h>
-#undef RLE_H
+#define RLEW_ASSERT TEST_ASSERT
+#define RLEW_H
+#define RLEW_INT_TYPE uint32_t
+#include <rlew.h>
+#undef RLEW_H
 
-#define BS_ASSERT TEST_ASSERT
-#include <bitstream.h>
+//#define BS_ASSERT TEST_ASSERT
+//#include <bitstream.h>
 
 
 

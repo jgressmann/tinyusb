@@ -3,13 +3,12 @@
 
 
 #include <linchpin.h>
-#include <bitstream.h>
 
 
 
 
-#define RLE_C
-#include <rle.h>
+#define RLEW_C
+#include <rlew.h>
 
 
 #include <string>
@@ -50,7 +49,6 @@ struct serial_fixture : public ::testing::Test
     int flush_count;
     int rx_clear_count;
     int tx_clear_count;
-    struct bitstream lin_input_bs;
 
 
     ~serial_fixture()
@@ -61,8 +59,6 @@ struct serial_fixture : public ::testing::Test
     serial_fixture()
     {
         self = this;
-
-        bs_init(&lin_input_bs);
 
         connected = false;
         pin = -1;
@@ -109,26 +105,26 @@ struct serial_fixture : public ::testing::Test
 
     void append_lin_input(char const *str)
     {
-        struct rle rle;
-        rle_init(&rle);
+//        struct rle rle;
+//        rle_init(&rle);
 
-        while (*str) {
-            bool bit = *str++ == '1';
-            rle_encode_bit(&rle, this, &static_append_lin_input_bits, bit);
-        }
+//        while (*str) {
+//            bool bit = *str++ == '1';
+//            rle_encode_bit(&rle, this, &static_append_lin_input_bits, bit);
+//        }
 
-        rle_encode_flush(&rle, this, &static_append_lin_input_bits);
+//        rle_encode_flush(&rle, this, &static_append_lin_input_bits);
     }
 
     void set_lin_input(char const *str)
     {
-        append_lin_input(str);
-        while (lin_input_bs.incoming_count != 0) {
-            bs_write(&lin_input_bs, this, &static_append_lin_input_byte, 1);
-        }
+//        append_lin_input(str);
+//        while (lin_input_bs.incoming_count != 0) {
+//            bs_write(&lin_input_bs, this, &static_append_lin_input_byte, 1);
+//        }
 
-        size_t term = ~0;
-        lin_input.insert(lin_input.end(), (uint8_t*)&term, (uint8_t*)(&term + 1));
+//        size_t term = ~0;
+//        lin_input.insert(lin_input.end(), (uint8_t*)&term, (uint8_t*)(&term + 1));
 
 //        for (auto it = lin_input.begin(); it != lin_input.end(); ++it) {
 //            fprintf(stdout, "%02x ", *it);
@@ -150,22 +146,22 @@ struct serial_fixture : public ::testing::Test
 
     void append_lin_input_bits(uint8_t const* ptr, unsigned bit_count)
     {
-        size_t index = 0;
-        size_t x = ptr[index++];
-        while (bit_count >= sizeof(*ptr) * 8) {
-            for (unsigned i = sizeof(*ptr) * 8 - 1; i < sizeof(*ptr) * 8; --i) {
-                auto bit = (x & (static_cast<decltype (*ptr)>(1) << i)) ? '1' : '0';
-                bs_write(&lin_input_bs, this, &static_append_lin_input_byte, bit);
-            }
+//        size_t index = 0;
+//        size_t x = ptr[index++];
+//        while (bit_count >= sizeof(*ptr) * 8) {
+//            for (unsigned i = sizeof(*ptr) * 8 - 1; i < sizeof(*ptr) * 8; --i) {
+//                auto bit = (x & (static_cast<decltype (*ptr)>(1) << i)) ? '1' : '0';
+//                bs_write(&lin_input_bs, this, &static_append_lin_input_byte, bit);
+//            }
 
-            x = ptr[index++];
-            bit_count -= sizeof(*ptr) * 8;
-        }
+//            x = ptr[index++];
+//            bit_count -= sizeof(*ptr) * 8;
+//        }
 
-        for (unsigned i = sizeof(*ptr) * 8 - 1; bit_count && i < sizeof(*ptr) * 8; --i, --bit_count) {
-            auto bit = (x & (static_cast<decltype (*ptr)>(1) << i)) ? '1' : '0';
-            bs_write(&lin_input_bs, this, &static_append_lin_input_byte, bit);
-        }
+//        for (unsigned i = sizeof(*ptr) * 8 - 1; bit_count && i < sizeof(*ptr) * 8; --i, --bit_count) {
+//            auto bit = (x & (static_cast<decltype (*ptr)>(1) << i)) ? '1' : '0';
+//            bs_write(&lin_input_bs, this, &static_append_lin_input_byte, bit);
+//        }
     }
 };
 

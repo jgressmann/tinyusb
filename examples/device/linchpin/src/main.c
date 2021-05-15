@@ -35,15 +35,16 @@
 #include <linchpin.h>
 
 
-#define RLE_C
-#include <rle.h>
+#define RLEW_C
+#include <rlew.h>
+#undef RLEW_C
 
 
 
 static void tusb_device_task(void* param);
 static void cdc_cmd_task(void* param);
 LP_RAMFUNC static void cdc_lin_task(void* param);
-LP_RAMFUNC static void rle_task(void* param);
+// LP_RAMFUNC static void rle_task(void* param);
 
 #define LIN_TX_PIN PIN_PC04
 #define LIN_RX_PIN PIN_PC05
@@ -59,9 +60,9 @@ static struct tasks {
 	StaticTask_t cdc_cmd_task_mem;
 	StackType_t cdc_lin_task_stack_mem[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t cdc_lin_task_mem;
-	StackType_t rle_task_stack_mem[configMINIMAL_STACK_SIZE];
-	StaticTask_t rle_task_mem;
-	TaskHandle_t rle_task_handle;
+	// StackType_t rle_task_stack_mem[configMINIMAL_STACK_SIZE];
+	// StaticTask_t rle_task_mem;
+	// TaskHandle_t rle_task_handle;
 } tasks;
 
 
@@ -183,14 +184,14 @@ LP_RAMFUNC static void cdc_lin_task(void* param)
 	}
 }
 
-LP_RAMFUNC static void rle_task(void* param)
-{
-	(void) param;
+// LP_RAMFUNC static void rle_task(void* param)
+// {
+// 	(void) param;
 
-	while (1) {
-		lp_rle_task();
-	}
-}
+// 	while (1) {
+// 		lp_rle_task();
+// 	}
+// }
 
 
 LP_RAMFUNC static void timer_interrupt(void)

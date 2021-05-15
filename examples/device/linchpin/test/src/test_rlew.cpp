@@ -290,6 +290,23 @@ TEST_F(rlew_fixture, encode_keeps_a_set_overflow_flag)
     EXPECT_EQ(RLEW_FLAG_ENC_OVERFLOW, e.flags);
 }
 
+TEST_F(rlew_fixture, encode_finish_writes_at_least_one_int_worth_of_zeros)
+{
+    rlew_enc_finish(&e, this, &static_write);
+    EXPECT_EQ(0u, e.flags);
+    EXPECT_EQ(0u, e.used);
+    EXPECT_STREQ("0000000000000000", output.c_str());
+}
+
+TEST_F(rlew_fixture, encode_finish_aligns_and_stores_current_state_then_terminates_with_zeros)
+{
+    rlew_enc_bit(&e, this, &static_write, 1);
+
+    rlew_enc_finish(&e, this, &static_write);
+    EXPECT_EQ(0u, e.flags);
+    EXPECT_EQ(0u, e.used);
+    EXPECT_STREQ("10000000000000000000000000000000", output.c_str());
+}
 
 
 TEST_F(rlew_fixture, rlew_dec_bit_asserts_params)

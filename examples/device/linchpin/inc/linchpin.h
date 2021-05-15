@@ -62,18 +62,15 @@
 #include <linchpin_error.h>
 
 
-#define RLE_ASSERT(...)
-#define rle_likely likely
-#define rle_unlikely unlikely
-#define RLE_FUNC LP_RAMFUNC
-#define RLE_H
-#define RLE_INT_TYPE uint32_t
-#include <rle.h>
-#undef RLE_H
+#define RLEW_ASSERT(...)
+#define rlew_likely likely
+#define rlew_unlikely unlikely
+#define RLEW_FUNC LP_RAMFUNC
+#define RLEW_H
+#define RLEW_INT_TYPE uint32_t
+#include <rlew.h>
+#undef RLEW_H
 
-
-#define BS_ASSERT LP_DEBUG_ASSERT
-#include <bitstream.h>
 
 #include <linchpin_state.h>
 
