@@ -11,10 +11,20 @@ import time
 
 import linchpin
 
-def bits(b: int):
+def lsb_first_bits(b: int):
 	for i in range(8):
 		bit = 1 << i
 		yield (b & bit) == bit
+
+def pid(id: int) -> int:
+	# P0 = ID0 ^ ID1 ^ ID2 ^ ID4
+	p0 = int((id & 1) == 1) ^ int((id & 2) == 2) ^ int((id & 4) == 4) ^ int((id & 16) == 16)
+	# P1 = ~(ID1 ^ ID3 ^ ID4 ^ ID5)
+	p1 = 1 ^ int((id & 2) == 2) ^ int((id & 8) == 8) ^ int((id & 16) == 16) ^ int((id & 32) == 32)
+
+	pid = (p1 << 7) | (p0 << 6) | (id & 63)
+
+	return pid
 
 if __name__ == "__main__":
 	import argparse
@@ -31,18 +41,31 @@ if __name__ == "__main__":
 	urandom = None
 	dec = None
 	enc = None
+	relais_pin = 71 # PC07
+	id = 0x20
 
 	try:
 		input = []
+		offset = 0
 
 		def store(value) -> int:
+			global input
 			input.append(value)
 			return 0
+
+		def load():
+			global offset
+			o = offset
+			offset += 1
+			return input[o]
 
 		cmd_serial = serial.Serial(port=args.cmd_dev, baudrate=115200)
 		lin_serial = serial.Serial(port=args.lin_dev, baudrate=115200)
 		enc = linchpin.RlewEncoder()
 		enc.store_callback = store
+
+		dec = linchpin.RlewDecoder()
+		dec.load_callback = load
 
 		def lp_run_cmd(cmd: str) -> str:
 			cmd_serial.write(bytes(cmd, 'utf-8'))
@@ -71,46 +94,160 @@ if __name__ == "__main__":
 		if linchpin.LinchpinError.NONE.value != e:
 			raise ValueError(f'failed to turn off lin')
 
+		# # turn off relais powering lin slave
+		# r = lp_run_cmd(f'!p {relais_pin} 0\n')
+		# (e, r) = linchpin.lp_parse_cmd_reply(r)
+		# if linchpin.LinchpinError.NONE.value != e:
+		# 	raise ValueError(f'failed to turn off relais')
 
-		oversampling = 16
+		# time.sleep(0.1)
 
-		# 13 bit time break field
-		for _ in range(13):
-			for _ in range(oversampling):
-				enc.add(0)
+		# turn on relais powering lin slave
+		r = lp_run_cmd(f'!p {relais_pin} 1\n')
+		(e, r) = linchpin.lp_parse_cmd_reply(r)
+		if linchpin.LinchpinError.NONE.value != e:
+			raise ValueError(f'failed to turn off relais')
 
-		# 1 bit time break delimiter
-		for _ in range(1):
+
+
+		oversampling = 4
+		baud = 19200
+		break_bits = 13
+		inter_byte_space = 0
+
+
+		r = lp_run_cmd(f'!f {oversampling * baud}\n')
+		(e, r) = linchpin.lp_parse_cmd_reply(r)
+		if linchpin.LinchpinError.NONE.value != e:
+			raise ValueError(f'failed to set frequency to {oversampling * baud}')
+
+		# # wakey wakey force bus to low for 250μs to 5 ms,
+		# #for _ in range((oversampling * baud * 5) // 1000):
+		# for _ in range(break_bits):
+		# 	for _ in range(oversampling):
+		# 		enc.add(0)
+
+		# # slaves show now detect the rising edge and be ready in max 100ms
+		# for _ in range((oversampling * baud * 100) // 1000):
+		# 	enc.add(1)
+
+		for id in [32, 33, 0x32, 0x33]:
+
+			# break field
+			for _ in range(break_bits):
+				for _ in range(oversampling):
+					enc.add(0)
+
+			# 1 bit time break delimiter
 			for _ in range(oversampling):
 				enc.add(1)
 
-		# sync field
-		# start bit
-		for _ in range(oversampling):
-			enc.add(0)
+			for _ in range(inter_byte_space):
+				enc.add(1)
 
-		for bit in bits(0x55):
+			# sync field
+			# start bit
 			for _ in range(oversampling):
-				enc.add(int(bit))
+				enc.add(0)
 
-		# stop bit
-		for _ in range(oversampling):
-			enc.add(1)
+			for bit in lsb_first_bits(0x55):
+				for _ in range(oversampling):
+					enc.add(int(bit))
 
-		# # send recessive
-		# for i in range(1000):
-		# 	for j in range(oversampling):
-		# 		enc.add(1)
+			# stop bit
+			for _ in range(oversampling):
+				enc.add(1)
+
+			for _ in range(inter_byte_space):
+				enc.add(1)
+
+
+			# pid field
+			# start bit
+			for _ in range(oversampling):
+				enc.add(0)
+
+			for bit in lsb_first_bits(pid(id)):
+				for _ in range(oversampling):
+					enc.add(int(bit))
+
+			# stop bit
+			for _ in range(oversampling):
+				enc.add(1)
+
+			for _ in range(inter_byte_space):
+				enc.add(1)
+
+
+			# send recessive placeholder for frame data
+			for _ in range(100):
+				for _ in range(oversampling):
+					enc.add(1)
+
+
+			# # send recessive delay between frames
+			# for _ in range((baud * oversampling) // 10):
+			# 	enc.add(1)
+
+
 
 		enc.finish()
 
-		urandom = open("/dev/urandom", "rb")
+		dec_value = None
+		dec_count = 0
 
+		def print_dec_value():
+			print(f"{dec_value}: {dec_count}")
+
+		while True:
+			value = dec.remove()
+			if value < 0:
+				if linchpin.RlewDecoder.FLAG_EOS != dec.flags:
+					raise ValueError("underflow error")
+
+				if None is not dec_value:
+					print_dec_value()
+
+				break
+
+			if None is dec_value:
+				dec_value = value
+				dec_count = 1
+			elif dec_value != value:
+				print_dec_value()
+				dec_value = value
+				dec_count = 1
+			else:
+				dec_count += 1
+
+
+		# # turn on relais powering lin slave
+		# r = lp_run_cmd(f'!p {relais_pin} 1\n')
+		# (e, r) = linchpin.lp_parse_cmd_reply(r)
+		# if linchpin.LinchpinError.NONE.value != e:
+		# 	raise ValueError(f'failed to turn on relais')
+
+		# # wait for slave startup
+		# time.sleep(0.5)
+
+		# urandom = open("/dev/urandom", "rb")
 		# input = urandom.read(16)
 		# lin_serial.write(urandom.read(16))
+
+		print(f"{len(input)} u32 to send")
+
 		for i in input:
+			for j in range(32):
+				bit = 1 << (31-j)
+				value = (i & bit) == bit
+				print(f"{int(value)}", end="")
+
 			b = i.to_bytes(4, le_str)
-			lin_serial.write(b)
+			w = lin_serial.write(b)
+			if w != 4:
+				raise ValueError(f'failed send 4 byte to lin')
+
+		print()
 
 		# start lin
 		r = lp_run_cmd('!lms\n')
@@ -119,7 +256,7 @@ if __name__ == "__main__":
 			# if lin_serial.in_waiting >= 4:
 			output = lin_serial.read(4)
 			value = int.from_bytes(output, byteorder=le_str, signed=False)
-			print(hex(value))
+			print(f"{value:08x}")
 			if 0 == value:
 				break
 
@@ -144,79 +281,3 @@ if __name__ == "__main__":
 			dec.close()
 		if None is not enc:
 			enc.close()
-
-
-	sys.exit(0)
-
-
-
-	def blocking_io():
-		import sys
-		while True:
-			try:
-				b = serialPort.read()
-				sys.stdout.buffer.write(b)
-			except serial.SerialException as e:
-				break
-		# print(repr(serialPort.readall())
-
-	def blocking_write():
-		serialPort.write(b'RUN\n')
-		x = base64.b64encode(b'\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01\x81\x01')
-		print(repr(x))
-		serialPort.write(x + b'====')
-		serialPort.write(b'?S')
-
-	# connected = False
-	# t = None
-
-	# class Output(asyncio.Protocol):
-	# 	def connection_made(self, transport):
-	# 		self.transport = transport
-	# 		print('port opened', transport)
-	# 		# transport.serial.rts = False
-	# 		# transport.write(b'hello world\n')
-	# 		transport.write(b'RUN\n')
-	# 		connected = True
-	# 		t = transport
-
-	# 	def data_received(self, data):
-	# 		print('data received', repr(data))
-	# 		# self.transport.close()
-
-	# 	def connection_lost(self, exc):
-	# 		print('port closed')
-	# 		asyncio.get_event_loop().stop()
-
-
-	# async def send_foo():
-	# 	while not connected:
-	# 		await asyncio.sleep(0.1)
-
-	# 	t.write(b'asdfdasfasdfdasf')
-
-
-	import threading
-	t = threading.Thread(target=blocking_io)
-	# t.daemon = True
-	t.start()
-
-	blocking_write()
-
-	# async def loo():
-	# 	await asyncio.gather(
-	# 		asyncio.to_thread(blocking_io),
-	# 		asyncio.to_thread(blocking_write))
-
-	# serialPort.write(b"?F\n")
-	# print(serialPort.read().decode("utf8"))
-
-	# loop = asyncio.get_event_loop()
-	# sender = asyncio.create_task(send_foo)
-	# coro = serial_asyncio.create_serial_connection(loop, Output, args.device, baudrate=args.baud)
-	# asyncio.run(loo())
-	# loop.run_until_complete(coro)
-	# loop.run_until_complete(sender)
-	# loop.run_forever()
-	# loop.close()
-	t.join()

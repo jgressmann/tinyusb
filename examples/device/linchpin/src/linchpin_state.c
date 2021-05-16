@@ -133,7 +133,7 @@ LP_RAMFUNC static bool usb_try_tx2(
         }
 
         if (count) {
-            LP_LOG("lp_cdc_tx itf=%u count=%lu\n", itf, count);
+            // LP_LOG("lp_cdc_tx itf=%u count=%lu\n", itf, count);
             (void)lp_cdc_tx(itf, ((uint8_t*)buf_ptr) + index * element_size, count * element_size);
             __atomic_store_n(gi_ptr, gi + count, __ATOMIC_RELEASE);
             return true;
@@ -609,7 +609,7 @@ LP_RAMFUNC static void lp_signal_load_error(unsigned lin_dec_flags)
 
     if (lin_dec_flags & RLEW_FLAG_DEC_EOS) {
         LP_LOG("eos\n");
-        rlew_enc_finish(&lp.lin.enc, NULL, &rlew_store);
+        rlew_enc_finish(&lp.lin.enc, NULL, &rlew_store, 1);
         if (unlikely(lp.lin.enc.flags)) {
             lp_signal_store_error(lp.lin.enc.flags);
         } else {

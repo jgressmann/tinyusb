@@ -62,7 +62,8 @@ struct rlew_fixture : public ::testing::Test
             return read_error;
         }
 
-        if (input.size() < sizeof(*ptr) * 8) {
+        auto input_size = input.size();
+        if (input_size < sizeof(*ptr) * 8) {
             return 1;
         }
 
@@ -260,22 +261,27 @@ TEST_F(rlew_fixture, encode_0000000_yields_expected_output)
 }
 
 
-TEST_F(rlew_fixture, encode_0x0x14_yields_expected_output)
+TEST_F(rlew_fixture, encode_0x0xLIMIT_yields_expected_output)
 {
-    const size_t LIMIT = (1u<<15)-1;
-    for (size_t i = 0; i < LIMIT; ++i) {
+    for (size_t i = 0; i < RLEW_MAX_COUNT; ++i) {
         rlew_enc_bit(&e, this, &static_write, 0);
+        EXPECT_EQ(0u, e.flags);
     }
 
     EXPECT_EQ(0u, e.value);
-    EXPECT_EQ(LIMIT, e.count);
-    EXPECT_EQ(0u, e.flags);
+    EXPECT_EQ(RLEW_MAX_COUNT, e.count);
 
-    rlew_enc_flush(&e, this, &static_write);
+    rlew_enc_finish(&e, this, &static_write, 0);
     EXPECT_EQ(0u, e.count);
     EXPECT_EQ(0u, e.flags);
-    EXPECT_EQ(0x3fff, e.state);
-    EXPECT_STREQ("0000000000000001", output.c_str());
+
+    if (1 == sizeof(RLEW_INT_TYPE)) {
+        EXPECT_STREQ("0000000111111100", output.c_str());
+    } else if (2 == sizeof(RLEW_INT_TYPE)){
+        EXPECT_STREQ("00000000000000011111111111111100", output.c_str());
+    } else {
+        FAIL();
+    }
 }
 
 TEST_F(rlew_fixture, encode_sets_overflow_flag_if_output_cannot_be_written)
@@ -308,20 +314,173 @@ TEST_F(rlew_fixture, encode_keeps_a_set_overflow_flag)
 
 TEST_F(rlew_fixture, encode_finish_writes_at_least_one_int_worth_of_zeros)
 {
-    rlew_enc_finish(&e, this, &static_write);
+    rlew_enc_finish(&e, this, &static_write, 1);
     EXPECT_EQ(0u, e.flags);
     EXPECT_EQ(0u, e.used);
-    EXPECT_STREQ("0000000000000000", output.c_str());
+
+    if (1 == sizeof(RLEW_INT_TYPE)) {
+        EXPECT_STREQ("00000000", output.c_str());
+    } else if (2 == sizeof(RLEW_INT_TYPE)) {
+        EXPECT_STREQ("0000000000000000", output.c_str());
+    } else {
+        FAIL();
+    }
 }
 
 TEST_F(rlew_fixture, encode_finish_aligns_and_stores_current_state_then_terminates_with_zeros)
 {
     rlew_enc_bit(&e, this, &static_write, 1);
 
-    rlew_enc_finish(&e, this, &static_write);
+    rlew_enc_finish(&e, this, &static_write, 1);
     EXPECT_EQ(0u, e.flags);
     EXPECT_EQ(0u, e.used);
-    EXPECT_STREQ("10000000000000000000000000000000", output.c_str());
+    if (1 == sizeof(RLEW_INT_TYPE)) {
+        EXPECT_STREQ("1000000000000000", output.c_str());
+    } else if (2 == sizeof(RLEW_INT_TYPE)) {
+        EXPECT_STREQ("10000000000000000000000000000000", output.c_str());
+    } else {
+        FAIL();
+    }
+}
+
+TEST_F(rlew_fixture, encode_for_break_is_correct)
+{
+
+    const int oversampling = 16;
+
+    // break
+    for (int i = 0; i < 13; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, 0);
+        }
+    }
+
+
+
+    rlew_enc_finish(&e, this, &static_write, 0);
+
+    EXPECT_EQ(0u, e.flags);
+    EXPECT_EQ(0u, e.used);
+
+    if (1 == sizeof(RLEW_INT_TYPE)) {
+        // 16*13=208 => 127 + 81 = 64 + 17 (0b010001)
+        EXPECT_STREQ("00000001111111000000010100010000", output.c_str());
+    } else if (2 == sizeof(RLEW_INT_TYPE)) {
+        // 16*13=208 => 128 + 80 (0b1010000)
+        EXPECT_STREQ("0000000011010000", output.c_str());
+    } else {
+        FAIL();
+    }
+}
+
+TEST_F(rlew_fixture, encode_for_break_and_break_delim_is_correct)
+{
+
+    const int oversampling = 16;
+
+    // break
+    for (int i = 0; i < 13; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, 0);
+        }
+    }
+
+    // 16*13=208 => 1<<7 + 80 (0b1010000)
+
+    // break delim
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 1);
+    }
+
+    // 16 => 1<<4 + 0 (0b0000)
+
+    rlew_enc_finish(&e, this, &static_write, 0);
+
+    EXPECT_EQ(0u, e.flags);
+    EXPECT_EQ(0u, e.used);
+    EXPECT_STREQ("00000000110100001111100000000000", output.c_str());
+}
+
+
+TEST_F(rlew_fixture, encode_for_break_and_break_delim_an_sync_start_is_correct)
+{
+
+    const int oversampling = 16;
+
+    // break
+    for (int i = 0; i < 13; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, 0);
+        }
+    }
+
+    // 16*13=208 => 1<<7 + 80 (0b1010000)
+
+    // break delim
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 1);
+    }
+
+    // 16 => 1<<4 + 0 (0b0000)
+
+    // sync start bit
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 0);
+    }
+
+    // 16 => 1<<4 + 0 (0b0000)
+
+    rlew_enc_finish(&e, this, &static_write, 0);
+
+    EXPECT_EQ(0u, e.flags);
+    EXPECT_EQ(0u, e.used);
+    EXPECT_STREQ("000000001101000011111000000000010000000000000000", output.c_str());
+}
+
+TEST_F(rlew_fixture, encode_for_break_and_break_delim_and_sync_start_and_sync_field_is_correct)
+{
+
+    const int oversampling = 16;
+
+    // break
+    for (int i = 0; i < 13; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, 0);
+        }
+    }
+
+    // 16*13=208 => 1<<7 + 80 (0b1010000)
+
+    // break delim
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 1);
+    }
+
+    // 16 => 1<<4 + 0 (0b0000)
+
+    // sync start bit
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 0);
+    }
+
+    // 16 => 1<<4 + 0 (0b0000)
+
+    for (int i = 0; i < 8; ++i) {
+        int bit = (1 << i);
+        int value = (0x55 & bit) == bit;
+
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, value);
+        }
+    }
+
+    // 0x55 (0b01010101), 16x oversample  => 1<<4 + 0 (0b0000000)
+
+    rlew_enc_finish(&e, this, &static_write, 0);
+
+    EXPECT_EQ(0u, e.flags);
+    EXPECT_EQ(0u, e.used);
+    EXPECT_STREQ("00000000110100001111100000000001000011111000000000010000111110000000000100001111100000000001000011111000000000010000000000000000", output.c_str());
 }
 
 TEST_F(rlew_fixture, encode_break_sync)
@@ -361,11 +520,11 @@ TEST_F(rlew_fixture, encode_break_sync)
         rlew_enc_bit(&e, this, &static_write, 1);
     }
 
-    rlew_enc_finish(&e, this, &static_write);
+    rlew_enc_finish(&e, this, &static_write, 0);
     EXPECT_EQ(0u, e.flags);
     EXPECT_EQ(0u, e.used);
     EXPECT_STREQ(
-                "000000001101000011111000000000010000111110000000000100001111100000000001000011111000000000010000111110000000000100001111100000000000000000000000",
+                "00000000110100001111100000000001000011111000000000010000111110000000000100001111100000000001000011111000000000010000111110000000",
                 output.c_str());
 
     dump_ints();
@@ -377,6 +536,7 @@ TEST_F(rlew_fixture, rlew_dec_bit_asserts_params)
     EXPECT_ANY_THROW(rlew_dec_bit(NULL, this, &static_read));
     EXPECT_ANY_THROW(rlew_dec_bit(&d, this, NULL));
 }
+
 
 TEST_F(rlew_fixture, rlew_dec_bit_underflows_if_no_input_is_available)
 {
@@ -406,6 +566,9 @@ TEST_F(rlew_fixture, rlew_dec_bit_decodes_0_bit_counter_properly)
     bit = rlew_dec_bit(&d, this, &static_read);
     EXPECT_EQ(RLEW_FLAG_DEC_UNDERFLOW, d.flags);
 }
+
+
+
 
 TEST_F(rlew_fixture, rlew_dec_bit_decodes_1_bit_counter_properly)
 {
@@ -438,53 +601,61 @@ TEST_F(rlew_fixture, rlew_dec_bit_decodes_1_bit_counter_properly)
 }
 
 
-TEST_F(rlew_fixture, rlew_dec_bit_decodes_8_bit_counter_properly)
-{
-    EXPECT_EQ(0u, d.flags);
-    set_input("000000000100000000");
 
-    int bit;
-    for (size_t i = 0; i < 255; ++i) {
-        bit = rlew_dec_bit(&d, this, &static_read);
-        EXPECT_EQ(0, bit);
-        EXPECT_EQ(0u, d.flags);
-    }
-
-    bit = rlew_dec_bit(&d, this, &static_read);
-    EXPECT_EQ(0, bit);
-    EXPECT_EQ(0u, d.flags);
-
-    bit = rlew_dec_bit(&d, this, &static_read);
-    EXPECT_EQ(RLEW_FLAG_DEC_UNDERFLOW, d.flags);
-}
 
 TEST_F(rlew_fixture, rlew_dec_bit_decodes_max_bit_counter_properly0)
 {
     int bit;
 
-    EXPECT_EQ(0u, d.flags);
-    set_input("000000000000000100000000000000");
+    if (1 == sizeof(RLEW_INT_TYPE)) {
+        set_input("0000000111111100");
 
-    bit = rlew_dec_bit(&d, this, &static_read);
-    EXPECT_EQ(0, bit);
-    EXPECT_EQ(0u, d.flags);
-    EXPECT_EQ(16383u, d.count);
+        bit = rlew_dec_bit(&d, this, &static_read);
+        EXPECT_EQ(0, bit);
+        EXPECT_EQ(0u, d.flags);
+        EXPECT_EQ(126u, d.count);
+    } else if (2 == sizeof(RLEW_INT_TYPE)) {
+        set_input("000000000000000100000000000000");
+
+        bit = rlew_dec_bit(&d, this, &static_read);
+        EXPECT_EQ(0, bit);
+        EXPECT_EQ(0u, d.flags);
+        EXPECT_EQ(16383u, d.count);
+    } else {
+        FAIL();
+    }
 }
+
 
 
 
 TEST_F(rlew_fixture, rlew_dec_bit_decodes_max_bit_counter_properly1)
 {
     int bit;
+    if (1 == sizeof(RLEW_INT_TYPE)) {
+        set_input("1111111011111100");
 
-    EXPECT_EQ(0u, d.flags);
-    set_input("111111111111111000000000000000");
+        bit = rlew_dec_bit(&d, this, &static_read);
+        EXPECT_EQ(1, bit);
+        EXPECT_EQ(0u, d.flags);
+        EXPECT_EQ(126u, d.count);
+    } else if (2 == sizeof(RLEW_INT_TYPE)) {
 
-    bit = rlew_dec_bit(&d, this, &static_read);
-    EXPECT_EQ(1, bit);
-    EXPECT_EQ(0u, d.flags);
-    EXPECT_EQ(16383u, d.count);
+        set_input("111111111111111000000000000000");
+
+        bit = rlew_dec_bit(&d, this, &static_read);
+        EXPECT_EQ(1, bit);
+        EXPECT_EQ(0u, d.flags);
+        EXPECT_EQ(16383u, d.count);
+    } else {
+        FAIL();
+    }
+
+
 }
+
+
+
 
 TEST_F(rlew_fixture, rlew_dec_bit_decodes_max_bit_counter_properly_accross_integer_boundaries)
 {
@@ -582,4 +753,415 @@ TEST_F(rlew_fixture, rlew_decode_keeps_eos_flag)
     EXPECT_EQ(-1, bit);
     EXPECT_EQ(RLEW_FLAG_DEC_EOS, d.flags);
 }
+
+TEST_F(rlew_fixture, rlew_decode_works_for_all_numbers)
+{
+    for (RLEW_INT_TYPE i = 0; i < RLEW_MAX_BIT_COUNT; ++i) {
+        RLEW_INT_TYPE count = RLEW_INT_TYPE(1) << i;
+
+        for (int value = 0; value <= 1; ++value) {
+            for (RLEW_INT_TYPE j = 0; j < count; ++j) {
+                rlew_enc_bit(&e, this, &static_write, value);
+                EXPECT_EQ(0u, e.flags);
+            }
+
+            rlew_enc_finish(&e, this, &static_write, 1);
+            EXPECT_EQ(0u, e.flags);
+
+            input.assign(output.begin(), output.end());
+            output.clear();
+            rlew_enc_init(&e);
+
+            for (RLEW_INT_TYPE j = 0; j < count; ++j) {
+                auto bit = rlew_dec_bit(&d, this, &static_read);
+                EXPECT_EQ(0u, d.flags);
+                EXPECT_EQ(value, bit);
+            }
+
+            rlew_dec_bit(&d, this, &static_read);
+            EXPECT_EQ(RLEW_FLAG_DEC_EOS, d.flags);
+            EXPECT_EQ(0u, input.size());
+
+            rlew_dec_init(&d);
+        }
+    }
+}
+
+TEST_F(rlew_fixture, encode_decode_for_break_is_correct)
+{
+
+    const int oversampling = 16;
+
+    // break
+    for (int i = 0; i < 13; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, 0);
+        }
+    }
+
+    // 16*13=208 => 128 + 80 (0b1010000)
+
+    rlew_enc_finish(&e, this, &static_write, 1);
+
+    EXPECT_EQ(0u, e.flags);
+    EXPECT_EQ(0u, e.used);
+    EXPECT_STREQ("00000000110100000000000000000000", output.c_str());
+
+    input.assign(output.begin(), output.end());
+
+    // break
+    for (int i = 0; i < 13; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            auto bit = rlew_dec_bit(&d, this, &static_read);
+            EXPECT_EQ(0u, d.flags);
+            EXPECT_EQ(0, bit);
+        }
+    }
+
+    rlew_dec_bit(&d, this, &static_read);
+    EXPECT_EQ(RLEW_FLAG_DEC_EOS, d.flags);
+}
+
+
+
+TEST_F(rlew_fixture, encode_decode_for_break_and_break_delim_is_correct)
+{
+
+    const int oversampling = 16;
+
+    // break
+    for (int i = 0; i < 13; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, 0);
+        }
+    }
+
+    // 16*13=208 => 1<<7 + 80 (0b1010000)
+
+    // break delim
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 1);
+    }
+
+    // 16 => 1<<4 + 0 (0b0000)
+
+    rlew_enc_finish(&e, this, &static_write, 1);
+
+    EXPECT_EQ(0u, e.flags);
+    EXPECT_EQ(0u, e.used);
+    EXPECT_STREQ("000000001101000011111000000000000000000000000000", output.c_str());
+
+    input.assign(output.begin(), output.end());
+
+    // break
+    for (int i = 0; i < 13; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            auto bit = rlew_dec_bit(&d, this, &static_read);
+            EXPECT_EQ(0u, d.flags);
+            EXPECT_EQ(0, bit);
+        }
+    }
+
+    // break delim
+    for (int j = 0; j < oversampling; ++j) {
+        auto bit = rlew_dec_bit(&d, this, &static_read);
+        EXPECT_EQ(0u, d.flags);
+        EXPECT_EQ(1, bit);
+    }
+
+    rlew_dec_bit(&d, this, &static_read);
+    EXPECT_EQ(RLEW_FLAG_DEC_EOS, d.flags);
+}
+
+
+TEST_F(rlew_fixture, encode_decode_for_break_and_break_delim_an_sync_start_is_correct)
+{
+
+    const int oversampling = 16;
+
+    // break
+    for (int i = 0; i < 13; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, 0);
+        }
+    }
+
+    // 16*13=208 => 1<<7 + 80 (0b1010000)
+
+    // break delim
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 1);
+    }
+
+    // 16 => 1<<4 + 0 (0b0000)
+
+    // sync start bit
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 0);
+    }
+
+    // 16 => 1<<4 + 0 (0b0000)
+
+    rlew_enc_finish(&e, this, &static_write, 1);
+
+    EXPECT_EQ(0u, e.flags);
+    EXPECT_EQ(0u, e.used);
+    EXPECT_STREQ("0000000011010000111110000000000100000000000000000000000000000000", output.c_str());
+
+    input.assign(output.begin(), output.end());
+
+    // break
+    for (int i = 0; i < 13; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            auto bit = rlew_dec_bit(&d, this, &static_read);
+            EXPECT_EQ(0u, d.flags);
+            EXPECT_EQ(0, bit);
+        }
+    }
+
+    // break delim
+    for (int j = 0; j < oversampling; ++j) {
+        auto bit = rlew_dec_bit(&d, this, &static_read);
+        EXPECT_EQ(0u, d.flags);
+        EXPECT_EQ(1, bit);
+    }
+
+    // start sync
+    for (int j = 0; j < oversampling; ++j) {
+        auto bit = rlew_dec_bit(&d, this, &static_read);
+        EXPECT_EQ(0u, d.flags);
+        EXPECT_EQ(0, bit);
+    }
+
+    rlew_dec_bit(&d, this, &static_read);
+    EXPECT_EQ(RLEW_FLAG_DEC_EOS, d.flags);
+}
+
+
+TEST_F(rlew_fixture, encode_decode_for_break_and_break_delim_and_sync_start_and_sync_field_is_correct)
+{
+
+    const int oversampling = 16;
+
+    // break
+    for (int i = 0; i < 13; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, 0);
+        }
+    }
+
+    // 16*13=208 => 1<<7 + 80 (0b1010000)
+
+    // break delim
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 1);
+    }
+
+    // 16 => 1<<4 + 0 (0b0000)
+
+    // sync start bit
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 0);
+    }
+
+    // 16 => 1<<4 + 0 (0b0000)
+
+    for (int i = 0; i < 8; ++i) {
+        int bit = (1 << i);
+        int value = (0x55 & bit) == bit;
+
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, value);
+        }
+    }
+
+    // 0x55 (0b01010101), 16x oversample  => 1<<4 + 0 (0b0000000)
+
+    rlew_enc_finish(&e, this, &static_write, 1);
+
+    EXPECT_EQ(0u, e.flags);
+    EXPECT_EQ(0u, e.used);
+    EXPECT_STREQ("000000001101000011111000000000010000111110000000000100001111100000000001000011111000000000010000111110000000000100000000000000000000000000000000", output.c_str());
+
+
+    input.assign(output.begin(), output.end());
+
+    // break
+    for (int i = 0; i < 13; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            auto bit = rlew_dec_bit(&d, this, &static_read);
+            EXPECT_EQ(0u, d.flags);
+            EXPECT_EQ(0, bit);
+        }
+    }
+
+    // break delim
+    for (int j = 0; j < oversampling; ++j) {
+        auto bit = rlew_dec_bit(&d, this, &static_read);
+        EXPECT_EQ(0u, d.flags);
+        EXPECT_EQ(1, bit);
+    }
+
+    // start sync
+    for (int j = 0; j < oversampling; ++j) {
+        auto bit = rlew_dec_bit(&d, this, &static_read);
+        EXPECT_EQ(0u, d.flags);
+        EXPECT_EQ(0, bit);
+    }
+
+    // sync byte
+    for (int i = 0; i < 8; ++i) {
+        int bit = (1 << i);
+        int value = (0x55 & bit) == bit;
+
+        for (int j = 0; j < oversampling; ++j) {
+            auto bit = rlew_dec_bit(&d, this, &static_read);
+            EXPECT_EQ(0u, d.flags);
+            EXPECT_EQ(value, bit);
+        }
+    }
+
+    rlew_dec_bit(&d, this, &static_read);
+    EXPECT_EQ(RLEW_FLAG_DEC_EOS, d.flags);
+
+}
+
+
+
+TEST_F(rlew_fixture, test_round_trip)
+{
+    const int break_bits = 13;
+    const int break_delim_bits = 1;
+    const int oversampling = 16;
+    const uint8_t pid = 0x20;
+
+    // break
+    for (int i = 0; i < break_bits; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, 0);
+        }
+    }
+
+    // break delim
+    for (int i = 0; i < break_delim_bits; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, 1);
+        }
+    }
+
+    // sync start bit
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 0);
+    }
+
+    for (int i = 0; i < 8; ++i) {
+        int bit = (1 << i);
+        int value = (0x55 & bit) == bit;
+
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, value);
+        }
+    }
+
+    // sync stop bit
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 1);
+    }
+
+    // pid start bit
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 0);
+    }
+
+    for (int i = 0; i < 8; ++i) {
+        int bit = (1 << i);
+        int value = (pid & bit) == bit;
+
+        for (int j = 0; j < oversampling; ++j) {
+            rlew_enc_bit(&e, this, &static_write, value);
+        }
+    }
+
+    // pid stop bit
+    for (int j = 0; j < oversampling; ++j) {
+        rlew_enc_bit(&e, this, &static_write, 1);
+    }
+
+    rlew_enc_finish(&e, this, &static_write, 1);
+    EXPECT_EQ(0u, e.flags);
+    EXPECT_EQ(0u, e.used);
+
+    input.assign(output.begin(), output.end());
+
+    /// READ IT ALL BACK
+
+    // break
+    for (int i = 0; i < break_bits; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            auto bit = rlew_dec_bit(&d, this, &static_read);
+            EXPECT_EQ(0u, d.flags);
+            EXPECT_EQ(0, bit);
+        }
+    }
+
+    // break delim
+    for (int i = 0; i < break_delim_bits; ++i) {
+        for (int j = 0; j < oversampling; ++j) {
+            auto bit = rlew_dec_bit(&d, this, &static_read);
+            EXPECT_EQ(0u, d.flags);
+            EXPECT_EQ(1, bit);
+        }
+    }
+
+    // sync start bit
+    for (int j = 0; j < oversampling; ++j) {
+        auto bit = rlew_dec_bit(&d, this, &static_read);
+        EXPECT_EQ(0u, d.flags);
+        EXPECT_EQ(0, bit);
+    }
+
+    for (int i = 0; i < 8; ++i) {
+        int bit = (1 << i);
+        int value = (0x55 & bit) == bit;
+
+        for (int j = 0; j < oversampling; ++j) {
+            auto bit = rlew_dec_bit(&d, this, &static_read);
+            EXPECT_EQ(0u, d.flags);
+            EXPECT_EQ(value, bit);
+        }
+    }
+
+    // sync stop bit
+    for (int j = 0; j < oversampling; ++j) {
+        auto bit = rlew_dec_bit(&d, this, &static_read);
+        EXPECT_EQ(0u, d.flags);
+        EXPECT_EQ(1, bit);
+    }
+
+    // pid start bit
+    for (int j = 0; j < oversampling; ++j) {
+        auto bit = rlew_dec_bit(&d, this, &static_read);
+        EXPECT_EQ(0u, d.flags);
+        EXPECT_EQ(0, bit);
+    }
+
+    for (int i = 0; i < 8; ++i) {
+        int bit = (1 << i);
+        int value = (pid & bit) == bit;
+
+        for (int j = 0; j < oversampling; ++j) {
+            auto bit = rlew_dec_bit(&d, this, &static_read);
+            EXPECT_EQ(0u, d.flags);
+            EXPECT_EQ(value, bit);
+        }
+    }
+
+    // pid stop bit
+    for (int j = 0; j < oversampling; ++j) {
+        auto bit = rlew_dec_bit(&d, this, &static_read);
+        EXPECT_EQ(0u, d.flags);
+        EXPECT_EQ(1, bit);
+    }
+}
+
 

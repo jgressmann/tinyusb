@@ -34,26 +34,29 @@ def lp_parse_cmd_reply(rep: str) -> (int, str):
 
 # print(os.environ)
 
+rlew32_p_uint32_type = ctypes.POINTER(ctypes.c_uint32)
 rlew32_store_func_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32)
-rlew32_load_func_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32))
+rlew32_load_func_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, rlew32_p_uint32_type)
 rlew32 = ctypes.cdll.LoadLibrary("rlew32.so")
 
 
 class RlewEncoder:
+	FLAG_OVERFLOW = 0x1
+
 	def __init__(self):
-		self.e = rlew32.rlew32_enc_new()
+		self.rle = rlew32.rlew32_enc_new()
 		self.store_callback = RlewEncoder._default_store_callback
 
-		def s(a, b: int) -> int:
+		def s(a, b: ctypes.c_uint32) -> int:
 			return self.store_callback(b)
 
 		self.c = rlew32_store_func_type(s)
 
 	def add(self, bit):
-		rlew32.rlew32_enc_bit(self.e, None, self.c, bit)
+		rlew32.rlew32_enc_bit(self.rle, None, self.c, bit)
 
 	def finish(self):
-		rlew32.rlew32_enc_finish(self.e, None, self.c)
+		rlew32.rlew32_enc_finish(self.rle, None, self.c)
 
 
 
@@ -64,40 +67,59 @@ class RlewEncoder:
 		self.close()
 
 	def close(self):
-		if None is not self.e:
-			rlew32.rlew32_enc_free(self.e)
-			self.e = None
+		if None is not self.rle:
+			rlew32.rlew32_enc_free(self.rle)
+			self.rle = None
+
+	@property
+	def flags(self) -> int:
+		return rlew32.rlew32_enc_flags(self.rle)
 
 	@staticmethod
 	def _default_store_callback(value: ctypes.c_uint32) -> int:
-		return 0
+		return 1
 
 
-# class RlewDecoder:
-# 	def __init__(self):
-# 		self.e = rlew32.rlew32_dec_new()
-# 		self.store_callback = RlewDecoder._default_load_callback
+class RlewDecoder:
+	FLAG_UNDERFLOW = 0x1
+	FLAG_EOS       = 0x2
 
-# 		def s(a, b: int) -> int:
-# 			return self.store_callback(b)
+#define RLEW_FLAG_DEC_UNDERFLOW 0x01
+#define RLEW_FLAG_DEC_EOS       0x02
+	def __init__(self):
+		self.rle = rlew32.rlew32_dec_new()
+		self.load_callback = RlewDecoder._default_load_callback
 
-# 		self.c = rlew32_store_func_type(s)
+		def s(a, b: rlew32_p_uint32_type) -> int:
+			r = self.load_callback()
+			if None is r:
+				return 1
 
-# 	def remove(self) -> bool:
-# 		return rlew32.rlew32_dec_bit(self.e, None, self.c)
+			b[0] = r
 
-# 	def __enter__(self):
-# 		return self
+			return 0
 
-# 	def __exit__(self, type, value, tb):
-# 		self.close()
+		self.c = rlew32_load_func_type(s)
 
-# 	def close(self):
-# 		if None is not self.e:
-# 			rlew32.rlew32_dec_free(self.e)
-# 			self.e = None
+	def remove(self) -> int:
+		return rlew32.rlew32_dec_bit(self.rle, None, self.c)
 
-# 	@staticmethod
-# 	def _default_load_callback(value: int) -> int:
-# 		return 1
+	def __enter__(self):
+		return self
+
+	def __exit__(self, type, value, tb):
+		self.close()
+
+	def close(self):
+		if None is not self.rle:
+			rlew32.rlew32_dec_free(self.rle)
+			self.rle = None
+
+	@property
+	def flags(self) -> int:
+		return rlew32.rlew32_dec_flags(self.rle)
+
+	@staticmethod
+	def _default_load_callback(ctx):
+		pass
 

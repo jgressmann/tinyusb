@@ -86,7 +86,6 @@ struct rlew_encoder {
 	uint8_t used;
 	uint8_t value;
 	uint8_t flags;
-	uint8_t priv;
 };
 
 struct rlew_decoder {
@@ -200,58 +199,55 @@ RLEW_FUNC static inline void rlew_enc_bit(
 		return;
 	}
 
-	if (rlew_likely(rle->priv)) {
+	if (rlew_likely(rle->count)) {
 		if (rlew_likely((bit == rle->value) & (rle->count < RLEW_MAX_COUNT))) {
 			++rle->count;
 		} else {
 			rlew_enc_flush(rle, ctx, callback);
 			if (rlew_likely(!rle->flags)) {
-				// goto increases by 4 cycles
 				rle->count = 1;
 				rle->value = bit;
-				// goto store;
 			}
 		}
 	} else {
-		rle->priv = 1;
-// store:
 		rle->count = 1;
 		rle->value = bit;
 	}
 }
 
+
+
 RLEW_FUNC static inline void rlew_enc_finish(
 		struct rlew_encoder *rle,
 		void* ctx,
-		rlew_store_t callback)
+		rlew_store_t callback,
+		int term)
 {
 	RLEW_ASSERT(rle);
 	RLEW_ASSERT(callback);
 
 	rlew_enc_flush(rle, ctx, callback);
 
-	if (rle->used) {
-		if (rlew_unlikely(rle->flags)) {
-			return;
-		}
-
-		rle->state <<= sizeof(RLEW_INT_TYPE) * 8 - rle->used;
-		int e = callback(ctx, rle->state);
-		if (rlew_unlikely(e)) {
-			rle->flags |= RLEW_FLAG_ENC_OVERFLOW;
-		}
-
-		rle->used = 0;
-		rle->priv = 0;
-	}
-
 	if (rlew_unlikely(rle->flags)) {
 		return;
 	}
 
-	int e = callback(ctx, 0);
-	if (rlew_unlikely(e)) {
-		rle->flags |= RLEW_FLAG_ENC_OVERFLOW;
+	if (rle->used) {
+		rle->state <<= sizeof(RLEW_INT_TYPE) * 8 - rle->used;
+		int e = callback(ctx, rle->state);
+		if (rlew_unlikely(e)) {
+			rle->flags |= RLEW_FLAG_ENC_OVERFLOW;
+			return;
+		}
+
+		rle->used = 0;
+	}
+
+	if (term) {
+		int e = callback(ctx, 0);
+		if (rlew_unlikely(e)) {
+			rle->flags |= RLEW_FLAG_ENC_OVERFLOW;
+		}
 	}
 }
 
@@ -386,30 +382,38 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 		rle->used = sizeof(RLEW_INT_TYPE) * 8;
 	}
 
+	RLEW_ASSERT(rle->used >= 2);
+
 	RLEW_INT_TYPE bit = ((RLEW_INT_TYPE)1) << (sizeof(RLEW_INT_TYPE) * 8 - 1);
 	RLEW_INT_TYPE count = 1;
+
+	// first bit
 	unsigned first = (rle->state & bit) == bit;
 	rle->state <<= 1;
 	--rle->used;
 
-	if (rlew_unlikely(!rle->used)) {
-		int e = callback(ctx, &rle->state);
-		if (rlew_unlikely(e)) {
-			rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
-			return;
-		}
+//	if (rlew_unlikely(!rle->used)) {
+//		int e = callback(ctx, &rle->state);
+//		if (rlew_unlikely(e)) {
+//			rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
+//			return;
+//		}
 
-		rle->used = sizeof(RLEW_INT_TYPE) * 8;
-	}
+//		rle->used = sizeof(RLEW_INT_TYPE) * 8;
+//	}
 
+	// second bit, but keep bit so we can
+	// easily do a check of same sign bit
+	// in case we need to read the counter
 	unsigned second = (rle->state & bit) == bit;
 
+	// need to read counter?
 	if (rlew_likely(second == first)) {
 		unsigned count_bits = 0;
 
 		unsigned same = rlew_clrsb(rle->state);
 
-		// remove 'second'
+		// now remove 'second'
 		--rle->used;
 		rle->state <<= 1;
 
@@ -448,8 +452,11 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 					return;
 				}
 
-				rle->used -= more_same;
-				rle->state <<= more_same;
+				rle->used -= more_same + 1;
+				rle->state <<= more_same + 1;
+			} else {
+				rle->used -= 1;
+				rle->state <<= 1;
 			}
 
 			count_bits = same;
@@ -495,6 +502,7 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 
 		count += rem;
 	} else {
+		// remove second
 		rle->state <<= 1;
 		--rle->used;
 	}

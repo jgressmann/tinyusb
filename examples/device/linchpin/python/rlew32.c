@@ -57,6 +57,11 @@ extern int rlew32_dec_bit(rlew32_decoder* d, void* ctx, rlew_load_t callback)
     return rlew_dec_bit(d, ctx, callback);
 }
 
+extern uint8_t rlew32_dec_flags(rlew32_decoder* rle)
+{
+    return rle->flags;
+}
+
 extern rlew32_encoder* rlew32_enc_new()
 {
     rlew32_encoder* e = malloc(sizeof(*e));
@@ -82,7 +87,12 @@ extern void rlew32_enc_bit(rlew32_encoder* e, void* ctx, rlew_store_t callback, 
 //    rlew_enc_flush(e, ctx, callback);
 //}
 
-extern void rlew32_enc_finish(rlew32_encoder* e, void* ctx, rlew_store_t callback)
+extern void rlew32_enc_finish(rlew32_encoder* e, void* ctx, rlew_store_t callback, int term)
 {
-    rlew_enc_finish(e, ctx, callback);
+    rlew_enc_finish(e, ctx, callback, term);
+}
+
+extern uint8_t rlew32_enc_flags(rlew32_encoder* rle)
+{
+    return rle->flags;
 }

@@ -50,7 +50,7 @@
 
 #define lp_timer_start() \
 	do { \
-		TC0->COUNT32.CC[0].reg = CONF_CPU_FREQUENCY / lp.lin.signal_frequency; \
+		TC0->COUNT32.CC[0].reg = (CONF_CPU_FREQUENCY + (lp.lin.signal_frequency - 1)) / lp.lin.signal_frequency; \
 		TC0->COUNT32.CTRLA.bit.ENABLE = 1; \
 		/*LP_LOG("timer started\n");*/ \
 	} while (0)

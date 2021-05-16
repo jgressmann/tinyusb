@@ -44,7 +44,6 @@
 static void tusb_device_task(void* param);
 static void cdc_cmd_task(void* param);
 LP_RAMFUNC static void cdc_lin_task(void* param);
-// LP_RAMFUNC static void rle_task(void* param);
 
 #define LIN_TX_PIN PIN_PC04
 #define LIN_RX_PIN PIN_PC05
@@ -60,24 +59,7 @@ static struct tasks {
 	StaticTask_t cdc_cmd_task_mem;
 	StackType_t cdc_lin_task_stack_mem[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t cdc_lin_task_mem;
-	// StackType_t rle_task_stack_mem[configMINIMAL_STACK_SIZE];
-	// StaticTask_t rle_task_mem;
-	// TaskHandle_t rle_task_handle;
 } tasks;
-
-
-static inline void counter_stop(void)
-{
-	TC0->COUNT32.CTRLA.bit.ENABLE = 0;
-	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
-}
-
-static inline void restart_counter(void)
-{
-	counter_stop();
-	TC0->COUNT32.COUNT.reg = 0;
-	TC0->COUNT32.CTRLA.bit.ENABLE = 1;
-}
 
 
 
@@ -109,8 +91,8 @@ int main(void)
 
 	gpio_set_pin_function(LIN_RX_PIN, GPIO_PIN_FUNCTION_OFF);
 	gpio_set_pin_direction(LIN_RX_PIN, GPIO_DIRECTION_IN);
-	gpio_set_pin_pull_mode(LIN_RX_PIN, GPIO_PULL_UP);
-	PORT->Group[2].CTRL.reg |= 0b100000;
+	gpio_set_pin_pull_mode(LIN_RX_PIN, GPIO_PULL_OFF);
+	// PORT->Group[2].CTRL.reg |= 0b100000; // continusous sampling for pin 5
 
 
 	NVIC_SetPriority(TC0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
@@ -141,12 +123,8 @@ int main(void)
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", ARRAY_SIZE(tasks.usb_device_stack), NULL, configMAX_PRIORITIES-1, tasks.usb_device_stack, &tasks.usb_device_task_mem);
 	(void) xTaskCreateStatic(&cdc_cmd_task, "cdc_cmd", ARRAY_SIZE(tasks.cdc_cmd_task_stack_mem), NULL, configMAX_PRIORITIES-1, tasks.cdc_cmd_task_stack_mem, &tasks.cdc_cmd_task_mem);
 	(void) xTaskCreateStatic(&cdc_lin_task, "cdc_lin", ARRAY_SIZE(tasks.cdc_lin_task_stack_mem), NULL, configMAX_PRIORITIES-1, tasks.cdc_lin_task_stack_mem, &tasks.cdc_lin_task_mem);
-	//tasks.rle_task_handle = xTaskCreateStatic(&rle_task, "rle", ARRAY_SIZE(tasks.rle_task_stack_mem), NULL, configMAX_PRIORITIES-1, tasks.rle_task_stack_mem, &tasks.rle_task_mem);
 
 
-
-	// board_uart_write("start scheduler\n", -1);
-	// board_led_off();
 	vTaskStartScheduler();
 	NVIC_SystemReset();
 
@@ -184,15 +162,6 @@ LP_RAMFUNC static void cdc_lin_task(void* param)
 	}
 }
 
-// LP_RAMFUNC static void rle_task(void* param)
-// {
-// 	(void) param;
-
-// 	while (1) {
-// 		lp_rle_task();
-// 	}
-// }
-
 
 LP_RAMFUNC static void timer_interrupt(void)
 {
@@ -202,8 +171,6 @@ LP_RAMFUNC static void timer_interrupt(void)
 	// LP_LOG("timer int\n");
 
 	lp_timer_callback();
-
-	// vTaskNotifyGiveFromISR(tasks.rle_task_handle, NULL);
 }
 
 void TC0_Handler(void)

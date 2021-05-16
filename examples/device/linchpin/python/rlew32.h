@@ -46,14 +46,16 @@ typedef struct rlew_decoder rlew32_decoder;
 
 extern rlew32_decoder* rlew32_dec_new();
 extern void rlew32_dec_free(rlew32_decoder* d);
-extern void rlew32_dec_init(rlew32_decoder* d);
+//extern void rlew32_dec_init(rlew32_decoder* d);
 extern int rlew32_dec_bit(rlew32_decoder* d, void* ctx, rlew_load_t callback);
+extern uint8_t rlew32_dec_flags(rlew32_decoder* d);
 
 extern rlew32_encoder* rlew32_enc_new();
 extern void rlew32_enc_free(rlew32_encoder* e);
 extern void rlew32_enc_bit(rlew32_encoder* e, void* ctx, rlew_store_t callback, unsigned int bit);
 //extern void rlew32_enc_flush(rlew32_encoder* e, void* ctx, rlew_store_t callback);
-extern void rlew32_enc_finish(rlew32_encoder* e, void* ctx, rlew_store_t callback);
+extern void rlew32_enc_finish(rlew32_encoder* e, void* ctx, rlew_store_t callback, int term);
+extern uint8_t rlew32_enc_flags(rlew32_encoder* e);
 
 #ifdef __cplusplus
 } // extern "C"
