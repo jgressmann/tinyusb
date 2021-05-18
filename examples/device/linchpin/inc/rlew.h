@@ -66,8 +66,9 @@ extern "C" {
 typedef int (*rlew_store_t)(void* ctx, RLEW_INT_TYPE i);
 typedef int (*rlew_load_t)(void* ctx, RLEW_INT_TYPE* i);
 
-#define RLEW_MAX_BIT_COUNT ((sizeof(RLEW_INT_TYPE) * 8)-2)
-#define RLEW_MAX_COUNT ((((RLEW_INT_TYPE)1) << (RLEW_MAX_BIT_COUNT+1))-1)
+#define RLEW_MAX_BIT_COUNT ((sizeof(RLEW_INT_TYPE) * 8)-1)
+//#define RLEW_MAX_COUNT ((((RLEW_INT_TYPE)1) << (RLEW_MAX_BIT_COUNT+1))-1)
+#define RLEW_MAX_COUNT ((RLEW_INT_TYPE)-1)
 
 
 #define RLEW_FLAG_ENC_OVERFLOW  0x01
@@ -336,7 +337,7 @@ RLEW_FUNC RLEW_EXTERN void rlew_enc_flush(
 	rle->state <<= prefix_bits;
 	rle->state |= value;
 	rle->used += prefix_bits;
-	left = sizeof(RLEW_INT_TYPE) * 8 - rle->used;
+	left -= prefix_bits;
 
 	if (count_bits) {
 		if (left < count_bits) {
@@ -392,19 +393,10 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 	rle->state <<= 1;
 	--rle->used;
 
-//	if (rlew_unlikely(!rle->used)) {
-//		int e = callback(ctx, &rle->state);
-//		if (rlew_unlikely(e)) {
-//			rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
-//			return;
-//		}
+	// get second bit, but keep it in state so
+	// we can save the reload of the state
+	// in case there are no more bits after 'second'
 
-//		rle->used = sizeof(RLEW_INT_TYPE) * 8;
-//	}
-
-	// second bit, but keep bit so we can
-	// easily do a check of same sign bit
-	// in case we need to read the counter
 	unsigned second = (rle->state & bit) == bit;
 
 	// need to read counter?
@@ -416,6 +408,7 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 		// now remove 'second'
 		--rle->used;
 		rle->state <<= 1;
+
 
 		if (same > rle->used) {
 			same = rle->used;
@@ -437,13 +430,8 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 
 			rle->used = sizeof(RLEW_INT_TYPE) * 8;
 
-
 			if (first == ((rle->state & bit) == bit)) {
 				unsigned more_same = rlew_clrsb(rle->state) + 1;
-
-				if (more_same > rle->used) {
-					more_same = rle->used;
-				}
 
 				same += more_same;
 
@@ -452,14 +440,16 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 					return;
 				}
 
+				count_bits = same;
+
 				rle->used -= more_same + 1;
 				rle->state <<= more_same + 1;
 			} else {
+
+				count_bits = same;
 				rle->used -= 1;
 				rle->state <<= 1;
 			}
-
-			count_bits = same;
 		} else {
 			// account for second
 			++same;
@@ -509,6 +499,8 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 
 	rle->value = first;
 	rle->count = count;
+
+	RLEW_ASSERT(!(rle->used & 1));
 }
 
 

@@ -25,12 +25,22 @@
 
 
 #include <stdlib.h>
+#include <stdio.h>
 #include "rlew32.h"
 
 #define RLEW_C
 #define RLEW_INT_TYPE uint32_t
 #include <rlew.h>
 
+
+//static rlew_load_t load_callback;
+
+//static int x_load_callback(void* ctx, uint32_t* ptr)
+//{
+//    int r = load_callback(ctx, ptr);
+//    printf("loaded %08lx\n", (unsigned long)*ptr);
+//    return r;
+//}
 
 extern rlew32_decoder* rlew32_dec_new()
 {
@@ -54,6 +64,8 @@ extern void rlew32_dec_init(rlew32_decoder* d)
 
 extern int rlew32_dec_bit(rlew32_decoder* d, void* ctx, rlew_load_t callback)
 {
+//    load_callback = callback;
+//    return rlew_dec_bit(d, ctx, &x_load_callback);
     return rlew_dec_bit(d, ctx, callback);
 }
 

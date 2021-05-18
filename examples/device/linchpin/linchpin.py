@@ -44,21 +44,17 @@ class RlewEncoder:
 	FLAG_OVERFLOW = 0x1
 
 	def __init__(self):
+		self.store_callback = lambda x: 0
+		def c(_, value):
+			return self.store_callback(value)
+		self._c_callback = rlew32_store_func_type(c)
 		self.rle = rlew32.rlew32_enc_new()
-		self.store_callback = RlewEncoder._default_store_callback
-
-		def s(a, b: ctypes.c_uint32) -> int:
-			return self.store_callback(b)
-
-		self.c = rlew32_store_func_type(s)
 
 	def add(self, bit):
-		rlew32.rlew32_enc_bit(self.rle, None, self.c, bit)
+		rlew32.rlew32_enc_bit(self.rle, None, self._c_callback, bit)
 
 	def finish(self):
-		rlew32.rlew32_enc_finish(self.rle, None, self.c)
-
-
+		rlew32.rlew32_enc_finish(self.rle, None, self._c_callback)
 
 	def __enter__(self):
 		return self
@@ -75,10 +71,6 @@ class RlewEncoder:
 	def flags(self) -> int:
 		return rlew32.rlew32_enc_flags(self.rle)
 
-	@staticmethod
-	def _default_store_callback(value: ctypes.c_uint32) -> int:
-		return 1
-
 
 class RlewDecoder:
 	FLAG_UNDERFLOW = 0x1
@@ -90,16 +82,12 @@ class RlewDecoder:
 		self.rle = rlew32.rlew32_dec_new()
 		self.load_callback = RlewDecoder._default_load_callback
 
-		def s(a, b: rlew32_p_uint32_type) -> int:
+		def c(_, value_ptr: rlew32_p_uint32_type) -> int:
 			r = self.load_callback()
-			if None is r:
-				return 1
-
-			b[0] = r
-
+			value_ptr[0] = int(r)
 			return 0
 
-		self.c = rlew32_load_func_type(s)
+		self.c = rlew32_load_func_type(c)
 
 	def remove(self) -> int:
 		return rlew32.rlew32_dec_bit(self.rle, None, self.c)
@@ -120,6 +108,6 @@ class RlewDecoder:
 		return rlew32.rlew32_dec_flags(self.rle)
 
 	@staticmethod
-	def _default_load_callback(ctx):
+	def _default_load_callback(_):
 		pass
 

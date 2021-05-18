@@ -1,9 +1,8 @@
 #! /usr/bin/env python3
 
-import asyncio
-import base64
+
+from typing import Sequence, Union
 import serial
-import serial_asyncio
 import sys
 import time
 
@@ -25,6 +24,63 @@ def pid(id: int) -> int:
 	pid = (p1 << 7) | (p0 << 6) | (id & 63)
 
 	return pid
+
+def checksum(ints: Union[bytes, Sequence[int]]) -> int:
+	sum = 0
+	for i in ints:
+		sum += int(i)
+		if sum >= 256:
+			sum -= 255
+
+	return sum ^ 255
+
+def data_byte(enc: linchpin.RlewEncoder, oversampling: int, b: int):
+	for bit in lsb_first_bits(b):
+		for _ in range(oversampling):
+			enc.add(int(bit))
+
+# def frame_header(enc: linchpin.RlewEncoder, oversampling: int, inter_byte_space: float):
+
+MASTER_REQUEST_ID = 0x3c
+
+
+def test_case_2_1(enc: linchpin.RlewEncoder, oversampling: int, inter_byte_space: float, nad: int, offset: int, *ids):
+
+	"""Diagnostic frame 'Master Request', IUT as Slave
+
+	This test verifies if the IUT as Slave is able to receive Master request frames.
+	In this test case the diagnostic frame type 'Master Request' is checked, i.e. a frame to send commands and data from the Master to the Slave.
+	In this test case the TST_FRAME_7 with the frame ID 0x30 shall be used.(according NCF)."""
+
+	# break
+	# sync
+
+	while len(ids) < 4:
+		ids.append(0xff)
+
+# 	NAD
+# PCI
+
+# SID
+
+# D1
+# D2
+# D3
+# D4
+# D5
+# start index PID (index) PID (index+1) PID (index+2) PID (index+3)
+
+
+	for byte in [MASTER_REQUEST_ID, nad, 0x06, 0xB7, offset, ids[0], ids[1], ids[2], ids[3]]:
+		data_byte(enc, oversampling, byte)
+
+		for _ in range(int(oversampling * inter_byte_space)):
+			enc.add(1)
+
+	# checksum
+
+
+
 
 if __name__ == "__main__":
 	import argparse
@@ -110,7 +166,7 @@ if __name__ == "__main__":
 
 
 
-		oversampling = 4
+		oversampling = 8
 		baud = 19200
 		break_bits = 13
 		inter_byte_space = 0
@@ -131,18 +187,18 @@ if __name__ == "__main__":
 		# for _ in range((oversampling * baud * 100) // 1000):
 		# 	enc.add(1)
 
-		for id in [32, 33, 0x32, 0x33]:
+		for a0 in range(4):
 
 			# break field
-			for _ in range(break_bits):
-				for _ in range(oversampling):
+			for _1 in range(break_bits):
+				for _2 in range(oversampling):
 					enc.add(0)
 
 			# 1 bit time break delimiter
-			for _ in range(oversampling):
+			for _1 in range(oversampling):
 				enc.add(1)
 
-			for _ in range(inter_byte_space):
+			for _1 in range(inter_byte_space):
 				enc.add(1)
 
 			# sync field
@@ -151,39 +207,42 @@ if __name__ == "__main__":
 				enc.add(0)
 
 			for bit in lsb_first_bits(0x55):
-				for _ in range(oversampling):
+				for _1 in range(oversampling):
 					enc.add(int(bit))
 
 			# stop bit
-			for _ in range(oversampling):
+			for _1 in range(oversampling):
 				enc.add(1)
 
-			for _ in range(inter_byte_space):
+			for _1 in range(inter_byte_space):
 				enc.add(1)
 
 
 			# pid field
 			# start bit
-			for _ in range(oversampling):
+			for _1 in range(oversampling):
 				enc.add(0)
 
 			for bit in lsb_first_bits(pid(id)):
-				for _ in range(oversampling):
+				for _1 in range(oversampling):
 					enc.add(int(bit))
 
 			# stop bit
-			for _ in range(oversampling):
+			for _1 in range(oversampling):
 				enc.add(1)
 
-			for _ in range(inter_byte_space):
+			for _1 in range(inter_byte_space):
 				enc.add(1)
 
 
 			# send recessive placeholder for frame data
-			for _ in range(100):
-				for _ in range(oversampling):
+			# xxx = 0
+			for _1 in range(174):
+				for _2 in range(oversampling):
 					enc.add(1)
+					# xxx += 1
 
+			# print(f"xxx {xxx}")
 
 			# # send recessive delay between frames
 			# for _ in range((baud * oversampling) // 10):
@@ -192,6 +251,10 @@ if __name__ == "__main__":
 
 
 		enc.finish()
+
+		print("input")
+		for i in input:
+			print(f"{i:08x}")
 
 		dec_value = None
 		dec_count = 0
