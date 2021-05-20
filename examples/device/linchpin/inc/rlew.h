@@ -62,39 +62,43 @@ extern "C" {
 
 #if defined(RLEW_H)
 
+#define RLEW_ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
+
 
 typedef int (*rlew_store_t)(void* ctx, RLEW_INT_TYPE i);
 typedef int (*rlew_load_t)(void* ctx, RLEW_INT_TYPE* i);
 
-#define RLEW_MAX_BIT_COUNT ((sizeof(RLEW_INT_TYPE) * 8)-1)
-//#define RLEW_MAX_COUNT ((((RLEW_INT_TYPE)1) << (RLEW_MAX_BIT_COUNT+1))-1)
-#define RLEW_MAX_COUNT ((RLEW_INT_TYPE)-1)
+#define RLEW_MAX_BIT_COUNT ((sizeof(RLEW_INT_TYPE) * 8)-2)
+#define RLEW_MAX_COUNT ((((RLEW_INT_TYPE)1) << (RLEW_MAX_BIT_COUNT+1))-1)
+//#define RLEW_MAX_COUNT ((RLEW_INT_TYPE)-1)
 
 
-#define RLEW_FLAG_ENC_OVERFLOW  0x01
-
-
-#define RLEW_FLAG_DEC_UNDERFLOW 0x01
-#define RLEW_FLAG_DEC_EOS       0x02
-
-
-
+#define RLEW_ERROR_NONE      0
+#define RLEW_ERROR_UNDERFLOW 1
+#define RLEW_ERROR_OVERFLOW  2
+#define RLEW_ERROR_EOS       3
+#define RLEW_ERROR_TRUE      4
+#define RLEW_ERROR_FALSE     5
 
 
 struct rlew_encoder {
 	RLEW_INT_TYPE count;
 	RLEW_INT_TYPE state;
+	RLEW_INT_TYPE output_buffer[2];
 	uint8_t used;
 	uint8_t value;
-	uint8_t flags;
+	uint8_t output_pi; // full range
+	uint8_t output_gi; // full range
 };
 
 struct rlew_decoder {
 	RLEW_INT_TYPE count;
 	RLEW_INT_TYPE state;
+	RLEW_INT_TYPE input_buffer[3];
 	uint8_t used;
 	uint8_t value;
-	uint8_t flags;
+	uint8_t input_pi; // full range
+	uint8_t input_gi; // full range
 };
 
 RLEW_FUNC static inline void rlew_enc_init(struct rlew_encoder *rle)
@@ -180,107 +184,63 @@ RLEW_FUNC static inline unsigned int rlew_clrsb(RLEW_INT_TYPE value)
 
 
 
-RLEW_FUNC RLEW_EXTERN void rlew_enc_flush(
-	struct rlew_encoder *rle,
-	void* ctx,
-	rlew_store_t callback);
+RLEW_FUNC RLEW_EXTERN void rlew_enc_flush(struct rlew_encoder *rle);
+RLEW_FUNC RLEW_EXTERN int rlew_enc_finish(struct rlew_encoder *rle);
 
 
-
-RLEW_FUNC static inline void rlew_enc_bit(
+RLEW_FUNC static inline int rlew_enc_bit(
 		struct rlew_encoder *rle,
-		void* ctx,
-		rlew_store_t callback,
 		unsigned bit)
 {
 	RLEW_ASSERT(rle);
-	RLEW_ASSERT(callback);
-
-	if (rlew_unlikely(rle->flags)) {
-		return;
-	}
 
 	if (rlew_likely(rle->count)) {
-		if (rlew_likely((bit == rle->value) & (rle->count < RLEW_MAX_COUNT))) {
-			++rle->count;
-		} else {
-			rlew_enc_flush(rle, ctx, callback);
-			if (rlew_likely(!rle->flags)) {
-				rle->count = 1;
-				rle->value = bit;
+		if (rlew_likely((bit == rle->value))) {
+			if (rlew_likely((rle->count < RLEW_MAX_COUNT))) {
+				++rle->count;
+				goto out;
+			} else {
+flush:
+				if (rle->output_pi != rle->output_gi) {
+					// require the output buffer to be cleared first
+					return RLEW_ERROR_OVERFLOW;
+				}
+
+				rlew_enc_flush(rle);
+				goto store1;
 			}
-		}
-	} else {
-		rle->count = 1;
-		rle->value = bit;
-	}
-}
-
-
-
-RLEW_FUNC static inline void rlew_enc_finish(
-		struct rlew_encoder *rle,
-		void* ctx,
-		rlew_store_t callback,
-		int term)
-{
-	RLEW_ASSERT(rle);
-	RLEW_ASSERT(callback);
-
-	rlew_enc_flush(rle, ctx, callback);
-
-	if (rlew_unlikely(rle->flags)) {
-		return;
-	}
-
-	if (rle->used) {
-		rle->state <<= sizeof(RLEW_INT_TYPE) * 8 - rle->used;
-		int e = callback(ctx, rle->state);
-		if (rlew_unlikely(e)) {
-			rle->flags |= RLEW_FLAG_ENC_OVERFLOW;
-			return;
-		}
-
-		rle->used = 0;
-	}
-
-	if (term) {
-		int e = callback(ctx, 0);
-		if (rlew_unlikely(e)) {
-			rle->flags |= RLEW_FLAG_ENC_OVERFLOW;
-		}
-	}
-}
-
-RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
-		struct rlew_decoder *rle,
-		void* ctx,
-		rlew_load_t callback);
-
-RLEW_FUNC static inline int rlew_dec_bit(
-		struct rlew_decoder *rle,
-		void* ctx,
-		rlew_load_t callback)
-{
-	int r;
-
-	RLEW_ASSERT(rle);
-	RLEW_ASSERT(callback);
-
-start:
-	if (rlew_unlikely(rle->flags)) {
-		r = -1;
-	} else {
-		if (rlew_likely(rle->count)) {
-			--rle->count;
-			r = rle->value;
 		} else {
-			rlew_dec_load(rle, ctx, callback);
-			goto start;
+			goto flush;
 		}
 	}
 
-	return r;
+store1:
+	rle->count = 1;
+	rle->value = (uint8_t)bit;
+
+out:
+	return RLEW_ERROR_NONE;
+}
+
+
+
+RLEW_FUNC RLEW_EXTERN int rlew_dec_load(struct rlew_decoder *rle);
+
+RLEW_FUNC static inline int rlew_dec_bit(struct rlew_decoder *rle)
+{
+	RLEW_ASSERT(rle);
+
+	if (rlew_unlikely(!rle->count)) {
+		int error = rlew_dec_load(rle);
+		if (error) {
+			return error;
+		}
+	}
+
+	RLEW_ASSERT(rle->count);
+
+	--rle->count;
+	return rle->value;
 }
 
 #endif // #ifdef RLEW_H
@@ -288,24 +248,53 @@ start:
 #ifdef RLEW_C
 
 
-RLEW_FUNC RLEW_EXTERN void rlew_enc_flush(
-	struct rlew_encoder *rle,
-	void* ctx,
-	rlew_store_t callback)
+RLEW_FUNC RLEW_EXTERN int rlew_enc_finish(struct rlew_encoder *rle)
 {
 	RLEW_ASSERT(rle);
-	RLEW_ASSERT(callback);
 
-	if (rlew_unlikely(!rle->count)) {
-		return;
+	if (rle->count) {
+		if (rle->output_pi != rle->output_gi) {
+			return RLEW_ERROR_OVERFLOW;
+		}
+
+		rlew_enc_flush(rle);
 	}
 
-	if (rlew_unlikely(rle->flags)) {
-		return;
+	if (rle->used) {
+		if (rle->output_pi != rle->output_gi) {
+			return RLEW_ERROR_OVERFLOW;
+		}
+
+		rle->state <<= sizeof(RLEW_INT_TYPE) * 8 - rle->used;
+		rle->output_buffer[rle->output_pi++ % RLEW_ARRAY_SIZE(rle->output_buffer)] = rle->state;
+		rle->used = 0;
+
+		return RLEW_ERROR_OVERFLOW;
 	}
+
+//	if (term) {
+//		if (rle->output_pi != rle->output_gi) {
+//			return RLEW_ERROR_OVERFLOW;
+//		}
+
+//		rle->output_buffer[rle->output_pi++ % RLEW_ARRAY_SIZE(rle->output_buffer)] = rle->state;
+//		return RLEW_ERROR_OVERFLOW;
+//	}
+
+	return RLEW_ERROR_NONE;
+}
+
+
+RLEW_FUNC RLEW_EXTERN void rlew_enc_flush(struct rlew_encoder *rle)
+{
+	RLEW_ASSERT(rle);
+	RLEW_ASSERT(rle->output_pi == rle->output_gi);
+	RLEW_ASSERT(rle->count);
+	RLEW_ASSERT(!(rle->used & 1));
 
 	unsigned lz = rlew_lz(rle->count);
-	unsigned count_bits = sizeof(RLEW_INT_TYPE) * 8 - 1 - lz;
+	lz -= lz != 0;
+	unsigned count_bits = RLEW_MAX_BIT_COUNT - lz;
 	unsigned rem = rle->count - (((RLEW_INT_TYPE)1) << count_bits);
 	unsigned left = sizeof(RLEW_INT_TYPE) * 8 - rle->used;
 	unsigned prefix_bits = count_bits + 2;
@@ -320,11 +309,8 @@ RLEW_FUNC RLEW_EXTERN void rlew_enc_flush(
 	if (left < prefix_bits) {
 		rle->state <<= left;
 		rle->state |= (value >> (prefix_bits - left)) & ((((RLEW_INT_TYPE)1) << left)-1);
-		int e = callback(ctx, rle->state);
-		if (rlew_unlikely(e)) {
-			rle->flags |= RLEW_FLAG_ENC_OVERFLOW;
-			return;
-		}
+
+		rle->output_buffer[rle->output_pi++ % RLEW_ARRAY_SIZE(rle->output_buffer)] = rle->state;
 
 		value &= ((((RLEW_INT_TYPE)1) << (prefix_bits - left))-1);
 		prefix_bits -= left;
@@ -343,11 +329,7 @@ RLEW_FUNC RLEW_EXTERN void rlew_enc_flush(
 		if (left < count_bits) {
 			rle->state <<= left;
 			rle->state |= (rem >> (count_bits - left)) & ((((RLEW_INT_TYPE)1) << left)-1);
-			int e = callback(ctx, rle->state);
-			if (rlew_unlikely(e)) {
-				rle->flags |= RLEW_FLAG_ENC_OVERFLOW;
-				return;
-			}
+			rle->output_buffer[rle->output_pi++ % RLEW_ARRAY_SIZE(rle->output_buffer)] = rle->state;
 
 			rem &= ((((RLEW_INT_TYPE)1) << (count_bits - left))-1);
 			count_bits -= left;
@@ -363,23 +345,19 @@ RLEW_FUNC RLEW_EXTERN void rlew_enc_flush(
 	}
 
 	rle->count = 0;
+	RLEW_ASSERT(!(rle->used & 1));
 }
 
-RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
-		struct rlew_decoder *rle,
-		void* ctx,
-		rlew_load_t callback)
+RLEW_FUNC RLEW_EXTERN int rlew_dec_load(struct rlew_decoder *rle)
 {
 	RLEW_ASSERT(rle);
-	RLEW_ASSERT(callback);
+
+	if ((uint8_t)(rle->input_pi - rle->input_gi) < RLEW_ARRAY_SIZE(rle->input_buffer)) {
+		return RLEW_ERROR_UNDERFLOW;
+	}
 
 	if (rlew_unlikely(!rle->used)) {
-		int e = callback(ctx, &rle->state);
-		if (rlew_unlikely(e)) {
-			rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
-			return;
-		}
-
+		rle->state = rle->input_buffer[rle->input_gi++ % RLEW_ARRAY_SIZE(rle->input_buffer)];
 		rle->used = sizeof(RLEW_INT_TYPE) * 8;
 	}
 
@@ -418,16 +396,7 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 			// account for second
 			++same;
 
-			int e = callback(ctx, &rle->state);
-			if (rlew_unlikely(e)) {
-				if (same + 1 >= sizeof(RLEW_INT_TYPE) * 8) {
-					rle->flags |= RLEW_FLAG_DEC_EOS;
-				} else {
-					rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
-				}
-				return;
-			}
-
+			rle->state = rle->input_buffer[rle->input_gi++ % RLEW_ARRAY_SIZE(rle->input_buffer)];
 			rle->used = sizeof(RLEW_INT_TYPE) * 8;
 
 			if (first == ((rle->state & bit) == bit)) {
@@ -436,16 +405,13 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 				same += more_same;
 
 				if (rlew_unlikely(same + 1 >= sizeof(RLEW_INT_TYPE) * 8)) {
-					rle->flags |= RLEW_FLAG_DEC_EOS;
-					return;
+					return RLEW_ERROR_EOS;
 				}
 
 				count_bits = same;
-
 				rle->used -= more_same + 1;
 				rle->state <<= more_same + 1;
 			} else {
-
 				count_bits = same;
 				rle->used -= 1;
 				rle->state <<= 1;
@@ -454,35 +420,20 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 			// account for second
 			++same;
 			count_bits = same;
-			rle->state <<= same;
 			rle->used -= same;
-
-			if (rlew_unlikely(!rle->used)) {
-				int e = callback(ctx, &rle->state);
-				if (rlew_unlikely(e)) {
-					rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
-					return;
-				}
-
-				rle->used = sizeof(RLEW_INT_TYPE) * 8;
-			}
+			rle->state <<= same;
 		}
 
 		RLEW_INT_TYPE rem = 0;
 		count = (((RLEW_INT_TYPE)1) << count_bits);
 
-		RLEW_ASSERT(rle->used);
+//		RLEW_ASSERT(rle->used);
 
 		if (count_bits > rle->used) {
 			rem = (rle->state >> (sizeof(RLEW_INT_TYPE) * 8 - count_bits)) << (count_bits - rle->used);
 			count_bits -= rle->used;
 
-			int e = callback(ctx, &rle->state);
-			if (rlew_unlikely(e)) {
-				rle->flags |= RLEW_FLAG_DEC_UNDERFLOW;
-				return;
-			}
-
+			rle->state = rle->input_buffer[rle->input_gi++ % RLEW_ARRAY_SIZE(rle->input_buffer)];
 			rle->used = sizeof(RLEW_INT_TYPE) * 8;
 		}
 
@@ -490,17 +441,19 @@ RLEW_FUNC RLEW_EXTERN void rlew_dec_load(
 		rle->used -= count_bits;
 		rle->state <<= count_bits;
 
-		count += rem;
+		count |= rem;
 	} else {
 		// remove second
 		rle->state <<= 1;
 		--rle->used;
 	}
 
-	rle->value = first;
+	rle->value = first ? RLEW_ERROR_TRUE : RLEW_ERROR_FALSE;
 	rle->count = count;
 
 	RLEW_ASSERT(!(rle->used & 1));
+
+	return RLEW_ERROR_NONE;
 }
 
 
