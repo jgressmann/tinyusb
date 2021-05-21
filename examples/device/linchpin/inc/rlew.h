@@ -74,12 +74,15 @@ typedef int (*rlew_load_t)(void* ctx, RLEW_INT_TYPE* i);
 
 
 #define RLEW_ERROR_NONE      0
-#define RLEW_ERROR_UNDERFLOW 1
-#define RLEW_ERROR_OVERFLOW  2
-#define RLEW_ERROR_EOS       3
-#define RLEW_ERROR_TRUE      4
-#define RLEW_ERROR_FALSE     5
+#define RLEW_ERROR_FALSE     0
+#define RLEW_ERROR_TRUE      1
+#define RLEW_ERROR_UNDERFLOW (1<<1)
+#define RLEW_ERROR_OVERFLOW  (2<<1)
+#define RLEW_ERROR_EOS       (3<<1)
 
+#define rlew_is_error(x) ((x) > 1)
+
+#define RLEW_TERM_COUNT 3
 
 struct rlew_encoder {
 	RLEW_INT_TYPE count;

@@ -2,6 +2,7 @@ import ctypes
 from enum import Enum
 import os
 import re
+from typing import Tuple
 
 
 class LinchpinError(Enum):
@@ -33,28 +34,65 @@ def lp_parse_cmd_reply(rep: str) -> (int, str):
 
 
 # print(os.environ)
-
-rlew32_p_uint32_type = ctypes.POINTER(ctypes.c_uint32)
-rlew32_store_func_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32)
-rlew32_load_func_type = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, rlew32_p_uint32_type)
+p_uint32 = ctypes.POINTER(ctypes.c_uint32)
 rlew32 = ctypes.cdll.LoadLibrary("rlew32.so")
 
 
-class RlewEncoder:
-	FLAG_OVERFLOW = 0x1
 
+class RlewError(Enum):
+	NONE = 0
+	FALSE = 0
+	TRUE = 1
+	UNDERFLOW = (1<<1)
+	OVERFLOW = (2<<1)
+	EOS = (3<<1)
+
+	@staticmethod
+	def is_error(e) -> bool:
+		return int(e) > 2
+
+
+
+class RlewEncoder:
 	def __init__(self):
-		self.store_callback = lambda x: 0
-		def c(_, value):
-			return self.store_callback(value)
-		self._c_callback = rlew32_store_func_type(c)
 		self.rle = rlew32.rlew32_enc_new()
+		self.store_callback = lambda x: 0
 
 	def add(self, bit):
-		rlew32.rlew32_enc_bit(self.rle, None, self._c_callback, bit)
+		while True:
+			error = rlew32.rlew32_enc_bit(self.rle, bit)
+			if not RlewError.is_error(error):
+				break
+
+			# overflow
+			assert int(error) == RlewError.OVERFLOW.value
+
+			value = ctypes.c_uint32()
+			error = rlew32.rlew32_enc_output_take(self.rle, p_uint32(value))
+			if RlewError.NONE.value == int(error):
+				self.store_callback(int(value.value))
+
+	# def take(self) -> Tuple[int, int]:
+	# 	value = ctypes.c_uint32()
+	# 	e = rlew32.rlew32_enc_take(self.rle, p_uint32(value))
+	# 	return (int(e), int(value))
 
 	def finish(self):
-		rlew32.rlew32_enc_finish(self.rle, None, self._c_callback)
+		while True:
+			error = rlew32.rlew32_enc_finish(self.rle)
+			if not RlewError.is_error(error):
+				break
+
+			# overflow
+			assert int(error) == RlewError.OVERFLOW.value
+
+			value = ctypes.c_uint32()
+			error = rlew32.rlew32_enc_output_take(self.rle, p_uint32(value))
+			if RlewError.NONE.value == int(error):
+				self.store_callback(int(value.value))
+
+		for _ in range(3):
+			self.store_callback(0)
 
 	def __enter__(self):
 		return self
@@ -67,30 +105,14 @@ class RlewEncoder:
 			rlew32.rlew32_enc_free(self.rle)
 			self.rle = None
 
-	@property
-	def flags(self) -> int:
-		return rlew32.rlew32_enc_flags(self.rle)
 
 
 class RlewDecoder:
-	FLAG_UNDERFLOW = 0x1
-	FLAG_EOS       = 0x2
-
-#define RLEW_FLAG_DEC_UNDERFLOW 0x01
-#define RLEW_FLAG_DEC_EOS       0x02
 	def __init__(self):
 		self.rle = rlew32.rlew32_dec_new()
-		self.load_callback = RlewDecoder._default_load_callback
-
-		def c(_, value_ptr: rlew32_p_uint32_type) -> int:
-			r = self.load_callback()
-			value_ptr[0] = int(r)
-			return 0
-
-		self.c = rlew32_load_func_type(c)
 
 	def remove(self) -> int:
-		return rlew32.rlew32_dec_bit(self.rle, None, self.c)
+		return rlew32.rlew32_dec_bit(self.rle)
 
 	def __enter__(self):
 		return self
@@ -102,12 +124,4 @@ class RlewDecoder:
 		if None is not self.rle:
 			rlew32.rlew32_dec_free(self.rle)
 			self.rle = None
-
-	@property
-	def flags(self) -> int:
-		return rlew32.rlew32_dec_flags(self.rle)
-
-	@staticmethod
-	def _default_load_callback(_):
-		pass
 

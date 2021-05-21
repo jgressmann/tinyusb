@@ -32,16 +32,6 @@
 #define RLEW_INT_TYPE uint32_t
 #include <rlew.h>
 
-
-//static rlew_load_t load_callback;
-
-//static int x_load_callback(void* ctx, uint32_t* ptr)
-//{
-//    int r = load_callback(ctx, ptr);
-//    printf("loaded %08lx\n", (unsigned long)*ptr);
-//    return r;
-//}
-
 extern rlew32_decoder* rlew32_dec_new()
 {
     rlew32_decoder* d = malloc(sizeof(*d));
@@ -62,17 +52,11 @@ extern void rlew32_dec_init(rlew32_decoder* d)
     rlew_dec_init(d);
 }
 
-extern int rlew32_dec_bit(rlew32_decoder* d, void* ctx, rlew_load_t callback)
+extern int rlew32_dec_bit(rlew32_decoder* d)
 {
-//    load_callback = callback;
-//    return rlew_dec_bit(d, ctx, &x_load_callback);
-    return rlew_dec_bit(d, ctx, callback);
+    return rlew_dec_bit(d);
 }
 
-extern uint8_t rlew32_dec_flags(rlew32_decoder* rle)
-{
-    return rle->flags;
-}
 
 extern rlew32_encoder* rlew32_enc_new()
 {
@@ -89,22 +73,28 @@ extern void rlew32_enc_free(rlew32_encoder* e)
     free(e);
 }
 
-extern void rlew32_enc_bit(rlew32_encoder* e, void* ctx, rlew_store_t callback, unsigned int bit)
+extern int rlew32_enc_bit(rlew32_encoder* e, unsigned int bit)
 {
-    rlew_enc_bit(e, ctx, callback, bit);
+    return rlew_enc_bit(e, bit);
 }
 
-//extern void rlew32_enc_flush(rlew32_encoder* e, void* ctx, rlew_store_t callback)
-//{
-//    rlew_enc_flush(e, ctx, callback);
-//}
-
-extern void rlew32_enc_finish(rlew32_encoder* e, void* ctx, rlew_store_t callback, int term)
+extern int rlew32_enc_finish(rlew32_encoder* e)
 {
-    rlew_enc_finish(e, ctx, callback, term);
+    return rlew_enc_finish(e);
 }
 
-extern uint8_t rlew32_enc_flags(rlew32_encoder* rle)
+extern int rlew32_enc_output_take(rlew32_encoder* e, uint32_t* value)
 {
-    return rle->flags;
+    if (e->output_gi != e->output_pi) {
+        *value = e->output_buffer[e->output_gi++ % RLEW_ARRAY_SIZE(e->output_buffer)];
+        return RLEW_ERROR_NONE;
+    }
+
+    return RLEW_ERROR_UNDERFLOW;
 }
+
+extern int rlew32_enc_output_count(rlew32_encoder* e)
+{
+    return e->output_pi - e->output_gi;
+}
+

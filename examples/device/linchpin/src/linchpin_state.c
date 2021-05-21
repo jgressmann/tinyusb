@@ -550,10 +550,8 @@ LP_RAMFUNC void lp_cdc_lin_task(void)
 }
 
 
-LP_RAMFUNC static int rlew_store(void* ctx, uint32_t value)
+LP_RAMFUNC static inline bool lp_signal_try_store1(uint32_t value)
 {
-    (void)ctx;
-
     size_t gi = __atomic_load_n(&lp.lin.signal_rx_buffer_gi, __ATOMIC_ACQUIRE);
     size_t pi = lp.lin.signal_rx_buffer_pi;
     size_t count = pi - gi;
@@ -563,10 +561,10 @@ LP_RAMFUNC static int rlew_store(void* ctx, uint32_t value)
         // LP_LOG("rlew store\n");
         lp.lin.signal_rx_buffer[pi % ARRAY_SIZE(lp.lin.signal_rx_buffer)] = value;
         __atomic_store_n(&lp.lin.signal_rx_buffer_pi, pi + 1, __ATOMIC_RELEASE);
-        return 0;
+        return true;
     }
 
-    return 1;
+    return false;
 }
 
 LP_RAMFUNC static int rlew_load(void* ctx, uint32_t *value)
@@ -593,11 +591,11 @@ LP_RAMFUNC static void lp_signal_store_error(unsigned lin_enc_flags)
 
     uint8_t flags = OUTPUT_FLAG_OUTPUT_DONE;
 
-    if (lin_enc_flags & (RLEW_FLAG_ENC_OVERFLOW)) {
-        flags |= OUTPUT_FLAG_RX_OVERFLOW;
-    } else {
-        flags |= OUTPUT_FLAG_ERROR;
-    }
+//    if (lin_enc_flags & (RLEW_FLAG_ENC_OVERFLOW)) {
+//        flags |= OUTPUT_FLAG_RX_OVERFLOW;
+//    } else {
+//        flags |= OUTPUT_FLAG_ERROR;
+//    }
 
     __atomic_or_fetch(&lp.lin.signal_flags, flags, __ATOMIC_ACQ_REL);
 }
@@ -607,43 +605,132 @@ LP_RAMFUNC static void lp_signal_load_error(unsigned lin_dec_flags)
     lp_timer_stop();
     // LP_LOG("%s\n", __func__);
 
-    if (lin_dec_flags & RLEW_FLAG_DEC_EOS) {
-        LP_LOG("eos\n");
-        rlew_enc_finish(&lp.lin.enc, NULL, &rlew_store, 1);
-        if (unlikely(lp.lin.enc.flags)) {
-            lp_signal_store_error(lp.lin.enc.flags);
-        } else {
-            __atomic_or_fetch(&lp.lin.signal_flags, OUTPUT_FLAG_OUTPUT_DONE, __ATOMIC_ACQ_REL);
-        }
-    } else if (lin_dec_flags & RLEW_FLAG_DEC_UNDERFLOW) {
-        __atomic_or_fetch(&lp.lin.signal_flags, OUTPUT_FLAG_OUTPUT_DONE | OUTPUT_FLAG_TX_STALLED, __ATOMIC_ACQ_REL);
-    } else {
-        __atomic_or_fetch(&lp.lin.signal_flags, OUTPUT_FLAG_OUTPUT_DONE | OUTPUT_FLAG_ERROR, __ATOMIC_ACQ_REL);
-    }
+//    if (lin_dec_flags & RLEW_FLAG_DEC_EOS) {
+//        LP_LOG("eos\n");
+//        rlew_enc_finish(&lp.lin.enc, NULL, &rlew_store, 1);
+//        if (unlikely(lp.lin.enc.flags)) {
+//            lp_signal_store_error(lp.lin.enc.flags);
+//        } else {
+//            __atomic_or_fetch(&lp.lin.signal_flags, OUTPUT_FLAG_OUTPUT_DONE, __ATOMIC_ACQ_REL);
+//        }
+//    } else if (lin_dec_flags & RLEW_FLAG_DEC_UNDERFLOW) {
+//        __atomic_or_fetch(&lp.lin.signal_flags, OUTPUT_FLAG_OUTPUT_DONE | OUTPUT_FLAG_TX_STALLED, __ATOMIC_ACQ_REL);
+//    } else {
+//        __atomic_or_fetch(&lp.lin.signal_flags, OUTPUT_FLAG_OUTPUT_DONE | OUTPUT_FLAG_ERROR, __ATOMIC_ACQ_REL);
+//    }
 }
 
+LP_RAMFUNC static bool lp_signal_try_forward_enc_output_buffer(void)
+{
+    while (lp.lin.enc.output_pi != lp.lin.enc.output_gi) {
+        uint32_t value = lp.lin.enc.output_buffer[lp.lin.enc.output_gi % RLEW_ARRAY_SIZE(lp.lin.enc.output_buffer)];
 
+        if (unlikely(!lp_signal_try_store1(value))) {
+            return false;
+        }
+
+        ++lp.lin.enc.output_gi;
+    }
+
+    return true;
+}
+
+LP_RAMFUNC static bool lp_signal_try_fill_dec_input_buffer(void)
+{
+    while ((size_t)(lp.lin.dec.input_pi - lp.lin.dec.input_gi) < ARRAY_SIZE(lp.lin.dec.input_buffer)) {
+        size_t gi = lp.lin.signal_tx_buffer_gi;
+        size_t pi = __atomic_load_n(&lp.lin.signal_tx_buffer_pi, __ATOMIC_ACQUIRE);
+
+        if (likely(pi != gi)) {
+            // LP_LOG("rlew load\n");
+            uint32_t value = lp.lin.signal_tx_buffer[gi % ARRAY_SIZE(lp.lin.signal_tx_buffer)];
+            __atomic_store_n(&lp.lin.signal_tx_buffer_gi, gi + 1, __ATOMIC_RELEASE);
+
+            lp.lin.dec.input_buffer[lp.lin.dec.input_pi++ % ARRAY_SIZE(lp.lin.dec.input_buffer)] = value;
+        } else {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+LP_RAMFUNC static void lp_signal_finish(void)
+{
+    lp_timer_stop();
+
+    // finish
+    for (;;) {
+        int error = rlew_enc_finish(&lp.lin.enc);
+        if (RLEW_ERROR_OVERFLOW == error) {
+            if (!lp_signal_try_forward_enc_output_buffer()) {
+                __atomic_or_fetch(&lp.lin.signal_flags, OUTPUT_FLAG_OUTPUT_DONE | OUTPUT_FLAG_RX_OVERFLOW, __ATOMIC_ACQ_REL);
+                return;
+            }
+        } else {
+            break;
+        }
+    }
+
+    // send termination
+    for (int i = 0; i < RLEW_TERM_COUNT; ++i) {
+        if (!lp_signal_try_store1(0)) {
+            __atomic_or_fetch(&lp.lin.signal_flags, OUTPUT_FLAG_OUTPUT_DONE | OUTPUT_FLAG_RX_OVERFLOW, __ATOMIC_ACQ_REL);
+            return;
+        }
+    }
+
+    __atomic_or_fetch(&lp.lin.signal_flags, OUTPUT_FLAG_OUTPUT_DONE, __ATOMIC_ACQ_REL);
+}
 
 LP_RAMFUNC static void lp_next_bit_strict(void)
 {
-    // static unsigned ib = 0;
     int output_bit = 0;
-    unsigned input_bit = lp_rx_pin_read();
-    // unsigned input_bit = ib++ & 1;
 
-    output_bit = rlew_dec_bit(&lp.lin.dec, NULL, &rlew_load);
-    if (unlikely(output_bit < 0)) {
-        lp_signal_load_error(lp.lin.dec.flags);
-    } else {
-        if (output_bit) {
-            lp_tx_pin_set();
-        } else {
-            lp_tx_pin_clear();
+
+    for (;;) {
+        int error = rlew_dec_bit(&lp.lin.dec);
+
+        if (likely(!rlew_is_error(error))) {
+            output_bit = error;
+            break;
+        } else if (RLEW_ERROR_UNDERFLOW == error) {
+            LP_ISR_ASSERT((size_t)(lp.lin.dec.input_pi - lp.lin.dec.input_gi) < ARRAY_SIZE(lp.lin.dec.input_buffer));
+
+            if (unlikely(!lp_signal_try_fill_dec_input_buffer())) {
+                lp_timer_stop();
+                __atomic_or_fetch(&lp.lin.signal_flags, OUTPUT_FLAG_OUTPUT_DONE | OUTPUT_FLAG_TX_STALLED, __ATOMIC_ACQ_REL);
+                return;
+            }
+        } else  {
+            LP_ISR_ASSERT(RLEW_ERROR_EOS == error);
+
+            lp_signal_finish();
+            return;
         }
+    }
 
-        rlew_enc_bit(&lp.lin.enc, NULL, &rlew_store, input_bit);
-        if (unlikely(lp.lin.enc.flags)) {
-            lp_signal_store_error(lp.lin.enc.flags);
+    unsigned input_bit = lp_rx_pin_read();
+    if (output_bit) {
+        lp_tx_pin_set();
+    } else {
+        lp_tx_pin_clear();
+    }
+
+    for (;;) {
+        int error = rlew_enc_bit(&lp.lin.enc, input_bit);
+
+        if (likely(!rlew_is_error(error))) {
+            break;
+        } else {
+            LP_ISR_ASSERT(RLEW_ERROR_OVERFLOW == error);
+            LP_ISR_ASSERT(lp.lin.enc.output_pi != lp.lin.enc.output_gi);
+
+            if (unlikely(!lp_signal_try_forward_enc_output_buffer())) {
+                lp_timer_stop();
+                __atomic_or_fetch(&lp.lin.signal_flags, OUTPUT_FLAG_OUTPUT_DONE | OUTPUT_FLAG_RX_OVERFLOW, __ATOMIC_ACQ_REL);
+                return;
+            }
         }
     }
 }
@@ -663,20 +750,20 @@ LP_RAMFUNC static void lp_next_bit_relaxed(void)
     int output_bit = 0;
     unsigned input_bit = lp_rx_pin_read();
 
-    rlew_enc_bit(&lp.lin.enc, NULL, &rlew_store, input_bit);
-    lp.lin.enc.flags = 0;
+//    rlew_enc_bit(&lp.lin.enc, NULL, &rlew_store, input_bit);
+//    lp.lin.enc.flags = 0;
 
-    output_bit = rlew_dec_bit(&lp.lin.dec, NULL, &rlew_load);
-    if (output_bit < 0) {
-        lp.lin.dec.flags = 0;
-        lp_tx_pin_set();
-    } else {
-        if (output_bit) {
-            lp_tx_pin_set();
-        } else {
-            lp_tx_pin_clear();
-        }
-    }
+//    output_bit = rlew_dec_bit(&lp.lin.dec, NULL, &rlew_load);
+//    if (output_bit < 0) {
+//        lp.lin.dec.flags = 0;
+//        lp_tx_pin_set();
+//    } else {
+//        if (output_bit) {
+//            lp_tx_pin_set();
+//        } else {
+//            lp_tx_pin_clear();
+//        }
+//    }
 
 
 #if SAME54XPLAINEDPRO
