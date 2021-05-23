@@ -433,7 +433,7 @@ RLEW_FUNC RLEW_EXTERN int rlew_dec_load(struct rlew_decoder *rle)
 //		RLEW_ASSERT(rle->used);
 
 		if (count_bits > rle->used) {
-			rem = (rle->state >> (sizeof(RLEW_INT_TYPE) * 8 - count_bits)) << (count_bits - rle->used);
+			rem = (rle->state >> (sizeof(RLEW_INT_TYPE) * 8 - rle->used)) << (count_bits - rle->used);
 			count_bits -= rle->used;
 
 			rle->state = rle->input_buffer[rle->input_gi++ % RLEW_ARRAY_SIZE(rle->input_buffer)];
