@@ -1481,6 +1481,82 @@ TEST_F(rlew_fixture, test_round_trip)
 #endif
 
 
+TEST_F(rlew_fixture, decode_this1)
+{
+    const uint32_t words[] = {
+        0x01a3c023,
+        0xc023c023,
+        0xc023c023,
+        0xc00c3c01,
+        0x0ffe5e00,
+        0x68f008f0,
+        0x08f008f0,
+        0x08f008f0,
+        0x030f0043,
+        0xff97801a,
+        0x3c023c02,
+        0x3c023c02,
+        0x3c023c00,
+        0xc3c010ff,
+        0xe5e0068f,
+        0x008f008f,
+        0x008f008f,
+        0x008f0030,
+        0xf0043ff9,
+        0x78000000,
+        0x00000000,
+        0x00000000,
+        0x00000000,
+    };
+
+    size_t count = 0;
+    bool value = false;
+    size_t word_offset = 0;
+    size_t decoded_bits_counter = 0;
+
+    for (bool done = false; !done; ) {
+        int error = 0;
+        if (3328 == decoded_bits_counter) {
+            error = rlew_dec_bit(&d);
+        } else {
+            error = rlew_dec_bit(&d);
+        }
+
+        switch (error) {
+        case RLEW_ERROR_FALSE:
+        case RLEW_ERROR_TRUE: {
+            ++decoded_bits_counter;
+            auto new_value = error == RLEW_ERROR_TRUE;
+            if (count == 0) {
+                value = new_value;
+                count = 1;
+            } else if (value != new_value) {
+                fprintf(stdout, "%d: %zu\n", value, count);
+                value = new_value;
+                count = 1;
+            } else {
+                ++count;
+            }
+        } break;
+        case RLEW_ERROR_EOS:
+            done = true;
+            break;
+        case RLEW_ERROR_UNDERFLOW:
+            ASSERT_TRUE(word_offset < RLEW_ARRAY_SIZE(words));
+            ASSERT_TRUE(size_t(d.input_pi - d.input_gi) < RLEW_ARRAY_SIZE(d.input_buffer));
+            d.input_buffer[d.input_pi++ % RLEW_ARRAY_SIZE(d.input_buffer)] = words[word_offset++];
+            break;
+        default:
+            FAIL();
+            break;
+        }
+    }
+
+    if (count) {
+        fprintf(stdout, "%d: %zu\n", value, count);
+    }
+}
+
 TEST_F(rlew_fixture, decode_is_correct_for_all_valid_offsets_and_all_bit_counts)
 {
     std::string prefix;

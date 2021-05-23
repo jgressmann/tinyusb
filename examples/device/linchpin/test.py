@@ -264,10 +264,7 @@ if __name__ == "__main__":
 
 		while True:
 			value = dec.remove()
-			if value < 0:
-				if linchpin.RlewDecoder.FLAG_EOS != dec.flags:
-					raise ValueError("underflow error")
-
+			if None is value:
 				if None is not dec_value:
 					print_dec_value()
 
@@ -304,6 +301,8 @@ if __name__ == "__main__":
 				bit = 1 << (31-j)
 				value = (i & bit) == bit
 				print(f"{int(value)}", end="")
+
+			print()
 
 			b = i.to_bytes(4, le_str)
 			w = lin_serial.write(b)

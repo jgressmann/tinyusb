@@ -49,7 +49,7 @@ class RlewError(Enum):
 
 	@staticmethod
 	def is_error(e) -> bool:
-		return int(e) > 2
+		return int(e) > 1
 
 
 
@@ -79,16 +79,16 @@ class RlewEncoder:
 
 	def finish(self):
 		while True:
-			error = rlew32.rlew32_enc_finish(self.rle)
+			error = int(rlew32.rlew32_enc_finish(self.rle))
 			if not RlewError.is_error(error):
 				break
 
 			# overflow
-			assert int(error) == RlewError.OVERFLOW.value
+			assert error == RlewError.OVERFLOW.value
 
 			value = ctypes.c_uint32()
 			error = rlew32.rlew32_enc_output_take(self.rle, p_uint32(value))
-			if RlewError.NONE.value == int(error):
+			if RlewError.NONE.value == error:
 				self.store_callback(int(value.value))
 
 		for _ in range(3):
@@ -110,9 +110,24 @@ class RlewEncoder:
 class RlewDecoder:
 	def __init__(self):
 		self.rle = rlew32.rlew32_dec_new()
+		self.load_callback = lambda: 0
 
-	def remove(self) -> int:
-		return rlew32.rlew32_dec_bit(self.rle)
+	def remove(self):
+		while True:
+			error = int(rlew32.rlew32_dec_bit(self.rle))
+			if not RlewError.is_error(error):
+				return 1 if RlewError.TRUE.value == error else 0
+
+			if RlewError.EOS.value == error:
+				return None
+
+			assert error == RlewError.UNDERFLOW.value
+
+			value = self.load_callback()
+			if None is value:
+				value = 0
+
+			rlew32.rlew32_dec_input_put(self.rle, value)
 
 	def __enter__(self):
 		return self

@@ -47,6 +47,7 @@ typedef struct rlew_decoder rlew32_decoder;
 extern rlew32_decoder* rlew32_dec_new();
 extern void rlew32_dec_free(rlew32_decoder* d);
 extern int rlew32_dec_bit(rlew32_decoder* d);
+extern int rlew32_dec_input_put(rlew32_decoder* d, uint32_t value);
 
 extern rlew32_encoder* rlew32_enc_new();
 extern void rlew32_enc_free(rlew32_encoder* e);

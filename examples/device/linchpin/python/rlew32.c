@@ -57,6 +57,17 @@ extern int rlew32_dec_bit(rlew32_decoder* d)
     return rlew_dec_bit(d);
 }
 
+extern int rlew32_dec_input_put(rlew32_decoder* d, uint32_t value)
+{
+    size_t used = d->input_pi - d->input_gi;
+    if (used >= RLEW_ARRAY_SIZE(d->input_buffer)) {
+        return RLEW_ERROR_OVERFLOW;
+    }
+
+    d->input_buffer[d->input_pi++ % RLEW_ARRAY_SIZE(d->input_buffer)] = value;
+
+    return RLEW_ERROR_NONE;
+}
 
 extern rlew32_encoder* rlew32_enc_new()
 {
