@@ -683,10 +683,19 @@ LP_RAMFUNC static void lp_signal_finish(void)
     __atomic_or_fetch(&lp.lin.signal_flags, OUTPUT_FLAG_OUTPUT_DONE, __ATOMIC_ACQ_REL);
 }
 
+static uint32_t lp_next_bit_strict_sum = 0;
+static uint32_t lp_next_bit_strict_count = 0;
+static uint32_t lp_next_bit_strict_min = ~0;
+static uint32_t lp_next_bit_strict_max = 0;
+
 LP_RAMFUNC static void lp_next_bit_strict(void)
 {
     int output_bit = 0;
 
+
+#if SAME54XPLAINEDPRO
+    CMCC->MCTRL.bit.SWRST = 1;
+#endif
 
     for (;;) {
         int error = rlew_dec_bit(&lp.lin.dec);
@@ -733,6 +742,34 @@ LP_RAMFUNC static void lp_next_bit_strict(void)
             }
         }
     }
+
+#if SAME54XPLAINEDPRO
+    uint32_t t = CMCC->MSR.reg;
+    ++lp_next_bit_strict_count;
+
+    lp_next_bit_strict_sum += t;
+
+    if (t < lp_next_bit_strict_min) {
+        lp_next_bit_strict_min = t;
+    }
+
+    if (t > lp_next_bit_strict_max) {
+        lp_next_bit_strict_max = t;
+    }
+
+    if (lp_next_bit_strict_count > 0xfff) {
+        unsigned avg = lp_next_bit_strict_sum / lp_next_bit_strict_count;
+        unsigned mi = lp_next_bit_strict_min;
+        unsigned ma = lp_next_bit_strict_max;
+        lp_next_bit_strict_count = 0;
+        lp_next_bit_strict_sum = 0;
+        lp_next_bit_strict_min = ~0;
+        lp_next_bit_strict_max = 0;
+
+        LP_LOG("lin rx avg=%lu min=%lu max=%lu ticks\n", avg, mi, ma);
+
+    }
+#endif
 }
 
 static uint32_t lp_next_bit_relaxed_sum;

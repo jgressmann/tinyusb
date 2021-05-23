@@ -166,7 +166,7 @@ if __name__ == "__main__":
 
 
 
-		oversampling = 8
+		oversampling = 28
 		baud = 19200
 		break_bits = 13
 		inter_byte_space = 0
@@ -311,16 +311,24 @@ if __name__ == "__main__":
 
 		print()
 
+
+
 		# start lin
+		output = []
 		r = lp_run_cmd('!lms\n')
 
 		while True:
 			# if lin_serial.in_waiting >= 4:
-			output = lin_serial.read(4)
-			value = int.from_bytes(output, byteorder=le_str, signed=False)
-			print(f"{value:08x}")
+			bits = lin_serial.read(4)
+			value = int.from_bytes(bits, byteorder=le_str, signed=False)
+			output.append(value)
+			# print(f"{value:08x}")
 			if 0 == value:
 				break
+
+		print("output")
+		for value in output:
+			print(f"{value:08x}")
 
 		r = lp_run_cmd('?L\n')
 		(e, r) = linchpin.lp_parse_cmd_reply(r)

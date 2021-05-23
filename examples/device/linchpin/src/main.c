@@ -155,7 +155,7 @@ LP_RAMFUNC static void cdc_lin_task(void* param)
 {
 	(void) param;
 
-	while (1) {
+	for (;;) {
 		// PORT->Group[2].OUTTGL.reg = 0b10000;
 		// (void)ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
 		lp_cdc_lin_task();

@@ -201,30 +201,29 @@ RLEW_FUNC static inline int rlew_enc_bit(
 		if (rlew_likely((bit == rle->value))) {
 			if (rlew_likely((rle->count < RLEW_MAX_COUNT))) {
 				++rle->count;
-				goto out;
-			} else {
-flush:
-				if (rle->output_pi != rle->output_gi) {
-					// require the output buffer to be cleared first
-					return RLEW_ERROR_OVERFLOW;
-				}
-
-				rlew_enc_flush(rle);
-				goto store1;
+				return RLEW_ERROR_NONE;
 			}
+flush:
+			if (rle->output_pi != rle->output_gi) {
+				// require the output buffer to be cleared first
+				return RLEW_ERROR_OVERFLOW;
+			}
+
+			rlew_enc_flush(rle);
+
+			rle->count = 1;
+			rle->value = (uint8_t)bit;
+			return RLEW_ERROR_NONE;
 		} else {
 			goto flush;
 		}
 	}
 
-store1:
 	rle->count = 1;
 	rle->value = (uint8_t)bit;
 
-out:
 	return RLEW_ERROR_NONE;
 }
-
 
 
 RLEW_FUNC RLEW_EXTERN int rlew_dec_load(struct rlew_decoder *rle);
@@ -274,15 +273,6 @@ RLEW_FUNC RLEW_EXTERN int rlew_enc_finish(struct rlew_encoder *rle)
 
 		return RLEW_ERROR_OVERFLOW;
 	}
-
-//	if (term) {
-//		if (rle->output_pi != rle->output_gi) {
-//			return RLEW_ERROR_OVERFLOW;
-//		}
-
-//		rle->output_buffer[rle->output_pi++ % RLEW_ARRAY_SIZE(rle->output_buffer)] = rle->state;
-//		return RLEW_ERROR_OVERFLOW;
-//	}
 
 	return RLEW_ERROR_NONE;
 }
