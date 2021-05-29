@@ -41,13 +41,12 @@
 
 static inline void same51_get_serial_number(uint32_t serial[4])
 {
+	// DS60001507E-page 60
 	serial[0] = *(uint32_t const *)0x008061FC;
 	serial[1] = *(uint32_t const *)0x00806010;
 	serial[2] = *(uint32_t const *)0x00806014;
 	serial[3] = *(uint32_t const *)0x00806018;
 }
-
-
 
 
 #endif // defined(__SAME51J19A__)
