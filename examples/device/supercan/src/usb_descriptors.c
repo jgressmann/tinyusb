@@ -29,6 +29,7 @@
 #include <supercan.h>
 #include <supercan_m1.h>
 #include <supercan_debug.h>
+#include <supercan_version.h>
 #include <usb_descriptors.h>
 #include <mcu.h>
 #include <device.h>
@@ -48,7 +49,9 @@ static const tusb_desc_device_t device = {
 
 	.idVendor           = 0x1d50,
 	.idProduct          = 0x5035,
-	.bcdDevice          = HWREV << 8,
+	//.bcdDevice          = (HWREV << 12) | (SUPERCAN_VERSION_MAJOR << 8) | (SUPERCAN_VERSION_MINOR << 4) | (SUPERCAN_VERSION_PATCH),
+	.bcdDevice          = (SUPERCAN_VERSION_MAJOR << 12) | (SUPERCAN_VERSION_MINOR << 8) | (SUPERCAN_VERSION_PATCH),
+	//.bcdDevice          = HWREV << 8,
 
 	.iManufacturer      = 0x01,
 	.iProduct           = 0x02,
@@ -153,6 +156,19 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 	return desc_configuration;
 }
 
+// MS_OS_20_SET_HEADER_DESCRIPTOR	0x00
+// MS_OS_20_SUBSET_HEADER_CONFIGURATION	0x01
+// MS_OS_20_SUBSET_HEADER_FUNCTION	0x02
+// MS_OS_20_FEATURE_COMPATBLE_ID	0x03
+// MS_OS_20_FEATURE_REG_PROPERTY	0x04
+// MS_OS_20_FEATURE_MIN_RESUME_TIME	0x05
+// MS_OS_20_FEATURE_MODEL_ID	0x06
+// MS_OS_20_FEATURE_CCGP_DEVICE	0x07
+// MS_OS_20_FEATURE_VENDOR_REVISION	0x08
+
+#define MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN 0x14
+#define MS_OS_20_FEATURE_MODEL_ID_DESC_LEN 0x14
+
 #if CFG_TUD_DFU_RT
 #	define DFU_MS_OS_20_DESC_LEN (0x08+0x14)
 #else
@@ -160,42 +176,50 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 #endif
 
 #if HWREV == 1
-#	define MS_OS_20_DESC_LEN (0x0A+0x08 + (0x08+0x14+0x84) + DFU_MS_OS_20_DESC_LEN)
+#	define MS_OS_20_DESC_LEN (0x0A+MS_OS_20_FEATURE_MODEL_ID_DESC_LEN+0x08 + (0x08+0x14+0x84) + DFU_MS_OS_20_DESC_LEN)
 #else
-#	define MS_OS_20_DESC_LEN (0x0A+0x08 + 2 * (0x08+0x14+0x84) + DFU_MS_OS_20_DESC_LEN)
+#	define MS_OS_20_DESC_LEN (0x0A+0x08 + 2 * (0x08+MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN+0x84) + DFU_MS_OS_20_DESC_LEN)
 #endif
 uint8_t const desc_ms_os_20[] =
 {
 	// Set header: length, type, windows version, total length
 	U16_TO_U8S_LE(0x000A), U16_TO_U8S_LE(MS_OS_20_SET_HEADER_DESCRIPTOR), U32_TO_U8S_LE(0x06030000), U16_TO_U8S_LE(MS_OS_20_DESC_LEN),
 
+	// U16_TO_U8S_LE(MS_OS_20_FEATURE_MODEL_ID_DESC_LEN), U16_TO_U8S_LE(MS_OS_20_FEATURE_MODEL_ID), 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+
+
 	// Configuration subset header: length, type, configuration index, reserved, configuration total length
 	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_CONFIGURATION), 0, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A),
 
 	// Function Subset header: length, type, first interface, reserved, subset length
-	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 0, 0, U16_TO_U8S_LE(0x08 + 0x14 + 0x84),
+	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 0, 0, U16_TO_U8S_LE(0x08 + MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN + 0x84),
 
 	// MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
-	U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
+	U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
 
 	// MS OS 2.0 Registry property descriptor: length, type
 	U16_TO_U8S_LE(0x0084), U16_TO_U8S_LE(MS_OS_20_FEATURE_REG_PROPERTY),
-	U16_TO_U8S_LE(0x0007), U16_TO_U8S_LE(0x002A), // wPropertyDataType, wPropertyNameLength and PropertyName "DeviceInterfaceGUIDs\0" in UTF-16
+	U16_TO_U8S_LE(0x0007) /* REG_MULTI_SZ */, U16_TO_U8S_LE(0x002A), // wPropertyDataType, wPropertyNameLength and PropertyName "DeviceInterfaceGUIDs\0" in UTF-16
 	'D', 0x00, 'e', 0x00, 'v', 0x00, 'i', 0x00, 'c', 0x00, 'e', 0x00, 'I', 0x00, 'n', 0x00, 't', 0x00, 'e', 0x00,
-	'r', 0x00, 'f', 0x00, 'a', 0x00, 'c', 0x00, 'e', 0x00, 'G', 0x00, 'U', 0x00, 'I', 0x00, 'D', 0x00, 's', 0x00, 0x00, 0x00,
+	'r', 0x00, 'f', 0x00, 'a', 0x00, 'c', 0x00, 'e', 0x00, 'G', 0x00, 'U', 0x00, 'I', 0x00, 'D', 0x00, 's', 0x00,
+	0x00, 0x00,
 	U16_TO_U8S_LE(0x0050), // wPropertyDataLength
 	//bPropertyData: “{f4ef82e0-dc07-4f21-8660-ae50cb3149c9}”.
 	'{', 0x00, 'F', 0x00, '4', 0x00, 'E', 0x00, 'F', 0x00, '8', 0x00, '2', 0x00, 'E', 0x00, '0', 0x00, '-', 0x00,
 	'D', 0x00, 'C', 0x00, '0', 0x00, '7', 0x00, '-', 0x00, '4', 0x00, 'F', 0x00, '2', 0x00, '1', 0x00, '-', 0x00,
 	'8', 0x00, '6', 0x00, '6', 0x00, '0', 0x00, '-', 0x00, 'A', 0x00, 'E', 0x00, '5', 0x00, '0', 0x00, 'C', 0x00,
 	'B', 0x00, '3', 0x00, '1', 0x00, '4', 0x00, '9', 0x00, 'C', 0x00, '9', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00,
+
+
+
+
 #if HWREV > 1
 	// Function Subset header: length, type, first interface, reserved, subset length
-	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 1, 0, U16_TO_U8S_LE(0x08 + 0x14 + 0x84),
+	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 1, 0, U16_TO_U8S_LE(0x08 + MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN + 0x84),
 
 	// MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
-	U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
+	U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
 
 	// MS OS 2.0 Registry property descriptor: length, type
@@ -212,10 +236,10 @@ uint8_t const desc_ms_os_20[] =
 #endif
 #if CFG_TUD_DFU_RT
 	// Function Subset header: length, type, first interface, reserved, subset length
-	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), DFU_INTERFACE_INDEX, 0, U16_TO_U8S_LE(0x08 + 0x14),
+	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), DFU_INTERFACE_INDEX, 0, U16_TO_U8S_LE(0x08 + MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN),
 
 	// MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
-	U16_TO_U8S_LE(0x0014), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
+	U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
 #endif
 };
@@ -247,16 +271,16 @@ uint8_t const * tud_descriptor_bos_cb(void)
 // array of pointer to string descriptors
 static char const* string_desc_arr [] =
 {
-	(const char[]) { 0x09, 0x04 },   // 0: is supported language is English (0x0409)
-	"2guys",                         // 1: Manufacturer
-	BOARD_NAME " " SC_NAME,          // 2: Product
-	"",                        		 // 3: Serial
-	SC_NAME " (ch0)",
+	(const char[]) { 0x09, 0x04 },                          // 0: is supported language is English (0x0409)
+	"2guys",                                                // 1: Manufacturer
+	BOARD_NAME " " SC_NAME,       // 2: Product
+	"",                                                     // 3: Serial
+	BOARD_NAME " " SC_NAME " CAN ch0",
 #if HWREV > 1
-	SC_NAME " (ch1)",
+	BOARD_NAME " " SC_NAME " CAN ch1",
 #endif
 #if CFG_TUD_DFU_RT
-	"USB DFU 1.1",
+	BOARD_NAME " " SC_NAME " DFU",
 #endif
 };
 

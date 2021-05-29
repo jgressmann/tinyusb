@@ -46,6 +46,7 @@
 #include <supercan.h>
 #include <supercan_m1.h>
 #include <supercan_debug.h>
+#include <supercan_version.h>
 #include <usb_descriptors.h>
 #include <m_can.h>
 #include <mcu.h>
@@ -902,19 +903,14 @@ static inline void cans_led_status_set(int status)
 	}
 }
 
-#define MAJOR 0
-#define MINOR 4
-#define PATCH 0
-
-
 #if SUPERDFU_APP
 struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_HDR_SECTION_NAME)));
 static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SECTION_NAME))) = {
 	.hdr_magic = DFU_APP_HDR_MAGIC_STRING,
 	.hdr_version = DFU_APP_HDR_VERSION,
-	.app_version_major = MAJOR,
-	.app_version_minor = MINOR,
-	.app_version_patch = PATCH,
+	.app_version_major = SUPERCAN_VERSION_MAJOR,
+	.app_version_minor = SUPERCAN_VERSION_MINOR,
+	.app_version_patch = SUPERCAN_VERSION_PATCH,
 	.app_watchdog_timeout_s = 1,
 	.app_name = SC_NAME,
 };
@@ -1354,9 +1350,9 @@ send_dev_info:
 				rep->len = bytes;
 				rep->feat_perm = CAN_FEAT_PERM;
 				rep->feat_conf = CAN_FEAT_CONF;
-				rep->fw_ver_major = MAJOR;
-				rep->fw_ver_minor = MINOR;
-				rep->fw_ver_patch = PATCH;
+				rep->fw_ver_major = SUPERCAN_VERSION_MAJOR;
+				rep->fw_ver_minor = SUPERCAN_VERSION_MINOR;
+				rep->fw_ver_patch = SUPERCAN_VERSION_PATCH;
 				static const char dev_name[] = BOARD_NAME " " SC_NAME " chX";
 				rep->name_len = tu_min8(sizeof(dev_name)-1, sizeof(rep->name_bytes));
 				memcpy(rep->name_bytes, dev_name, rep->name_len);
