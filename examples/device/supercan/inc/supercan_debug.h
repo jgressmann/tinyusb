@@ -38,8 +38,8 @@ extern char sc_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
 
 #		define LOG(...) \
 	do { \
-		int chars = usnprintf(sc_log_buffer, sizeof(sc_log_buffer), __VA_ARGS__); \
-		board_uart_write(sc_log_buffer, chars); \
+		int sc_debug_chars = usnprintf(sc_log_buffer, sizeof(sc_log_buffer), __VA_ARGS__); \
+		board_uart_write(sc_log_buffer, sc_debug_chars); \
 	} while (0)
 #	endif
 
