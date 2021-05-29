@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,12 +28,19 @@
 #include <usb_descriptors.h>
 #include <sam.h>
 #include <mcu.h>
+#include <version.h>
 
 #ifndef VID
 #	error Define VID
 #endif
 #ifndef PID
 #	error Define PID
+#endif
+#ifndef PRODUCT_NAME
+#	error Define PRODUCT_NAME
+#endif
+#ifndef INTERFACE_NAME
+#	error Define INTERFACE_NAME
 #endif
 
 
@@ -50,7 +57,8 @@ static const tusb_desc_device_t device = {
 
 	.idVendor           = VID,
 	.idProduct          = PID,
-	.bcdDevice          = HWREV << 8,
+	// .bcdDevice          = HWREV << 8,
+	.bcdDevice          = (SUPERDFU_VERSION_MAJOR << 12) | (SUPERDFU_VERSION_MINOR << 8) | (SUPERDFU_VERSION_PATCH),
 
 	.iManufacturer      = 0x01,
 	.iProduct           = 0x02,
@@ -123,11 +131,11 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 // array of pointer to string descriptors
 static char const* string_desc_arr [] =
 {
-	(const char[]) { 0x09, 0x04 },   // 0: is supported language is English (0x0409)
-	"Jean Gressmann",                // 1: Manufacturer
-	"SuperDFU",	                     // 2: Product
-	"",                              // 3: Serial
-	"USB DFU 1.1",
+	(const char[]) { 0x09, 0x04 },            // 0: is supported language is English (0x0409)
+	"Jean Gressmann",                         // 1: Manufacturer
+	PRODUCT_NAME,                             // 2: Product
+	"",                                       // 3: Serial
+	INTERFACE_NAME,
 };
 
 

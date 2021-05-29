@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -39,7 +39,7 @@
 #include <dfu_ram.h>
 #include <dfu_app.h>
 #include <dfu_debug.h>
-
+#include <version.h>
 
 static void led_task(void);
 
@@ -251,20 +251,21 @@ static inline void watchdog_timeout(uint8_t seconds_in, uint8_t* wdt_reg, uint8_
 	}
 }
 
-#define SUPERDFU_VERSION_MAJOR 0
-#define SUPERDFU_VERSION_MINOR 2
-#define SUPERDFU_VERSION_PATCH 3
+#ifndef PRODUCT_NAME
+#	error Define PRODUCT_NAME
+#endif
+
+
 #define STR2(x) #x
 #define STR(x) STR2(x)
-#define NAME "SuperDFU"
-
+#define NAME PRODUCT_NAME
 
 
 int main(void)
 {
 	board_init();
 
-	LOG(NAME " v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " starting...\n");
+	LOG(NAME " v" SUPERDFU_VERSION_STR " starting...\n");
 
 	dfu.status.bStatus = DFU_ERROR_OK;
 	dfu.status.bState = DFU_STATE_DFU_IDLE;
@@ -363,7 +364,7 @@ int main(void)
 		return 0; // never reached
 	}
 
-	board_uart_write("SuperDFU v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " running\n", -1);
+	board_uart_write(NAME " v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " running\n", -1);
 
 	// set app stable counter
 	dfu_hdr_ptr()->counter = 0;
