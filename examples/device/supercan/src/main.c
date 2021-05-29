@@ -1359,9 +1359,12 @@ send_dev_info:
 				if (rep->name_len <= TU_ARRAY_SIZE(rep->name_bytes)) {
 					rep->name_bytes[rep->name_len-1] = '0' + index;
 				}
-				rep->sn_len = serial_length;
-				static_assert(sizeof(rep->sn_bytes) >= 16, "expect at least 16 of buffer for serial number");
-				memcpy(rep->sn_bytes, serial_buffer, serial_length);
+
+				rep->sn_bytes[0] = (device_identifier >> 24) & 0xff;
+				rep->sn_bytes[1] = (device_identifier >> 16) & 0xff;
+				rep->sn_bytes[2] = (device_identifier >> 8) & 0xff;
+				rep->sn_bytes[3] = (device_identifier >> 0) & 0xff;
+				rep->sn_len = 4;
 			} else {
 				if (sc_cmd_bulk_in_ep_ready(index)) {
 					sc_cmd_bulk_in_submit(index);
@@ -1738,12 +1741,12 @@ send:
 	}
 }
 
-static void init_serial(void);
+static void init_device_identifier(void);
 
 int main(void)
 {
 	board_init();
-	init_serial();
+	init_device_identifier();
 
 #if SUPERDFU_APP
 	LOG(
@@ -3079,19 +3082,48 @@ static bool can_poll(
 	return more;
 }
 
-static void init_serial(void)
+static void init_device_identifier(void)
 {
 	uint32_t serial_number[4];
 	int error = CRC32E_NONE;
 
 	same51_get_serial_number(serial_number);
-	error = crc32f((uint32_t)serial_number, 16, CRC32E_FLAG_UNLOCK, serial_buffer);
+
+#if SUPERCAN_DEBUG
+	char serial_buffer[64];
+	memset(serial_buffer, '0', 32);
+	char hex_buffer[16];
+	int chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[0]);
+	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
+	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[1]);
+	memcpy(&serial_buffer[16-chars], hex_buffer, chars);
+	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[2]);
+	memcpy(&serial_buffer[24-chars], hex_buffer, chars);
+	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[3]);
+	memcpy(&serial_buffer[32-chars], hex_buffer, chars);
+	serial_buffer[32] = 0;
+	LOG("SAM serial number %s\n", serial_buffer);
+#endif
+
+#if TU_LITTLE_ENDIAN == TU_BYTE_ORDER
+	// swap integers so they have printf layout
+	serial_number[0] = __builtin_bswap32(serial_number[0]);
+	serial_number[1] = __builtin_bswap32(serial_number[1]);
+	serial_number[2] = __builtin_bswap32(serial_number[2]);
+	serial_number[3] = __builtin_bswap32(serial_number[3]);
+#endif
+
+	error = crc32f((uint32_t)serial_number, 16, CRC32E_FLAG_UNLOCK, &device_identifier);
 	if (unlikely(error)) {
-		serial_buffer[0] = serial_number[0];
-		LOG("ERROR: failed to compute CRC32: %d. Using fallback serial\n", error);
+		device_identifier = serial_number[0];
+		LOG("ERROR: failed to compute CRC32: %d. Using fallback device identifier\n", error);
 	}
 
-	LOG("serial number %08lx\n", serial_buffer[0]);
-
-	serial_length = 4;
+#if SUPERCAN_DEBUG
+	memset(serial_buffer, '0', 8);
+	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", device_identifier);
+	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
+	serial_buffer[8] = 0;
+	LOG("device identifier %s\n", serial_buffer);
+#endif
 }

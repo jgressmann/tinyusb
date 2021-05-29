@@ -26,5 +26,4 @@
 
 #include <stdint.h>
 
-extern uint32_t serial_buffer[1];
-extern uint32_t serial_length;
+extern uint32_t device_identifier;
