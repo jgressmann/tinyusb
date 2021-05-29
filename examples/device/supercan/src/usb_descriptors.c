@@ -33,6 +33,7 @@
 #include <usb_descriptors.h>
 #include <mcu.h>
 #include <device.h>
+#include <usnprintf.h>
 
 
 
@@ -273,63 +274,58 @@ static char const* string_desc_arr [] =
 {
 	(const char[]) { 0x09, 0x04 },                          // 0: is supported language is English (0x0409)
 	"2guys",                                                // 1: Manufacturer
-	BOARD_NAME " " SC_NAME,       // 2: Product
-	"",                                                     // 3: Serial
-	BOARD_NAME " " SC_NAME " CAN ch0",
+	BOARD_NAME " " SC_NAME " (%s)",                         // 2: Product
+	"%s",                                                   // 3: Serial
+	BOARD_NAME " " SC_NAME " (%s) CAN ch0",
 #if HWREV > 1
-	BOARD_NAME " " SC_NAME " CAN ch1",
+	BOARD_NAME " " SC_NAME " (%s) CAN ch1",
 #endif
 #if CFG_TUD_DFU_RT
-	BOARD_NAME " " SC_NAME " DFU",
+	BOARD_NAME " " SC_NAME " (%s) DFU",
 #endif
 };
 
-
-static uint16_t _desc_str[33];
-static const char hex_map[16] = "0123456789abcdef";
-
-// Invoked when received GET STRING DESCRIPTOR request
-// Application return pointer to descriptor, whose contents must exist long enough for transfer to complete
 uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 {
+	static uint16_t wstring_buffer[64];
+
+	uint8_t chr_count = 0;
+
 	(void) langid;
 
-	uint8_t chr_count;
+	if (index >= TU_ARRAY_SIZE(string_desc_arr) || !string_desc_arr[index]) {
+		return NULL;
+	}
+
 	switch (index) {
 	case 0:
-		memcpy(&_desc_str[1], string_desc_arr[0], 2);
+		wstring_buffer[1] = *(const uint16_t*)string_desc_arr[0];
 		chr_count = 1;
 		break;
-	case 3: {
-		uint32_t x = serial_buffer[0];
-		SC_DEBUG_ASSERT(serial_length <= 4);
-		for (unsigned j = 0, k = 1, shift = 0; j < serial_length; ++j, shift += 8, k += 2) {
-			uint8_t y = (x >> shift) & 0xff;
-			uint8_t hi = (y >> 4) & 0xf;
-			uint8_t lo = (y >> 0) & 0xf;
-			_desc_str[k] = hex_map[hi];
-			_desc_str[k+1] = hex_map[lo];
-		}
-
-		chr_count = serial_length * 2;
-	} break;
 	default: {
-		// Convert ASCII string into UTF-16
-		if ( !(index < sizeof(string_desc_arr)/sizeof(string_desc_arr[0])) ) return NULL;
+		char string_buffer[TU_ARRAY_SIZE(wstring_buffer)-1];
 
-		const char* str = string_desc_arr[index];
+		// 0-pad serial in case it has leading zeros
+		char zero_padded[32];
+		memset(zero_padded, '0', 8);
+		int serial_chars = usnprintf(&zero_padded[8], 24, "%x", device_identifier);
+		SC_DEBUG_ASSERT(serial_chars >= 0 && serial_chars <= 8);
 
-		// Cap at max char
-		chr_count = tu_min8(strlen(str), TU_ARRAY_SIZE(_desc_str) - 1);
+		int chars = usnprintf(string_buffer, sizeof(string_buffer), string_desc_arr[index], &zero_padded[serial_chars]);
 
-		for (uint8_t i = 0; i < chr_count; ++i) {
-			_desc_str[1+i] = str[i];
+		// convert to UTF-16
+		for (int i = 0; i < chars; ++i) {
+			wstring_buffer[i+1] = string_buffer[i];
 		}
+
+		chr_count = (uint8_t)chars;
 	} break;
 	}
 
-	// first byte is length (including header), second byte is string type
-	_desc_str[0] = (TUSB_DESC_STRING << 8) | (2*chr_count + 2);
+	SC_DEBUG_ASSERT((size_t)(chr_count + 1) <= TU_ARRAY_SIZE(wstring_buffer));
 
-	return _desc_str;
+	// first byte is length (including header), second byte is string type
+	wstring_buffer[0] = (TUSB_DESC_STRING << 8) | ((chr_count + 1) << 1);
+
+	return wstring_buffer;
 }
