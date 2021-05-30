@@ -635,21 +635,44 @@ LP_RAMFUNC static bool lp_signal_try_forward_enc_output_buffer(void)
     return true;
 }
 
+LP_RAMFUNC static inline bool lp_signal_try_fill_dec_input_buffer1_unsafe(void)
+{
+    LP_ISR_ASSERT((size_t)(lp.lin.dec.input_pi - lp.lin.dec.input_gi) < ARRAY_SIZE(lp.lin.dec.input_buffer));
+
+    size_t gi = lp.lin.signal_tx_buffer_gi;
+    size_t pi = __atomic_load_n(&lp.lin.signal_tx_buffer_pi, __ATOMIC_ACQUIRE);
+
+    if (likely(pi != gi)) {
+        // LP_LOG("rlew load\n");
+        uint32_t value = lp.lin.signal_tx_buffer[gi % ARRAY_SIZE(lp.lin.signal_tx_buffer)];
+        __atomic_store_n(&lp.lin.signal_tx_buffer_gi, gi + 1, __ATOMIC_RELEASE);
+
+        lp.lin.dec.input_buffer[lp.lin.dec.input_pi++ % ARRAY_SIZE(lp.lin.dec.input_buffer)] = value;
+        return true;
+
+    }
+
+    return false;
+}
+
 LP_RAMFUNC static bool lp_signal_try_fill_dec_input_buffer(void)
 {
     while ((size_t)(lp.lin.dec.input_pi - lp.lin.dec.input_gi) < ARRAY_SIZE(lp.lin.dec.input_buffer)) {
-        size_t gi = lp.lin.signal_tx_buffer_gi;
-        size_t pi = __atomic_load_n(&lp.lin.signal_tx_buffer_pi, __ATOMIC_ACQUIRE);
-
-        if (likely(pi != gi)) {
-            // LP_LOG("rlew load\n");
-            uint32_t value = lp.lin.signal_tx_buffer[gi % ARRAY_SIZE(lp.lin.signal_tx_buffer)];
-            __atomic_store_n(&lp.lin.signal_tx_buffer_gi, gi + 1, __ATOMIC_RELEASE);
-
-            lp.lin.dec.input_buffer[lp.lin.dec.input_pi++ % ARRAY_SIZE(lp.lin.dec.input_buffer)] = value;
-        } else {
+        if (unlikely(!lp_signal_try_fill_dec_input_buffer1_unsafe())) {
             return false;
         }
+        // size_t gi = lp.lin.signal_tx_buffer_gi;
+        // size_t pi = __atomic_load_n(&lp.lin.signal_tx_buffer_pi, __ATOMIC_ACQUIRE);
+
+        // if (likely(pi != gi)) {
+        //     // LP_LOG("rlew load\n");
+        //     uint32_t value = lp.lin.signal_tx_buffer[gi % ARRAY_SIZE(lp.lin.signal_tx_buffer)];
+        //     __atomic_store_n(&lp.lin.signal_tx_buffer_gi, gi + 1, __ATOMIC_RELEASE);
+
+        //     lp.lin.dec.input_buffer[lp.lin.dec.input_pi++ % ARRAY_SIZE(lp.lin.dec.input_buffer)] = value;
+        // } else {
+        //     return false;
+        // }
     }
 
     return true;
@@ -726,6 +749,12 @@ LP_RAMFUNC static void lp_next_bit_strict(void)
         lp_tx_pin_clear();
     }
 
+    // try to add a single input word
+    if (unlikely((size_t)(lp.lin.dec.input_pi - lp.lin.dec.input_gi) < ARRAY_SIZE(lp.lin.dec.input_buffer))) {
+        // LP_LOG("i\n");
+        lp_signal_try_fill_dec_input_buffer1_unsafe();
+    }
+
     for (;;) {
         int error = rlew_enc_bit(&lp.lin.enc, input_bit);
 
@@ -741,6 +770,18 @@ LP_RAMFUNC static void lp_next_bit_strict(void)
                 return;
             }
         }
+    }
+
+    // try to remove a single output word
+    if (unlikely(lp.lin.enc.output_pi != lp.lin.enc.output_gi)) {
+        // LP_LOG("o\n");
+        uint32_t value = lp.lin.enc.output_buffer[lp.lin.enc.output_gi % RLEW_ARRAY_SIZE(lp.lin.enc.output_buffer)];
+
+        if (unlikely(!lp_signal_try_store1(value))) {
+            return false;
+        }
+
+        ++lp.lin.enc.output_gi;
     }
 
 #if SAME54XPLAINEDPRO
@@ -767,7 +808,6 @@ LP_RAMFUNC static void lp_next_bit_strict(void)
         lp_next_bit_strict_max = 0;
 
         LP_LOG("lin rx avg=%lu min=%lu max=%lu ticks\n", avg, mi, ma);
-
     }
 #endif
 }

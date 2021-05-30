@@ -92,7 +92,7 @@ int main(void)
 	gpio_set_pin_function(LIN_RX_PIN, GPIO_PIN_FUNCTION_OFF);
 	gpio_set_pin_direction(LIN_RX_PIN, GPIO_DIRECTION_IN);
 	gpio_set_pin_pull_mode(LIN_RX_PIN, GPIO_PULL_OFF);
-	// PORT->Group[2].CTRL.reg |= 0b100000; // continusous sampling for pin 5
+	PORT->Group[2].CTRL.reg |= 0b100000; // continusous sampling for pin 5
 
 
 	NVIC_SetPriority(TC0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);

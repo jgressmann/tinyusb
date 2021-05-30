@@ -166,7 +166,7 @@ if __name__ == "__main__":
 
 
 
-		oversampling = 28
+		oversampling = 32
 		baud = 19200
 		break_bits = 13
 		inter_byte_space = 0
