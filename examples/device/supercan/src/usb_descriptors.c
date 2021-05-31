@@ -51,7 +51,7 @@ static const tusb_desc_device_t device = {
 	.idVendor           = 0x1d50,
 	.idProduct          = 0x5035,
 	//.bcdDevice          = (HWREV << 12) | (SUPERCAN_VERSION_MAJOR << 8) | (SUPERCAN_VERSION_MINOR << 4) | (SUPERCAN_VERSION_PATCH),
-	.bcdDevice          = (SUPERCAN_VERSION_MAJOR << 12) | (SUPERCAN_VERSION_MINOR << 8) | (SUPERCAN_VERSION_PATCH),
+	.bcdDevice          = (SUPERCAN_VERSION_MAJOR << 12) | (SUPERCAN_VERSION_MINOR << 8) | ((SUPERCAN_VERSION_PATCH / 10) << 4) | (SUPERCAN_VERSION_PATCH % 10),
 	//.bcdDevice          = HWREV << 8,
 
 	.iManufacturer      = 0x01,
