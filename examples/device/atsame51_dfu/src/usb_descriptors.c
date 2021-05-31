@@ -58,7 +58,7 @@ static const tusb_desc_device_t device = {
 	.idVendor           = VID,
 	.idProduct          = PID,
 	// .bcdDevice          = HWREV << 8,
-	.bcdDevice          = (SUPERDFU_VERSION_MAJOR << 12) | (SUPERDFU_VERSION_MINOR << 8) | (SUPERDFU_VERSION_PATCH),
+	.bcdDevice          = (SUPERDFU_VERSION_MAJOR << 12) | (SUPERDFU_VERSION_MINOR << 8) | ((SUPERDFU_VERSION_PATCH / 10) << 4) | (SUPERDFU_VERSION_PATCH % 10),
 
 	.iManufacturer      = 0x01,
 	.iProduct           = 0x02,
@@ -110,7 +110,7 @@ Bit 0: download capable
 #endif
 	9,
 		DFU_DESC_FUNCTIONAL,
-		(0<<3) | (1<<2) | (0<<1) | (1<<0) /*attrs*/,
+		(DFU_WILL_DETACH<<3) | (DFU_MANIFESTATION_TOLERANT<<2) | (0<<1) | (1<<0) /*attrs*/,
 		U16_TO_U8S_LE(DFU_USB_TIMEOUT_MS) /* timeout [ms]*/,
 		U16_TO_U8S_LE(MCU_NVM_PAGE_SIZE)/* xfer size*/,
 		U16_TO_U8S_LE(0x0101)/*bcdVersion*/

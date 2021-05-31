@@ -468,19 +468,6 @@ void dfu_rtd_reset(uint8_t rhport)
 {
 	(void)rhport;
 	LOG("dfu_rtd_reset\n");
-	switch (dfu.status.bState) {
-	case DFU_STATE_DFU_MANIFEST:
-	case DFU_STATE_DFU_MANIFEST_SYNC:
-	case DFU_STATE_DFU_MANIFEST_WAIT_RESET:
-		NVIC_SystemReset();
-		break;
-	}
-
-
-	if (dfu.download_size) { // hack for dfu-util, use with -R
-		LOG("reset\n");
-		NVIC_SystemReset();
-	}
 }
 
 bool dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_length)
@@ -565,18 +552,72 @@ bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * req
 	return true;
 }
 
-
-static inline bool dfu_state_manifest_wait_reset(tusb_control_request_t const *request)
+static inline bool dfu_state_manifest_sync(tusb_control_request_t const *request)
 {
 	const int port = 0;
-	LOG("DFU_STATE_DFU_MANIFEST_WAIT_RESET\n");
+	LOG("DFU_STATE_DFU_MANIFEST_SYNC\n");
 	switch (request->bRequest) {
 	case DFU_REQUEST_GETSTATUS:
 		LOG("> DFU_REQUEST_GETSTATUS\n");
+		dfu.status.bState = DFU_STATE_DFU_MANIFEST;
 		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
 			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
 			dfu.status.bState = DFU_STATE_DFU_ERROR;
 		}
+		break;
+	default:
+		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
+		break;
+	}
+
+	return true;
+}
+
+static inline bool dfu_state_manifest(tusb_control_request_t const *request)
+{
+	const int port = 0;
+	LOG("DFU_STATE_DFU_MANIFEST\n");
+	switch (request->bRequest) {
+	case DFU_REQUEST_GETSTATUS:
+		LOG("> DFU_REQUEST_GETSTATUS\n");
+		if (DFU_MANIFESTATION_TOLERANT) {
+			dfu.status.bState = DFU_STATE_DFU_MANIFEST_SYNC;
+		} else {
+			dfu.status.bState = DFU_STATE_DFU_MANIFEST_WAIT_RESET;
+		}
+
+		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
+			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+			dfu.status.bState = DFU_STATE_DFU_ERROR;
+		}
+		break;
+	default:
+		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
+		break;
+	}
+
+	return true;
+}
+
+static inline bool dfu_state_manifest_wait_reset(tusb_control_request_t const *request)
+{
+	// const int port = 0;
+	LOG("DFU_STATE_DFU_MANIFEST_WAIT_RESET\n");
+	switch (request->bRequest) {
+	case DFU_REQUEST_DETACH:
+		LOG("> DFU_REQUEST_DETACH\n"); // dfu-util sends this (when it shoudn't)
+		NVIC_SystemReset();
+		break;
+	// case DFU_REQUEST_GETSTATUS:
+	// 	LOG("> DFU_REQUEST_GETSTATUS\n");
+	// 	if (DFU_MANIFESTATION_TOLERANT) {
+	// 		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
+	// 			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+	// 			dfu.status.bState = DFU_STATE_DFU_ERROR;
+	// 		}
+	// 	} else {
+	// 		// NVIC_SystemReset();
+	// 	}
 		break;
 	default:
 		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
@@ -629,6 +670,13 @@ static inline bool dfu_state_download_sync(tusb_control_request_t const *request
 	const int port = 0;
 	LOG("DFU_STATE_DFU_DNLOAD_SYNC\n");
 	switch (request->bRequest) {
+	case DFU_REQUEST_GETSTATUS:
+		LOG("> DFU_REQUEST_GETSTATUS\n");
+		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
+			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+			dfu.status.bState = DFU_STATE_DFU_ERROR;
+		}
+		break;
 	case DFU_REQUEST_ABORT:
 		LOG("> DFU_REQUEST_ABORT\n");
 		dfu.status.bStatus = DFU_ERROR_OK;
@@ -653,6 +701,13 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 	const int port = 0;
 	LOG("DFU_STATE_DFU_DNLOAD_IDLE\n");
 	switch (request->bRequest) {
+	case DFU_REQUEST_GETSTATUS:
+		LOG("> DFU_REQUEST_GETSTATUS\n");
+		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
+			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+			dfu.status.bState = DFU_STATE_DFU_ERROR;
+		}
+		break;
 	case DFU_REQUEST_DNLOAD:
 		LOG("> DFU_REQUEST_DNLOAD l=%u\n", request->wLength);
 		if (request->wLength > 0) {
@@ -677,9 +732,15 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 			dfu.status.bState = DFU_STATE_DFU_DNLOAD_SYNC;
 		} else {
 			if (dfu.download_size) {
-				//dfu.status.bState = DFU_STATE_DFU_MANIFEST_WAIT_RESET;
-				// dfu.status.bState = DFU_STATE_DFU_IDLE;
-				dfu.status.bState = DFU_STATE_DFU_MANIFEST_SYNC;
+				// //dfu.status.bState = DFU_STATE_DFU_MANIFEST_WAIT_RESET;
+				// // dfu.status.bState = DFU_STATE_DFU_IDLE;
+				if (DFU_MANIFESTATION_TOLERANT) {
+					dfu.status.bState = DFU_STATE_DFU_IDLE;
+				} else {
+					// reset
+					// NVIC_SystemReset();
+					dfu.status.bState = DFU_STATE_DFU_MANIFEST_SYNC;
+				}
 			} else {
 				LOG("> no data received\n");
 				dfu.status.bStatus = DFU_ERROR_NOTDONE;
@@ -704,9 +765,18 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 
 static inline bool dfu_state_idle(tusb_control_request_t const *request)
 {
+	const int port = 0;
+
 	LOG("DFU_STATE_DFU_IDLE\n");
 
 	switch (request->bRequest) {
+	case DFU_REQUEST_GETSTATUS:
+		LOG("> DFU_REQUEST_GETSTATUS\n");
+		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
+			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+			dfu.status.bState = DFU_STATE_DFU_ERROR;
+		}
+		break;
 	case DFU_REQUEST_DNLOAD:
 		return dfu_start_download(request);
 	default:
@@ -719,6 +789,7 @@ static inline bool dfu_state_idle(tusb_control_request_t const *request)
 
 bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const *request)
 {
+	(void)rhport;
 	LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
 		request->bmRequestType,
 		recipient_str(request->bmRequestType_bit.recipient),
@@ -732,34 +803,6 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const *reque
 
 	LOG("DFU state=%u, status=%u\n", dfu.status.bState, dfu.status.bStatus);
 
-	switch (request->bRequest) {
-	case DFU_REQUEST_GETSTATUS:
-		LOG("> DFU_REQUEST_GETSTATUS\n");
-		switch (dfu.status.bState) {
-		case DFU_STATE_DFU_MANIFEST_SYNC:
-			dfu.status.bState = DFU_STATE_DFU_MANIFEST;
-			break;
-		case DFU_STATE_DFU_MANIFEST:
-			dfu.status.bState = DFU_STATE_DFU_IDLE;
-			break;
-		}
-
-
-		if (unlikely(!tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status)))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-		}
-		return true;
-	case DFU_REQUEST_DETACH: // dfu-util sends this
-		if (unlikely(!tud_control_xfer(rhport, request, NULL, 0))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-			return false;
-		}
-		return true;
-	}
-
-
 	switch (dfu.status.bState) {
 	case DFU_STATE_DFU_IDLE:
 		return dfu_state_idle(request);
@@ -767,6 +810,12 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const *reque
 		return dfu_state_download_idle(request);
 	case DFU_STATE_DFU_DNLOAD_SYNC:
 		return dfu_state_download_sync(request);
+	case DFU_STATE_DFU_MANIFEST_SYNC:
+		return dfu_state_manifest_sync(request);
+	case DFU_STATE_DFU_MANIFEST:
+		return dfu_state_manifest(request);
+	case DFU_STATE_DFU_MANIFEST_WAIT_RESET:
+		return dfu_state_manifest_wait_reset(request);
 	case DFU_STATE_DFU_ERROR:
 		return dfu_state_error(request);
 	default:

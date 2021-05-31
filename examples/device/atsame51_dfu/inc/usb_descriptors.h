@@ -28,5 +28,7 @@
 #include <stdint.h>
 
 enum {
-	DFU_USB_TIMEOUT_MS = 1000u
+	DFU_USB_TIMEOUT_MS = 1000u,
+	DFU_WILL_DETACH = 0,
+	DFU_MANIFESTATION_TOLERANT = 0,
 };
