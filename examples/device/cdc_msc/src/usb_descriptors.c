@@ -104,6 +104,18 @@ enum
   #define EPNUM_MSC_OUT     0x04
   #define EPNUM_MSC_IN      0x85
 
+#elif CFG_TUSB_MCU == OPT_MCU_CXD56
+  // CXD56 doesn't support a same endpoint number with different direction IN and OUT
+  //    e.g EP1 OUT & EP1 IN cannot exist together
+  // CXD56 USB driver has fixed endpoint type (bulk/interrupt/iso) and direction (IN/OUT) by its number
+  // 0 control (IN/OUT), 1 Bulk (IN), 2 Bulk (OUT), 3 In (IN), 4 Bulk (IN), 5 Bulk (OUT), 6 In (IN)
+  #define EPNUM_CDC_NOTIF   0x83
+  #define EPNUM_CDC_OUT     0x02
+  #define EPNUM_CDC_IN      0x81
+
+  #define EPNUM_MSC_OUT     0x05
+  #define EPNUM_MSC_IN      0x84
+
 #else
   #define EPNUM_CDC_NOTIF   0x81
   #define EPNUM_CDC_OUT     0x02
@@ -114,7 +126,7 @@ enum
 
 #endif
 
-uint8_t const desc_configuration[] =
+uint8_t const desc_fs_configuration[] =
 {
   // Config number, interface count, string index, total length, attribute, power in mA
   TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
@@ -123,8 +135,22 @@ uint8_t const desc_configuration[] =
   TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 64),
 
   // Interface number, string index, EP Out & EP In address, EP size
-  TUD_MSC_DESCRIPTOR(ITF_NUM_MSC, 5, EPNUM_MSC_OUT, EPNUM_MSC_IN, (CFG_TUSB_RHPORT0_MODE & OPT_MODE_HIGH_SPEED) ? 512 : 64),
+  TUD_MSC_DESCRIPTOR(ITF_NUM_MSC, 5, EPNUM_MSC_OUT, EPNUM_MSC_IN, 64),
 };
+
+#if TUD_OPT_HIGH_SPEED
+uint8_t const desc_hs_configuration[] =
+{
+  // Config number, interface count, string index, total length, attribute, power in mA
+  TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+
+  // Interface number, string index, EP notification address and size, EP data address (out, in) and size.
+  TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 512),
+
+  // Interface number, string index, EP Out & EP In address, EP size
+  TUD_MSC_DESCRIPTOR(ITF_NUM_MSC, 5, EPNUM_MSC_OUT, EPNUM_MSC_IN, 512),
+};
+#endif
 
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
@@ -133,7 +159,13 @@ uint8_t const desc_configuration[] =
 uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 {
   (void) index; // for multiple configurations
-  return desc_configuration;
+
+#if TUD_OPT_HIGH_SPEED
+  // Although we are highspeed, host may be fullspeed.
+  return (tud_speed_get() == TUSB_SPEED_HIGH) ?  desc_hs_configuration : desc_fs_configuration;
+#else
+  return desc_fs_configuration;
+#endif
 }
 
 //--------------------------------------------------------------------+
@@ -167,7 +199,8 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
     chr_count = 1;
   }else
   {
-    // Convert ASCII string into UTF-16
+    // Note: the 0xEE index string is a Microsoft OS 1.0 Descriptors.
+    // https://docs.microsoft.com/en-us/windows-hardware/drivers/usbcon/microsoft-defined-usb-descriptors
 
     if ( !(index < sizeof(string_desc_arr)/sizeof(string_desc_arr[0])) ) return NULL;
 
@@ -177,6 +210,7 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
     chr_count = strlen(str);
     if ( chr_count > 31 ) chr_count = 31;
 
+    // Convert ASCII string into UTF-16
     for(uint8_t i=0; i<chr_count; i++)
     {
       _desc_str[1+i] = str[i];

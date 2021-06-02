@@ -42,78 +42,10 @@
  * See http://www.freertos.org/a00110.html.
  *----------------------------------------------------------*/
 
-// for OPT_MCU_
-#include "tusb_option.h"
-
-#if   CFG_TUSB_MCU == OPT_MCU_LPC11UXX   || CFG_TUSB_MCU == OPT_MCU_LPC13XX    || \
-      CFG_TUSB_MCU == OPT_MCU_LPC15XX    || CFG_TUSB_MCU == OPT_MCU_LPC175X_6X || \
-      CFG_TUSB_MCU == OPT_MCU_LPC177X_8X || CFG_TUSB_MCU == OPT_MCU_LPC18XX    || \
-      CFG_TUSB_MCU == OPT_MCU_LPC40XX    || CFG_TUSB_MCU == OPT_MCU_LPC43XX
-  #include "chip.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_LPC51UXX || CFG_TUSB_MCU == OPT_MCU_LPC54XXX || \
-      CFG_TUSB_MCU == OPT_MCU_LPC55XX
-  #include "fsl_device_registers.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_NRF5X
-  #include "nrf.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_SAMD21 || CFG_TUSB_MCU == OPT_MCU_SAMD51 || \
-      CFG_TUSB_MCU == OPT_MCU_SAME5X
-  #include "sam.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_SAMG
-  #undef LITTLE_ENDIAN // hack to suppress "LITTLE_ENDIAN" redefined
-  #include "sam.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_STM32F0
-  #include "stm32f0xx.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_STM32F1
-  #include "stm32f1xx.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_STM32F2
-  #include "stm32f2xx.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_STM32F3
-  #include "stm32f3xx.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_STM32F4
-  #include "stm32f4xx.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_STM32F7
-  #include "stm32f7xx.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_STM32H7
-  #include "stm32h7xx.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_STM32L0
-  #include "stm32l0xx.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_STM32L1
-  #include "stm32l1xx.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_STM32L4
-  #include "stm32l4xx.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_MIMXRT10XX
-  #include "fsl_device_registers.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_NUC120
-  #include "NUC100Series.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_NUC121 || CFG_TUSB_MCU == OPT_MCU_NUC126
-  #include "NuMicro.h"
-
-#elif CFG_TUSB_MCU == OPT_MCU_NUC505
-  #include "NUC505Series.h"
-
-#else
-  #error "FreeRTOSConfig.h need to include low level mcu header for configuration"
-#endif
+// Include MCU header
+#include "bsp/board_mcu.h"
 
 extern uint32_t SystemCoreClock;
-
 
 /* Cortex M23/M33 port configuration. */
 #define configENABLE_MPU								        0
@@ -139,6 +71,7 @@ extern uint32_t SystemCoreClock;
 #define configUSE_TIME_SLICING                  0
 #define configUSE_NEWLIB_REENTRANT              0
 #define configENABLE_BACKWARD_COMPATIBILITY     1
+#define configSTACK_ALLOCATION_FROM_SEPARATE_HEAP   0
 
 #define configSUPPORT_STATIC_ALLOCATION         1
 #define configSUPPORT_DYNAMIC_ALLOCATION        0
@@ -199,6 +132,16 @@ extern uint32_t SystemCoreClock;
   #define configASSERT( x )
 #endif
 
+#ifdef __RX__
+/* Renesas RX series */
+#define vSoftwareInterruptISR					INT_Excep_ICU_SWINT
+#define vTickISR								INT_Excep_CMT0_CMI0
+#define configPERIPHERAL_CLOCK_HZ				(configCPU_CLOCK_HZ/2)
+#define configKERNEL_INTERRUPT_PRIORITY			1
+#define configMAX_SYSCALL_INTERRUPT_PRIORITY	4
+
+#else
+
 /* FreeRTOS hooks to NVIC vectors */
 #define xPortPendSVHandler    PendSV_Handler
 #define xPortSysTickHandler   SysTick_Handler
@@ -230,5 +173,7 @@ to all Cortex-M ports, and do not rely on any particular library functions. */
 /* !!!! configMAX_SYSCALL_INTERRUPT_PRIORITY must not be set to zero !!!!
 See http://www.FreeRTOS.org/RTOS-Cortex-M3-M4.html. */
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY 	        ( configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << (8 - configPRIO_BITS) )
+
+#endif
 
 #endif /* __FREERTOS_CONFIG__H */

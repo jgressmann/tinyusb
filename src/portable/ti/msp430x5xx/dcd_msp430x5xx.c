@@ -48,6 +48,7 @@ uint8_t _setup_packet[8];
 typedef struct
 {
   uint8_t * buffer;
+  // tu_fifo_t * ff; // TODO support dcd_edpt_xfer_fifo API
   uint16_t total_len;
   uint16_t queued_len;
   uint16_t max_size;
@@ -70,8 +71,7 @@ typedef enum
   SIZXY = 7
 } ep_regs_index_t;
 
-#define EP_REGS(epnum, dir) &USBOEPCNF_1 + 64*dir + 8*(epnum - 1)
-
+#define EP_REGS(epnum, dir) ((ep_regs_t) ((uintptr_t)&USBOEPCNF_1 + 64*dir + 8*(epnum - 1)))
 
 static void bus_reset(void)
 {
@@ -133,6 +133,9 @@ void dcd_init (uint8_t rhport)
 
   // Enable reset and wait for it before continuing.
   USBIE |= RSTRIE;
+
+  // Enable pullup.
+  USBCNF |= PUR_EN;
 
   USBKEYPID = 0;
 }
@@ -230,9 +233,9 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * desc_edpt)
   uint8_t const epnum = tu_edpt_number(desc_edpt->bEndpointAddress);
   uint8_t const dir   = tu_edpt_dir(desc_edpt->bEndpointAddress);
 
-  // Unsupported endpoint numbers/size or type (Iso not supported. Control
+  // Unsupported endpoint numbers or type (Iso not supported. Control
   // not supported on nonzero endpoints).
-  if((desc_edpt->wMaxPacketSize.size > 64) || (epnum > 7) || \
+  if( (epnum > 7) || \
       (desc_edpt->bmAttributes.xfer == 0) || \
       (desc_edpt->bmAttributes.xfer == 1)) {
     return false;
@@ -304,6 +307,7 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
 
   xfer_ctl_t * xfer = XFER_CTL_BASE(epnum, dir);
   xfer->buffer = buffer;
+  // xfer->ff     = NULL; // TODO support dcd_edpt_xfer_fifo API
   xfer->total_len = total_bytes;
   xfer->queued_len = 0;
   xfer->short_packet = false;
@@ -341,6 +345,36 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
 
   return true;
 }
+
+#if 0 // TODO support dcd_edpt_xfer_fifo API
+bool dcd_edpt_xfer_fifo (uint8_t rhport, uint8_t ep_addr, tu_fifo_t * ff, uint16_t total_bytes)
+{
+  (void) rhport;
+
+  uint8_t const epnum = tu_edpt_number(ep_addr);
+  uint8_t const dir   = tu_edpt_dir(ep_addr);
+
+  xfer_ctl_t * xfer = XFER_CTL_BASE(epnum, dir);
+  xfer->buffer = NULL;
+  xfer->ff     = ff;
+  xfer->total_len = total_bytes;
+  xfer->queued_len = 0;
+  xfer->short_packet = false;
+
+  ep_regs_t ep_regs = EP_REGS(epnum, dir);
+
+  if(dir == TUSB_DIR_OUT)
+  {
+    ep_regs[BCTX] &= ~NAK;
+  }
+  else
+  {
+    USBIEPIFG |= (1 << epnum);
+  }
+
+  return true;
+}
+#endif
 
 void dcd_edpt_stall (uint8_t rhport, uint8_t ep_addr)
 {
@@ -441,22 +475,32 @@ static void receive_packet(uint8_t ep_num)
     to_recv_size = (xfer_size > xfer->max_size) ? xfer->max_size : xfer_size;
   }
 
-  uint8_t * base = (xfer->buffer + xfer->queued_len);
-
-  if(ep_num == 0)
+#if 0 // TODO support dcd_edpt_xfer_fifo API
+  if (xfer->ff)
   {
-    volatile uint8_t * ep0out_buf = &USBOEP0BUF;
-    for(uint16_t i = 0; i < to_recv_size; i++)
-    {
-      base[i] = ep0out_buf[i];
-    }
+    volatile uint8_t * ep_buf = (ep_num == 0) ? &USBOEP0BUF : (&USBSTABUFF + (ep_regs[BBAX] << 3));
+    tu_fifo_write_n(xfer->ff, (const void *) ep_buf, to_recv_size);
   }
   else
+#endif
   {
-    volatile uint8_t * ep_buf = &USBSTABUFF + (ep_regs[BBAX] << 3);
-    for(uint16_t i = 0; i < to_recv_size ; i++)
+    uint8_t * base = (xfer->buffer + xfer->queued_len);
+
+    if(ep_num == 0)
     {
-      base[i] = ep_buf[i];
+      volatile uint8_t * ep0out_buf = &USBOEP0BUF;
+      for(uint16_t i = 0; i < to_recv_size; i++)
+      {
+        base[i] = ep0out_buf[i];
+      }
+    }
+    else
+    {
+      volatile uint8_t * ep_buf = &USBSTABUFF + (ep_regs[BBAX] << 3);
+      for(uint16_t i = 0; i < to_recv_size ; i++)
+      {
+        base[i] = ep_buf[i];
+      }
     }
   }
 
@@ -497,7 +541,6 @@ static void transmit_packet(uint8_t ep_num)
   }
 
   // Then actually commit to transmit a packet.
-  uint8_t * base = (xfer->buffer + xfer->queued_len);
   uint16_t remaining = xfer->total_len - xfer->queued_len;
   uint8_t xfer_size = (xfer->max_size < xfer->total_len) ? xfer->max_size : remaining;
 
@@ -511,6 +554,7 @@ static void transmit_packet(uint8_t ep_num)
   if(ep_num == 0)
   {
     volatile uint8_t * ep0in_buf = &USBIEP0BUF;
+    uint8_t * base = (xfer->buffer + xfer->queued_len);
     for(uint16_t i = 0; i < xfer_size; i++)
     {
       ep0in_buf[i] = base[i];
@@ -524,9 +568,19 @@ static void transmit_packet(uint8_t ep_num)
     ep_regs_t ep_regs = EP_REGS(ep_num, TUSB_DIR_IN);
     volatile uint8_t * ep_buf = &USBSTABUFF + (ep_regs[BBAX] << 3);
 
-    for(int i = 0; i < xfer_size; i++)
+#if 0 // TODO support dcd_edpt_xfer_fifo API
+    if (xfer->ff)
     {
-      ep_buf[i] = base[i];
+      tu_fifo_read_n(xfer->ff, (void *) ep_buf, xfer_size);
+    }
+    else
+#endif
+    {
+      uint8_t * base = (xfer->buffer + xfer->queued_len);
+      for(int i = 0; i < xfer_size; i++)
+      {
+        ep_buf[i] = base[i];
+      }
     }
 
     ep_regs[BCTX] = (ep_regs[BCTX] & 0x80) + (xfer_size & 0x7F);
@@ -570,7 +624,7 @@ void dcd_int_handler(uint8_t rhport)
   {
     case USBVECINT_RSTR:
       bus_reset();
-      dcd_event_bus_signal(0, DCD_EVENT_BUS_RESET, true);
+      dcd_event_bus_reset(0, TUSB_SPEED_FULL, true);
       break;
 
     // Clear the (hardware-enforced) NAK on EP 0 after a SETUP packet

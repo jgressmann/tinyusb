@@ -55,10 +55,6 @@ int main(void)
   {
     uint32_t interval_ms = board_button_read() ? BLINK_PRESSED : BLINK_UNPRESSED;
 
-    // uart echo
-//    uint8_t ch;
-//    if ( board_uart_read(&ch, 1) ) board_uart_write(&ch, 1);
-
     // Blink every interval ms
     if ( !(board_millis() - start_ms < interval_ms) )
     {
@@ -74,7 +70,7 @@ int main(void)
   return 0;
 }
 
-#if CFG_TUSB_MCU == OPT_MCU_ESP32S2
+#if CFG_TUSB_MCU == OPT_MCU_ESP32S2 || CFG_TUSB_MCU == OPT_MCU_ESP32S3
 void app_main(void)
 {
   main();

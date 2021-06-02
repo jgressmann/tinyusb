@@ -83,7 +83,6 @@ void cdc_task(void* params);
 int main(void)
 {
   board_init();
-  tusb_init();
 
   // soft timer for blinky
   blinky_tm = xTimerCreateStatic(NULL, pdMS_TO_TICKS(BLINK_NOT_MOUNTED), true, NULL, led_blinky_cb, &blinky_tmdef);
@@ -95,15 +94,15 @@ int main(void)
   // Create CDC task
   (void) xTaskCreateStatic( cdc_task, "cdc", CDC_STACK_SZIE, NULL, configMAX_PRIORITIES-2, cdc_stack, &cdc_taskdef);
 
-  // skip starting scheduler (and return) for ESP32-S2
-#if CFG_TUSB_MCU != OPT_MCU_ESP32S2
+  // skip starting scheduler (and return) for ESP32-S2 or ESP32-S3
+#if CFG_TUSB_MCU != OPT_MCU_ESP32S2 && CFG_TUSB_MCU != OPT_MCU_ESP32S3
   vTaskStartScheduler();
-  NVIC_SystemReset();
-  return 0;
 #endif
+
+  return 0;
 }
 
-#if CFG_TUSB_MCU == OPT_MCU_ESP32S2
+#if CFG_TUSB_MCU == OPT_MCU_ESP32S2 || CFG_TUSB_MCU == OPT_MCU_ESP32S3
 void app_main(void)
 {
   main();
@@ -115,6 +114,10 @@ void app_main(void)
 void usb_device_task(void* param)
 {
   (void) param;
+
+  // This should be called after scheduler/kernel is started.
+  // Otherwise it could cause kernel issue since USB IRQ handler does use RTOS queue API.
+  tusb_init();
 
   // RTOS forever loop
   while (1)
@@ -165,23 +168,24 @@ void cdc_task(void* params)
   // RTOS forever loop
   while ( 1 )
   {
-    if ( tud_cdc_connected() )
+    // connected() check for DTR bit
+    // Most but not all terminal client set this when making connection
+    // if ( tud_cdc_connected() )
     {
-      // connected and there are data available
+      // There are data available
       if ( tud_cdc_available() )
       {
         uint8_t buf[64];
 
         // read and echo back
         uint32_t count = tud_cdc_read(buf, sizeof(buf));
+        (void) count;
 
-        for(uint32_t i=0; i<count; i++)
-        {
-          tud_cdc_write_char(buf[i]);
-
-          if ( buf[i] == '\r' ) tud_cdc_write_char('\n');
-        }
-
+        // Echo back
+        // Note: Skip echo by commenting out write() and write_flush()
+        // for throughput test e.g
+        //    $ dd if=/dev/zero of=/dev/ttyACM0 count=10000
+        tud_cdc_write(buf, count);
         tud_cdc_write_flush();
       }
     }
@@ -195,12 +199,15 @@ void cdc_task(void* params)
 void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 {
   (void) itf;
+  (void) rts;
 
-  // connected
-  if ( dtr && rts )
+  // TODO set some indicator
+  if ( dtr )
   {
-    // print initial message when connected
-    tud_cdc_write_str("\r\nTinyUSB CDC MSC device with FreeRTOS example\r\n");
+    // Terminal connected
+  }else
+  {
+    // Terminal disconnected
   }
 }
 

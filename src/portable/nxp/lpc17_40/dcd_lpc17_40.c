@@ -26,7 +26,8 @@
 
 #include "tusb_option.h"
 
-#if TUSB_OPT_DEVICE_ENABLED && (CFG_TUSB_MCU == OPT_MCU_LPC175X_6X || CFG_TUSB_MCU == OPT_MCU_LPC40XX)
+#if TUSB_OPT_DEVICE_ENABLED && \
+    (CFG_TUSB_MCU == OPT_MCU_LPC175X_6X || CFG_TUSB_MCU == OPT_MCU_LPC177X_8X || CFG_TUSB_MCU == OPT_MCU_LPC40XX)
 
 #include "device/dcd.h"
 #include "dcd_lpc17_40.h"
@@ -180,6 +181,8 @@ void dcd_init(uint8_t rhport)
   LPC_USB->DevIntEn = (DEV_INT_DEVICE_STATUS_MASK | DEV_INT_ENDPOINT_FAST_MASK | DEV_INT_ENDPOINT_SLOW_MASK | DEV_INT_ERROR_MASK);
   LPC_USB->UDCAH = (uint32_t) _dcd.udca;
   LPC_USB->DMAIntEn = (DMA_INT_END_OF_XFER_MASK /*| DMA_INT_NEW_DD_REQUEST_MASK*/ | DMA_INT_ERROR_MASK);
+
+  dcd_connect(rhport);
 
   // Clear pending IRQ
   NVIC_ClearPendingIRQ(USB_IRQn);
@@ -469,7 +472,7 @@ static void bus_event_isr(uint8_t rhport)
   if (dev_status & SIE_DEV_STATUS_RESET_MASK)
   {
     bus_reset();
-    dcd_event_bus_signal(rhport, DCD_EVENT_BUS_RESET, true);
+    dcd_event_bus_reset(rhport, TUSB_SPEED_FULL, true);
   }
 
   if (dev_status & SIE_DEV_STATUS_CONNECT_CHANGE_MASK)

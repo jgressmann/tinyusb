@@ -45,20 +45,6 @@ void dcd_init (uint8_t rhport)
   (void) rhport;
 }
 
-#if HAS_INTERNAL_PULLUP
-// Enable internal D+/D- pullup
-void dcd_connect(uint8_t rhport) TU_ATTR_WEAK
-{
-  (void) rhport;
-}
-
-// Disable internal D+/D- pullup
-void dcd_disconnect(uint8_t rhport) TU_ATTR_WEAK
-{
-  (void) rhport;
-}
-#endif
-
 // Enable device interrupt
 void dcd_int_enable (uint8_t rhport)
 {
@@ -114,6 +100,16 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
   (void) rhport;
   (void) ep_addr;
   (void) buffer;
+  (void) total_bytes;
+  return false;
+}
+
+// Submit a transfer where is managed by FIFO, When complete dcd_event_xfer_complete() is invoked to notify the stack - optional, however, must be listed in usbd.c
+bool dcd_edpt_xfer_fifo (uint8_t rhport, uint8_t ep_addr, tu_fifo_t * ff, uint16_t total_bytes)
+{
+  (void) rhport;
+  (void) ep_addr;
+  (void) ff;
   (void) total_bytes;
   return false;
 }

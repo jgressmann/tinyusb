@@ -144,6 +144,12 @@
 #  define DCD_STM32_BTABLE_LENGTH (PMA_LENGTH - DCD_STM32_BTABLE_BASE)
 #endif
 
+// Since TinyUSB doesn't use SOF for now, and this interrupt too often (1ms interval)
+// We disable SOF for now until needed later on
+#ifndef USE_SOF
+#  define USE_SOF     0
+#endif
+
 /***************************************************
  * Checks, structs, defines, function definitions, etc.
  */
@@ -159,6 +165,7 @@ TU_VERIFY_STATIC(((DCD_STM32_BTABLE_BASE) % 8) == 0, "BTABLE base must be aligne
 typedef struct
 {
   uint8_t * buffer;
+  // tu_fifo_t * ff;  // TODO support dcd_edpt_xfer_fifo API
   uint16_t total_len;
   uint16_t queued_len;
   uint16_t pma_ptr;
@@ -191,15 +198,22 @@ static void dcd_pma_free(uint8_t ep_addr);
 static bool dcd_write_packet_memory(uint16_t dst, const void *__restrict src, size_t wNBytes);
 static bool dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wNBytes);
 
+//static bool dcd_write_packet_memory_ff(tu_fifo_t * ff, uint16_t dst, uint16_t wNBytes);
+//static bool dcd_read_packet_memory_ff(tu_fifo_t * ff, uint16_t src, uint16_t wNBytes);
+
 // Using a function due to better type checks
 // This seems better than having to do type casts everywhere else
 static inline void reg16_clear_bits(__IO uint16_t *reg, uint16_t mask) {
   *reg = (uint16_t)(*reg & ~mask);
 }
 
+// Bits in ISTR are cleared upon writing 0
+static inline void clear_istr_bits(uint16_t mask) {
+  USB->ISTR = ~mask;
+}
+
 void dcd_init (uint8_t rhport)
 {
-  (void)rhport;
   /* Clocks should already be enabled */
   /* Use __HAL_RCC_USB_CLK_ENABLE(); to enable the clocks before calling this function */
 
@@ -226,7 +240,7 @@ void dcd_init (uint8_t rhport)
   
   USB->BTABLE = DCD_STM32_BTABLE_BASE;
 
-  reg16_clear_bits(&USB->ISTR, USB_ISTR_ALL_EVENTS); // Clear pending interrupts
+  USB->ISTR = 0; // Clear pending interrupts
 
   // Reset endpoints to disabled
   for(uint32_t i=0; i<STFSDEV_EP_COUNT; i++)
@@ -235,10 +249,11 @@ void dcd_init (uint8_t rhport)
     pcd_set_endpoint(USB,i,0u);
   }
 
-  USB->CNTR |= USB_CNTR_RESETM | USB_CNTR_SOFM | USB_CNTR_ESOFM | USB_CNTR_CTRM | USB_CNTR_SUSPM | USB_CNTR_WKUPM;
+  USB->CNTR |= USB_CNTR_RESETM | (USE_SOF ? USB_CNTR_SOFM : 0) | USB_CNTR_ESOFM | USB_CNTR_CTRM | USB_CNTR_SUSPM | USB_CNTR_WKUPM;
   dcd_handle_bus_reset();
   
-  // Data-line pull-up is left disconnected.
+  // Enable pull-up if supported
+  if ( dcd_connect ) dcd_connect(rhport);
 }
 
 // Define only on MCU with internal pull-up. BSP can define on MCU without internal PU.
@@ -270,9 +285,23 @@ void dcd_int_enable (uint8_t rhport)
 #if CFG_TUSB_MCU == OPT_MCU_STM32F0 || CFG_TUSB_MCU == OPT_MCU_STM32L0
   NVIC_EnableIRQ(USB_IRQn);
 #elif CFG_TUSB_MCU == OPT_MCU_STM32F3
-  NVIC_EnableIRQ(USB_HP_CAN_TX_IRQn);
-  NVIC_EnableIRQ(USB_LP_CAN_RX0_IRQn);
-  NVIC_EnableIRQ(USBWakeUp_IRQn);
+  // Some STM32F302/F303 devices allow to remap the USB interrupt vectors from
+  // shared USB/CAN IRQs to separate CAN and USB IRQs.
+  // This dynamically checks if this remap is active to enable the right IRQs.
+  #ifdef SYSCFG_CFGR1_USB_IT_RMP
+  if (SYSCFG->CFGR1 & SYSCFG_CFGR1_USB_IT_RMP)
+  {
+    NVIC_EnableIRQ(USB_HP_IRQn);
+    NVIC_EnableIRQ(USB_LP_IRQn);
+    NVIC_EnableIRQ(USBWakeUp_RMP_IRQn);
+  }
+  else
+  #endif
+  {
+    NVIC_EnableIRQ(USB_HP_CAN_TX_IRQn);
+    NVIC_EnableIRQ(USB_LP_CAN_RX0_IRQn);
+    NVIC_EnableIRQ(USBWakeUp_IRQn);
+  }
 #elif CFG_TUSB_MCU == OPT_MCU_STM32F1
   NVIC_EnableIRQ(USB_HP_CAN1_TX_IRQn);
   NVIC_EnableIRQ(USB_LP_CAN1_RX0_IRQn);
@@ -290,9 +319,23 @@ void dcd_int_disable(uint8_t rhport)
 #if CFG_TUSB_MCU == OPT_MCU_STM32F0 || CFG_TUSB_MCU == OPT_MCU_STM32L0
   NVIC_DisableIRQ(USB_IRQn);
 #elif CFG_TUSB_MCU == OPT_MCU_STM32F3
-  NVIC_DisableIRQ(USB_HP_CAN_TX_IRQn);
-  NVIC_DisableIRQ(USB_LP_CAN_RX0_IRQn);
-  NVIC_DisableIRQ(USBWakeUp_IRQn);
+  // Some STM32F302/F303 devices allow to remap the USB interrupt vectors from
+  // shared USB/CAN IRQs to separate CAN and USB IRQs.
+  // This dynamically checks if this remap is active to disable the right IRQs.
+  #ifdef SYSCFG_CFGR1_USB_IT_RMP
+  if (SYSCFG->CFGR1 & SYSCFG_CFGR1_USB_IT_RMP)
+  {
+    NVIC_DisableIRQ(USB_HP_IRQn);
+    NVIC_DisableIRQ(USB_LP_IRQn);
+    NVIC_DisableIRQ(USBWakeUp_RMP_IRQn);
+  }
+  else
+  #endif
+  {
+    NVIC_DisableIRQ(USB_HP_CAN_TX_IRQn);
+    NVIC_DisableIRQ(USB_LP_CAN_RX0_IRQn);
+    NVIC_DisableIRQ(USBWakeUp_IRQn);
+  }
 #elif CFG_TUSB_MCU == OPT_MCU_STM32F1
   NVIC_DisableIRQ(USB_HP_CAN1_TX_IRQn);
   NVIC_DisableIRQ(USB_LP_CAN1_RX0_IRQn);
@@ -437,8 +480,17 @@ static void dcd_ep_ctr_rx_handler(uint32_t wIstr)
 
     if (count != 0U)
     {
-      dcd_read_packet_memory(&(xfer->buffer[xfer->queued_len]),
-        *pcd_ep_rx_address_ptr(USB,EPindex), count);
+#if 0 // TODO support dcd_edpt_xfer_fifo API
+      if (xfer->ff)
+      {
+        dcd_read_packet_memory_ff(xfer->ff, *pcd_ep_rx_address_ptr(USB,EPindex), count);
+      }
+      else
+#endif
+      {
+        dcd_read_packet_memory(&(xfer->buffer[xfer->queued_len]), *pcd_ep_rx_address_ptr(USB,EPindex), count);
+      }
+
       xfer->queued_len = (uint16_t)(xfer->queued_len + count);
     }
 
@@ -506,9 +558,9 @@ void dcd_int_handler(uint8_t rhport) {
 
   if(int_status & USB_ISTR_RESET) {
     // USBRST is start of reset.
-    reg16_clear_bits(&USB->ISTR, USB_ISTR_RESET);
+    clear_istr_bits(USB_ISTR_RESET);
     dcd_handle_bus_reset();
-    dcd_event_bus_signal(0, DCD_EVENT_BUS_RESET, true);
+    dcd_event_bus_reset(0, TUSB_SPEED_FULL, true);
     return; // Don't do the rest of the things here; perhaps they've been cleared?
   }
 
@@ -517,14 +569,13 @@ void dcd_int_handler(uint8_t rhport) {
     /* servicing of the endpoint correct transfer interrupt */
     /* clear of the CTR flag into the sub */
     dcd_ep_ctr_handler();
-    reg16_clear_bits(&USB->ISTR, USB_ISTR_CTR);
   }
 
   if (int_status & USB_ISTR_WKUP)
   {
     reg16_clear_bits(&USB->CNTR, USB_CNTR_LPMODE);
     reg16_clear_bits(&USB->CNTR, USB_CNTR_FSUSP);
-    reg16_clear_bits(&USB->ISTR, USB_ISTR_WKUP);
+    clear_istr_bits(USB_ISTR_WKUP);
     dcd_event_bus_signal(0, DCD_EVENT_RESUME, true);
   }
 
@@ -538,14 +589,16 @@ void dcd_int_handler(uint8_t rhport) {
     USB->CNTR |= USB_CNTR_LPMODE;
 
     /* clear of the ISTR bit must be done after setting of CNTR_FSUSP */
-    reg16_clear_bits(&USB->ISTR, USB_ISTR_SUSP);
+    clear_istr_bits(USB_ISTR_SUSP);
     dcd_event_bus_signal(0, DCD_EVENT_SUSPEND, true);
   }
 
+#if USE_SOF
   if(int_status & USB_ISTR_SOF) {
-    reg16_clear_bits(&USB->ISTR, USB_ISTR_SOF);
+    clear_istr_bits(USB_ISTR_SOF);
     dcd_event_bus_signal(0, DCD_EVENT_SOF, true);
   }
+#endif 
 
   if(int_status & USB_ISTR_ESOF) {
     if(remoteWakeCountdown == 1u)
@@ -556,7 +609,7 @@ void dcd_int_handler(uint8_t rhport) {
     {
       remoteWakeCountdown--;
     }
-    reg16_clear_bits(&USB->ISTR, USB_ISTR_ESOF);
+    clear_istr_bits(USB_ISTR_ESOF);
   }
 }
 
@@ -698,7 +751,6 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
 
   default:
     TU_ASSERT(false);
-    return false;
   }
 
   pcd_set_eptype(USB, epnum, wType);
@@ -765,7 +817,17 @@ static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix)
     len = xfer->max_packet_size;
   }
   uint16_t oldAddr = *pcd_ep_tx_address_ptr(USB,ep_ix);
-  dcd_write_packet_memory(oldAddr, &(xfer->buffer[xfer->queued_len]), len);
+
+#if 0 // TODO support dcd_edpt_xfer_fifo API
+  if (xfer->ff)
+  {
+    dcd_write_packet_memory_ff(xfer->ff, oldAddr, len);
+  }
+  else
+#endif
+  {
+    dcd_write_packet_memory(oldAddr, &(xfer->buffer[xfer->queued_len]), len);
+  }
   xfer->queued_len = (uint16_t)(xfer->queued_len + len);
 
   pcd_set_ep_tx_cnt(USB,ep_ix,len);
@@ -782,6 +844,7 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
   xfer_ctl_t * xfer = xfer_ctl_ptr(epnum,dir);
 
   xfer->buffer = buffer;
+  // xfer->ff     = NULL; // TODO support dcd_edpt_xfer_fifo API
   xfer->total_len = total_bytes;
   xfer->queued_len = 0;
 
@@ -807,6 +870,39 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
   }
   return true;
 }
+
+#if 0 // TODO support dcd_edpt_xfer_fifo API
+bool dcd_edpt_xfer_fifo (uint8_t rhport, uint8_t ep_addr, tu_fifo_t * ff, uint16_t total_bytes)
+{
+  (void) rhport;
+
+  uint8_t const epnum = tu_edpt_number(ep_addr);
+  uint8_t const dir   = tu_edpt_dir(ep_addr);
+
+  xfer_ctl_t * xfer = xfer_ctl_ptr(epnum,dir);
+
+  xfer->buffer = NULL;
+  // xfer->ff     = ff; // TODO support dcd_edpt_xfer_fifo API
+  xfer->total_len = total_bytes;
+  xfer->queued_len = 0;
+
+  if ( dir == TUSB_DIR_OUT )
+  {
+    if(total_bytes > xfer->max_packet_size)
+    {
+      pcd_set_ep_rx_cnt(USB,epnum,xfer->max_packet_size);
+    } else {
+      pcd_set_ep_rx_cnt(USB,epnum,total_bytes);
+    }
+    pcd_set_ep_rx_status(USB, epnum, USB_EP_RX_VALID);
+  }
+  else // IN
+  {
+    dcd_transmit_packet(xfer,epnum);
+  }
+  return true;
+}
+#endif
 
 void dcd_edpt_stall (uint8_t rhport, uint8_t ep_addr)
 {
@@ -881,8 +977,55 @@ static bool dcd_write_packet_memory(uint16_t dst, const void *__restrict src, si
   return true;
 }
 
+#if 0 // TODO support dcd_edpt_xfer_fifo API
 /**
-  * @brief Copy a buffer from user memory area to packet memory area (PMA).
+  * @brief Copy from FIFO to packet memory area (PMA).
+  *        Uses byte-access of system memory and 16-bit access of packet memory
+  * @param   wNBytes no. of bytes to be copied.
+  * @retval None
+  */
+
+// THIS FUNCTION IS UNTESTED
+
+static bool dcd_write_packet_memory_ff(tu_fifo_t * ff, uint16_t dst, uint16_t wNBytes)
+{
+  // Since we copy from a ring buffer FIFO, a wrap might occur making it necessary to conduct two copies
+  // Check for first linear part
+  void * src;
+  uint16_t len = tu_fifo_get_linear_read_info(ff, 0, &src, wNBytes);  // We want to read from the FIFO        - THIS FUNCTION CHANGED!!!
+  TU_VERIFY(len && dcd_write_packet_memory(dst, src, len));           // and write it into the PMA
+  tu_fifo_advance_read_pointer(ff, len);
+
+  // Check for wrapped part
+  if (len < wNBytes)
+  {
+    // Get remaining wrapped length
+    uint16_t len2 = tu_fifo_get_linear_read_info(ff, 0, &src, wNBytes - len);
+    TU_VERIFY(len2);
+
+    // Update destination pointer
+    dst += len;
+
+    // Since PMA is accessed 16-bit wise we need to handle the case when a 16 bit value was split
+    if (len % 2)    // If len is uneven there is a byte left to copy
+    {
+      // Since PMA can accessed only 16 bit-wise we copy the last byte again
+      tu_fifo_backward_read_pointer(ff, 1);                 // Move one byte back and copy two bytes for the PMA
+      tu_fifo_read_n(ff, (void *) &pma[PMA_STRIDE*(dst>>1)], 2);     // Since EP FIFOs must be of item size 1 this is safe to do
+      dst++;
+      len2--;
+    }
+
+    TU_VERIFY(dcd_write_packet_memory(dst, src, len2));
+    tu_fifo_advance_write_pointer(ff, len2);
+  }
+
+  return true;
+}
+#endif
+
+/**
+  * @brief Copy a buffer from packet memory area (PMA) to user memory area.
   *        Uses byte-access of system memory and 16-bit access of packet memory
   * @param   wNBytes no. of bytes to be copied.
   * @retval None
@@ -915,6 +1058,53 @@ static bool dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wN
   }
   return true;
 }
+
+#if 0 // TODO support dcd_edpt_xfer_fifo API
+/**
+  * @brief Copy a buffer from user packet memory area (PMA) to FIFO.
+  *        Uses byte-access of system memory and 16-bit access of packet memory
+  * @param   wNBytes no. of bytes to be copied.
+  * @retval None
+  */
+
+// THIS FUNCTION IS UNTESTED
+
+static bool dcd_read_packet_memory_ff(tu_fifo_t * ff, uint16_t src, uint16_t wNBytes)
+{
+  // Since we copy into a ring buffer FIFO, a wrap might occur making it necessary to conduct two copies
+  // Check for first linear part
+  void * dst;
+  uint16_t len = tu_fifo_get_linear_write_info(ff, 0, &dst, wNBytes);           // THIS FUNCTION CHANGED!!!!
+  TU_VERIFY(len && dcd_read_packet_memory(dst, src, len));
+  tu_fifo_advance_write_pointer(ff, len);
+
+  // Check for wrapped part
+  if (len < wNBytes)
+  {
+    // Get remaining wrapped length
+    uint16_t len2 = tu_fifo_get_linear_write_info(ff, 0, &dst, wNBytes - len);
+    TU_VERIFY(len2);
+
+    // Update source pointer
+    src += len;
+
+    // Since PMA is accessed 16-bit wise we need to handle the case when a 16 bit value was split
+    if (len % 2)    // If len is uneven there is a byte left to copy
+    {
+      uint32_t temp = pma[PMA_STRIDE*(src>>1)];
+      *((uint8_t *)dst++) = ((temp >> 8) & 0xFF);
+      src++;
+      len2--;
+    }
+
+    TU_VERIFY(dcd_read_packet_memory(dst, src, len2));
+    tu_fifo_advance_write_pointer(ff, len2);
+  }
+
+  return true;
+}
+
+#endif
 
 #endif
 

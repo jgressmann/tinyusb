@@ -28,12 +28,14 @@
 
 #if (TUSB_OPT_DEVICE_ENABLED && CFG_TUD_VENDOR)
 
-#include "vendor_device.h"
+#include "device/usbd.h"
 #include "device/usbd_pvt.h"
 #if CFG_TUD_VENDOR_CUSTOM
 
 #else  // !CFG_TUD_VENDOR_CUSTOM
 
+
+#include "vendor_device.h"
 
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF
@@ -76,9 +78,9 @@ uint32_t tud_vendor_n_available (uint8_t itf)
   return tu_fifo_count(&_vendord_itf[itf].rx_ff);
 }
 
-bool tud_vendor_n_peek(uint8_t itf, int pos, uint8_t* u8)
+bool tud_vendor_n_peek(uint8_t itf, uint8_t* u8)
 {
-  return tu_fifo_peek_at(&_vendord_itf[itf].rx_ff, pos, u8);
+  return tu_fifo_peek(&_vendord_itf[itf].rx_ff, u8);
 }
 
 //--------------------------------------------------------------------+
@@ -150,8 +152,8 @@ void vendord_init(void)
     tu_fifo_config(&p_itf->tx_ff, p_itf->tx_ff_buf, CFG_TUD_VENDOR_TX_BUFSIZE, 1, false);
 
 #if CFG_FIFO_MUTEX
-    tu_fifo_config_mutex(&p_itf->rx_ff, osal_mutex_create(&p_itf->rx_ff_mutex));
-    tu_fifo_config_mutex(&p_itf->tx_ff, osal_mutex_create(&p_itf->tx_ff_mutex));
+    tu_fifo_config_mutex(&p_itf->rx_ff, NULL, osal_mutex_create(&p_itf->rx_ff_mutex));
+    tu_fifo_config_mutex(&p_itf->tx_ff, osal_mutex_create(&p_itf->tx_ff_mutex), NULL);
 #endif
   }
 }
@@ -170,9 +172,12 @@ void vendord_reset(uint8_t rhport)
   }
 }
 
-bool vendord_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_len)
+uint16_t vendord_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t max_len)
 {
-  TU_VERIFY(TUSB_CLASS_VENDOR_SPECIFIC == itf_desc->bInterfaceClass);
+  TU_VERIFY(TUSB_CLASS_VENDOR_SPECIFIC == itf_desc->bInterfaceClass, 0);
+
+  uint16_t const drv_len = sizeof(tusb_desc_interface_t) + itf_desc->bNumEndpoints*sizeof(tusb_desc_endpoint_t);
+  TU_VERIFY(max_len >= drv_len, 0);
 
   // Find available interface
   vendord_interface_t* p_vendor = NULL;
@@ -184,18 +189,21 @@ bool vendord_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
       break;
     }
   }
-  TU_VERIFY(p_vendor);
+  TU_VERIFY(p_vendor, 0);
 
   // Open endpoint pair with usbd helper
-  TU_ASSERT(usbd_open_edpt_pair(rhport, tu_desc_next(itf_desc), 2, TUSB_XFER_BULK, &p_vendor->ep_out, &p_vendor->ep_in));
+  TU_ASSERT(usbd_open_edpt_pair(rhport, tu_desc_next(itf_desc), 2, TUSB_XFER_BULK, &p_vendor->ep_out, &p_vendor->ep_in), 0);
 
   p_vendor->itf_num = itf_desc->bInterfaceNumber;
-  (*p_len) = sizeof(tusb_desc_interface_t) + 2*sizeof(tusb_desc_endpoint_t);
 
   // Prepare for incoming data
-  TU_ASSERT(usbd_edpt_xfer(rhport, p_vendor->ep_out, p_vendor->epout_buf, sizeof(p_vendor->epout_buf)));
+  if ( !usbd_edpt_xfer(rhport, p_vendor->ep_out, p_vendor->epout_buf, sizeof(p_vendor->epout_buf)) )
+  {
+    TU_LOG1_FAILED();
+    TU_BREAKPOINT();
+  }
 
-  return true;
+  return drv_len;
 }
 
 bool vendord_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)

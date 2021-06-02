@@ -1,3 +1,5 @@
+DEPS_SUBMODULES += hw/mcu/nuvoton
+
 CFLAGS += \
   -flto \
   -mthumb \
@@ -12,6 +14,7 @@ CFLAGS += \
 LD_FILE = hw/bsp/$(BOARD)/nuc121_flash.ld
 
 SRC_C += \
+  src/portable/nuvoton/nuc121/dcd_nuc121.c \
   hw/mcu/nuvoton/nuc121_125/Device/Nuvoton/NUC121/Source/system_NUC121.c \
   hw/mcu/nuvoton/nuc121_125/StdDriver/src/adc.c \
   hw/mcu/nuvoton/nuc121_125/StdDriver/src/bpwm.c \
@@ -40,18 +43,13 @@ INC += \
   $(TOP)/hw/mcu/nuvoton/nuc121_125/StdDriver/inc \
   $(TOP)/hw/mcu/nuvoton/nuc121_125/CMSIS/Include
 
-# For TinyUSB port source
-VENDOR = nuvoton
-CHIP_FAMILY = nuc121
-
 # For freeRTOS port source
 FREERTOS_PORT = ARM_CM0
 
 # For flash-jlink target
 JLINK_DEVICE = NUC121SC2AE
-JLINK_IF = swd
 
 # Flash using Nuvoton's openocd fork at https://github.com/OpenNuvoton/OpenOCD-Nuvoton
 # Please compile and install it from github source
-flash: $(BUILD)/$(BOARD)-firmware.elf
+flash: $(BUILD)/$(PROJECT).elf
 	openocd -f interface/nulink.cfg -f target/numicroM0.cfg -c "program $< reset exit"
