@@ -12,8 +12,7 @@ INC += \
 	$(TOP)/hw \
 	$(TOP)/src/device \
 	$(TOP)/$(FREERTOS_SRC)/include \
-	$(TOP)/$(FREERTOS_SRC)/portable/GCC/$(FREERTOS_PORT) \
-	$(TOP)/examples/device/atsame51_dfu/inc \
+	$(TOP)/$(FREERTOS_SRC)/portable/GCC/$(FREERTOS_PORT)
 
 
 CFLAGS += -Wno-error
