@@ -177,16 +177,6 @@ if __name__ == "__main__":
 		if linchpin.LinchpinError.NONE.value != e:
 			raise ValueError(f'failed to set frequency to {oversampling * baud}')
 
-		# # wakey wakey force bus to low for 250μs to 5 ms,
-		# #for _ in range((oversampling * baud * 5) // 1000):
-		# for _ in range(break_bits):
-		# 	for _ in range(oversampling):
-		# 		enc.add(0)
-
-		# # slaves show now detect the rising edge and be ready in max 100ms
-		# for _ in range((oversampling * baud * 100) // 1000):
-		# 	enc.add(1)
-
 		for a0 in range(4):
 
 			# break field
@@ -339,6 +329,12 @@ if __name__ == "__main__":
 			print(f"lin xmit failed with flags: {r}")
 		else:
 			print(f"lin OK")
+
+		# turn off relais powering lin slave
+		r = lp_run_cmd(f'!p {relais_pin} 0\n')
+		(e, r) = linchpin.lp_parse_cmd_reply(r)
+		if linchpin.LinchpinError.NONE.value != e:
+			raise ValueError(f'failed to turn off relais')
 
 	finally:
 		if None is not cmd_serial:
