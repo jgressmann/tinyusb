@@ -645,6 +645,13 @@ static inline bool dfu_state_error(tusb_control_request_t const *request)
 	const int port = 0;
 	LOG("DFU_STATE_DFU_ERROR\n");
 	switch (request->bRequest) {
+	case DFU_REQUEST_GETSTATUS:
+		LOG("> DFU_REQUEST_GETSTATUS\n");
+		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
+			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+			dfu.status.bState = DFU_STATE_DFU_ERROR;
+		}
+		break;
 	case DFU_REQUEST_CLRSTATUS:
 		LOG("> DFU_REQUEST_CLRSTATUS\n");
 		dfu.status.bStatus = DFU_ERROR_OK;
