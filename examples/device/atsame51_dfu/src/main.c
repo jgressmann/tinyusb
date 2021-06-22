@@ -468,6 +468,15 @@ void dfu_rtd_reset(uint8_t rhport)
 {
 	(void)rhport;
 	LOG("dfu_rtd_reset\n");
+
+	// All DFU states are required to revert to the application
+	// firmware on "USB reset or power on reset and firmware is valid".
+	// We take a shortcut here and assume a completed download
+	// has installed a valid application firmware. If we are wrong,
+	// we'll end up back in the bootloader anyway.
+	if (dfu.download_size) {
+		NVIC_SystemReset();
+	}
 }
 
 bool dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_length)
