@@ -29,25 +29,28 @@ OUTPUT_ARCH(arm)
 SEARCH_DIR(.)
 
 BOOTLOADER_SIZE = 0x4000;
+APP_HDR_SIZE = 0x0400;
+STACK_SIZE = 0x0200;
 
 /* Memory Spaces Definitions */
 MEMORY
 {
-  dfurom     (rx) : ORIGIN = 0x00000000, LENGTH = BOOTLOADER_SIZE
-  dfuram     (rw) : ORIGIN = 0x20000000, LENGTH = 0x00000080
-  ram       (rwx) : ORIGIN = ORIGIN(dfuram) + LENGTH(dfuram), LENGTH = 0x00030000 - LENGTH(dfuram)
+  rom         (rw) : ORIGIN = 0x00000000, LENGTH = 0x00080000
+  ram        (rwx) : ORIGIN = 0x20000000, LENGTH = 0x00030000
 }
 
-STACK_SIZE = 0x0200;
+
 
 /* Section Definitions */
 SECTIONS
 {
-    .dfuram (NOLOAD) : {
-        . = ALIGN(4);
-        KEEP(*(.dfuram))
-    } > dfuram
 
+/*
+    .dfuapphdr : {
+        . = ALIGN(4);
+        KEEP (*(.dfuapphdr))
+    } > rom
+*/
     .text :
     {
         . = ALIGN(4);
@@ -95,20 +98,41 @@ SECTIONS
 
         . = ALIGN(4);
         _efixed = .;            /* End of text section */
-    } > dfurom
+    } > rom
 
     /* .ARM.exidx is sorted, so has to go in its own output section.  */
     PROVIDE_HIDDEN (__exidx_start = .);
     .ARM.exidx :
     {
       *(.ARM.exidx* .gnu.linkonce.armexidx.*)
-    } > dfurom
+    } > rom
     PROVIDE_HIDDEN (__exidx_end = .);
-
+/*
+    .dfuappftr :
+    {
+        . = ALIGN(4);
+        KEEP (*(.dfuappftr));
+    } > rom
+*/
     . = ALIGN(4);
     _etext = .;
 
-    .relocate : AT (_etext)
+    .dfuram ORIGIN(ram) (NOLOAD) : {
+        . = ALIGN(4);
+        KEEP (*(.dfuram))
+    } > ram
+
+
+    .dfu_relo_ram (ORIGIN(ram) + APP_HDR_SIZE) (NOLOAD) : {
+        . = ALIGN(4);
+        _sdfu_relo_ram = .;
+        . = . + BOOTLOADER_SIZE;
+        _edfu_relo_ram = .;
+    } > ram
+
+
+
+    .relocate (ORIGIN(ram) + APP_HDR_SIZE + BOOTLOADER_SIZE) : AT (_etext)
     {
         . = ALIGN(4);
         _srelocate = .;
@@ -119,7 +143,7 @@ SECTIONS
     } > ram
 
     /* .bss section which is used for uninitialized data */
-    .bss (NOLOAD) :
+    .bss  (NOLOAD) :
     {
         . = ALIGN(4);
         _sbss = . ;
@@ -130,6 +154,8 @@ SECTIONS
         _ebss = . ;
         _ezero = .;
     } > ram
+
+
 
     /* stack section */
     .stack (NOLOAD):

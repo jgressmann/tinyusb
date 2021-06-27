@@ -216,6 +216,7 @@ __attribute__((noreturn)) static void start_app_jump(uint32_t addr)
 
 	SCB->VTOR = addr;
 
+
 	// A few device families, like the NXP 4300 series, will also have a "shadow pointer" to the VTOR, which also needs to be updated with the new address. Review the device datasheet to see if one exists.
 	// The final part is to set the MSP to the value found in the user application vector table and then load the PC with the reset vector value of the user application. This can't be done in C, as it is always possible, that the compiler uses the current SP. But that would be gone after setting the new MSP. So, a call to a small assembler function is done.
 
@@ -251,6 +252,19 @@ static inline void watchdog_timeout(uint8_t seconds_in, uint8_t* wdt_reg, uint8_
 	}
 }
 
+__attribute__((noreturn, section(".ramfunc"))) static void run_bootloader(void)
+{
+	LOG("sadfasfdasfd\n");
+	tusb_init();
+
+	while (1) {
+		led_task();
+		tud_task();
+	}
+
+	__unreachable();
+}
+
 #ifndef PRODUCT_NAME
 #	error Define PRODUCT_NAME
 #endif
@@ -260,12 +274,49 @@ static inline void watchdog_timeout(uint8_t seconds_in, uint8_t* wdt_reg, uint8_
 #define STR(x) STR2(x)
 #define NAME PRODUCT_NAME
 
+/* Initialize segments */
+extern uint32_t _sfixed;
+extern uint32_t _efixed;
+extern uint32_t _etext;
+extern uint32_t _srelocate;
+extern uint32_t _erelocate;
+extern uint32_t _szero;
+extern uint32_t _ezero;
+extern uint32_t _sstack;
+extern uint32_t _estack;
+extern uint32_t _sdfu_relo_ram;
+extern uint32_t _edfu_relo_ram;
 
 int main(void)
 {
 	board_init();
 
+	if (NVMCTRL->STATUS.bit.AFIRST) {
+		LOG("Bank A mapped at 0x0000000.\n");
+	} else {
+		LOG("Bank B mapped at 0x0000000.\n");
+	}
+
+	if (SCB->VTOR) {
+		LOG("Running from RAM\n");
+	} else {
+		LOG("Running from ROM\n");
+	}
+
+	LOG("_sfixed %p\n", (void*)&_sfixed);
+	LOG("_efixed %p\n", (void*)&_efixed);
+	LOG("_etext %p\n", (void*)&_etext);
+	LOG("_srelocate %p\n", (void*)&_srelocate);
+	LOG("_erelocate %p\n", (void*)&_erelocate);
+	LOG("_szero %p\n", (void*)&_szero);
+	LOG("_ezero %p\n", (void*)&_ezero);
+	LOG("_sstack %p\n", (void*)&_sstack);
+	LOG("_estack %p\n", (void*)&_estack);
+	LOG("_sdfu_relo_ram %p\n", (void*)&_sdfu_relo_ram);
+	LOG("_edfu_relo_ram %p\n", (void*)&_edfu_relo_ram);
+
 	LOG(NAME " v" SUPERDFU_VERSION_STR " starting...\n");
+
 
 	dfu.status.bStatus = DFU_ERROR_OK;
 	dfu.status.bState = DFU_STATE_DFU_IDLE;
@@ -369,14 +420,69 @@ int main(void)
 	// set app stable counter
 	dfu_hdr_ptr()->counter = 0;
 
-	tusb_init();
 
-	while (1) {
-		led_task();
-		tud_task();
+	uint32_t const * const src_sptr = (uint32_t*)&_sfixed;
+	uint32_t const * const src_eptr = src_sptr + MCU_BOOTLOADER_SIZE;
+	(void)src_eptr;
+	uint32_t const * src_ptr = src_sptr;
+	// uint32_t* dst_ptr = (uint32_t*)_sdfu_relo_ram;
+	uint32_t* const dst_sptr = (uint32_t*)&_sdfu_relo_ram;
+	uint32_t* dst_ptr = dst_sptr;
+	LOG(NAME " relocate from %p to %p\n", src_sptr, dst_ptr);
+
+	if (src_ptr != dst_ptr) {
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+		memcpy((void*)(uintptr_t)dst_sptr, src_ptr, MCU_BOOTLOADER_SIZE);
+		// while (src_ptr < src_eptr) {
+		// 	// LOG(NAME " copy %p->%p\n", src_ptr, dst_ptr);
+		// 	*dst_ptr++ = *src_ptr++;
+		// }
 	}
 
-	return 0;
+	DeviceVectors* vec_sptr = (void*)dst_sptr;
+	DeviceVectors* vec_esptr = vec_sptr + 1;
+
+	// LOG("Relocated vector table\n");
+	for (uint32_t* handler = (uint32_t*)&vec_sptr->pfnReset_Handler; handler < (uint32_t*)vec_esptr; ++handler) {
+		if (*handler) {
+			uint32_t pre = *handler;
+			uint32_t post = pre + (uint32_t)dst_sptr;
+			// LOG("%p -> %p\n", (void*)pre, (void*)post);
+			*handler = post;
+		}
+	}
+
+	// update vector table
+	SCB->VTOR = (uintptr_t)dst_sptr;
+	__DSB();
+    __ISB();
+
+
+	// start_app_jump(MCU_BOOTLOADER_SIZE + MCU_VECTOR_TABLE_ALIGNMENT);
+	// uintptr_t offset = (uint32_t const *)&run_bootloader - src_sptr;
+	// void* f = ((uint8_t*)&_sdfu_relo_ram) + offset;
+	// LOG(NAME " jumping to relocated bootloader @%p\n", (void*)f);
+	// typedef void (*func_sig)(void);
+	// ((func_sig)f)();
+
+	LOG(NAME " boot loader func @%p\n", &run_bootloader);
+	run_bootloader();
+
+
+	__unreachable();
+
+	// tusb_init();
+
+
+
+	// // relocate to ram
+
+	// while (1) {
+	// 	led_task();
+	// 	tud_task();
+	// }
+
+	// return 0;
 }
 
 //--------------------------------------------------------------------+

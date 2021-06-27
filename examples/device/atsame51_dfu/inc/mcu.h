@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,7 @@
 
 #include <stdint.h>
 
-#if defined(__SAME51J19A__)
+#if defined(__SAME51J18A__) || defined(__SAME51J19A__) || defined(__SAME51J20A__)
 
 #include <sam.h>
 
@@ -48,6 +48,15 @@ static inline void same51_get_serial_number(uint32_t serial[4])
 	serial[3] = *(uint32_t const *)0x00806018;
 }
 
+#if defined(__SAME51J18A__)
+	#define MCU_NVM_SIZE (1ul<<18)
+#elif defined(__SAME51J19A__)
+	#define MCU_NVM_SIZE (1ul<<19)
+#elif defined(__SAME51J20A__)
+	#define MCU_NVM_SIZE (1ul<<20)
+#else
+	#error Unknown SAME51J chip
+#endif
 
-#endif // defined(__SAME51J19A__)
+#endif // defined(__SAME51J*A__)
 
