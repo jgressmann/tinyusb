@@ -930,9 +930,17 @@ static void dfu_timer_expired(TimerHandle_t t)
 {
 	(void)t;
 
-	LOG("DFU detach timeer expired\n");
+	LOG("DFU detach timer expired\n");
 
 	dfu.status.bState = DFU_STATE_APP_IDLE;
+
+	/*
+	 * This is wrong. DFU 1.1. specification wants us to wait for USB reset.
+	 * However, without these lines, the device can't be updated on Windows using
+	 * dfu-util. Updating from Linux works either way. All hail compatibility (sigh).
+	 */
+	dfu_request_dfu(1);
+	NVIC_SystemReset();
 }
 
 #endif
@@ -1908,6 +1916,14 @@ void tud_custom_reset_cb(uint8_t rhport)
 	usb.can[1].pipe = SC_M1_EP_MSG1_BULK_OUT;
 	usb.can[1].tx_offsets[0] = 0;
 	usb.can[1].tx_offsets[1] = 0;
+
+	if (DFU_STATE_APP_DETACH == dfu.status.bState) {
+		LOG("Detected USB reset while DFU detach timer is running\n");
+		dfu_request_dfu(1);
+		NVIC_SystemReset();
+	} else {
+		dfu.status.bState = DFU_STATE_APP_IDLE;
+	}
 }
 
 bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t* p_length)
@@ -2170,9 +2186,6 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 	// TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
 	// TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
 
-
-
-
 	switch (request->bRequest) {
 	case DFU_REQUEST_GETSTATUS:
 		return tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status));
@@ -2182,16 +2195,10 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * requ
 			TU_LOG1("Bootloader runtime signature incompatible, not starting detach\n");
 		} else {
 			dfu.status.bState = DFU_STATE_APP_DETACH;
-			xTimerStart(dfu.timer_handle, 0);
-			/*
-			 * This is wrong. DFU 1.1. specification wants us to wait for USB reset.
-			 * However, without these lines, the device can't be updated on Windows using
-			 * dfu-util. Updating from Linux works either way. All hail compatibility (sigh).
-			 */
-			dfu_request_dfu(1);
-			NVIC_SystemReset();
+			xTimerStart(dfu.timer_handle, pdMS_TO_TICKS(request->wValue));
+			return tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status));
 		}
-		return tud_control_xfer(rhport, request, NULL, 0);
+		break;
 	default:
 		LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
 			request->bmRequestType,
