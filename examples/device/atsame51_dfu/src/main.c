@@ -76,19 +76,21 @@ static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(va
 #define NVM_PROG_BLOCKS (MCU_NVM_SIZE / 2 - NVM_BOOTLOADER_BLOCKS)
 
 
+#define BOOTLOADER_STATUS_MAYBE -1
+#define BOOTLOADER_STATUS_NO 0
+#define BOOTLOADER_STATUS_YES 1
 
 int crc32(uint32_t addr, uint32_t bytes, uint32_t *result);
 
 static struct dfu {
 	struct dfu_get_status_reply status;
+	int bootloader_status;
 	uint32_t download_size;
+	uint32_t block_offset;
 	uint32_t prog_offset;
-	uint32_t skip_target;
-	uint32_t skip_current;
 	uint32_t bootloader_size;
 	uint32_t bootloader_crc;
-	uint16_t cleared_pages_left;
-	uint32_t page_buffer[MCU_NVM_PAGE_SIZE / 4];
+	uint8_t block_buffer[MCU_NVM_BLOCK_SIZE];
 } dfu;
 
 struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_HDR_SECTION_NAME)));
@@ -257,14 +259,15 @@ static inline void watchdog_timeout(uint8_t seconds_in, uint8_t* wdt_reg, uint8_
 
 static inline void reset_device(void)
 {
-	if (dfu.bootloader_size) {
+	if (BOOTLOADER_STATUS_YES == dfu.bootloader_status) {
 		uint32_t bytes_written = dfu.prog_offset - MCU_NVM_SIZE / 2;
 
 		if (bytes_written < dfu.bootloader_size) {
 			LOG("> incomplete bootloader write, NOT swapping banks\n");
 		} else {
 			uint32_t crc = ~dfu.bootloader_crc;
-			int error = crc32(MCU_NVM_SIZE / 2, dfu.bootloader_size, &crc);
+			// bootloader payload is offset by dfu app header
+			int error = crc32(MCU_NVM_SIZE / 2 + MCU_VECTOR_TABLE_ALIGNMENT, dfu.bootloader_size, &crc);
 			if (error) {
 				LOG("> bootloader verification failed with %d\n", error);
 			} else if (crc != dfu.bootloader_crc) {
@@ -276,6 +279,7 @@ static inline void reset_device(void)
 		}
 	}
 
+	LOG("> reset\n");
 	NVIC_SystemReset();
 }
 
@@ -300,26 +304,7 @@ __attribute__((noreturn)) static void run_bootloader(void)
 #define STR(x) STR2(x)
 #define NAME PRODUCT_NAME
 
-/* Initialize segments */
-extern uint32_t _sfixed;
-extern uint32_t _efixed;
-extern uint32_t _etext;
-extern uint32_t _srelocate;
-extern uint32_t _erelocate;
-extern uint32_t _szero;
-extern uint32_t _ezero;
-extern uint32_t _sstack;
-extern uint32_t _estack;
-
-#if 0
-
-#define SUPERDFU_VERSION_MAJOR 0
-#define SUPERDFU_VERSION_MINOR 2
-#define SUPERDFU_VERSION_PATCH 6
-
-#define SUPERDFU_VERSION_STR SUPERDFU_STR(SUPERDFU_VERSION_MAJOR) "." SUPERDFU_STR(SUPERDFU_VERSION_MINOR) "." SUPERDFU_STR(SUPERDFU_VERSION_PATCH)
-
-
+#if SUPERDFU_APP
 static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SECTION_NAME))) = {
 	.hdr_magic = DFU_APP_HDR_MAGIC_STRING,
 	.hdr_version = DFU_APP_HDR_VERSION,
@@ -334,7 +319,7 @@ static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SE
 static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(DFU_APP_FTR_SECTION_NAME))) = {
 	.magic = DFU_APP_FTR_MAGIC_STRING
 };
-#endif
+#endif // #if SUPERDFU_APP
 
 int main(void)
 {
@@ -450,7 +435,6 @@ int main(void)
 
 	// set app stable counter
 	dfu_hdr_ptr()->counter = 0;
-
 
 	run_bootloader();
 
@@ -569,85 +553,80 @@ bool dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
 	return true;
 }
 
+_Static_assert(MCU_NVM_BLOCK_SIZE >= 2 * MCU_VECTOR_TABLE_ALIGNMENT, "block size must fit the vector table at least 2 times");
+
 static bool dfu_state_download_sync_complete(tusb_control_request_t const *request)
 {
+	dfu.block_offset += request->wLength;
+	dfu.download_size += request->wLength;
+
 	// check for bootloader upload
-	if (!dfu.skip_target && !dfu.download_size && request->wLength >= DFU_APP_HDR_SIZE)  {
-		struct dfu_app_hdr *hdr = (struct dfu_app_hdr *)dfu.page_buffer;
+	if (BOOTLOADER_STATUS_MAYBE == dfu.bootloader_status &&
+		dfu.block_offset >= 2 * MCU_VECTOR_TABLE_ALIGNMENT)  {
+		TU_ASSERT(!dfu.bootloader_size);
+
+		struct dfu_app_hdr *hdr = (struct dfu_app_hdr *)dfu.block_buffer;
 		int error = dfu_app_hdr_validate_hdr(hdr);
 		if (unlikely(error)) {
 			LOG("> invalid dfu app header\n");
 			dfu.status.bStatus = DFU_ERROR_FILE;
 			dfu.status.bState = DFU_STATE_DFU_ERROR;
 			return false;
-		} else if (hdr->app_size < 2048) {
-			LOG("> invalid bootloader size %u (too small)\n", hdr->app_size);
-			dfu.status.bStatus = DFU_ERROR_FILE;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-			return false;
-		} else if (hdr->app_size > MCU_BOOTLOADER_SIZE) {
-			LOG("> bootloader size %u exceeds available space %u\n", hdr->app_size, MCU_BOOTLOADER_SIZE);
-			dfu.status.bStatus = DFU_ERROR_FILE;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-			return false;
-		} else if (hdr->hdr_version >= 2 && (hdr->hdr_flags & DFU_APP_HDR_FLAG_BOOTLOADER)) {
-			LOG("> bootloader upload detected");
-			dfu.skip_target += MCU_VECTOR_TABLE_ALIGNMENT;
+		}
+
+		if (hdr->hdr_version >= 2 && (hdr->hdr_flags & DFU_APP_HDR_FLAG_BOOTLOADER)) {
+			LOG("> bootloader upload detected\n");
+			dfu.bootloader_status = BOOTLOADER_STATUS_YES;
 			dfu.prog_offset = MCU_NVM_SIZE / 2;
 			dfu.bootloader_size = hdr->app_size;
 			dfu.bootloader_crc = hdr->app_crc;
-		}
-	}
-
-	if (dfu.skip_current < dfu.skip_target) {
-		uint32_t left = dfu.skip_target - dfu.skip_current;
-		if (unlikely(left < request->wLength)) {
-			LOG("> Unhandled download request of %u bytes, should be %zu", request->wLength, sizeof(dfu.page_buffer));
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-			return false;
-		}
-
-		dfu.skip_current += request->wLength;
-		return true;
-	}
-
-	if (!dfu.cleared_pages_left) {
-		LOG("> clearing block @ %#08lx\n", dfu.prog_offset);
-		if (nvm_erase_block((void*)dfu.prog_offset)) {
-			dfu.cleared_pages_left = MCU_NVM_BLOCK_SIZE / MCU_NVM_PAGE_SIZE;
+			// move vector table up to 0x0
+			memcpy(&dfu.block_buffer[0], &dfu.block_buffer[MCU_VECTOR_TABLE_ALIGNMENT], MCU_VECTOR_TABLE_ALIGNMENT);
 		} else {
+			dfu.bootloader_status = BOOTLOADER_STATUS_NO;
+		}
+	}
+
+	if (request->wLength < MCU_NVM_PAGE_SIZE || dfu.block_offset == sizeof(dfu.block_buffer)) {
+		LOG("> clearing block @ %#08lx\n", dfu.prog_offset);
+		if (!nvm_erase_block((void*)dfu.prog_offset)) {
 			LOG("\tclearing failed for block @ %#08lx\n", dfu.prog_offset);
 			dfu.status.bStatus = DFU_ERROR_ERASE;
 			dfu.status.bState = DFU_STATE_DFU_ERROR;
 			return false;
 		}
+
+		uint8_t* sptr = dfu.block_buffer;
+		uint8_t* eptr = sptr + sizeof(dfu.block_buffer);
+
+		for (uint8_t* ptr = sptr; ptr < eptr; ptr += MCU_NVM_PAGE_SIZE) {
+			LOG("> write page @ %p\n", (void*)dfu.prog_offset);
+			if (nvm_write_main_page((void*)dfu.prog_offset, ptr)) {
+				if (0 == memcmp(ptr, (void*)dfu.prog_offset, MCU_NVM_PAGE_SIZE)) {
+					LOG("> verify page @ %p\n", (void*)dfu.prog_offset);
+					dfu.prog_offset += MCU_NVM_PAGE_SIZE;
+				} else {
+					LOG("> target content\n");
+					TU_LOG1_MEM(ptr, MCU_NVM_PAGE_SIZE, 2);
+					LOG("> actual content\n");
+					TU_LOG1_MEM((void*)dfu.prog_offset, MCU_NVM_PAGE_SIZE, 2);
+					LOG("> verification failed for page @ %p\n", (void*)dfu.prog_offset);
+					dfu.status.bStatus = DFU_ERROR_VERIFY;
+					dfu.status.bState = DFU_STATE_DFU_ERROR;
+					return false;
+				}
+			} else {
+				LOG("> write failed for page @ %p\n", (void*)dfu.prog_offset);
+				dfu.status.bStatus = DFU_ERROR_WRITE;
+				dfu.status.bState = DFU_STATE_DFU_ERROR;
+				return false;
+			}
+		}
+
+		dfu.block_offset = 0;
 	}
 
-	LOG("> write page @ %p\n", (void*)dfu.prog_offset);
-	if (nvm_write_main_page((void*)dfu.prog_offset, dfu.page_buffer)) {
-		if (0 == memcmp(dfu.page_buffer, (void*)dfu.prog_offset, sizeof(dfu.page_buffer))) {
-			LOG("> verify page @ %p\n", (void*)dfu.prog_offset);
-			dfu.download_size += request->wLength;
-			dfu.prog_offset += sizeof(dfu.page_buffer);
-			--dfu.cleared_pages_left;
-			dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
-		} else {
-			LOG("> target content\n");
-			TU_LOG1_MEM(dfu.page_buffer, MCU_NVM_PAGE_SIZE, 2);
-			LOG("> actual content\n");
-			TU_LOG1_MEM((void*)dfu.prog_offset, MCU_NVM_PAGE_SIZE, 2);
-			LOG("> verification failed for page @ %p\n", (void*)dfu.prog_offset);
-			dfu.status.bStatus = DFU_ERROR_VERIFY;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-			return false;
-		}
-	} else {
-		LOG("> write failed for page @ %p\n", (void*)dfu.prog_offset);
-		dfu.status.bStatus = DFU_ERROR_WRITE;
-		dfu.status.bState = DFU_STATE_DFU_ERROR;
-		return false;
-	}
+	dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
 
 	return true;
 }
@@ -759,11 +738,10 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 static inline bool dfu_start_download(tusb_control_request_t const *request)
 {
 	LOG("> DFU_REQUEST_DNLOAD\n");
+	dfu.bootloader_status = BOOTLOADER_STATUS_MAYBE;
 	dfu.prog_offset = MCU_BOOTLOADER_SIZE;
 	dfu.download_size = 0;
-	dfu.cleared_pages_left = 0;
-	dfu.skip_target = 0;
-	dfu.skip_current = 0;
+	dfu.block_offset = 0;
 	dfu.bootloader_size = 0;
 	dfu.bootloader_crc = 0;
 
@@ -850,10 +828,11 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 	case DFU_REQUEST_DNLOAD:
 		LOG("> DFU_REQUEST_DNLOAD l=%u\n", request->wLength);
 		if (request->wLength > 0) {
+			LOG("> block_offset=%#lx\n", dfu.block_offset);
 			LOG("> download_size=%#lx\n", dfu.download_size);
 			LOG("> prog_offset=%#lx\n", dfu.prog_offset);
 
-			TU_ASSERT(request->wLength <= sizeof(dfu.page_buffer));
+			TU_ASSERT(dfu.block_offset + request->wLength <= sizeof(dfu.block_buffer));
 
 			if (dfu.download_size + request->wLength > NVM_PROG_BLOCKS * MCU_NVM_BLOCK_SIZE) {
 				dfu.status.bStatus = DFU_ERROR_ADDRESS;
@@ -861,8 +840,7 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 				return false;
 			}
 
-			memset(dfu.page_buffer, 0, sizeof(dfu.page_buffer));
-			if (!tud_control_xfer(port, request, dfu.page_buffer, sizeof(dfu.page_buffer))) {
+			if (!tud_control_xfer(port, request, &dfu.block_buffer[dfu.block_offset], MCU_NVM_PAGE_SIZE)) {
 				dfu.status.bStatus = DFU_ERROR_UNKNOWN;
 				dfu.status.bState = DFU_STATE_DFU_ERROR;
 				return false;

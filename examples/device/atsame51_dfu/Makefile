@@ -36,6 +36,6 @@ EXAMPLE_SOURCE += $(wildcard src/*.c)
 SRC_C += $(addprefix $(CURRENT_PATH)/, $(EXAMPLE_SOURCE))
 
 include ../../rules.mk
-
+include src/dfu.mk
 
 

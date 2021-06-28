@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,7 +29,6 @@ OUTPUT_ARCH(arm)
 SEARCH_DIR(.)
 
 BOOTLOADER_SIZE = 0x4000;
-APP_HDR_SIZE = 0x0400;
 STACK_SIZE = 0x0200;
 
 /* Memory Spaces Definitions */
@@ -39,21 +38,23 @@ MEMORY
   ram        (rwx) : ORIGIN = 0x20000000, LENGTH = 0x00030000
 }
 
-
-
 /* Section Definitions */
 SECTIONS
 {
+    .dfuram (NOLOAD) : {
+        . = ALIGN(4);
+        KEEP (*(.dfuram))
+    } > ram
 
-/*
     .dfuapphdr : {
         . = ALIGN(4);
         KEEP (*(.dfuapphdr))
     } > rom
-*/
+
     .text :
     {
-        . = ALIGN(4);
+        /* Vector table must at least be 1024-byte aligned */
+        . = ALIGN(1024);
         _sfixed = .;
         KEEP(*(.vectors .vectors.*))
         *(.text .text.* .gnu.linkonce.t.*)
@@ -107,32 +108,17 @@ SECTIONS
       *(.ARM.exidx* .gnu.linkonce.armexidx.*)
     } > rom
     PROVIDE_HIDDEN (__exidx_end = .);
-/*
+
     .dfuappftr :
     {
         . = ALIGN(4);
         KEEP (*(.dfuappftr));
     } > rom
-*/
+
     . = ALIGN(4);
     _etext = .;
 
-    .dfuram ORIGIN(ram) (NOLOAD) : {
-        . = ALIGN(4);
-        KEEP (*(.dfuram))
-    } > ram
-
-
-    .dfu_relo_ram (ORIGIN(ram) + APP_HDR_SIZE) (NOLOAD) : {
-        . = ALIGN(4);
-        _sdfu_relo_ram = .;
-        . = . + BOOTLOADER_SIZE;
-        _edfu_relo_ram = .;
-    } > ram
-
-
-
-    .relocate (ORIGIN(ram) + APP_HDR_SIZE + BOOTLOADER_SIZE) : AT (_etext)
+    .relocate : AT (_etext)
     {
         . = ALIGN(4);
         _srelocate = .;
