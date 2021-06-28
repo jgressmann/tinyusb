@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -35,7 +35,7 @@
 
 
 
-static int crc32(uint32_t addr, uint32_t bytes, uint32_t *result)
+int crc32(uint32_t addr, uint32_t bytes, uint32_t *result)
 {
 	// // p. 112 of 60001507E.pdf
 	// disable DSU protection
@@ -75,7 +75,7 @@ static int crc32(uint32_t addr, uint32_t bytes, uint32_t *result)
 	return DFU_APP_ERROR_NONE;
 }
 
-int dfu_app_hdr_validate(struct dfu_app_hdr const *hdr)
+int dfu_app_hdr_validate_hdr(struct dfu_app_hdr const *hdr)
 {
 	int error;
 	uint32_t crc;
@@ -101,6 +101,19 @@ int dfu_app_hdr_validate(struct dfu_app_hdr const *hdr)
 
 	if (crc != hdr->hdr_crc) {
 		return DFU_APP_ERROR_CRC_APP_HEADER_MISMATCH;
+	}
+
+	return DFU_APP_ERROR_NONE;
+}
+
+int dfu_app_hdr_validate_app(struct dfu_app_hdr const *hdr)
+{
+	int error;
+	uint32_t crc;
+
+	error = dfu_app_hdr_validate_hdr(hdr);
+	if (error) {
+		return error;
 	}
 
 	// app size within reasonably limits

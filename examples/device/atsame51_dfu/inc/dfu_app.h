@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,8 +33,9 @@
 #define DFU_APP_FTR_SECTION_NAME ".dfuappftr"
 #define DFU_APP_HDR_MAGIC_STRING "SuperDFU AH\0\0\0\0\0"
 #define DFU_APP_FTR_MAGIC_STRING "SuperDFU AF\0\0\0\0\0"
-#define DFU_APP_HDR_VERSION 1
+#define DFU_APP_HDR_VERSION 2
 #define DFU_APP_HDR_SIZE 0x40
+#define DFU_APP_HDR_FLAG_BOOTLOADER 1
 
 #define DFU_APP_ERROR_NONE                      0x00
 #define DFU_APP_ERROR_MAGIC_MISMATCH            0x01
@@ -66,6 +67,7 @@
  * static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SECTION_NAME))) = {
  *   .hdr_magic = DFU_APP_HDR_MAGIC_STRING,
  *   .hdr_version = DFU_APP_HDR_VERSION,
+ *   .hdr_flags = 0,
  *   .app_version_major = 0,
  *   .app_version_minor = 1,
  *   .app_version_patch = 0,
@@ -81,7 +83,8 @@
 struct dfu_app_hdr {
 	uint8_t hdr_magic[16];
 	uint8_t hdr_version;
-	uint8_t hdr_reserved[3];
+	uint8_t hdr_flags;
+	uint8_t hdr_reserved[2];
 	uint32_t hdr_crc;
 	uint32_t app_size;
 	uint32_t app_crc;
@@ -108,7 +111,15 @@ struct dfu_app_ftr {
 };
 
 
-int dfu_app_hdr_validate(struct dfu_app_hdr const *hdr);
+/**
+ * Validate the dfu app header
+ */
+int dfu_app_hdr_validate_hdr(struct dfu_app_hdr const *hdr);
+
+/**
+ * Validate the dfu app header and the application
+ */
+int dfu_app_hdr_validate_app(struct dfu_app_hdr const *hdr);
 
 /**
  * Disables the bootloader watchdog

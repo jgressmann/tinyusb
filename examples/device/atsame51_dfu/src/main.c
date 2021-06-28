@@ -31,7 +31,6 @@
 #include <tusb.h>
 
 #include <sam.h>
-#include <hal/include/hal_gpio.h>
 
 #include <usb_descriptors.h>
 #include <mcu.h>
@@ -78,12 +77,16 @@ static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(va
 
 
 
-
+int crc32(uint32_t addr, uint32_t bytes, uint32_t *result);
 
 static struct dfu {
 	struct dfu_get_status_reply status;
 	uint32_t download_size;
 	uint32_t prog_offset;
+	uint32_t skip_target;
+	uint32_t skip_current;
+	uint32_t bootloader_size;
+	uint32_t bootloader_crc;
 	uint16_t cleared_pages_left;
 	uint32_t page_buffer[MCU_NVM_PAGE_SIZE / 4];
 } dfu;
@@ -252,9 +255,32 @@ static inline void watchdog_timeout(uint8_t seconds_in, uint8_t* wdt_reg, uint8_
 	}
 }
 
-__attribute__((noreturn, section(".ramfunc"))) static void run_bootloader(void)
+static inline void reset_device(void)
 {
-	LOG("sadfasfdasfd\n");
+	if (dfu.bootloader_size) {
+		uint32_t bytes_written = dfu.prog_offset - MCU_NVM_SIZE / 2;
+
+		if (bytes_written < dfu.bootloader_size) {
+			LOG("> incomplete bootloader write, NOT swapping banks\n");
+		} else {
+			uint32_t crc = ~dfu.bootloader_crc;
+			int error = crc32(MCU_NVM_SIZE / 2, dfu.bootloader_size, &crc);
+			if (error) {
+				LOG("> bootloader verification failed with %d\n", error);
+			} else if (crc != dfu.bootloader_crc) {
+				LOG("> bootloader checksum mismatch\n");
+			} else {
+				LOG("> bootloader checksum verified, swapping banks and resetting!\n");
+				NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CMD_BKSWRST | NVMCTRL_CTRLB_CMDEX_KEY;
+			}
+		}
+	}
+
+	NVIC_SystemReset();
+}
+
+__attribute__((noreturn)) static void run_bootloader(void)
+{
 	tusb_init();
 
 	while (1) {
@@ -284,8 +310,31 @@ extern uint32_t _szero;
 extern uint32_t _ezero;
 extern uint32_t _sstack;
 extern uint32_t _estack;
-extern uint32_t _sdfu_relo_ram;
-extern uint32_t _edfu_relo_ram;
+
+#if 0
+
+#define SUPERDFU_VERSION_MAJOR 0
+#define SUPERDFU_VERSION_MINOR 2
+#define SUPERDFU_VERSION_PATCH 6
+
+#define SUPERDFU_VERSION_STR SUPERDFU_STR(SUPERDFU_VERSION_MAJOR) "." SUPERDFU_STR(SUPERDFU_VERSION_MINOR) "." SUPERDFU_STR(SUPERDFU_VERSION_PATCH)
+
+
+static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SECTION_NAME))) = {
+	.hdr_magic = DFU_APP_HDR_MAGIC_STRING,
+	.hdr_version = DFU_APP_HDR_VERSION,
+	.hdr_flags = DFU_APP_HDR_FLAG_BOOTLOADER,
+	.app_version_major = SUPERDFU_VERSION_MAJOR,
+	.app_version_minor = SUPERDFU_VERSION_MINOR,
+	.app_version_patch = SUPERDFU_VERSION_PATCH,
+	.app_watchdog_timeout_s = 0,
+	.app_name = NAME,
+};
+
+static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(DFU_APP_FTR_SECTION_NAME))) = {
+	.magic = DFU_APP_FTR_MAGIC_STRING
+};
+#endif
 
 int main(void)
 {
@@ -296,24 +345,6 @@ int main(void)
 	} else {
 		LOG("Bank B mapped at 0x0000000.\n");
 	}
-
-	if (SCB->VTOR) {
-		LOG("Running from RAM\n");
-	} else {
-		LOG("Running from ROM\n");
-	}
-
-	LOG("_sfixed %p\n", (void*)&_sfixed);
-	LOG("_efixed %p\n", (void*)&_efixed);
-	LOG("_etext %p\n", (void*)&_etext);
-	LOG("_srelocate %p\n", (void*)&_srelocate);
-	LOG("_erelocate %p\n", (void*)&_erelocate);
-	LOG("_szero %p\n", (void*)&_szero);
-	LOG("_ezero %p\n", (void*)&_ezero);
-	LOG("_sstack %p\n", (void*)&_sstack);
-	LOG("_estack %p\n", (void*)&_estack);
-	LOG("_sdfu_relo_ram %p\n", (void*)&_sdfu_relo_ram);
-	LOG("_edfu_relo_ram %p\n", (void*)&_edfu_relo_ram);
 
 	LOG(NAME " v" SUPERDFU_VERSION_STR " starting...\n");
 
@@ -346,7 +377,7 @@ int main(void)
 
 	if (should_start_app) {
 		LOG(NAME " checking app header @ %p\n", app_hdr);
-		int error = dfu_app_hdr_validate(app_hdr);
+		int error = dfu_app_hdr_validate_app(app_hdr);
 		if (error) {
 			dfu.status.bState = DFU_STATE_DFU_ERROR;
 			dfu.status.bStatus = DFU_ERROR_FIRMWARE;
@@ -421,68 +452,9 @@ int main(void)
 	dfu_hdr_ptr()->counter = 0;
 
 
-	uint32_t const * const src_sptr = (uint32_t*)&_sfixed;
-	uint32_t const * const src_eptr = src_sptr + MCU_BOOTLOADER_SIZE;
-	(void)src_eptr;
-	uint32_t const * src_ptr = src_sptr;
-	// uint32_t* dst_ptr = (uint32_t*)_sdfu_relo_ram;
-	uint32_t* const dst_sptr = (uint32_t*)&_sdfu_relo_ram;
-	uint32_t* dst_ptr = dst_sptr;
-	LOG(NAME " relocate from %p to %p\n", src_sptr, dst_ptr);
-
-	if (src_ptr != dst_ptr) {
-#pragma GCC diagnostic ignored "-Wstringop-overflow"
-		memcpy((void*)(uintptr_t)dst_sptr, src_ptr, MCU_BOOTLOADER_SIZE);
-		// while (src_ptr < src_eptr) {
-		// 	// LOG(NAME " copy %p->%p\n", src_ptr, dst_ptr);
-		// 	*dst_ptr++ = *src_ptr++;
-		// }
-	}
-
-	DeviceVectors* vec_sptr = (void*)dst_sptr;
-	DeviceVectors* vec_esptr = vec_sptr + 1;
-
-	// LOG("Relocated vector table\n");
-	for (uint32_t* handler = (uint32_t*)&vec_sptr->pfnReset_Handler; handler < (uint32_t*)vec_esptr; ++handler) {
-		if (*handler) {
-			uint32_t pre = *handler;
-			uint32_t post = pre + (uint32_t)dst_sptr;
-			// LOG("%p -> %p\n", (void*)pre, (void*)post);
-			*handler = post;
-		}
-	}
-
-	// update vector table
-	SCB->VTOR = (uintptr_t)dst_sptr;
-	__DSB();
-    __ISB();
-
-
-	// start_app_jump(MCU_BOOTLOADER_SIZE + MCU_VECTOR_TABLE_ALIGNMENT);
-	// uintptr_t offset = (uint32_t const *)&run_bootloader - src_sptr;
-	// void* f = ((uint8_t*)&_sdfu_relo_ram) + offset;
-	// LOG(NAME " jumping to relocated bootloader @%p\n", (void*)f);
-	// typedef void (*func_sig)(void);
-	// ((func_sig)f)();
-
-	LOG(NAME " boot loader func @%p\n", &run_bootloader);
 	run_bootloader();
 
-
-	__unreachable();
-
-	// tusb_init();
-
-
-
-	// // relocate to ram
-
-	// while (1) {
-	// 	led_task();
-	// 	tud_task();
-	// }
-
-	// return 0;
+	return 0; // never reached
 }
 
 //--------------------------------------------------------------------+
@@ -581,7 +553,7 @@ void dfu_rtd_reset(uint8_t rhport)
 	// has installed a valid application firmware. If we are wrong,
 	// we'll end up back in the bootloader anyway.
 	if (dfu.download_size) {
-		NVIC_SystemReset();
+		reset_device();
 	}
 }
 
@@ -599,6 +571,47 @@ bool dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16
 
 static bool dfu_state_download_sync_complete(tusb_control_request_t const *request)
 {
+	// check for bootloader upload
+	if (!dfu.skip_target && !dfu.download_size && request->wLength >= DFU_APP_HDR_SIZE)  {
+		struct dfu_app_hdr *hdr = (struct dfu_app_hdr *)dfu.page_buffer;
+		int error = dfu_app_hdr_validate_hdr(hdr);
+		if (unlikely(error)) {
+			LOG("> invalid dfu app header\n");
+			dfu.status.bStatus = DFU_ERROR_FILE;
+			dfu.status.bState = DFU_STATE_DFU_ERROR;
+			return false;
+		} else if (hdr->app_size < 2048) {
+			LOG("> invalid bootloader size %u (too small)\n", hdr->app_size);
+			dfu.status.bStatus = DFU_ERROR_FILE;
+			dfu.status.bState = DFU_STATE_DFU_ERROR;
+			return false;
+		} else if (hdr->app_size > MCU_BOOTLOADER_SIZE) {
+			LOG("> bootloader size %u exceeds available space %u\n", hdr->app_size, MCU_BOOTLOADER_SIZE);
+			dfu.status.bStatus = DFU_ERROR_FILE;
+			dfu.status.bState = DFU_STATE_DFU_ERROR;
+			return false;
+		} else if (hdr->hdr_version >= 2 && (hdr->hdr_flags & DFU_APP_HDR_FLAG_BOOTLOADER)) {
+			LOG("> bootloader upload detected");
+			dfu.skip_target += MCU_VECTOR_TABLE_ALIGNMENT;
+			dfu.prog_offset = MCU_NVM_SIZE / 2;
+			dfu.bootloader_size = hdr->app_size;
+			dfu.bootloader_crc = hdr->app_crc;
+		}
+	}
+
+	if (dfu.skip_current < dfu.skip_target) {
+		uint32_t left = dfu.skip_target - dfu.skip_current;
+		if (unlikely(left < request->wLength)) {
+			LOG("> Unhandled download request of %u bytes, should be %zu", request->wLength, sizeof(dfu.page_buffer));
+			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
+			dfu.status.bState = DFU_STATE_DFU_ERROR;
+			return false;
+		}
+
+		dfu.skip_current += request->wLength;
+		return true;
+	}
+
 	if (!dfu.cleared_pages_left) {
 		LOG("> clearing block @ %#08lx\n", dfu.prog_offset);
 		if (nvm_erase_block((void*)dfu.prog_offset)) {
@@ -721,7 +734,7 @@ static inline bool dfu_state_manifest_wait_reset(tusb_control_request_t const *r
 	switch (request->bRequest) {
 	case DFU_REQUEST_DETACH:
 		LOG("> DFU_REQUEST_DETACH\n"); // dfu-util sends this (when it shoudn't)
-		NVIC_SystemReset();
+		reset_device();
 		break;
 	// case DFU_REQUEST_GETSTATUS:
 	// 	LOG("> DFU_REQUEST_GETSTATUS\n");
@@ -731,7 +744,7 @@ static inline bool dfu_state_manifest_wait_reset(tusb_control_request_t const *r
 	// 			dfu.status.bState = DFU_STATE_DFU_ERROR;
 	// 		}
 	// 	} else {
-	// 		// NVIC_SystemReset();
+	// 		// reset_device();
 	// 	}
 		break;
 	default:
@@ -749,6 +762,10 @@ static inline bool dfu_start_download(tusb_control_request_t const *request)
 	dfu.prog_offset = MCU_BOOTLOADER_SIZE;
 	dfu.download_size = 0;
 	dfu.cleared_pages_left = 0;
+	dfu.skip_target = 0;
+	dfu.skip_current = 0;
+	dfu.bootloader_size = 0;
+	dfu.bootloader_crc = 0;
 
 	dfu.status.bStatus = DFU_ERROR_OK;
 	dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
@@ -859,8 +876,6 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 				if (DFU_MANIFESTATION_TOLERANT) {
 					dfu.status.bState = DFU_STATE_DFU_IDLE;
 				} else {
-					// reset
-					// NVIC_SystemReset();
 					dfu.status.bState = DFU_STATE_DFU_MANIFEST_SYNC;
 				}
 			} else {
