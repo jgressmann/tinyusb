@@ -1916,14 +1916,6 @@ void tud_custom_reset_cb(uint8_t rhport)
 	usb.can[1].pipe = SC_M1_EP_MSG1_BULK_OUT;
 	usb.can[1].tx_offsets[0] = 0;
 	usb.can[1].tx_offsets[1] = 0;
-
-	if (DFU_STATE_APP_DETACH == dfu.status.bState) {
-		LOG("Detected USB reset while DFU detach timer is running\n");
-		dfu_request_dfu(1);
-		NVIC_SystemReset();
-	} else {
-		dfu.status.bState = DFU_STATE_APP_IDLE;
-	}
 }
 
 bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t* p_length)
