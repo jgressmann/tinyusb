@@ -774,7 +774,7 @@ static inline bool dfu_state_error(tusb_control_request_t const *request)
 		LOG("> DFU_REQUEST_CLRSTATUS\n");
 		dfu.status.bStatus = DFU_ERROR_OK;
 		dfu.status.bState = DFU_STATE_DFU_IDLE;
-		if (!tud_control_xfer(port, request, NULL, 0)) {
+		if (unlikely(!tud_control_xfer(port, request, NULL, 0))) {
 			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
 			dfu.status.bState = DFU_STATE_DFU_ERROR;
 			return false;
@@ -816,7 +816,7 @@ static inline bool dfu_state_download_sync(tusb_control_request_t const *request
 		return false;
 	}
 
-	if (!tud_control_xfer(port, request, NULL, 0)) {
+	if (unlikely(!tud_control_xfer(port, request, NULL, 0))) {
 		dfu.status.bStatus = DFU_ERROR_UNKNOWN;
 		dfu.status.bState = DFU_STATE_DFU_ERROR;
 		return false;
@@ -852,7 +852,7 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 				return false;
 			}
 
-			if (!tud_control_xfer(port, request, &dfu.block_buffer[dfu.block_offset], MCU_NVM_PAGE_SIZE)) {
+			if (unlikely(!tud_control_xfer(port, request, &dfu.block_buffer[dfu.block_offset], MCU_NVM_PAGE_SIZE))) {
 				dfu.status.bStatus = DFU_ERROR_UNKNOWN;
 				dfu.status.bState = DFU_STATE_DFU_ERROR;
 				return false;
@@ -874,7 +874,7 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 				dfu.status.bState = DFU_STATE_DFU_ERROR;
 			}
 
-			if (!tud_control_xfer(port, request, NULL, 0)) {
+			if (unlikely(!tud_control_xfer(port, request, NULL, 0))) {
 				dfu.status.bStatus = DFU_ERROR_UNKNOWN;
 				dfu.status.bState = DFU_STATE_DFU_ERROR;
 				return false;
