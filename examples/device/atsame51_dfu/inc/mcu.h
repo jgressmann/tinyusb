@@ -48,6 +48,12 @@ static inline void same51_get_serial_number(uint32_t serial[4])
 	serial[3] = *(uint32_t const *)0x00806018;
 }
 
+
+static inline int mcu_nvm_boot_bank_index(void)
+{
+	return NVMCTRL->STATUS.bit.AFIRST ? 0 : 1;
+}
+
 #if defined(__SAME51J18A__)
 	#define MCU_NVM_SIZE (1ul<<18)
 #elif defined(__SAME51J19A__)

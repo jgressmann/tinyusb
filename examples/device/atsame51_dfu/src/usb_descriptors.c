@@ -176,6 +176,27 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 			}
 		}
 	} break;
+	case 4: {
+		const uint8_t BANK_LEN = 7;
+		uint8_t i = 0;
+		const char* str = string_desc_arr[index];
+
+		chr_count = tu_min8(strlen(str), TU_ARRAY_SIZE(_desc_str) - 1 - BANK_LEN);
+
+		for (; i < chr_count; ++i) {
+			_desc_str[1+i] = str[i];
+		}
+
+		_desc_str[1+i++] = ' ';
+		_desc_str[1+i++] = 'B';
+		_desc_str[1+i++] = 'a';
+		_desc_str[1+i++] = 'n';
+		_desc_str[1+i++] = 'k';
+		_desc_str[1+i++] = ' ';
+		_desc_str[1+i++] = '0' + mcu_nvm_boot_bank_index();
+
+		chr_count += BANK_LEN;
+	} break;
 	default: {
 		// Convert ASCII string into UTF-16
 		if ( !(index < sizeof(string_desc_arr)/sizeof(string_desc_arr[0])) ) return NULL;

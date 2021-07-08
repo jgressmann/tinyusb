@@ -331,6 +331,8 @@ int main(void)
 		LOG("Bank B mapped at 0x0000000.\n");
 	}
 
+	LOG("mcu_nvm_boot_bank_index: %d\n", mcu_nvm_boot_bank_index());
+
 	LOG(NAME " v" SUPERDFU_VERSION_STR " starting...\n");
 
 
