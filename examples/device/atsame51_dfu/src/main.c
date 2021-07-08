@@ -899,6 +899,10 @@ static inline bool dfu_state_idle(tusb_control_request_t const *request)
 	LOG("DFU_STATE_DFU_IDLE\n");
 
 	switch (request->bRequest) {
+	case DFU_REQUEST_DETACH:
+		LOG("> DFU_REQUEST_DETACH\n"); // dfu-util sends this (when it shoudn't)
+		reset_device();
+		break;
 	case DFU_REQUEST_GETSTATUS:
 		LOG("> DFU_REQUEST_GETSTATUS\n");
 		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
