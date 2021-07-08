@@ -718,7 +718,7 @@ static inline bool dfu_state_manifest_wait_reset(tusb_control_request_t const *r
 	LOG("DFU_STATE_DFU_MANIFEST_WAIT_RESET\n");
 	switch (request->bRequest) {
 	case DFU_REQUEST_DETACH:
-		LOG("> DFU_REQUEST_DETACH\n"); // dfu-util sends this (when it shoudn't)
+		LOG("> DFU_REQUEST_DETACH\n"); // dfu-util sends this (when it shouldn't)
 		reset_device();
 		break;
 	// case DFU_REQUEST_GETSTATUS:
@@ -900,7 +900,7 @@ static inline bool dfu_state_idle(tusb_control_request_t const *request)
 
 	switch (request->bRequest) {
 	case DFU_REQUEST_DETACH:
-		LOG("> DFU_REQUEST_DETACH\n"); // dfu-util sends this (when it shoudn't)
+		LOG("> DFU_REQUEST_DETACH\n"); // dfu-util sends this (when it shouldn't)
 		reset_device();
 		break;
 	case DFU_REQUEST_GETSTATUS:
