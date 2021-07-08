@@ -676,7 +676,9 @@ static inline bool dfu_state_manifest_sync(tusb_control_request_t const *request
 		break;
 	default:
 		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-		break;
+		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
+		dfu.status.bState = DFU_STATE_DFU_ERROR;
+		return false;
 	}
 
 	return true;
@@ -702,7 +704,9 @@ static inline bool dfu_state_manifest(tusb_control_request_t const *request)
 		break;
 	default:
 		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-		break;
+		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
+		dfu.status.bState = DFU_STATE_DFU_ERROR;
+		return false;
 	}
 
 	return true;
@@ -730,7 +734,9 @@ static inline bool dfu_state_manifest_wait_reset(tusb_control_request_t const *r
 		break;
 	default:
 		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-		break;
+		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
+		dfu.status.bState = DFU_STATE_DFU_ERROR;
+		return false;
 	}
 
 	return true;
@@ -778,7 +784,9 @@ static inline bool dfu_state_error(tusb_control_request_t const *request)
 		return dfu_start_download(request);
 	default:
 		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-		break;
+		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
+		dfu.status.bState = DFU_STATE_DFU_ERROR;
+		return false;
 	}
 
 	return true;
@@ -803,7 +811,9 @@ static inline bool dfu_state_download_sync(tusb_control_request_t const *request
 		break;
 	default:
 		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-		break;
+		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
+		dfu.status.bState = DFU_STATE_DFU_ERROR;
+		return false;
 	}
 
 	if (!tud_control_xfer(port, request, NULL, 0)) {
@@ -874,6 +884,8 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 		break;
 	default:
 		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
+		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
+		dfu.status.bState = DFU_STATE_DFU_ERROR;
 		return false;
 	}
 
@@ -898,6 +910,8 @@ static inline bool dfu_state_idle(tusb_control_request_t const *request)
 		return dfu_start_download(request);
 	default:
 		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
+		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
+		dfu.status.bState = DFU_STATE_DFU_ERROR;
 		return false;
 	}
 
@@ -937,6 +951,8 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const *reque
 		return dfu_state_error(request);
 	default:
 		LOG("> UNHANDLED STATE\n");
+		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
+		dfu.status.bState = DFU_STATE_DFU_ERROR;
 		break;
 	}
 
