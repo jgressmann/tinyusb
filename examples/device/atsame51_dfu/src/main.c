@@ -90,6 +90,7 @@ static struct dfu {
 	uint32_t prog_offset;
 	uint32_t bootloader_size;
 	uint32_t bootloader_crc;
+	uint32_t bootloader_vector_table_crc;
 	uint8_t block_buffer[MCU_NVM_BLOCK_SIZE];
 } dfu;
 
@@ -269,12 +270,20 @@ static inline void reset_device(void)
 			// bootloader payload is offset by dfu app header
 			int error = crc32(MCU_NVM_SIZE / 2 + MCU_VECTOR_TABLE_ALIGNMENT, dfu.bootloader_size, &crc);
 			if (error) {
-				LOG("> bootloader verification failed with %d\n", error);
+				LOG("> bootloader verification (1) failed with %d\n", error);
 			} else if (crc != dfu.bootloader_crc) {
-				LOG("> bootloader checksum mismatch\n");
+				LOG("> bootloader checksum (1) mismatch\n");
 			} else {
-				LOG("> bootloader checksum verified, swapping banks and resetting!\n");
-				NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CMD_BKSWRST | NVMCTRL_CTRLB_CMDEX_KEY;
+				error = crc32(MCU_NVM_SIZE / 2, MCU_VECTOR_TABLE_ALIGNMENT, &crc);
+				if (error) {
+					LOG("> bootloader verification (2) failed with %d\n", error);
+				} else if (crc != dfu.bootloader_vector_table_crc) {
+					LOG("> bootloader checksum (2) mismatch\n");
+				} else {
+					LOG("> bootloader checksums verified, swapping banks and resetting!\n");
+					NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CMD_BKSWRST | NVMCTRL_CTRLB_CMDEX_KEY;
+					LOG("> ERROR: should never be reached\n");
+				}
 			}
 		}
 	}
@@ -573,6 +582,13 @@ static bool dfu_state_download_sync_complete(tusb_control_request_t const *reque
 			dfu.prog_offset = MCU_NVM_SIZE / 2;
 			dfu.bootloader_size = hdr->app_size;
 			dfu.bootloader_crc = hdr->app_crc;
+			error = crc32((uint32_t)&dfu.block_buffer[MCU_VECTOR_TABLE_ALIGNMENT], MCU_VECTOR_TABLE_ALIGNMENT, &dfu.bootloader_vector_table_crc);
+			if (unlikely(error)) {
+				dfu.status.bStatus = DFU_ERROR_VERIFY;
+				dfu.status.bState = DFU_STATE_DFU_ERROR;
+				return false;
+			}
+
 			// move vector table up to 0x0
 			memcpy(&dfu.block_buffer[0], &dfu.block_buffer[MCU_VECTOR_TABLE_ALIGNMENT], MCU_VECTOR_TABLE_ALIGNMENT);
 		} else {
@@ -743,6 +759,7 @@ static inline bool dfu_start_download(tusb_control_request_t const *request)
 	dfu.block_offset = 0;
 	dfu.bootloader_size = 0;
 	dfu.bootloader_crc = 0;
+	dfu.bootloader_vector_table_crc = 0;
 
 	dfu.status.bStatus = DFU_ERROR_OK;
 	dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
