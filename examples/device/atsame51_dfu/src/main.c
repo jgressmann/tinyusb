@@ -85,6 +85,7 @@ int crc32(uint32_t addr, uint32_t bytes, uint32_t *result);
 static struct dfu {
 	struct dfu_get_status_reply status;
 	int bootloader_status;
+	int bootloader_swap_banks_on_reset;
 	uint32_t download_size;
 	uint32_t block_offset;
 	uint32_t prog_offset;
@@ -260,32 +261,10 @@ static inline void watchdog_timeout(uint8_t seconds_in, uint8_t* wdt_reg, uint8_
 
 static inline void reset_device(void)
 {
-	if (BOOTLOADER_STATUS_YES == dfu.bootloader_status) {
-		uint32_t bytes_written = dfu.prog_offset - MCU_NVM_SIZE / 2;
-
-		if (bytes_written < dfu.bootloader_size) {
-			LOG("> incomplete bootloader write, NOT swapping banks\n");
-		} else {
-			uint32_t crc = ~dfu.bootloader_crc;
-			// bootloader payload is offset by dfu app header
-			int error = crc32(MCU_NVM_SIZE / 2 + MCU_VECTOR_TABLE_ALIGNMENT, dfu.bootloader_size, &crc);
-			if (error) {
-				LOG("> bootloader verification (1) failed with %d\n", error);
-			} else if (crc != dfu.bootloader_crc) {
-				LOG("> bootloader checksum (1) mismatch\n");
-			} else {
-				error = crc32(MCU_NVM_SIZE / 2, MCU_VECTOR_TABLE_ALIGNMENT, &crc);
-				if (error) {
-					LOG("> bootloader verification (2) failed with %d\n", error);
-				} else if (crc != dfu.bootloader_vector_table_crc) {
-					LOG("> bootloader checksum (2) mismatch\n");
-				} else {
-					LOG("> bootloader checksums verified, swapping banks and resetting!\n");
-					NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CMD_BKSWRST | NVMCTRL_CTRLB_CMDEX_KEY;
-					LOG("> ERROR: should never be reached\n");
-				}
-			}
-		}
+	if (dfu.bootloader_swap_banks_on_reset) {
+		LOG("> Swapping banks and resetting!\n");
+		NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CMD_BKSWRST | NVMCTRL_CTRLB_CMDEX_KEY;
+		LOG("> ERROR: should never be reached\n");
 	}
 
 	LOG("> reset\n");
@@ -675,7 +654,43 @@ static inline bool dfu_state_manifest_sync(tusb_control_request_t const *request
 	switch (request->bRequest) {
 	case DFU_REQUEST_GETSTATUS:
 		LOG("> DFU_REQUEST_GETSTATUS\n");
-		dfu.status.bState = DFU_STATE_DFU_MANIFEST;
+
+		if (BOOTLOADER_STATUS_YES == dfu.bootloader_status) {
+			uint32_t bytes_written = dfu.prog_offset - MCU_NVM_SIZE / 2;
+
+			if (bytes_written < dfu.bootloader_size) {
+				LOG("> incomplete bootloader write, NOT swapping banks\n");
+			} else {
+				uint32_t crc = ~dfu.bootloader_crc;
+				// bootloader payload is offset by dfu app header
+				int error = crc32(MCU_NVM_SIZE / 2 + MCU_VECTOR_TABLE_ALIGNMENT, dfu.bootloader_size, &crc);
+				if (error) {
+					LOG("> bootloader verification (1) failed with %d\n", error);
+				} else if (crc != dfu.bootloader_crc) {
+					LOG("> bootloader checksum (1) mismatch\n");
+				} else {
+					error = crc32(MCU_NVM_SIZE / 2, MCU_VECTOR_TABLE_ALIGNMENT, &crc);
+					if (error) {
+						LOG("> bootloader verification (2) failed with %d\n", error);
+					} else if (crc != dfu.bootloader_vector_table_crc) {
+						LOG("> bootloader checksum (2) mismatch\n");
+					} else {
+						LOG("> bootloader checksums verified\n");
+						dfu.bootloader_swap_banks_on_reset = 1;
+					}
+				}
+			}
+
+			if (dfu.bootloader_swap_banks_on_reset) {
+				dfu.status.bState = DFU_STATE_DFU_MANIFEST;
+			} else {
+				dfu.status.bStatus = DFU_ERROR_VERIFY;
+				dfu.status.bState = DFU_STATE_DFU_ERROR;
+			}
+		} else {
+			dfu.status.bState = DFU_STATE_DFU_MANIFEST;
+		}
+
 		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
 			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
 			dfu.status.bState = DFU_STATE_DFU_ERROR;
@@ -760,6 +775,7 @@ static inline bool dfu_start_download(tusb_control_request_t const *request)
 	dfu.bootloader_size = 0;
 	dfu.bootloader_crc = 0;
 	dfu.bootloader_vector_table_crc = 0;
+	dfu.bootloader_swap_banks_on_reset = 0;
 
 	dfu.status.bStatus = DFU_ERROR_OK;
 	dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
