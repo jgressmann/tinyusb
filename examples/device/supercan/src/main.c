@@ -56,11 +56,12 @@
 #include <leds.h>
 #include <crc32.h>
 #include <device.h>
+#include <sections.h>
 
 
 #define CLOCK_MAX 0xffffffff
 #define SPAM 0
-#define SC_RAMFUNC __attribute__((section("ramfunc")))
+
 
 #if TU_BIG_ENDIAN == TU_BYTE_ORDER
 static inline uint16_t le16_to_cpu(uint16_t value) { return __builtin_bswap16(value); }
@@ -1133,14 +1134,14 @@ static inline void sc_cmd_bulk_in_submit(uint8_t index)
 	cmd->tx_bank = !cmd->tx_bank;
 }
 
-static inline bool sc_can_bulk_in_ep_ready(uint8_t index)
+SC_RAMFUNC static inline bool sc_can_bulk_in_ep_ready(uint8_t index)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 	struct usb_can *can = &usb.can[index];
 	return 0 == can->tx_offsets[!can->tx_bank];
 }
 
-static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
+SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 {
 	SC_DEBUG_ASSERT(sc_can_bulk_in_ep_ready(index));
 	struct usb_can *can = &usb.can[index];
@@ -1269,8 +1270,8 @@ static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 
 static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes);
 static void sc_cmd_bulk_in(uint8_t index);
-static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes);
-static void sc_can_bulk_in(uint8_t index);
+SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes);
+SC_RAMFUNC static void sc_can_bulk_in(uint8_t index);
 static void sc_cmd_place_error_reply(uint8_t index, int8_t error);
 
 static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
@@ -1523,7 +1524,7 @@ send_can_info:
 	}
 }
 
-static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header const *msg)
+SC_RAMFUNC static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header const *msg)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
@@ -1615,7 +1616,7 @@ send_txr:
 	}
 }
 
-static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
+SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 	// SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
@@ -1703,7 +1704,7 @@ static void sc_cmd_bulk_in(uint8_t index)
 	}
 }
 
-static void sc_can_bulk_in(uint8_t index)
+SC_RAMFUNC static void sc_can_bulk_in(uint8_t index)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 
@@ -1835,6 +1836,7 @@ int main(void)
 
 	vTaskStartScheduler();
 	NVIC_SystemReset();
+	__unreachable();
 	return 0;
 }
 
@@ -1842,7 +1844,7 @@ int main(void)
 //--------------------------------------------------------------------+
 // USB DEVICE TASK
 //--------------------------------------------------------------------+
-static void tusb_device_task(void* param)
+SC_RAMFUNC static void tusb_device_task(void* param)
 {
 	(void) param;
 
@@ -1903,127 +1905,6 @@ void tud_resume_cb(void)
 //--------------------------------------------------------------------+
 // Device callbacks
 //--------------------------------------------------------------------+
-void tud_custom_init_cb(void)
-{
-	LOG("init\n");
-}
-
-void tud_custom_reset_cb(uint8_t rhport)
-{
-	LOG("port %u reset\n", rhport);
-	usb.mounted = false;
-	usb.port = rhport;
-	usb.cmd[0].pipe = SC_M1_EP_CMD0_BULK_OUT;
-	usb.cmd[0].tx_offsets[0] = 0;
-	usb.cmd[0].tx_offsets[1] = 0;
-	usb.cmd[1].pipe = SC_M1_EP_CMD1_BULK_OUT;
-	usb.cmd[1].tx_offsets[0] = 0;
-	usb.cmd[1].tx_offsets[1] = 0;
-	usb.can[0].pipe = SC_M1_EP_MSG0_BULK_OUT;
-	usb.can[0].tx_offsets[0] = 0;
-	usb.can[0].tx_offsets[1] = 0;
-	usb.can[1].pipe = SC_M1_EP_MSG1_BULK_OUT;
-	usb.can[1].tx_offsets[0] = 0;
-	usb.can[1].tx_offsets[1] = 0;
-}
-
-bool tud_custom_open_cb(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t* p_length)
-{
-	LOG("port %u open\n", rhport);
-
-	if (unlikely(rhport != usb.port)) {
-		return false;
-	}
-
-	TU_VERIFY(TUSB_CLASS_VENDOR_SPECIFIC == desc_intf->bInterfaceClass);
-
-	if (unlikely(desc_intf->bInterfaceNumber >= TU_ARRAY_SIZE(usb.can))) {
-		return false;
-	}
-
-
-	struct usb_cmd *usb_cmd = &usb.cmd[desc_intf->bInterfaceNumber];
-	struct usb_can *usb_can = &usb.can[desc_intf->bInterfaceNumber];
-
-	uint8_t const *ptr = (void const *)desc_intf;
-
-	ptr += 9;
-
-	const uint8_t eps = 4;
-
-	for (uint8_t i = 0; i < eps; ++i) {
-		tusb_desc_endpoint_t const *ep_desc = (tusb_desc_endpoint_t const *)(ptr + i * 7);
-		LOG("! ep %02x open\n", ep_desc->bEndpointAddress);
-		bool success = dcd_edpt_open(rhport, ep_desc);
-		SC_ASSERT(success);
-	}
-
-	bool success_cmd = dcd_edpt_xfer(rhport, usb_cmd->pipe, usb_cmd->rx_buffers[usb_cmd->rx_bank], CMD_BUFFER_SIZE);
-	bool success_can = dcd_edpt_xfer(rhport, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE);
-	SC_ASSERT(success_cmd);
-	SC_ASSERT(success_can);
-
-	// // Required to immediately send URBs when buffer size > endpoint size
-	// // and transfers are multiple of enpoint size.
-	// if (MSG_BUFFER_SIZE > SC_M1_EP_SIZE) {
-	// 	dcd_auto_zlp(rhport, usb_can->pipe | 0x80, true);
-	// }
-
-	*p_length = 9+eps*7;
-
-	return true;
-}
-
-bool tud_custom_xfer_cb(
-	uint8_t rhport,
-	uint8_t ep_addr,
-	xfer_result_t event,
-	uint32_t xferred_bytes)
-{
-	(void)event; // always success
-
-	if (unlikely(rhport != usb.port)) {
-		return false;
-	}
-
-	USB_TRAFFIC_DO_LED;
-
-
-
-	switch (ep_addr) {
-	case SC_M1_EP_CMD0_BULK_OUT:
-		sc_cmd_bulk_out(0, xferred_bytes);
-		break;
-	case SC_M1_EP_CMD1_BULK_OUT:
-		sc_cmd_bulk_out(1, xferred_bytes);
-		break;
-	case SC_M1_EP_CMD0_BULK_IN:
-		sc_cmd_bulk_in(0);
-		break;
-	case SC_M1_EP_CMD1_BULK_IN:
-		sc_cmd_bulk_in(1);
-		break;
-	case SC_M1_EP_MSG0_BULK_OUT:
-		sc_can_bulk_out(0, xferred_bytes);
-		break;
-	case SC_M1_EP_MSG1_BULK_OUT:
-		sc_can_bulk_out(1, xferred_bytes);
-		break;
-	case SC_M1_EP_MSG0_BULK_IN:
-		sc_can_bulk_in(0);
-		break;
-	case SC_M1_EP_MSG1_BULK_IN:
-		sc_can_bulk_in(1);
-		break;
-	default:
-		LOG("port %u ep %02x event %d bytes %u\n", rhport, ep_addr, event, (unsigned)xferred_bytes);
-		return false;
-	}
-
-	return true;
-}
-
-
 static inline const char* recipient_str(tusb_request_recipient_t r)
 {
 	switch (r) {
@@ -2115,22 +1996,118 @@ bool tud_vendor_control_complete_cb(uint8_t rhport, tusb_control_request_t const
 #if defined(CFG_TUD_VENDOR_CUSTOM) && CFG_TUD_VENDOR_CUSTOM
 void vendord_init(void)
 {
-	tud_custom_init_cb();
+	LOG("vendor init\n");
 }
 
 void vendord_reset(uint8_t rhport)
 {
-	tud_custom_reset_cb(rhport);
+	LOG("vendor port %u reset\n", rhport);
+	usb.mounted = false;
+	usb.port = rhport;
+	usb.cmd[0].pipe = SC_M1_EP_CMD0_BULK_OUT;
+	usb.cmd[0].tx_offsets[0] = 0;
+	usb.cmd[0].tx_offsets[1] = 0;
+	usb.cmd[1].pipe = SC_M1_EP_CMD1_BULK_OUT;
+	usb.cmd[1].tx_offsets[0] = 0;
+	usb.cmd[1].tx_offsets[1] = 0;
+	usb.can[0].pipe = SC_M1_EP_MSG0_BULK_OUT;
+	usb.can[0].tx_offsets[0] = 0;
+	usb.can[0].tx_offsets[1] = 0;
+	usb.can[1].pipe = SC_M1_EP_MSG1_BULK_OUT;
+	usb.can[1].tx_offsets[0] = 0;
+	usb.can[1].tx_offsets[1] = 0;
 }
 
-bool vendord_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_len)
+bool vendord_open(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t *p_length)
 {
-	return tud_custom_open_cb(rhport, itf_desc, p_len);
+	LOG("vendor port %u open\n", rhport);
+
+	if (unlikely(rhport != usb.port)) {
+		return false;
+	}
+
+	TU_VERIFY(TUSB_CLASS_VENDOR_SPECIFIC == desc_intf->bInterfaceClass);
+
+	if (unlikely(desc_intf->bInterfaceNumber >= TU_ARRAY_SIZE(usb.can))) {
+		return false;
+	}
+
+
+	struct usb_cmd *usb_cmd = &usb.cmd[desc_intf->bInterfaceNumber];
+	struct usb_can *usb_can = &usb.can[desc_intf->bInterfaceNumber];
+
+	uint8_t const *ptr = (void const *)desc_intf;
+
+	ptr += 9;
+
+	const uint8_t eps = 4;
+
+	for (uint8_t i = 0; i < eps; ++i) {
+		tusb_desc_endpoint_t const *ep_desc = (tusb_desc_endpoint_t const *)(ptr + i * 7);
+		LOG("! ep %02x open\n", ep_desc->bEndpointAddress);
+		bool success = dcd_edpt_open(rhport, ep_desc);
+		SC_ASSERT(success);
+	}
+
+	bool success_cmd = dcd_edpt_xfer(rhport, usb_cmd->pipe, usb_cmd->rx_buffers[usb_cmd->rx_bank], CMD_BUFFER_SIZE);
+	bool success_can = dcd_edpt_xfer(rhport, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE);
+	SC_ASSERT(success_cmd);
+	SC_ASSERT(success_can);
+
+	// // Required to immediately send URBs when buffer size > endpoint size
+	// // and transfers are multiple of enpoint size.
+	// if (MSG_BUFFER_SIZE > SC_M1_EP_SIZE) {
+	// 	dcd_auto_zlp(rhport, usb_can->pipe | 0x80, true);
+	// }
+
+	*p_length = 9+eps*7;
+
+	return true;
 }
 
-bool vendord_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
+SC_RAMFUNC bool vendord_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
 {
-	return tud_custom_xfer_cb(rhport, ep_addr, result, xferred_bytes);
+	(void)result; // always success
+
+	if (unlikely(rhport != usb.port)) {
+		return false;
+	}
+
+	USB_TRAFFIC_DO_LED;
+
+
+
+	switch (ep_addr) {
+	case SC_M1_EP_CMD0_BULK_OUT:
+		sc_cmd_bulk_out(0, xferred_bytes);
+		break;
+	case SC_M1_EP_CMD1_BULK_OUT:
+		sc_cmd_bulk_out(1, xferred_bytes);
+		break;
+	case SC_M1_EP_CMD0_BULK_IN:
+		sc_cmd_bulk_in(0);
+		break;
+	case SC_M1_EP_CMD1_BULK_IN:
+		sc_cmd_bulk_in(1);
+		break;
+	case SC_M1_EP_MSG0_BULK_OUT:
+		sc_can_bulk_out(0, xferred_bytes);
+		break;
+	case SC_M1_EP_MSG1_BULK_OUT:
+		sc_can_bulk_out(1, xferred_bytes);
+		break;
+	case SC_M1_EP_MSG0_BULK_IN:
+		sc_can_bulk_in(0);
+		break;
+	case SC_M1_EP_MSG1_BULK_IN:
+		sc_can_bulk_in(1);
+		break;
+	default:
+		LOG("port %u ep %02x result %d bytes %u\n", rhport, ep_addr, result, (unsigned)xferred_bytes);
+		return false;
+	}
+
+	return true;
 }
 #endif
 
@@ -2230,7 +2207,7 @@ bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
 // CAN TASK
 //--------------------------------------------------------------------+
 #if SPAM
-static void can_usb_task(void *param)
+SC_RAMFUNC static void can_usb_task(void *param)
 {
 	const uint8_t index = (uint8_t)(uintptr_t)param;
 	SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
@@ -2321,7 +2298,7 @@ static void can_usb_task(void *param)
 	}
 }
 #else
-static void can_usb_task(void *param)
+SC_RAMFUNC static void can_usb_task(void *param)
 {
 	const unsigned BUS_ACTIVITY_TIMEOUT_MS = 256;
 

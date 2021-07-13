@@ -17,7 +17,7 @@ INC += \
 	$(TOP)/examples/device/atsame51_dfu/inc \
 
 
-CFLAGS += -Wno-error
+CFLAGS += -DUSNPRINTF_SECTION_NAME="\".ramfunc\"" -DSC_RAMFUNC_SECTION_NAME="\".ramfunc\"" -Wno-error
 
 ifdef SUPERCAN_DEBUG
   CFLAGS += -DSUPERCAN_DEBUG=$(SUPERCAN_DEBUG)

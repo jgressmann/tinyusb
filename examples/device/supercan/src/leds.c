@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -83,7 +83,7 @@ static struct led leds[] = {
 	LED_STATIC_INITIALIZER("green2", PIN_PA15),
 };
 
-extern void led_init(void)
+SC_RAMFUNC extern void led_init(void)
 {
 	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
 	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
@@ -110,7 +110,7 @@ static struct led leds[] = {
 
 
 
-extern void led_init(void)
+SC_RAMFUNC extern void led_init(void)
 {
 	PORT->Group[0].DIRSET.reg = PORT_PA18 | PORT_PA19;
 	PORT->Group[1].DIRSET.reg =
@@ -124,7 +124,7 @@ extern void led_init(void)
 #endif // HWREV > 1
 
 
-extern void led_set(uint8_t index, bool on)
+SC_RAMFUNC extern void led_set(uint8_t index, bool on)
 {
 	SC_DEBUG_ASSERT(index < ARRAY_SIZE(leds));
 
@@ -134,7 +134,7 @@ extern void led_set(uint8_t index, bool on)
 }
 
 
-extern void led_toggle(uint8_t index)
+SC_RAMFUNC extern void led_toggle(uint8_t index)
 {
 	SC_DEBUG_ASSERT(index < ARRAY_SIZE(leds));
 
@@ -143,7 +143,7 @@ extern void led_toggle(uint8_t index)
 	__atomic_store_n(&leds[index].cmd, s.reg, __ATOMIC_RELEASE);
 }
 
-extern void led_blink(uint8_t index, uint16_t delay_ms)
+SC_RAMFUNC extern void led_blink(uint8_t index, uint16_t delay_ms)
 {
 	SC_DEBUG_ASSERT(index < ARRAY_SIZE(leds));
 
@@ -154,7 +154,7 @@ extern void led_blink(uint8_t index, uint16_t delay_ms)
 
 }
 
-extern void led_burst(uint8_t index, uint16_t duration_ms)
+SC_RAMFUNC extern void led_burst(uint8_t index, uint16_t duration_ms)
 {
 	SC_DEBUG_ASSERT(index < ARRAY_SIZE(leds));
 
@@ -164,14 +164,14 @@ extern void led_burst(uint8_t index, uint16_t duration_ms)
 	__atomic_store_n(&leds[index].cmd, s.reg, __ATOMIC_RELEASE);
 }
 
-extern void leds_on_unsafe(void)
+SC_RAMFUNC extern void leds_on_unsafe(void)
 {
 	for (unsigned i = 0; i < LED_COUNT; ++i) {
 		gpio_set_pin_level(leds[i].pin, 1);
 	}
 }
 
-extern void led_task(void *param)
+SC_RAMFUNC extern void led_task(void *param)
 {
 	(void) param;
 
