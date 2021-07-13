@@ -1750,11 +1750,16 @@ send:
 }
 
 static void init_device_identifier(void);
+static void move_vector_table_to_ram(void);
 
 int main(void)
 {
+	LOG("Vectors ROM @ %p\n", SCB->VTOR);
+	move_vector_table_to_ram();
+	LOG("Vectors RAM @ %p\n", SCB->VTOR);
 	board_init();
 	init_device_identifier();
+
 
 #if SUPERDFU_APP
 	LOG(
@@ -3125,4 +3130,18 @@ static void init_device_identifier(void)
 	serial_buffer[8] = 0;
 	LOG("device identifier %s\n", serial_buffer);
 #endif
+}
+
+extern uint32_t _svectors;
+extern uint32_t _evectors;
+
+static void move_vector_table_to_ram(void)
+{
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+	void* vectors_ram = (void*)(uint32_t)&_svectors;
+
+	memcpy(vectors_ram, (void*)SCB->VTOR, MCU_VECTOR_TABLE_ALIGNMENT);
+	SCB->VTOR = (uint32_t)vectors_ram;
+#pragma GCC diagnostic pop
 }

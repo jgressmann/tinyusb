@@ -29,6 +29,7 @@ OUTPUT_ARCH(arm)
 SEARCH_DIR(.)
 
 BOOTLOADER_SIZE = 0x4000;
+VECTOR_TABLE_ALIGNMENT = 0x400; /* vector table must at least be 1024-byte aligned */
 
 /* Memory Spaces Definitions */
 MEMORY
@@ -58,8 +59,8 @@ SECTIONS
 
     .text :
     {
-        /* Vector table must at least be 1024-byte aligned */
-        . = ALIGN(1024);
+
+        . = ALIGN(VECTOR_TABLE_ALIGNMENT);
         _sfixed = .;
         KEEP(*(.vectors .vectors.*))
         *(.text .text.* .gnu.linkonce.t.*)
@@ -133,6 +134,14 @@ SECTIONS
         *(.data .data.*);
         . = ALIGN(4);
         _erelocate = .;
+    } > ram
+
+    .vectors (NOLOAD):
+    {
+        . = ALIGN(VECTOR_TABLE_ALIGNMENT);
+        _svectors = .;
+        . = . + VECTOR_TABLE_ALIGNMENT;
+        _evectors = .;
     } > ram
 
     .bkupram (NOLOAD):
