@@ -1751,12 +1751,17 @@ send:
 
 static void init_device_identifier(void);
 static void move_vector_table_to_ram(void);
+static void enable_cache(void);
 
 int main(void)
 {
 	LOG("Vectors ROM @ %p\n", SCB->VTOR);
 	move_vector_table_to_ram();
 	LOG("Vectors RAM @ %p\n", SCB->VTOR);
+
+	LOG("Enabling cache\n");
+	enable_cache();
+
 	board_init();
 	init_device_identifier();
 
@@ -3144,4 +3149,12 @@ static void move_vector_table_to_ram(void)
 	memcpy(vectors_ram, (void*)SCB->VTOR, MCU_VECTOR_TABLE_ALIGNMENT);
 	SCB->VTOR = (uint32_t)vectors_ram;
 #pragma GCC diagnostic pop
+}
+
+static void enable_cache(void)
+{
+	// DS60001507E-page 83
+	if (!CMCC->SR.bit.CSTS) {
+		CMCC->CTRL.bit.CEN = 1;
+	}
 }
