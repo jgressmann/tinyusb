@@ -60,7 +60,7 @@
 
 #define CLOCK_MAX 0xffffffff
 #define SPAM 0
-
+#define SC_RAMFUNC __attribute__((section("ramfunc")))
 
 #if TU_BIG_ENDIAN == TU_BYTE_ORDER
 static inline uint16_t le16_to_cpu(uint16_t value) { return __builtin_bswap16(value); }
@@ -419,7 +419,7 @@ static inline char const *m_can_psr_act_str(uint8_t act)
 	}
 }
 
-static inline uint8_t can_map_m_can_ec(uint8_t lec, uint8_t previous)
+SC_RAMFUNC static inline uint8_t can_map_m_can_ec(uint8_t lec, uint8_t previous)
 {
 	switch (lec) {
 	case 0x0: return SC_CAN_ERROR_NONE;
@@ -434,9 +434,9 @@ static inline uint8_t can_map_m_can_ec(uint8_t lec, uint8_t previous)
 	}
 }
 
-static bool can_poll(uint8_t index, uint8_t *events, uint32_t tsc);
+SC_RAMFUNC static bool can_poll(uint8_t index, uint8_t *events, uint32_t tsc);
 
-static void sat_u16(volatile uint16_t* sat)
+SC_RAMFUNC static void sat_u16(volatile uint16_t* sat)
 {
 	uint16_t prev = 0;
 	uint16_t curr = 0;
@@ -453,7 +453,7 @@ static void sat_u16(volatile uint16_t* sat)
 	} while (!__atomic_compare_exchange_n(sat, &prev, curr, 0 /* weak */, __ATOMIC_RELEASE, __ATOMIC_RELAXED));
 }
 
-static inline void can_inc_sat_rx_lost(uint8_t index)
+SC_RAMFUNC static inline void can_inc_sat_rx_lost(uint8_t index)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 
@@ -475,12 +475,12 @@ static inline void counter_1MHz_init_clock(void)
 	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup TC1 to use GLCK2 */
 }
 
-static inline void counter_1MHz_request_current_value(void)
+SC_RAMFUNC static inline void counter_1MHz_request_current_value(void)
 {
 	TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
 }
 
-static inline void counter_1MHz_request_current_value_lazy(void)
+SC_RAMFUNC static inline void counter_1MHz_request_current_value_lazy(void)
 {
 	uint8_t reg;
 
@@ -506,13 +506,13 @@ static inline void counter_1MHz_request_current_value_lazy(void)
 	}
 }
 
-static inline bool counter_1MHz_is_current_value_ready(void)
+SC_RAMFUNC static inline bool counter_1MHz_is_current_value_ready(void)
 {
 	return (__atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE) & TC_CTRLBSET_CMD_Msk) == TC_CTRLBSET_CMD_NONE;
 	//return TC0->COUNT32.CTRLBSET.bit.CMD == TC_CTRLBSET_CMD_NONE_Val;
 }
 
-static inline uint32_t counter_1MHz_read_unsafe(void)
+SC_RAMFUNC static inline uint32_t counter_1MHz_read_unsafe(void)
 {
 	return TC0->COUNT32.COUNT.reg & CLOCK_MAX;
 }
@@ -528,7 +528,7 @@ static inline void counter_1MHz_reset(void)
 }
 
 
-static inline uint32_t counter_1MHz_wait_for_current_value(void)
+SC_RAMFUNC static inline uint32_t counter_1MHz_wait_for_current_value(void)
 {
 	while (!counter_1MHz_is_current_value_ready()) {
 		;
@@ -537,15 +537,14 @@ static inline uint32_t counter_1MHz_wait_for_current_value(void)
 	return counter_1MHz_read_unsafe();
 }
 
-static inline uint32_t counter_1MHz_read_sync(void)
+SC_RAMFUNC static inline uint32_t counter_1MHz_read_sync(void)
 {
 	counter_1MHz_request_current_value_lazy();
 	return counter_1MHz_wait_for_current_value();
 }
 
-static void can_int(uint8_t index)
+SC_RAMFUNC static void can_int(uint8_t index)
 {
-
 	counter_1MHz_request_current_value();
 
 	// SC_ASSERT(index < TU_ARRAY_SIZE(cans.can));
@@ -801,7 +800,7 @@ static inline void can_set_state1(Can *can, IRQn_Type interrupt_id, bool enabled
 	}
 }
 
-static inline uint8_t dlc_to_len(uint8_t dlc)
+SC_RAMFUNC static inline uint8_t dlc_to_len(uint8_t dlc)
 {
 	static const uint8_t map[16] = {
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64
@@ -810,7 +809,7 @@ static inline uint8_t dlc_to_len(uint8_t dlc)
 }
 
 
-void CAN0_Handler(void)
+SC_RAMFUNC void CAN0_Handler(void)
 {
 	// LOG("CAN0 int\n");
 
@@ -818,7 +817,7 @@ void CAN0_Handler(void)
 
 }
 
-void CAN1_Handler(void)
+SC_RAMFUNC void CAN1_Handler(void)
 {
 	// LOG("CAN1 int\n");
 
@@ -2725,7 +2724,7 @@ static void can_usb_task(void *param)
 #endif // !SPAM
 
 
-static inline void can_frame_bits(
+SC_RAMFUNC static inline void can_frame_bits(
 	uint32_t xtd,
 	uint32_t rtr,
 	uint32_t fdf,
@@ -2879,7 +2878,7 @@ static inline void can_frame_bits(
 	}
 }
 
-static inline uint32_t can_frame_time_us(
+SC_RAMFUNC static inline uint32_t can_frame_time_us(
 	uint8_t index,
 	uint32_t nm,
 	uint32_t dt)
@@ -2893,7 +2892,7 @@ static volatile uint32_t rx_lost_reported[TU_ARRAY_SIZE(cans.can)];
 // static volatile uint32_t rx_ts_last[TU_ARRAY_SIZE(cans.can)];
 #endif
 
-static bool can_poll(
+SC_RAMFUNC static bool can_poll(
 	uint8_t index,
 	uint8_t* events,
 	uint32_t tsc)
