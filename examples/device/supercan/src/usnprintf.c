@@ -210,7 +210,7 @@ precision:
 					break;
 				case 'c':
 					step = -1;
-					buffer[offset++] = c;
+					buffer[offset++] = (char)va_arg(vl, int);
 					break;
 				case 's':
 					step = -1;
