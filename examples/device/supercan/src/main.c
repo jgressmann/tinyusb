@@ -187,8 +187,6 @@ struct can {
 	uint16_t rx_lost;
 	uint16_t features;
 	uint16_t tx_dropped;
-	uint16_t task_poll_tscv_hi;
-	uint16_t task_poll_tscv_lo;
 	uint8_t nmbt_sjw;
 	uint8_t nmbt_tseg2;
 	uint8_t dtbt_brp;
