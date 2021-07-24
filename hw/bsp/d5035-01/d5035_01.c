@@ -67,12 +67,8 @@ void USB_3_Handler (void)
 // MACRO TYPEDEF CONSTANT ENUM DECLARATION
 //--------------------------------------------------------------------+
 #define LED_PIN      PIN_PA02
+#define BOARD_SERCOM SERCOM0
 
-#if HWREV < 3
-# define BOARD_SERCOM SERCOM5
-#else
-# define BOARD_SERCOM SERCOM0
-#endif
 
 static inline void init_clock(void)
 {
@@ -101,33 +97,6 @@ static inline void init_clock(void)
 
 	// Here we are running of the FLL and can safely modify the PLLs.
 
-#if HWREV == 1
-	/* configure XOSC1 for a 16MHz crystal connected to XIN1/XOUT1 */
-	OSCCTRL->XOSCCTRL[1].reg =
-		OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
-		OSCCTRL_XOSCCTRL_RUNSTDBY |
-		OSCCTRL_XOSCCTRL_ENALC |
-		OSCCTRL_XOSCCTRL_IMULT(4) |
-		OSCCTRL_XOSCCTRL_IPTAT(3) |
-		OSCCTRL_XOSCCTRL_XTALEN |
-		OSCCTRL_XOSCCTRL_ENABLE;
-	while(0 == OSCCTRL->STATUS.bit.XOSCRDY1);
-
-	/* pre-scaler = 8, input = XOSC1, input = 2 MHz, ouput = 160 MHz (>= 96 MHz DS60001507E, page 763) */
-	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC1_Val);
-	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(79);
-	OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
-	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
-
-	// configure GCLK2 for 16MHz from XOSC1
-	GCLK->GENCTRL[2].reg =
-		GCLK_GENCTRL_DIV(0) |
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_XOSC1 |
-		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
-#else // HWREV >= 1
 	/* configure XOSC0 for a 16MHz crystal connected to XIN0/XOUT0 */
 	OSCCTRL->XOSCCTRL[0].reg =
 		OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
@@ -153,7 +122,6 @@ static inline void init_clock(void)
 		GCLK_GENCTRL_SRC_XOSC0 |
 		GCLK_GENCTRL_IDC;
 	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
-#endif // HWREV
 
 	/* 80 MHz core clock */
 	GCLK->GENCTRL[0].reg =
@@ -192,39 +160,6 @@ static inline void init_clock(void)
 
 static inline void uart_init(void)
 {
-#if HWREV < 3
-	/* configure SERCOM5 on PB02 */
-	PORT->Group[1].WRCONFIG.reg =
-		PORT_WRCONFIG_WRPINCFG |
-		PORT_WRCONFIG_WRPMUX |
-		PORT_WRCONFIG_PMUX(3) |    /* function D */
-		PORT_WRCONFIG_DRVSTR |
-		PORT_WRCONFIG_PINMASK(0x0004) | /* PB02 */
-		PORT_WRCONFIG_PMUXEN;
-
-	MCLK->APBDMASK.bit.SERCOM5_ = 1;
-	GCLK->PCHCTRL[SERCOM5_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK0 -> 80MHz */
-
-	SERCOM5->USART.CTRLA.reg = 0x00; /* disable SERCOM -> enable config */
-	while(SERCOM5->USART.SYNCBUSY.bit.ENABLE);
-
-	SERCOM5->USART.CTRLA.reg  =  /* CMODE = 0 -> async, SAMPA = 0, FORM = 0 -> USART frame, SMPR = 0 -> arithmetic baud rate */
-		SERCOM_USART_CTRLA_SAMPR(1) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
-//    SERCOM_USART_CTRLA_FORM(0) | /* 0 = USART Frame, 2 = LIN Master */
-		SERCOM_USART_CTRLA_DORD | /* LSB first */
-		SERCOM_USART_CTRLA_MODE(1) | /* 0 = Asynchronous, 1 = USART with internal clock */
-		SERCOM_USART_CTRLA_RXPO(1) | /* SERCOM PAD[1] is used for data reception */
-		SERCOM_USART_CTRLA_TXPO(0); /* SERCOM PAD[0] is used for data transmission */
-
-	SERCOM5->USART.CTRLB.reg = /* RXEM = 0 -> receiver disabled, LINCMD = 0 -> normal USART transmission, SFDE = 0 -> start-of-frame detection disabled, SBMODE = 0 -> one stop bit, CHSIZE = 0 -> 8 bits */
-		SERCOM_USART_CTRLB_TXEN; /* transmitter enabled */
-	SERCOM5->USART.CTRLC.reg = 0x00;
-	// 21.701388889 @ baud rate of 230400 bit/s, table 33-2, p 918 of DS60001507E
-	SERCOM5->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(7) | SERCOM_USART_BAUD_FRAC_BAUD(21);
-
-	SERCOM5->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
-	while(SERCOM5->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
-#else // HWREV >= 3
 /* configure SERCOM0 on PA08 */
 	PORT->Group[0].WRCONFIG.reg =
 		PORT_WRCONFIG_WRPINCFG |
@@ -256,7 +191,6 @@ static inline void uart_init(void)
 
 	SERCOM0->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
 	while(SERCOM0->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
-#endif
 }
 
 static inline void uart_send_buffer(uint8_t const *text, size_t len)
