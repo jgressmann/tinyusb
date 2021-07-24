@@ -73,7 +73,6 @@ static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(va
 
 
 #define NVM_BOOTLOADER_BLOCKS (MCU_BOOTLOADER_SIZE / MCU_NVM_BLOCK_SIZE)
-#define NVM_PROG_BLOCKS (MCU_NVM_SIZE / 2 - NVM_BOOTLOADER_BLOCKS)
 
 
 #define BOOTLOADER_STATUS_MAYBE -1
@@ -86,6 +85,8 @@ static struct dfu {
 	struct dfu_get_status_reply status;
 	int bootloader_status;
 	int bootloader_swap_banks_on_reset;
+	uint32_t rom_size;
+	uint32_t app_size;
 	uint32_t download_size;
 	uint32_t block_offset;
 	uint32_t prog_offset;
@@ -312,6 +313,11 @@ static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(DFU_APP_FTR_SE
 int main(void)
 {
 	board_init();
+
+	dfu.rom_size = MCU_NVM_PAGE_SIZE * NVMCTRL->PARAM.bit.NVMP;
+	dfu.app_size = dfu.rom_size / 2 - MCU_BOOTLOADER_SIZE;
+	LOG("ROM size: %x\n", dfu.rom_size);
+	LOG("Max app size: %x\n", dfu.app_size);
 
 	if (NVMCTRL->STATUS.bit.AFIRST) {
 		LOG("Bank A mapped at 0x0000000.\n");
@@ -558,7 +564,7 @@ static bool dfu_state_download_sync_complete(tusb_control_request_t const *reque
 		if (hdr->hdr_version >= 2 && (hdr->hdr_flags & DFU_APP_HDR_FLAG_BOOTLOADER)) {
 			LOG("> bootloader upload detected\n");
 			dfu.bootloader_status = BOOTLOADER_STATUS_YES;
-			dfu.prog_offset = MCU_NVM_SIZE / 2;
+			dfu.prog_offset = dfu.rom_size / 2;
 			dfu.bootloader_size = hdr->app_size;
 			dfu.bootloader_crc = hdr->app_crc;
 			error = crc32((uint32_t)&dfu.block_buffer[MCU_VECTOR_TABLE_ALIGNMENT], MCU_VECTOR_TABLE_ALIGNMENT, &dfu.bootloader_vector_table_crc);
@@ -656,20 +662,20 @@ static inline bool dfu_state_manifest_sync(tusb_control_request_t const *request
 		LOG("> DFU_REQUEST_GETSTATUS\n");
 
 		if (BOOTLOADER_STATUS_YES == dfu.bootloader_status) {
-			uint32_t bytes_written = dfu.prog_offset - MCU_NVM_SIZE / 2;
+			uint32_t bytes_written = dfu.prog_offset - dfu.rom_size / 2;
 
 			if (bytes_written < dfu.bootloader_size) {
 				LOG("> incomplete bootloader write, NOT swapping banks\n");
 			} else {
 				uint32_t crc = ~dfu.bootloader_crc;
 				// bootloader payload is offset by dfu app header
-				int error = crc32(MCU_NVM_SIZE / 2 + MCU_VECTOR_TABLE_ALIGNMENT, dfu.bootloader_size, &crc);
+				int error = crc32(dfu.rom_size / 2 + MCU_VECTOR_TABLE_ALIGNMENT, dfu.bootloader_size, &crc);
 				if (error) {
 					LOG("> bootloader verification (1) failed with %d\n", error);
 				} else if (crc != dfu.bootloader_crc) {
 					LOG("> bootloader checksum (1) mismatch\n");
 				} else {
-					error = crc32(MCU_NVM_SIZE / 2, MCU_VECTOR_TABLE_ALIGNMENT, &crc);
+					error = crc32(dfu.rom_size / 2, MCU_VECTOR_TABLE_ALIGNMENT, &crc);
 					if (error) {
 						LOG("> bootloader verification (2) failed with %d\n", error);
 					} else if (crc != dfu.bootloader_vector_table_crc) {
@@ -870,7 +876,7 @@ static inline bool dfu_state_download_idle(tusb_control_request_t const *request
 
 			TU_ASSERT(dfu.block_offset + request->wLength <= sizeof(dfu.block_buffer));
 
-			if (dfu.download_size + request->wLength > NVM_PROG_BLOCKS * MCU_NVM_BLOCK_SIZE) {
+			if (dfu.download_size + request->wLength > dfu.app_size) {
 				dfu.status.bStatus = DFU_ERROR_ADDRESS;
 				dfu.status.bState = DFU_STATE_DFU_ERROR;
 				return false;

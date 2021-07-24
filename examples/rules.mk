@@ -48,12 +48,13 @@ SRC_C += \
 INC += $(TOP)/src
 
 CFLAGS += $(addprefix -I,$(INC))
+LINKER_SCRIPT ?= $(TOP)/$(LD_FILE)
 
 # TODO Skip nanolib for MSP430
 ifeq ($(BOARD), msp_exp430f5529lp)
-  LDFLAGS += $(CFLAGS) -fshort-enums -Wl,-T,$(TOP)/$(LD_FILE) -Wl,-Map=$@.map -Wl,-cref -Wl,-gc-sections
+  LDFLAGS += $(CFLAGS) -fshort-enums -Wl,-T,$(LINKER_SCRIPT) -Wl,-Map=$@.map -Wl,-cref -Wl,-gc-sections
 else
-  LDFLAGS += $(CFLAGS) -fshort-enums -Wl,-T,$(TOP)/$(LD_FILE) -Wl,-Map=$@.map -Wl,-cref -Wl,-gc-sections -specs=nosys.specs -specs=nano.specs
+  LDFLAGS += $(CFLAGS) -fshort-enums -Wl,-T,$(LINKER_SCRIPT) -Wl,-Map=$@.map -Wl,-cref -Wl,-gc-sections -specs=nosys.specs -specs=nano.specs
 endif
 ASFLAGS += $(CFLAGS)
 
@@ -83,9 +84,9 @@ $(OBJ): | $(OBJ_DIRS)
 $(OBJ_DIRS):
 	@$(MKDIR) -p $@
 
-$(BUILD)/$(BOARD)-firmware.elf: $(OBJ)
+$(BUILD)/$(BOARD)-firmware.elf: $(LINKER_SCRIPT) $(OBJ)
 	@echo LINK $@
-	@$(CC) -o $@ $(LDFLAGS) $^ -Wl,--start-group $(LIBS) -Wl,--end-group
+	@$(CC) -o $@ $(LDFLAGS) $(OBJ) -Wl,--start-group $(LIBS) -Wl,--end-group
 
 $(BUILD)/$(BOARD)-firmware.bin: $(BUILD)/$(BOARD)-firmware.elf
 	@echo CREATE $@
