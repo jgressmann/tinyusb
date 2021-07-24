@@ -40,33 +40,6 @@ ifneq ($(BOOTLOADER),0)
 endif
 endif
 
-
-# compiler options for Atmel Studio's 'Debug' configuration
-#-O2 -ffunction-sections -mlong-calls -g3 -Wall -Wextra -mcpu=cortex-m4 -c -std=gnu99 -mfloat-abi=softfp -mfpu=fpv4-sp-d16
-
-# Create various files
-#"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-objcopy.exe" -O binary "Inbetriebnahme.elf" "Inbetriebnahme.bin"
-#"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-objcopy.exe" -O ihex -R .eeprom -R .fuse -R .lock -R .signature  "Inbetriebnahme.elf" "Inbetriebnahme.hex"
-#"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-objcopy.exe" -j .eeprom --set-section-flags=.eeprom=alloc,load --change-section-lma .eeprom=0 --no-change-warnings -O binary "Inbetriebnahme.elf" "Inbetriebnahme.eep" || exit 0
-#"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-objdump.exe" -h -S "Inbetriebnahme.elf" > "Inbetriebnahme.lss"
-#"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-objcopy.exe" -O srec -R .eeprom -R .fuse -R .lock -R .signature  "Inbetriebnahme.elf" "Inbetriebnahme.srec"
-#"C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\arm\arm-gnu-toolchain\bin\arm-none-eabi-size.exe" "Inbetriebnahme.elf"
-
-
-
-
-
-
-# SRC_C += \
-# 	hw/mcu/microchip/same/asf4/same51/gcc/gcc/startup_same51.c \
-# 	hw/mcu/microchip/same/asf4/same51/gcc/system_same51.c \
-# 	hw/mcu/microchip/same/asf4/same51/hpl/gclk/hpl_gclk.c \
-# 	hw/mcu/microchip/same/asf4/same51/hpl/mclk/hpl_mclk.c \
-# 	hw/mcu/microchip/same/asf4/same51/hpl/osc32kctrl/hpl_osc32kctrl.c \
-# 	hw/mcu/microchip/same/asf4/same51/hpl/oscctrl/hpl_oscctrl.c \
-# 	hw/mcu/microchip/same/asf4/same51/hal/src/hal_atomic.c \
-# 	hw/mcu/microchip/same/asf4/same51/hal/utils/src/utils_syscalls.c
-
 SRC_C += \
 	hw/mcu/microchip/same/asf4/same51/gcc/gcc/startup_same51.c \
   hw/mcu/microchip/same/asf4/same51/gcc/system_same51.c \
