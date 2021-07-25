@@ -434,7 +434,7 @@ SC_RAMFUNC static inline uint8_t can_map_m_can_ec(uint8_t lec, uint8_t previous)
 	}
 }
 
-SC_RAMFUNC static bool can_poll(uint8_t index, uint8_t *events, uint32_t tsc);
+SC_RAMFUNC static bool can_poll(uint8_t index, uint32_t *events, uint32_t tsc);
 
 SC_RAMFUNC static void sat_u16(volatile uint16_t* sat)
 {
@@ -543,9 +543,11 @@ SC_RAMFUNC static inline uint32_t counter_1MHz_read_sync(void)
 	return counter_1MHz_wait_for_current_value();
 }
 
-SC_RAMFUNC static void can_int_update_status(uint8_t index)
+SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* events, uint32_t tsc)
 {
 	// SC_ISR_ASSERT(index < TU_ARRAY_SIZE(cans.can));
+	SC_DEBUG_ASSERT(events);
+
 	struct can *can = &cans.can[index];
 	uint8_t current_bus_state = 0;
 	CAN_PSR_Type current_psr = can->m_can->PSR; // always read, sets NC
@@ -601,12 +603,14 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index)
 
 			s->type = CAN_STATUS_FIFO_TYPE_BUS_STATUS;
 			s->payload = current_bus_state;
+			s->ts = tsc;
 
 			__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
 		} else {
 			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
 		}
-		vTaskNotifyGiveFromISR(can->usb_task_handle, NULL);
+
+		++*events;
 	}
 
 	bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
@@ -633,13 +637,14 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index)
 			s->tx = is_tx_error;
 			s->data_part = 0;
 			s->payload = can_map_m_can_ec(current_psr.bit.LEC, 0),
-			s->ts = counter_1MHz_wait_for_current_value();
+			s->ts = tsc;
 
 			__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
 		} else {
 			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
 		}
-		vTaskNotifyGiveFromISR(can->usb_task_handle, NULL);
+
+		++*events;
 	}
 
 	// bool had_dt_error = prev_psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val && prev_psr.bit.DLEC != CAN_PSR_DLEC_NC_Val;
@@ -662,13 +667,14 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index)
 			s->tx = is_tx_error;
 			s->data_part = 1;
 			s->payload = can_map_m_can_ec(current_psr.bit.DLEC, 0),
-			s->ts = counter_1MHz_wait_for_current_value();
+			s->ts = tsc;
 
 			__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
 		} else {
 			__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
 		}
-		vTaskNotifyGiveFromISR(can->usb_task_handle, NULL);
+
+		++*events;
 	}
 
 	// if ((had_nm_error || had_dt_error) &&
@@ -694,7 +700,8 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index)
 	// 	} else {
 	// 		__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
 	// 	}
-	// 	vTaskNotifyGiveFromISR(can->usb_task_handle, NULL);
+	//
+	//  ++*events;
 	// }
 }
 
@@ -704,6 +711,8 @@ SC_RAMFUNC static void can_int(uint8_t index)
 
 	// SC_ISR_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 	struct can *can = &cans.can[index];
+
+	uint32_t events = 0;
 
 
 
@@ -758,27 +767,28 @@ SC_RAMFUNC static void can_int(uint8_t index)
 		// notify = true;
 	}
 
-	can_int_update_status(index);
+	// Do this late to increase likelyhood that the counter
+	// is ready right away.
+	uint32_t tsc = counter_1MHz_wait_for_current_value();
 
-	// Do this late to increase likelyhood that we read a
-	// recent counter value.
+	can_int_update_status(index, &events, tsc);
 
 	if (ir.reg & (CAN_IR_TEFN | CAN_IR_RF0N)) {
 
-		uint32_t tsc = counter_1MHz_wait_for_current_value();
 		// LOG("CAN%u RX/TX\n", index);
-		uint8_t events = 0;
 		can_poll(index, &events, tsc);
-		if (likely(events)) {
-			for (uint8_t i = 0; i < events - 1; ++i) {
-				vTaskNotifyGiveFromISR(can->usb_task_handle, NULL);
-			}
 
-			notify_usb = true;
-		}
 	}
 
-	if (notify_usb) {
+	if (likely(events)) {
+		for (uint32_t i = 0; i < events - 1; ++i) {
+			vTaskNotifyGiveFromISR(can->usb_task_handle, NULL);
+		}
+
+		notify_usb = true;
+	}
+
+	if (likely(notify_usb)) {
 		// LOG("CAN%u notify\n", index);
 		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 		vTaskNotifyGiveFromISR(can->usb_task_handle, &xHigherPriorityTaskWoken);
@@ -2860,30 +2870,15 @@ static volatile uint32_t rx_lost_reported[TU_ARRAY_SIZE(cans.can)];
 
 SC_RAMFUNC static bool can_poll(
 	uint8_t index,
-	uint8_t* events,
+	uint32_t* events,
 	uint32_t tsc)
 {
 	SC_DEBUG_ASSERT(events);
 
-	*events = 0;
-
 	struct can *can = &cans.can[index];
-
-	// not initalized? happens on bus off as well
-	if (unlikely(can->m_can->CCCR.bit.INIT)) {
-		// can->rx_get_index = 0;
-		// can->rx_put_index = 0;
-		// can->tx_get_index = 0;
-		// can->tx_put_index = 0;
-		// __atomic_thread_fence(__ATOMIC_RELEASE);
-		return false;
-	}
-
-
 
 	bool more = false;
 	uint32_t tsv[CAN_RX_FIFO_SIZE];
-	// uint32_t tsc = 0;
 	uint8_t count = 0;
 	uint8_t pi = 0;
 
@@ -2972,6 +2967,10 @@ SC_RAMFUNC static bool can_poll(
 				}
 
 				++pi;
+
+				// NOTE: This code is too slow to have here for some reason.
+				// NOTE: If called outside this function, it is fast enough.
+				// NOTE: Likely because of register / cache thrashing.
 
 				// xTaskNotifyGive(can->usb_task_handle);
 				// BaseType_t xHigherPriorityTaskWoken = pdFALSE;
