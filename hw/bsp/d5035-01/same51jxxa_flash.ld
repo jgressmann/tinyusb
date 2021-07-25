@@ -32,6 +32,7 @@ OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
 OUTPUT_ARCH(arm)
 SEARCH_DIR(.)
 
+VECTOR_TABLE_ALIGNMENT = 0x400; /* vector table must at least be 1024-byte aligned */
 ROM_SIZE = CHIP_ROM_SIZE;
 RAM_SIZE = CHIP_RAM_SIZE;
 
@@ -52,7 +53,7 @@ SECTIONS
 {
     .text :
     {
-        . = ALIGN(4);
+        . = ALIGN(VECTOR_TABLE_ALIGNMENT);
         _sfixed = .;
         KEEP(*(.vectors .vectors.*))
         *(.text .text.* .gnu.linkonce.t.*)
@@ -118,6 +119,14 @@ SECTIONS
         *(.data .data.*);
         . = ALIGN(4);
         _erelocate = .;
+    } > ram
+
+    .vectors (NOLOAD):
+    {
+        . = ALIGN(VECTOR_TABLE_ALIGNMENT);
+        _svectors = .;
+        . = . + VECTOR_TABLE_ALIGNMENT;
+        _evectors = .;
     } > ram
 
     .bkupram (NOLOAD):
