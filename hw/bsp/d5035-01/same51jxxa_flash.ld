@@ -1,25 +1,29 @@
-/*
- * The MIT License (MIT)
+/**
+ * \file
  *
- * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
+ * \brief Linker script for running in internal FLASH on the SAME51J19A
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Copyright (c) 2019 Microchip Technology Inc.
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
+ * \asf_license_start
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
+ * \page License
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the Licence at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an AS IS BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * \asf_license_stop
  *
  */
 
@@ -28,33 +32,27 @@ OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
 OUTPUT_ARCH(arm)
 SEARCH_DIR(.)
 
-BOOTLOADER_SIZE = 0x4000;
-STACK_SIZE = 0x0200;
+ROM_SIZE = CHIP_ROM_SIZE;
+RAM_SIZE = CHIP_RAM_SIZE;
 
 /* Memory Spaces Definitions */
 MEMORY
 {
-  rom         (rw) : ORIGIN = 0x00000000, LENGTH = 0x00080000
-  ram        (rwx) : ORIGIN = 0x20000000, LENGTH = 0x00030000
+  rom      (rx)  : ORIGIN = 0x00000000, LENGTH = ROM_SIZE
+  ram      (rwx) : ORIGIN = 0x20000000, LENGTH = RAM_SIZE
+  bkupram  (rwx) : ORIGIN = 0x47000000, LENGTH = 0x00002000
+  qspi     (rwx) : ORIGIN = 0x04000000, LENGTH = 0x01000000
 }
+
+/* The stack size used by the application. NOTE: you need to adjust according to your application. */
+STACK_SIZE = DEFINED(STACK_SIZE) ? STACK_SIZE : DEFINED(__stack_size__) ? __stack_size__ : 0x1000;
 
 /* Section Definitions */
 SECTIONS
 {
-    .dfuram (NOLOAD) : {
-        . = ALIGN(4);
-        KEEP (*(.dfuram))
-    } > ram
-
-    .dfuapphdr : {
-        . = ALIGN(4);
-        KEEP (*(.dfuapphdr))
-    } > rom
-
     .text :
     {
-        /* Vector table must at least be 1024-byte aligned */
-        . = ALIGN(1024);
+        . = ALIGN(4);
         _sfixed = .;
         KEEP(*(.vectors .vectors.*))
         *(.text .text.* .gnu.linkonce.t.*)
@@ -109,12 +107,6 @@ SECTIONS
     } > rom
     PROVIDE_HIDDEN (__exidx_end = .);
 
-    .dfuappftr :
-    {
-        . = ALIGN(4);
-        KEEP (*(.dfuappftr));
-    } > rom
-
     . = ALIGN(4);
     _etext = .;
 
@@ -128,8 +120,26 @@ SECTIONS
         _erelocate = .;
     } > ram
 
+    .bkupram (NOLOAD):
+    {
+        . = ALIGN(8);
+        _sbkupram = .;
+        *(.bkupram .bkupram.*);
+        . = ALIGN(8);
+        _ebkupram = .;
+    } > bkupram
+
+    .qspi (NOLOAD):
+    {
+        . = ALIGN(8);
+        _sqspi = .;
+        *(.qspi .qspi.*);
+        . = ALIGN(8);
+        _eqspi = .;
+    } > qspi
+
     /* .bss section which is used for uninitialized data */
-    .bss  (NOLOAD) :
+    .bss (NOLOAD) :
     {
         . = ALIGN(4);
         _sbss = . ;
@@ -140,8 +150,6 @@ SECTIONS
         _ebss = . ;
         _ezero = .;
     } > ram
-
-
 
     /* stack section */
     .stack (NOLOAD):

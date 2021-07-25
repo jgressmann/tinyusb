@@ -71,57 +71,25 @@ struct led {
 #define LED_STATIC_INITIALIZER(name, pin) \
 	{ 0, pin }
 
-
-#if HWREV == 1
-static struct led leds[] = {
-	LED_STATIC_INITIALIZER("debug", PIN_PA02), // board led
-	LED_STATIC_INITIALIZER("red1", PIN_PB14),
-	LED_STATIC_INITIALIZER("orange1", PIN_PB15),
-	LED_STATIC_INITIALIZER("green1", PIN_PA12),
-	LED_STATIC_INITIALIZER("red2", PIN_PA13),
-	LED_STATIC_INITIALIZER("orange2", PIN_PA14),
-	LED_STATIC_INITIALIZER("green2", PIN_PA15),
-};
-
-SC_RAMFUNC extern void led_init(void)
-{
-	PORT->Group[1].DIRSET.reg = PORT_PB14; /* Debug-LED */
-	PORT->Group[1].DIRSET.reg = PORT_PB15; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA12; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA13; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA14; /* Debug-LED */
-	PORT->Group[0].DIRSET.reg = PORT_PA15; /* Debug-LED */
-}
-#else // HWREV > 1
 static struct led leds[] = {
 	LED_STATIC_INITIALIZER("debug", PIN_PA02), // board led
 	LED_STATIC_INITIALIZER("red", PIN_PA18),
 	LED_STATIC_INITIALIZER("orange", PIN_PA19),
 	LED_STATIC_INITIALIZER("green", PIN_PB16),
 	LED_STATIC_INITIALIZER("blue", PIN_PB17),
-#if HWREV >= 3
 	LED_STATIC_INITIALIZER("can1_red", PIN_PB00),
 	LED_STATIC_INITIALIZER("can1_green", PIN_PB01),
 	LED_STATIC_INITIALIZER("can0_red", PIN_PB02),
 	LED_STATIC_INITIALIZER("can0_green", PIN_PB03),
-#endif
 };
-
-
 
 
 SC_RAMFUNC extern void led_init(void)
 {
 	PORT->Group[0].DIRSET.reg = PORT_PA18 | PORT_PA19;
 	PORT->Group[1].DIRSET.reg =
-		PORT_PB16 | PORT_PB17
-#if HWREV >= 3
-		| PORT_PB00 | PORT_PB01 | PORT_PB02 | PORT_PB03
-#endif
-		;
+		PORT_PB16 | PORT_PB17 | PORT_PB00 | PORT_PB01 | PORT_PB02 | PORT_PB03;
 }
-
-#endif // HWREV > 1
 
 
 SC_RAMFUNC extern void led_set(uint8_t index, bool on)

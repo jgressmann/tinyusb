@@ -832,19 +832,10 @@ static void can_usb_task(void* param);
 
 #define LED_BURST_DURATION_MS 8
 
-#if HWREV == 1
-#define USB_TRAFFIC_LED LED_DEBUG
-#define USB_TRAFFIC_DO_LED led_burst(LED_ORANGE1, LED_BURST_DURATION_MS)
-#define POWER_LED LED_RED1
-#define CAN0_TRAFFIC_LED LED_GREEN1
-#define CAN1_TRAFFIC_LED LED_GREEN2
-
-#else // HWREV > 1
 #define USB_TRAFFIC_DO_LED led_burst(LED_DEBUG_3, LED_BURST_DURATION_MS)
 #define POWER_LED LED_DEBUG_0
 #define CAN0_TRAFFIC_LED LED_DEBUG_1
 #define CAN1_TRAFFIC_LED LED_DEBUG_2
-#endif // HWREV > 1
 
 
 
@@ -859,7 +850,6 @@ enum {
 
 static inline void canled_set_status(struct can *can, int status)
 {
-#if HWREV >= 3
 	const uint16_t BLINK_DELAY_PASSIVE_MS = 512;
 	const uint16_t BLINK_DELAY_ACTIVE_MS = 128;
 	switch (status) {
@@ -888,10 +878,6 @@ static inline void canled_set_status(struct can *can, int status)
 		led_blink(can->led_status_red, BLINK_DELAY_ACTIVE_MS);
 		break;
 	}
-#else
-	(void)can;
-	(void)status;
-#endif
 }
 
 static inline void cans_led_status_set(int status)
@@ -1797,12 +1783,10 @@ int main(void)
 
 	usb.can[0].mutex_handle = xSemaphoreCreateMutexStatic(&usb.can[0].mutex_mem);
 	usb.can[1].mutex_handle = xSemaphoreCreateMutexStatic(&usb.can[1].mutex_mem);
-#if HWREV >= 3
 	cans.can[0].led_status_green = LED_CAN0_STATUS_GREEN;
 	cans.can[0].led_status_red = LED_CAN0_STATUS_RED;
 	cans.can[1].led_status_green = LED_CAN1_STATUS_GREEN;
 	cans.can[1].led_status_red = LED_CAN1_STATUS_RED;
-#endif
 	cans.can[0].led_traffic = CAN0_TRAFFIC_LED;
 	cans.can[1].led_traffic = CAN1_TRAFFIC_LED;
 	cans.can[0].queue_handle = xQueueCreateStatic(CAN_QUEUE_SIZE, sizeof(cans.can[0].queue_storage) / CAN_QUEUE_SIZE, cans.can[0].queue_storage, &cans.can[0].queue_mem);

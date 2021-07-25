@@ -38,33 +38,18 @@ extern StaticTask_t led_task_mem;
 SC_RAMFUNC extern void led_task(void *param);
 
 
-#if HWREV == 1
-enum {
-	LED_DEBUG_DEFAULT,
-	LED_RED1,
-	LED_ORANGE1,
-	LED_GREEN1,
-	LED_RED2,
-	LED_ORANGE2,
-	LED_GREEN2,
-	LED_COUNT
-};
-#else // HWREV > 1
 enum {
 	LED_DEBUG_DEFAULT,
 	LED_DEBUG_0,
 	LED_DEBUG_1,
 	LED_DEBUG_2,
 	LED_DEBUG_3,
-#if HWREV >= 3
 	LED_CAN0_STATUS_GREEN,
 	LED_CAN0_STATUS_RED,
 	LED_CAN1_STATUS_GREEN,
 	LED_CAN1_STATUS_RED,
-#endif
 	LED_COUNT
 };
-#endif // HWREV > 1
 
 
 SC_RAMFUNC extern void led_init(void);

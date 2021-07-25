@@ -32,7 +32,6 @@
 #include <sam.h>
 
 #define MCU_BOOTLOADER_SIZE 0x4000
-#define MCU_NVM_SIZE (1ul<<19)
 #define MCU_NVM_PAGE_SIZE NVMCTRL_PAGE_SIZE // Atmel
 #define MCU_NVM_BLOCK_SIZE NVMCTRL_BLOCK_SIZE // Atmel
 // 138 interrupts, DS60001507E-page 62

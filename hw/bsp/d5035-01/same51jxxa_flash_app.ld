@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -30,13 +30,15 @@ SEARCH_DIR(.)
 
 BOOTLOADER_SIZE = 0x4000;
 VECTOR_TABLE_ALIGNMENT = 0x400; /* vector table must at least be 1024-byte aligned */
+ROM_SIZE = CHIP_ROM_SIZE;
+RAM_SIZE = CHIP_RAM_SIZE;
 
 /* Memory Spaces Definitions */
 MEMORY
 {
-  rom        (rx) : ORIGIN = BOOTLOADER_SIZE, LENGTH = 0x00080000 - BOOTLOADER_SIZE
+  rom        (rx) : ORIGIN = BOOTLOADER_SIZE, LENGTH = ROM_SIZE - BOOTLOADER_SIZE
   dfuram     (rw) : ORIGIN = 0x20000000, LENGTH = 0x00000080
-  ram       (rwx) : ORIGIN = 0x20000000 + LENGTH(dfuram), LENGTH = 0x00030000 - LENGTH(dfuram)
+  ram       (rwx) : ORIGIN = 0x20000000 + LENGTH(dfuram), LENGTH = RAM_SIZE - LENGTH(dfuram)
   bkupram   (rwx) : ORIGIN = 0x47000000, LENGTH = 0x00002000
   qspi      (rwx) : ORIGIN = 0x04000000, LENGTH = 0x01000000
 }
@@ -59,7 +61,6 @@ SECTIONS
 
     .text :
     {
-
         . = ALIGN(VECTOR_TABLE_ALIGNMENT);
         _sfixed = .;
         KEEP(*(.vectors .vectors.*))
