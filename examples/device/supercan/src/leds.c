@@ -71,6 +71,7 @@ struct led {
 #define LED_STATIC_INITIALIZER(name, pin) \
 	{ 0, pin }
 
+
 static struct led leds[] = {
 	LED_STATIC_INITIALIZER("debug", PIN_PA02), // board led
 	LED_STATIC_INITIALIZER("red", PIN_PA18),
