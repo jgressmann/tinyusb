@@ -331,9 +331,9 @@ static void can_configure(struct can *c)
 			| CAN_DBTP_TDC;
 
 	// transmitter delay compensation offset
-	can->TDCR.bit.TDCO = tu_min8((1 + c->dtbt_tseg1 + c->dtbt_tseg2) / 2, M_CAN_TDCR_TDCO_MAX);
-	// can->TDCR.bit.TDCO = tu_min8((1 + c->dtbt_tseg1 - c->dtbt_tseg2 / 2), M_CAN_TDCR_TDCO_MAX);
-	// can->TDCR.bit.TDCF = tu_min8((1 + c->dtbt_tseg1 + c->dtbt_tseg2 / 2), M_CAN_TDCR_TDCO_MAX);
+	// can->TDCR.bit.TDCO = tu_min8((1 + c->dtbt_tseg1 + c->dtbt_tseg2) / 2, M_CAN_TDCR_TDCO_MAX);
+	can->TDCR.bit.TDCO = tu_min8((1 + c->dtbt_tseg1 - c->dtbt_tseg2 / 2), M_CAN_TDCR_TDCO_MAX);
+	can->TDCR.bit.TDCF = tu_min8((1 + c->dtbt_tseg1 + c->dtbt_tseg2 / 2), M_CAN_TDCR_TDCO_MAX);
 
 
 	// tx fifo
