@@ -332,6 +332,9 @@ static void can_configure(struct can *c)
 
 	// transmitter delay compensation offset
 	can->TDCR.bit.TDCO = tu_min8((1 + c->dtbt_tseg1 + c->dtbt_tseg2) / 2, M_CAN_TDCR_TDCO_MAX);
+	// can->TDCR.bit.TDCO = tu_min8((1 + c->dtbt_tseg1 - c->dtbt_tseg2 / 2), M_CAN_TDCR_TDCO_MAX);
+	// can->TDCR.bit.TDCF = tu_min8((1 + c->dtbt_tseg1 + c->dtbt_tseg2 / 2), M_CAN_TDCR_TDCO_MAX);
+
 
 	// tx fifo
 	can->TXBC.reg = CAN_TXBC_TBSA((uint32_t) c->tx_fifo) | CAN_TXBC_TFQS(CAN_TX_FIFO_SIZE);
@@ -419,19 +422,20 @@ static inline char const *m_can_psr_act_str(uint8_t act)
 	}
 }
 
-SC_RAMFUNC static inline uint8_t can_map_m_can_ec(uint8_t lec, uint8_t previous)
+SC_RAMFUNC static inline uint8_t can_map_m_can_ec(uint8_t value)
 {
-	switch (lec) {
-	case 0x0: return SC_CAN_ERROR_NONE;
-	case 0x1: return SC_CAN_ERROR_STUFF;
-	case 0x2: return SC_CAN_ERROR_FORM;
-	case 0x3: return SC_CAN_ERROR_ACK;
-	case 0x4: return SC_CAN_ERROR_BIT1;
-	case 0x5: return SC_CAN_ERROR_BIT0;
-	case 0x6: return SC_CAN_ERROR_CRC;
-	case 0x7: return 0xf & previous;
-	default: return 0xff;
-	}
+	static const uint8_t can_map_m_can_ec_table[8] = {
+		SC_CAN_ERROR_NONE,
+		SC_CAN_ERROR_STUFF,
+		SC_CAN_ERROR_FORM,
+		SC_CAN_ERROR_ACK,
+		SC_CAN_ERROR_BIT1,
+		SC_CAN_ERROR_BIT0,
+		SC_CAN_ERROR_CRC,
+		0xff
+	};
+
+	return can_map_m_can_ec_table[value & 7];
 }
 
 SC_RAMFUNC static bool can_poll(uint8_t index, uint32_t *events, uint32_t tsc);
@@ -475,10 +479,13 @@ static inline void counter_1MHz_init_clock(void)
 	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup TC1 to use GLCK2 */
 }
 
-SC_RAMFUNC static inline void counter_1MHz_request_current_value(void)
-{
-	TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
-}
+// SC_RAMFUNC static inline void counter_1MHz_request_current_value(void)
+// {
+// 	TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val;
+// }
+
+#define counter_1MHz_request_current_value() do { TC0->COUNT32.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_READSYNC_Val; } while (0)
+
 
 SC_RAMFUNC static inline void counter_1MHz_request_current_value_lazy(void)
 {
@@ -506,16 +513,22 @@ SC_RAMFUNC static inline void counter_1MHz_request_current_value_lazy(void)
 	}
 }
 
-SC_RAMFUNC static inline bool counter_1MHz_is_current_value_ready(void)
-{
-	return (__atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE) & TC_CTRLBSET_CMD_Msk) == TC_CTRLBSET_CMD_NONE;
-	//return TC0->COUNT32.CTRLBSET.bit.CMD == TC_CTRLBSET_CMD_NONE_Val;
-}
+// SC_RAMFUNC static inline bool counter_1MHz_is_current_value_ready(void)
+// {
+// 	return (__atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE) & TC_CTRLBSET_CMD_Msk) == TC_CTRLBSET_CMD_NONE;
+// 	//return TC0->COUNT32.CTRLBSET.bit.CMD == TC_CTRLBSET_CMD_NONE_Val;
+// }
 
-SC_RAMFUNC static inline uint32_t counter_1MHz_read_unsafe(void)
-{
-	return TC0->COUNT32.COUNT.reg & CLOCK_MAX;
-}
+#define counter_1MHz_is_current_value_ready() ((__atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE) & TC_CTRLBSET_CMD_Msk) == TC_CTRLBSET_CMD_NONE)
+
+
+// SC_RAMFUNC static inline uint32_t counter_1MHz_read_unsafe(void)
+// {
+// 	return TC0->COUNT32.COUNT.reg & CLOCK_MAX;
+// }
+
+#define counter_1MHz_read_unsafe() (TC0->COUNT32.COUNT.reg & CLOCK_MAX)
+
 
 static inline void counter_1MHz_reset(void)
 {
@@ -528,14 +541,21 @@ static inline void counter_1MHz_reset(void)
 }
 
 
-SC_RAMFUNC static inline uint32_t counter_1MHz_wait_for_current_value(void)
-{
-	while (!counter_1MHz_is_current_value_ready()) {
-		;
-	}
+// SC_RAMFUNC static inline uint32_t counter_1MHz_wait_for_current_value(void)
+// {
+// 	while (!counter_1MHz_is_current_value_ready()) {
+// 		;
+// 	}
 
-	return counter_1MHz_read_unsafe();
-}
+// 	return counter_1MHz_read_unsafe();
+// }
+
+#define counter_1MHz_wait_for_current_value() \
+	({ \
+		while (!counter_1MHz_is_current_value_ready()); \
+		uint32_t counter = counter_1MHz_read_unsafe(); \
+		counter; \
+	})
 
 SC_RAMFUNC static inline uint32_t counter_1MHz_read_sync(void)
 {
@@ -636,7 +656,7 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* events, ui
 			s->type = CAN_STATUS_FIFO_TYPE_BUS_ERROR;
 			s->tx = is_tx_error;
 			s->data_part = 0;
-			s->payload = can_map_m_can_ec(current_psr.bit.LEC, 0),
+			s->payload = can_map_m_can_ec(current_psr.bit.LEC),
 			s->ts = tsc;
 
 			__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
@@ -666,7 +686,7 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* events, ui
 			s->type = CAN_STATUS_FIFO_TYPE_BUS_ERROR;
 			s->tx = is_tx_error;
 			s->data_part = 1;
-			s->payload = can_map_m_can_ec(current_psr.bit.DLEC, 0),
+			s->payload = can_map_m_can_ec(current_psr.bit.DLEC),
 			s->ts = tsc;
 
 			__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
