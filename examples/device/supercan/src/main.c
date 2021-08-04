@@ -2331,6 +2331,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 	bool has_bus_error = false;
 	bool had_bus_error = false;
 	bool send_can_status = 0;
+	bool yield = false;
 
 
 	while (42) {
@@ -2430,6 +2431,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 						continue;
 					} else {
 						xTaskNotifyGive(can->usb_task_handle);
+						yield = true;
 						break;
 					}
 				}
@@ -2479,6 +2481,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 							// LOG("ch%u dropped CAN bus error msg\n", index);
 							// break;
 							xTaskNotifyGive(can->usb_task_handle);
+							yield = true;
 						}
 					}
 				} break;
@@ -2592,6 +2595,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 						continue;
 					} else {
 						xTaskNotifyGive(can->usb_task_handle);
+						yield = true;
 						break;
 					}
 				}
@@ -2678,6 +2682,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 						continue;
 					} else {
 						xTaskNotifyGive(can->usb_task_handle);
+						yield = true;
 						break;
 					}
 				}
@@ -2715,6 +2720,14 @@ SC_RAMFUNC static void can_usb_task(void *param)
 		previous_bus_status = current_bus_status;
 
 		xSemaphoreGive(usb_can->mutex_handle);
+
+		// LOG("|");
+
+		if (yield) {
+			yield = false;
+			// taskYIELD();
+			vTaskDelay(pdMS_TO_TICKS(1)); // 1ms for USB HS
+		}
 	}
 }
 #endif // !SPAM
