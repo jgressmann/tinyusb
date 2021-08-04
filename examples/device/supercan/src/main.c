@@ -2728,7 +2728,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 			// when the USB buffers are full/busy.
 			yield = false;
 			// taskYIELD();
-			vTaskDelay(pdMS_TO_TICKS(1)); // 1ms for USB HS
+			vTaskDelay(pdMS_TO_TICKS(1)); // 1ms for USB FS
 		}
 	}
 }
