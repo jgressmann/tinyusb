@@ -160,7 +160,7 @@ static inline void init_clock(void)
 
 static inline void uart_init(void)
 {
-/* configure SERCOM0 on PA08 */
+	/* configure SERCOM0 on PA08 */
 	PORT->Group[0].WRCONFIG.reg =
 		PORT_WRCONFIG_WRPINCFG |
 		PORT_WRCONFIG_WRPMUX |
