@@ -24,7 +24,6 @@
  */
 
 #include <tusb.h>
-#include <class/dfu/dfu.h>
 
 #include <usb_descriptors.h>
 #include <sam.h>
@@ -75,15 +74,16 @@ uint8_t const * tud_descriptor_device_cb(void)
 	return (uint8_t const *) &device;
 }
 
+#define ALT_COUNT   1
 
-
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_DFU_RT_DESC_LEN)
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_DFU_DESC_LEN(ALT_COUNT))
 
 static uint8_t const desc_configuration[] =
 {
 	// Config number, interface count, string index, total length, attribute, power in mA
 	TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0, 100),
 
+#if 0
 	9, TUSB_DESC_INTERFACE, 0, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_DFU, 4, \
   	/* Function */
 #if 0
@@ -115,6 +115,9 @@ Bit 0: download capable
 		U16_TO_U8S_LE(DFU_USB_TIMEOUT_MS) /* timeout [ms]*/,
 		U16_TO_U8S_LE(MCU_NVM_PAGE_SIZE)/* xfer size*/,
 		U16_TO_U8S_LE(0x0101)/*bcdVersion*/
+#endif
+	// Interface number, Alternate count, starting string index, attributes, detach timeout, transfer size
+	TUD_DFU_DESCRIPTOR(0, ALT_COUNT, 4, (DFU_ATTR_CAN_DOWNLOAD | DFU_ATTR_MANIFESTATION_TOLERANT), 1000, CFG_TUD_DFU_XFER_BUFSIZE),
 };
 
 

@@ -29,40 +29,16 @@
 
 #include <bsp/board.h>
 #include <tusb.h>
-#include <usbd_pvt.h>
-#include <class/dfu/dfu.h>
-
-#include <sam.h>
+#include <class/dfu/dfu_device.h>
 
 #include <usb_descriptors.h>
 #include <mcu.h>
-#include <usb_dfu_1_1.h>
 #include <dfu_ram.h>
 #include <dfu_app.h>
 #include <dfu_debug.h>
 #include <version.h>
 
 static void led_task(void);
-
-#if TU_BIG_ENDIAN == TU_BYTE_ORDER
-static inline uint16_t le16_to_cpu(uint16_t value) { return __builtin_bswap16(value); }
-static inline uint32_t le32_to_cpu(uint32_t value) { return __builtin_bswap32(value); }
-static inline uint16_t cpu_to_le16(uint16_t value) { return __builtin_bswap16(value); }
-static inline uint32_t cpu_to_le32(uint32_t value) { return __builtin_bswap32(value); }
-static inline uint16_t be16_to_cpu(uint16_t value) { return value; }
-static inline uint32_t be32_to_cpu(uint32_t value) { return value; }
-static inline uint16_t cpu_to_be16(uint16_t value) { return value; }
-static inline uint32_t cpu_to_be32(uint32_t value) { return value; }
-#else
-static inline uint16_t le16_to_cpu(uint16_t value) { return value; }
-static inline uint32_t le32_to_cpu(uint32_t value) { return value; }
-static inline uint16_t cpu_to_le16(uint16_t value) { return value; }
-static inline uint32_t cpu_to_le32(uint32_t value) { return value; }
-static inline uint16_t be16_to_cpu(uint16_t value) { return __builtin_bswap16(value); }
-static inline uint32_t be32_to_cpu(uint32_t value) { return __builtin_bswap32(value); }
-static inline uint16_t cpu_to_be16(uint16_t value) { return __builtin_bswap16(value); }
-static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(value); }
-#endif
 
 #ifndef likely
 #define likely(x) __builtin_expect(!!(x),1)
@@ -84,7 +60,6 @@ static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(va
 int crc32(uint32_t addr, uint32_t bytes, uint32_t *result);
 
 static struct dfu {
-	struct dfu_get_status_reply status;
 	int bootloader_status;
 	int bootloader_swap_banks_on_reset;
 	uint32_t rom_size;
@@ -274,8 +249,22 @@ static inline void reset_device(void)
 	NVIC_SystemReset();
 }
 
+static inline void reset_download(void)
+{
+	dfu.bootloader_status = BOOTLOADER_STATUS_MAYBE;
+	dfu.prog_offset = MCU_BOOTLOADER_SIZE;
+	dfu.download_size = 0;
+	dfu.block_offset = 0;
+	dfu.bootloader_size = 0;
+	dfu.bootloader_crc = 0;
+	dfu.bootloader_vector_table_crc = 0;
+	dfu.bootloader_swap_banks_on_reset = 0;
+}
+
 __attribute__((noreturn)) static void run_bootloader(void)
 {
+	reset_download();
+
 	tusb_init();
 
 	while (1) {
@@ -331,15 +320,6 @@ int main(void)
 
 	LOG(NAME " v" SUPERDFU_VERSION_STR " starting...\n");
 
-
-	dfu.status.bStatus = DFU_ERROR_OK;
-	dfu.status.bState = DFU_STATE_DFU_IDLE;
-#if SUPERDFU_DEBUG
-	dfu.status.bwPollTimeout = cpu_to_le32(5);
-#else
-	dfu.status.bwPollTimeout = cpu_to_le32(1);
-#endif
-
 	bool should_start_app = true;
 	struct dfu_app_hdr const *app_hdr = (struct dfu_app_hdr const *)(uintptr_t)MCU_BOOTLOADER_SIZE;
 
@@ -362,8 +342,8 @@ int main(void)
 		LOG(NAME " checking app header @ %p\n", app_hdr);
 		int error = dfu_app_hdr_validate_app(app_hdr);
 		if (error) {
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-			dfu.status.bStatus = DFU_ERROR_FIRMWARE;
+			// dfu.status.bState = DFU_STATE_DFU_ERROR;
+			// dfu.status.bStatus = DFU_ERROR_FIRMWARE;
 			should_start_app = false;
 
 			switch (error) {
@@ -470,96 +450,65 @@ void tud_resume_cb(void)
 	LOG("resume\n");
 }
 
+
+// Invoked right before tud_dfu_download_cb() (state=DFU_DNBUSY) or tud_dfu_manifest_cb() (state=DFU_MANIFEST)
+// Application return timeout in milliseconds (bwPollTimeout) for the next download/manifest operation.
+// During this period, USB host won't try to communicate with us.
+uint32_t tud_dfu_get_timeout_cb(uint8_t alt, uint8_t state)
+{
+	LOG("tud_dfu_get_timeout_cb alt=%u state=%u\n", alt, state);
+	(void)alt;
+	(void)state;
+
+	switch (state) {
+	case DFU_DNBUSY:
+	case DFU_MANIFEST:
 #if SUPERDFU_DEBUG
-static inline const char* recipient_str(tusb_request_recipient_t r)
-{
-	switch (r) {
-	case TUSB_REQ_RCPT_DEVICE:
-		return "device (0)";
-	case TUSB_REQ_RCPT_INTERFACE:
-		return "interface (1)";
-	case TUSB_REQ_RCPT_ENDPOINT:
-		return "endpoint (2)";
-	case TUSB_REQ_RCPT_OTHER:
-		return "other (3)";
-	default:
-		return "???";
-	}
-}
-
-static inline const char* type_str(tusb_request_type_t value)
-{
-	switch (value) {
-	case TUSB_REQ_TYPE_STANDARD:
-		return "standard (0)";
-	case TUSB_REQ_TYPE_CLASS:
-		return "class (1)";
-	case TUSB_REQ_TYPE_VENDOR:
-		return "vendor (2)";
-	case TUSB_REQ_TYPE_INVALID:
-		return "invalid (3)";
-	default:
-		return "???";
-	}
-}
-
-static inline const char* dir_str(tusb_dir_t value)
-{
-	switch (value) {
-	case TUSB_DIR_OUT:
-		return "out (0)";
-	case TUSB_DIR_IN:
-		return "in (1)";
-	default:
-		return "???";
-	}
-}
+		return 5;
+#else
+		return 1;
 #endif
+	default:
+		break;
+	}
 
-
-
-void sd_usb_init(void)
-{
-	LOG("sd_usb_init\n");
+	return 0;
 }
 
-void sd_usb_reset(uint8_t rhport)
+// Invoked when received DFU_DNLOAD (wLength>0) following by DFU_GETSTATUS (state=DFU_DNBUSY) requests
+// This callback could be returned before flashing op is complete (async).
+// Once finished flashing, application must call tud_dfu_finish_flashing()
+void tud_dfu_download_cb(uint8_t alt, uint16_t block_num, uint8_t const* data, uint16_t length)
 {
-	(void)rhport;
-	LOG("sd_usb_reset\n");
-}
+	(void) alt;
+	(void) block_num;
 
-uint16_t sd_usb_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t max_len)
-{
-	(void)rhport;
-	(void)max_len;
+	LOG("tud_dfu_download_cb alt=%u block_num=%u\n", alt, block_num);
 
-	LOG("sd_usb_open\n");
-	TU_VERIFY(itf_desc->bInterfaceSubClass == TUD_DFU_APP_SUBCLASS);
-	TU_VERIFY(itf_desc->bInterfaceProtocol == DFU_PROTOCOL_DFU);
+	if (unlikely(dfu.block_offset + length > sizeof(dfu.block_buffer))) {
+		LOG("> download would exceed configured block buffer size\n");
+		tud_dfu_finish_flashing(DFU_STATUS_ERR_UNKNOWN);
+		return;
+	}
 
-	return sizeof(tusb_desc_interface_t) + TUD_DFU_RT_DESC_LEN;
-}
-
-_Static_assert(MCU_NVM_BLOCK_SIZE >= 2 * MCU_VECTOR_TABLE_ALIGNMENT, "block size must fit the vector table at least 2 times");
-
-static bool dfu_state_download_sync_complete(tusb_control_request_t const *request)
-{
-	dfu.block_offset += request->wLength;
-	dfu.download_size += request->wLength;
+	memcpy(&dfu.block_buffer[dfu.block_offset], data, length);
+	dfu.block_offset += length;
+	dfu.download_size += length;
 
 	// check for bootloader upload
+	_Static_assert(MCU_NVM_BLOCK_SIZE >= 2 * MCU_VECTOR_TABLE_ALIGNMENT, "block size must fit the vector table at least 2 times");
+
+
 	if (BOOTLOADER_STATUS_MAYBE == dfu.bootloader_status &&
 		dfu.block_offset >= 2 * MCU_VECTOR_TABLE_ALIGNMENT)  {
-		TU_ASSERT(!dfu.bootloader_size);
+		// TU_ASSERT(!dfu.bootloader_size);
 
 		struct dfu_app_hdr *hdr = (struct dfu_app_hdr *)dfu.block_buffer;
 		int error = dfu_app_hdr_validate_hdr(hdr);
 		if (unlikely(error)) {
 			LOG("> invalid dfu app header\n");
-			dfu.status.bStatus = DFU_ERROR_FILE;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-			return false;
+			tud_dfu_finish_flashing(DFU_STATUS_ERR_FILE);
+			return;
 		}
 
 		if (hdr->hdr_version >= 2 && (hdr->hdr_flags & DFU_APP_HDR_FLAG_BOOTLOADER)) {
@@ -570,9 +519,8 @@ static bool dfu_state_download_sync_complete(tusb_control_request_t const *reque
 			dfu.bootloader_crc = hdr->app_crc;
 			error = crc32((uint32_t)&dfu.block_buffer[MCU_VECTOR_TABLE_ALIGNMENT], MCU_VECTOR_TABLE_ALIGNMENT, &dfu.bootloader_vector_table_crc);
 			if (unlikely(error)) {
-				dfu.status.bStatus = DFU_ERROR_VERIFY;
-				dfu.status.bState = DFU_STATE_DFU_ERROR;
-				return false;
+				tud_dfu_finish_flashing(DFU_STATUS_ERR_VERIFY);
+				return;
 			}
 
 			// move vector table up to 0x0
@@ -582,13 +530,12 @@ static bool dfu_state_download_sync_complete(tusb_control_request_t const *reque
 		}
 	}
 
-	if (request->wLength < MCU_NVM_PAGE_SIZE || dfu.block_offset == sizeof(dfu.block_buffer)) {
+	if (length < MCU_NVM_PAGE_SIZE || dfu.block_offset == sizeof(dfu.block_buffer)) {
 		LOG("> clearing block @ %#08lx\n", dfu.prog_offset);
 		if (!nvm_erase_block((void*)dfu.prog_offset)) {
 			LOG("\tclearing failed for block @ %#08lx\n", dfu.prog_offset);
-			dfu.status.bStatus = DFU_ERROR_ERASE;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-			return false;
+			tud_dfu_finish_flashing(DFU_STATUS_ERR_ERASE);
+			return;
 		}
 
 		uint8_t* sptr = dfu.block_buffer;
@@ -606,425 +553,80 @@ static bool dfu_state_download_sync_complete(tusb_control_request_t const *reque
 					LOG("> actual content\n");
 					TU_LOG1_MEM((void*)dfu.prog_offset, MCU_NVM_PAGE_SIZE, 2);
 					LOG("> verification failed for page @ %p\n", (void*)dfu.prog_offset);
-					dfu.status.bStatus = DFU_ERROR_VERIFY;
-					dfu.status.bState = DFU_STATE_DFU_ERROR;
-					return false;
+					tud_dfu_finish_flashing(DFU_STATUS_ERR_VERIFY);
+					return;
 				}
 			} else {
 				LOG("> write failed for page @ %p\n", (void*)dfu.prog_offset);
-				dfu.status.bStatus = DFU_ERROR_WRITE;
-				dfu.status.bState = DFU_STATE_DFU_ERROR;
-				return false;
+				tud_dfu_finish_flashing(DFU_STATUS_ERR_WRITE);
+				return;
 			}
 		}
 
 		dfu.block_offset = 0;
 	}
 
-	dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
-
-	return true;
+	tud_dfu_finish_flashing(DFU_STATUS_OK);
 }
 
-bool sd_usb_control_complete(uint8_t rhport, tusb_control_request_t const * request)
+// Invoked when download process is complete, received DFU_DNLOAD (wLength=0) following by DFU_GETSTATUS (state=Manifest)
+// Application can do checksum, or actual flashing if buffered entire image previously.
+// Once finished flashing, application must call tud_dfu_finish_flashing()
+void tud_dfu_manifest_cb(uint8_t alt)
 {
-	(void)rhport;
-	// LOG("complete req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
-	// 	request->bmRequestType,
-	// 	recipient_str(request->bmRequestType_bit.recipient),
-	// 	type_str(request->bmRequestType_bit.type),
-	// 	dir_str(request->bmRequestType_bit.direction),
-	// 	request->bRequest, request->wValue, request->wIndex,
-	// 	request->wLength);
+	(void) alt;
+	LOG("tud_dfu_manifest_cb alt=%u\n", alt);
 
-	// LOG("DFU state=%u, status=%u\n", dfu.status.bState, dfu.status.bStatus);
+	if (BOOTLOADER_STATUS_YES == dfu.bootloader_status) {
+		uint32_t bytes_written = dfu.prog_offset - dfu.rom_size / 2;
 
-	// LOG("sd_usb_control_complete\n");
-
-	switch (dfu.status.bState) {
-	case DFU_STATE_DFU_DNLOAD_SYNC:
-		return dfu_state_download_sync_complete(request);
-	default:
-		break;
-	// default:
-	// 	LOG("> UNHANDLED STATE\n");
-	// 	break;
-	}
-
-	return true;
-}
-
-static inline bool dfu_state_manifest_sync(tusb_control_request_t const *request)
-{
-	const int port = 0;
-	LOG("DFU_STATE_DFU_MANIFEST_SYNC\n");
-	switch (request->bRequest) {
-	case DFU_REQUEST_GETSTATUS:
-		LOG("> DFU_REQUEST_GETSTATUS\n");
-
-		if (BOOTLOADER_STATUS_YES == dfu.bootloader_status) {
-			uint32_t bytes_written = dfu.prog_offset - dfu.rom_size / 2;
-
-			if (bytes_written < dfu.bootloader_size) {
-				LOG("> incomplete bootloader write, NOT swapping banks\n");
+		if (bytes_written < dfu.bootloader_size) {
+			LOG("> incomplete bootloader write, NOT swapping banks\n");
+		} else {
+			uint32_t crc = ~dfu.bootloader_crc;
+			// bootloader payload is offset by dfu app header
+			int error = crc32(dfu.rom_size / 2 + MCU_VECTOR_TABLE_ALIGNMENT, dfu.bootloader_size, &crc);
+			if (error) {
+				LOG("> bootloader verification (1) failed with %d\n", error);
+			} else if (crc != dfu.bootloader_crc) {
+				LOG("> bootloader checksum (1) mismatch\n");
 			} else {
-				uint32_t crc = ~dfu.bootloader_crc;
-				// bootloader payload is offset by dfu app header
-				int error = crc32(dfu.rom_size / 2 + MCU_VECTOR_TABLE_ALIGNMENT, dfu.bootloader_size, &crc);
+				error = crc32(dfu.rom_size / 2, MCU_VECTOR_TABLE_ALIGNMENT, &crc);
 				if (error) {
-					LOG("> bootloader verification (1) failed with %d\n", error);
-				} else if (crc != dfu.bootloader_crc) {
-					LOG("> bootloader checksum (1) mismatch\n");
+					LOG("> bootloader verification (2) failed with %d\n", error);
+				} else if (crc != dfu.bootloader_vector_table_crc) {
+					LOG("> bootloader checksum (2) mismatch\n");
 				} else {
-					error = crc32(dfu.rom_size / 2, MCU_VECTOR_TABLE_ALIGNMENT, &crc);
-					if (error) {
-						LOG("> bootloader verification (2) failed with %d\n", error);
-					} else if (crc != dfu.bootloader_vector_table_crc) {
-						LOG("> bootloader checksum (2) mismatch\n");
-					} else {
-						LOG("> bootloader checksums verified\n");
-						dfu.bootloader_swap_banks_on_reset = 1;
-					}
+					LOG("> bootloader checksums verified\n");
+					dfu.bootloader_swap_banks_on_reset = 1;
 				}
 			}
+		}
 
-			if (dfu.bootloader_swap_banks_on_reset) {
-				dfu.status.bState = DFU_STATE_DFU_MANIFEST;
-			} else {
-				dfu.status.bStatus = DFU_ERROR_VERIFY;
-				dfu.status.bState = DFU_STATE_DFU_ERROR;
-			}
+		if (dfu.bootloader_swap_banks_on_reset) {
+			tud_dfu_finish_flashing(DFU_STATUS_OK);
 		} else {
-			dfu.status.bState = DFU_STATE_DFU_MANIFEST;
+			tud_dfu_finish_flashing(DFU_STATUS_ERR_VERIFY);
 		}
-
-		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-		}
-		break;
-	default:
-		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
-		dfu.status.bState = DFU_STATE_DFU_ERROR;
-		return false;
+	} else {
+		tud_dfu_finish_flashing(DFU_STATUS_OK);
 	}
-
-	return true;
 }
 
-static inline bool dfu_state_manifest(tusb_control_request_t const *request)
+// Invoked when the Host has terminated a download or upload transfer
+void tud_dfu_abort_cb(uint8_t alt)
 {
-	const int port = 0;
-	LOG("DFU_STATE_DFU_MANIFEST\n");
-	switch (request->bRequest) {
-	case DFU_REQUEST_GETSTATUS:
-		LOG("> DFU_REQUEST_GETSTATUS\n");
-		if (DFU_MANIFESTATION_TOLERANT) {
-			dfu.status.bState = DFU_STATE_DFU_MANIFEST_SYNC;
-		} else {
-			dfu.status.bState = DFU_STATE_DFU_MANIFEST_WAIT_RESET;
-		}
-
-		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-		}
-		break;
-	default:
-		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
-		dfu.status.bState = DFU_STATE_DFU_ERROR;
-		return false;
-	}
-
-	return true;
+	(void) alt;
+	LOG("tud_dfu_abort_cb\n");
+	reset_download();
 }
 
-static inline bool dfu_state_manifest_wait_reset(tusb_control_request_t const *request)
+// Invoked when a DFU_DETACH request is received
+void tud_dfu_detach_cb(void)
 {
-	// const int port = 0;
-	LOG("DFU_STATE_DFU_MANIFEST_WAIT_RESET\n");
-	switch (request->bRequest) {
-	case DFU_REQUEST_DETACH:
-		LOG("> DFU_REQUEST_DETACH\n"); // dfu-util sends this (when it shouldn't)
-		reset_device();
-		break;
-	// case DFU_REQUEST_GETSTATUS:
-	// 	LOG("> DFU_REQUEST_GETSTATUS\n");
-	// 	if (DFU_MANIFESTATION_TOLERANT) {
-	// 		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
-	// 			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-	// 			dfu.status.bState = DFU_STATE_DFU_ERROR;
-	// 		}
-	// 	} else {
-	// 		// reset_device();
-	// 	}
-		break;
-	default:
-		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
-		dfu.status.bState = DFU_STATE_DFU_ERROR;
-		return false;
-	}
-
-	return true;
+	LOG("tud_dfu_detach_cb\n");
+	reset_device();
 }
-
-static inline bool dfu_state_download_idle(tusb_control_request_t const *request);
-static inline bool dfu_start_download(tusb_control_request_t const *request)
-{
-	LOG("> DFU_REQUEST_DNLOAD\n");
-	dfu.bootloader_status = BOOTLOADER_STATUS_MAYBE;
-	dfu.prog_offset = MCU_BOOTLOADER_SIZE;
-	dfu.download_size = 0;
-	dfu.block_offset = 0;
-	dfu.bootloader_size = 0;
-	dfu.bootloader_crc = 0;
-	dfu.bootloader_vector_table_crc = 0;
-	dfu.bootloader_swap_banks_on_reset = 0;
-
-	dfu.status.bStatus = DFU_ERROR_OK;
-	dfu.status.bState = DFU_STATE_DFU_DNLOAD_IDLE;
-	return dfu_state_download_idle(request);
-}
-
-static inline bool dfu_state_error(tusb_control_request_t const *request)
-{
-	const int port = 0;
-	LOG("DFU_STATE_DFU_ERROR\n");
-	switch (request->bRequest) {
-	case DFU_REQUEST_GETSTATUS:
-		LOG("> DFU_REQUEST_GETSTATUS\n");
-		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-		}
-		break;
-	case DFU_REQUEST_CLRSTATUS:
-		LOG("> DFU_REQUEST_CLRSTATUS\n");
-		dfu.status.bStatus = DFU_ERROR_OK;
-		dfu.status.bState = DFU_STATE_DFU_IDLE;
-		if (unlikely(!tud_control_xfer(port, request, NULL, 0))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-			return false;
-		}
-		break;
-	case DFU_REQUEST_DNLOAD: // dfu-tool (fwupd 1.2.5) doesn't clear status
-		return dfu_start_download(request);
-	default:
-		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
-		dfu.status.bState = DFU_STATE_DFU_ERROR;
-		return false;
-	}
-
-	return true;
-}
-
-static inline bool dfu_state_download_sync(tusb_control_request_t const *request)
-{
-	const int port = 0;
-	LOG("DFU_STATE_DFU_DNLOAD_SYNC\n");
-	switch (request->bRequest) {
-	case DFU_REQUEST_GETSTATUS:
-		LOG("> DFU_REQUEST_GETSTATUS\n");
-		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-		}
-		break;
-	case DFU_REQUEST_ABORT:
-		LOG("> DFU_REQUEST_ABORT\n");
-		dfu.status.bStatus = DFU_ERROR_OK;
-		dfu.status.bState = DFU_STATE_DFU_IDLE;
-		break;
-	default:
-		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
-		dfu.status.bState = DFU_STATE_DFU_ERROR;
-		return false;
-	}
-
-	if (unlikely(!tud_control_xfer(port, request, NULL, 0))) {
-		dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-		dfu.status.bState = DFU_STATE_DFU_ERROR;
-		return false;
-	}
-
-	return true;
-}
-
-static inline bool dfu_state_download_idle(tusb_control_request_t const *request)
-{
-	const int port = 0;
-	LOG("DFU_STATE_DFU_DNLOAD_IDLE\n");
-	switch (request->bRequest) {
-	case DFU_REQUEST_GETSTATUS:
-		LOG("> DFU_REQUEST_GETSTATUS\n");
-		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-		}
-		break;
-	case DFU_REQUEST_DNLOAD:
-		LOG("> DFU_REQUEST_DNLOAD l=%u\n", request->wLength);
-		if (request->wLength > 0) {
-			LOG("> block_offset=%#lx\n", dfu.block_offset);
-			LOG("> download_size=%#lx\n", dfu.download_size);
-			LOG("> prog_offset=%#lx\n", dfu.prog_offset);
-
-			TU_ASSERT(dfu.block_offset + request->wLength <= sizeof(dfu.block_buffer));
-
-			if (dfu.download_size + request->wLength > dfu.app_size) {
-				dfu.status.bStatus = DFU_ERROR_ADDRESS;
-				dfu.status.bState = DFU_STATE_DFU_ERROR;
-				return false;
-			}
-
-			if (unlikely(!tud_control_xfer(port, request, &dfu.block_buffer[dfu.block_offset], MCU_NVM_PAGE_SIZE))) {
-				dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-				dfu.status.bState = DFU_STATE_DFU_ERROR;
-				return false;
-			}
-
-			dfu.status.bState = DFU_STATE_DFU_DNLOAD_SYNC;
-		} else {
-			if (dfu.download_size) {
-				// //dfu.status.bState = DFU_STATE_DFU_MANIFEST_WAIT_RESET;
-				// // dfu.status.bState = DFU_STATE_DFU_IDLE;
-				if (DFU_MANIFESTATION_TOLERANT) {
-					dfu.status.bState = DFU_STATE_DFU_IDLE;
-				} else {
-					dfu.status.bState = DFU_STATE_DFU_MANIFEST_SYNC;
-				}
-			} else {
-				LOG("> no data received\n");
-				dfu.status.bStatus = DFU_ERROR_NOTDONE;
-				dfu.status.bState = DFU_STATE_DFU_ERROR;
-			}
-
-			if (unlikely(!tud_control_xfer(port, request, NULL, 0))) {
-				dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-				dfu.status.bState = DFU_STATE_DFU_ERROR;
-				return false;
-			}
-			return true;
-		}
-		break;
-	default:
-		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
-		dfu.status.bState = DFU_STATE_DFU_ERROR;
-		return false;
-	}
-
-	return true;
-}
-
-static inline bool dfu_state_idle(tusb_control_request_t const *request)
-{
-	const int port = 0;
-
-	LOG("DFU_STATE_DFU_IDLE\n");
-
-	switch (request->bRequest) {
-	case DFU_REQUEST_DETACH:
-		LOG("> DFU_REQUEST_DETACH\n"); // dfu-util sends this (when it shouldn't)
-		reset_device();
-		break;
-	case DFU_REQUEST_GETSTATUS:
-		LOG("> DFU_REQUEST_GETSTATUS\n");
-		if (unlikely(!tud_control_xfer(port, request, &dfu.status, sizeof(dfu.status)))) {
-			dfu.status.bStatus = DFU_ERROR_UNKNOWN;
-			dfu.status.bState = DFU_STATE_DFU_ERROR;
-		}
-		break;
-	case DFU_REQUEST_DNLOAD:
-		return dfu_start_download(request);
-	default:
-		LOG("> UNHANDLED REQUEST %02x\n", request->bRequest);
-		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
-		dfu.status.bState = DFU_STATE_DFU_ERROR;
-		return false;
-	}
-
-	return true;
-}
-
-bool sd_usb_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const *request)
-{
-	(void)rhport;
-	(void)stage;
-
-	LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
-		request->bmRequestType,
-		recipient_str(request->bmRequestType_bit.recipient),
-		type_str(request->bmRequestType_bit.type),
-		dir_str(request->bmRequestType_bit.direction),
-		request->bRequest, request->wValue, request->wIndex,
-		request->wLength);
-
-	TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
-	TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
-
-	LOG("DFU state=%u, status=%u\n", dfu.status.bState, dfu.status.bStatus);
-
-	switch (dfu.status.bState) {
-	case DFU_STATE_DFU_IDLE:
-		return dfu_state_idle(request);
-	case DFU_STATE_DFU_DNLOAD_IDLE:
-		return dfu_state_download_idle(request);
-	case DFU_STATE_DFU_DNLOAD_SYNC:
-		return dfu_state_download_sync(request);
-	case DFU_STATE_DFU_MANIFEST_SYNC:
-		return dfu_state_manifest_sync(request);
-	case DFU_STATE_DFU_MANIFEST:
-		return dfu_state_manifest(request);
-	case DFU_STATE_DFU_MANIFEST_WAIT_RESET:
-		return dfu_state_manifest_wait_reset(request);
-	case DFU_STATE_DFU_ERROR:
-		return dfu_state_error(request);
-	default:
-		LOG("> UNHANDLED STATE\n");
-		dfu.status.bStatus = DFU_ERROR_STALLEDPKT;
-		dfu.status.bState = DFU_STATE_DFU_ERROR;
-		break;
-	}
-
-	return false;
-}
-
-bool sd_usb_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
-{
-	LOG("sd_usb_xfer_cb\n");
-	(void) rhport;
-	(void) ep_addr;
-	(void) result;
-	(void) xferred_bytes;
-	return true;
-}
-
-static const usbd_class_driver_t sd_usb_driver = {
-#if CFG_TUSB_DEBUG >= 2
-	.name = "SD",
-#endif
-	.init = &sd_usb_init,
-	.reset = &sd_usb_reset,
-	.open = &sd_usb_open,
-	.control_xfer_cb = &sd_usb_control_xfer_cb,
-	.xfer_cb = NULL,
-	.sof = NULL,
-};
-
-usbd_class_driver_t const* usbd_app_driver_get_cb(uint8_t* driver_count)
-{
-	*driver_count = 1;
-	return &sd_usb_driver;
-}
-
-
 
 
 static void led_task(void)

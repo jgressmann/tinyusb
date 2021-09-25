@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,8 @@
  */
 
 #pragma once
+
+#include <mcu.h>
 
 #ifdef __cplusplus
  extern "C" {
@@ -66,8 +68,9 @@
 #define CFG_TUD_ENDPOINT0_SIZE    64
 
 //------------- CLASS -------------//
-// #define CFG_TUD_DFU               1
+#define CFG_TUD_DFU               1
 
+#define CFG_TUD_DFU_XFER_BUFSIZE MCU_NVM_PAGE_SIZE
 
 #ifdef __cplusplus
 } // extern "C" {
