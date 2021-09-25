@@ -103,8 +103,7 @@ CFLAGS += \
   -Wsign-compare \
   -Wmissing-format-attribute \
   -Wunreachable-code \
-  -Wcast-align \
-  -Wcast-function-type
+  -Wcast-align
 
 # Debugging/Optimization
 ifeq ($(DEBUG), 1)

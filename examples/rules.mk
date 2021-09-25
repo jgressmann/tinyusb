@@ -41,8 +41,9 @@ SRC_C += \
 INC += $(TOP)/src
 
 CFLAGS += $(addprefix -I,$(INC))
+LINKER_SCRIPT ?= $(TOP)/$(LD_FILE)
 
-LDFLAGS += $(CFLAGS) -Wl,-T,$(TOP)/$(LD_FILE) -Wl,-Map=$@.map -Wl,-cref -Wl,-gc-sections
+LDFLAGS += $(CFLAGS) -Wl,-T,$(LINKER_SCRIPT) -Wl,-Map=$@.map -Wl,-cref -Wl,-gc-sections
 ifneq ($(SKIP_NANOLIB), 1)
 LDFLAGS += -specs=nosys.specs -specs=nano.specs
 endif
@@ -78,7 +79,7 @@ else
 	@$(MKDIR) -p $@
 endif
 
-$(BUILD)/$(PROJECT).elf: $(OBJ)
+$(BUILD)/$(PROJECT).elf: $(LINKER_SCRIPT) $(OBJ)
 	@echo LINK $@
 	@$(CC) -o $@ $(LDFLAGS) $^ -Wl,--start-group $(LIBS) -Wl,--end-group
 

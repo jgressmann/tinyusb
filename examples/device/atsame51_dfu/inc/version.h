@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,14 +21,15 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  *
- * This file is part of the TinyUSB stack.
  */
 
-#include "tusb_option.h"
+#pragma once
 
-#if TUSB_OPT_DEVICE_ENABLED && (CFG_TUSB_MCU == OPT_MCU_SAME51)
-#undef CFG_TUSB_MCU
-#define CFG_TUSB_MCU OPT_MCU_SAMD51
-#include "../samd/dcd_samd.c"
-#endif
+#define SUPERDFU_STR2(x) #x
+#define SUPERDFU_STR(x) SUPERDFU_STR2(x)
 
+#define SUPERDFU_VERSION_MAJOR 0
+#define SUPERDFU_VERSION_MINOR 3
+#define SUPERDFU_VERSION_PATCH 4
+
+#define SUPERDFU_VERSION_STR SUPERDFU_STR(SUPERDFU_VERSION_MAJOR) "." SUPERDFU_STR(SUPERDFU_VERSION_MINOR) "." SUPERDFU_STR(SUPERDFU_VERSION_PATCH)

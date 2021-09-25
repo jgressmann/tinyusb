@@ -32,11 +32,15 @@ OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
 OUTPUT_ARCH(arm)
 SEARCH_DIR(.)
 
+VECTOR_TABLE_ALIGNMENT = 0x400; /* vector table must at least be 1024-byte aligned */
+ROM_SIZE = CHIP_ROM_SIZE;
+RAM_SIZE = CHIP_RAM_SIZE;
+
 /* Memory Spaces Definitions */
 MEMORY
 {
-  rom      (rx)  : ORIGIN = 0x00000000, LENGTH = 0x00080000
-  ram      (rwx) : ORIGIN = 0x20000000, LENGTH = 0x00030000
+  rom      (rx)  : ORIGIN = 0x00000000, LENGTH = ROM_SIZE
+  ram      (rwx) : ORIGIN = 0x20000000, LENGTH = RAM_SIZE
   bkupram  (rwx) : ORIGIN = 0x47000000, LENGTH = 0x00002000
   qspi     (rwx) : ORIGIN = 0x04000000, LENGTH = 0x01000000
 }
@@ -49,7 +53,7 @@ SECTIONS
 {
     .text :
     {
-        . = ALIGN(4);
+        . = ALIGN(VECTOR_TABLE_ALIGNMENT);
         _sfixed = .;
         KEEP(*(.vectors .vectors.*))
         *(.text .text.* .gnu.linkonce.t.*)
@@ -115,6 +119,14 @@ SECTIONS
         *(.data .data.*);
         . = ALIGN(4);
         _erelocate = .;
+    } > ram
+
+    .vectors (NOLOAD):
+    {
+        . = ALIGN(VECTOR_TABLE_ALIGNMENT);
+        _svectors = .;
+        . = . + VECTOR_TABLE_ALIGNMENT;
+        _evectors = .;
     } > ram
 
     .bkupram (NOLOAD):
