@@ -79,9 +79,9 @@ else
 	@$(MKDIR) -p $@
 endif
 
-$(BUILD)/$(PROJECT).elf: $(LINKER_SCRIPT) $(OBJ)
+$(BUILD)/$(PROJECT).elf: $(OBJ) $(LINKER_SCRIPT)
 	@echo LINK $@
-	@$(CC) -o $@ $(LDFLAGS) $^ -Wl,--start-group $(LIBS) -Wl,--end-group
+	@$(CC) -o $@ $(LDFLAGS) $(OBJ) -Wl,--start-group $(LIBS) -Wl,--end-group
 
 $(BUILD)/$(PROJECT).bin: $(BUILD)/$(PROJECT).elf
 	@echo CREATE $@

@@ -56,7 +56,7 @@ endif
 
 
 LD_FILE_IN = $(TOP)/hw/bsp/$(BOARD)/same51jxxa_flash.ld
-LINKER_SCRIPT = $(BUILD)/$(BOARD).ld
+LINKER_SCRIPT = $(CURDIR)/$(BUILD)/$(BOARD).ld
 ifdef APP
 ifneq ($(APP),0)
   LD_FILE_IN = $(TOP)/hw/bsp/$(BOARD)/same51jxxa_flash_app.ld
@@ -107,8 +107,7 @@ FREERTOS_PORT = ARM_CM4F
 # For flash-jlink target
 JLINK_IF = swd
 
-$(BUILD)/$(BOARD).ld:
-	@mkdir -p $(BUILD) 2>/dev/null
+$(LINKER_SCRIPT): $(OBJ_DIRS)
 	@cat "$(LD_FILE_IN)" | $(SED) 's/CHIP_ROM_SIZE/$(CHIP_ROM_SIZE)/g; s/CHIP_RAM_SIZE/$(CHIP_RAM_SIZE)/g;' >$@
 
 # flash using jlink
