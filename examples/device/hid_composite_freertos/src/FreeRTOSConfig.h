@@ -71,6 +71,7 @@ extern uint32_t SystemCoreClock;
 #define configUSE_TIME_SLICING                  0
 #define configUSE_NEWLIB_REENTRANT              0
 #define configENABLE_BACKWARD_COMPATIBILITY     1
+#define configSTACK_ALLOCATION_FROM_SEPARATE_HEAP   0
 
 #define configSUPPORT_STATIC_ALLOCATION         1
 #define configSUPPORT_DYNAMIC_ALLOCATION        0
@@ -131,6 +132,16 @@ extern uint32_t SystemCoreClock;
   #define configASSERT( x )
 #endif
 
+#ifdef __RX__
+/* Renesas RX series */
+#define vSoftwareInterruptISR					INT_Excep_ICU_SWINT
+#define vTickISR								INT_Excep_CMT0_CMI0
+#define configPERIPHERAL_CLOCK_HZ				(configCPU_CLOCK_HZ/2)
+#define configKERNEL_INTERRUPT_PRIORITY			1
+#define configMAX_SYSCALL_INTERRUPT_PRIORITY	4
+
+#else
+
 /* FreeRTOS hooks to NVIC vectors */
 #define xPortPendSVHandler    PendSV_Handler
 #define xPortSysTickHandler   SysTick_Handler
@@ -139,11 +150,14 @@ extern uint32_t SystemCoreClock;
 //--------------------------------------------------------------------+
 // Interrupt nesting behavior configuration.
 //--------------------------------------------------------------------+
-/* Cortex-M specific definitions. __NVIC_PRIO_BITS is defined in core_cmx.h */
-#ifdef __NVIC_PRIO_BITS
+#if defined(__NVIC_PRIO_BITS)
+  // For Cortex-M specific: __NVIC_PRIO_BITS is defined in core_cmx.h
 	#define configPRIO_BITS       __NVIC_PRIO_BITS
+#elif defined(__ECLIC_INTCTLBITS)
+  // RISC-V Bumblebee core from nuclei
+  #define configPRIO_BITS       __ECLIC_INTCTLBITS
 #else
-  #error "This port requires __NVIC_PRIO_BITS to be defined"
+  #error "FreeRTOS configPRIO_BITS to be defined"
 #endif
 
 /* The lowest interrupt priority that can be used in a call to a "set priority" function. */
@@ -162,5 +176,7 @@ to all Cortex-M ports, and do not rely on any particular library functions. */
 /* !!!! configMAX_SYSCALL_INTERRUPT_PRIORITY must not be set to zero !!!!
 See http://www.FreeRTOS.org/RTOS-Cortex-M3-M4.html. */
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY 	        ( configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << (8 - configPRIO_BITS) )
+
+#endif
 
 #endif /* __FREERTOS_CONFIG__H */

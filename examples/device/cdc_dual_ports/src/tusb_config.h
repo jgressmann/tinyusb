@@ -48,7 +48,7 @@
 // Default to Highspeed for MCU with internal HighSpeed PHY (can be port specific), otherwise FullSpeed
 #ifndef BOARD_DEVICE_RHPORT_SPEED
   #if (CFG_TUSB_MCU == OPT_MCU_LPC18XX || CFG_TUSB_MCU == OPT_MCU_LPC43XX || CFG_TUSB_MCU == OPT_MCU_MIMXRT10XX || \
-       CFG_TUSB_MCU == OPT_MCU_NUC505  || CFG_TUSB_MCU == OPT_MCU_CXD56)
+       CFG_TUSB_MCU == OPT_MCU_NUC505  || CFG_TUSB_MCU == OPT_MCU_CXD56 || CFG_TUSB_MCU == OPT_MCU_SAMX7X)
     #define BOARD_DEVICE_RHPORT_SPEED   OPT_MODE_HIGH_SPEED
   #else
     #define BOARD_DEVICE_RHPORT_SPEED   OPT_MODE_FULL_SPEED
@@ -64,8 +64,9 @@
   #error "Incorrect RHPort configuration"
 #endif
 
-// This example doesn't use an RTOS
+#ifndef CFG_TUSB_OS
 #define CFG_TUSB_OS                 OPT_OS_NONE
+#endif
 
 // CFG_TUSB_DEBUG is defined by compiler in DEBUG build
 // #define CFG_TUSB_DEBUG           0
@@ -104,6 +105,8 @@
 #define CFG_TUD_CDC_RX_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 512 : 64)
 #define CFG_TUD_CDC_TX_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 512 : 64)
 
+// CDC Endpoint transfer buffer size, more is faster
+#define CFG_TUD_CDC_EP_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 512 : 64)
 
 #ifdef __cplusplus
  }

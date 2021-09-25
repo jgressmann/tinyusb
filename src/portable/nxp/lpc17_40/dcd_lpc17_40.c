@@ -26,7 +26,8 @@
 
 #include "tusb_option.h"
 
-#if TUSB_OPT_DEVICE_ENABLED && (CFG_TUSB_MCU == OPT_MCU_LPC175X_6X || CFG_TUSB_MCU == OPT_MCU_LPC40XX)
+#if TUSB_OPT_DEVICE_ENABLED && \
+    (CFG_TUSB_MCU == OPT_MCU_LPC175X_6X || CFG_TUSB_MCU == OPT_MCU_LPC177X_8X || CFG_TUSB_MCU == OPT_MCU_LPC40XX)
 
 #include "device/dcd.h"
 #include "dcd_lpc17_40.h"
@@ -323,6 +324,12 @@ bool dcd_edpt_open(uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc)
   sie_write(SIE_CMDCODE_ENDPOINT_SET_STATUS + ep_id, 1, 0);    // clear all endpoint status
 
   return true;
+}
+
+void dcd_edpt_close_all (uint8_t rhport)
+{
+  (void) rhport;
+  // TODO implement dcd_edpt_close_all()
 }
 
 void dcd_edpt_stall(uint8_t rhport, uint8_t ep_addr)

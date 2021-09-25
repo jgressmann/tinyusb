@@ -77,14 +77,10 @@
 
 #if (TUSB_OPT_DEVICE_ENABLED && CFG_TUD_USBTMC)
 
-#include <string.h>
-#include "usbtmc.h"
-#include "usbtmc_device.h"
 #include "device/usbd.h"
-#include "osal/osal.h"
-
-// FIXME: I shouldn't need to include _pvt headers, but it is necessary for usbd_edpt_xfer, _stall, and _busy
 #include "device/usbd_pvt.h"
+
+#include "usbtmc_device.h"
 
 #ifdef xDEBUG
 #include "uart_util.h"
@@ -131,9 +127,9 @@ typedef struct
   uint8_t ep_int_in;
   // IN buffer is only used for first packet, not the remainder
   // in order to deal with prepending header
-  uint8_t ep_bulk_in_buf[USBTMCD_MAX_PACKET_SIZE];
+  CFG_TUSB_MEM_ALIGN uint8_t ep_bulk_in_buf[USBTMCD_MAX_PACKET_SIZE];
   // OUT buffer receives one packet at a time
-  uint8_t ep_bulk_out_buf[USBTMCD_MAX_PACKET_SIZE];
+  CFG_TUSB_MEM_ALIGN uint8_t ep_bulk_out_buf[USBTMCD_MAX_PACKET_SIZE];
   uint32_t transfer_size_remaining; // also used for requested length for bulk IN.
   uint32_t transfer_size_sent;      // To keep track of data bytes that have been queued in FIFO (not header bytes)
 
@@ -145,7 +141,7 @@ typedef struct
   usbtmc_capabilities_specific_t const * capabilities;
 } usbtmc_interface_state_t;
 
-static usbtmc_interface_state_t usbtmc_state =
+CFG_TUSB_MEM_SECTION static usbtmc_interface_state_t usbtmc_state =
 {
     .itf_id = 0xFF,
 };

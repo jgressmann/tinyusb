@@ -76,6 +76,7 @@ static bool active_ep0_xfer;
 static struct xfer_ctl_t
 {
   uint8_t *data_ptr;         /* data_ptr tracks where to next copy data to (for OUT) or from (for IN) */
+  // tu_fifo_t * ff;         /* pointer to FIFO required for dcd_edpt_xfer_fifo() */ // TODO support dcd_edpt_xfer_fifo API
   union {
     uint16_t in_remaining_bytes; /* for IN endpoints, we track how many bytes are left to transfer */
     uint16_t out_bytes_so_far;   /* but for OUT endpoints, we track how many bytes we've transferred so far */
@@ -96,6 +97,11 @@ static void usb_attach(void)
 static void usb_detach(void)
 {
   USBD->DRVSE0 |= USBD_DRVSE0_DRVSE0_Msk;
+}
+
+static inline void usb_memcpy(uint8_t *dest, uint8_t *src, uint16_t size)
+{
+  while(size--) *dest++ = *src++;
 }
 
 static void usb_control_send_zlp(void)
@@ -142,7 +148,18 @@ static void dcd_in_xfer(struct xfer_ctl_t *xfer, USBD_EP_T *ep)
 {
   uint16_t bytes_now = tu_min16(xfer->in_remaining_bytes, xfer->max_packet_size);
 
-  memcpy((uint8_t *)(USBD_BUF_BASE + ep->BUFSEG), xfer->data_ptr, bytes_now);
+#if 0 // TODO support dcd_edpt_xfer_fifo API
+  if (xfer->ff)
+  {
+    tu_fifo_read_n(xfer->ff, (void *) (USBD_BUF_BASE + ep->BUFSEG), bytes_now);
+  }
+  else
+#endif
+  {
+    // USB SRAM seems to only support byte access and memcpy could possibly do it by words
+    usb_memcpy((uint8_t *)(USBD_BUF_BASE + ep->BUFSEG), xfer->data_ptr, bytes_now);
+  }
+
   ep->MXPLD = bytes_now;
 }
 
@@ -235,7 +252,7 @@ bool dcd_edpt_open(uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc)
   /* mine the data for the information we need */
   int const dir = tu_edpt_dir(p_endpoint_desc->bEndpointAddress);
   int const size = p_endpoint_desc->wMaxPacketSize.size;
-  tusb_xfer_type_t const type = p_endpoint_desc->bmAttributes.xfer;
+  tusb_xfer_type_t const type = (tusb_xfer_type_t) p_endpoint_desc->bmAttributes.xfer;
   struct xfer_ctl_t *xfer = &xfer_table[ep - USBD->EP];
 
   /* allocate buffer from USB RAM */
@@ -256,6 +273,12 @@ bool dcd_edpt_open(uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc)
   return true;
 }
 
+void dcd_edpt_close_all (uint8_t rhport)
+{
+  (void) rhport;
+  // TODO implement dcd_edpt_close_all()
+}
+
 bool dcd_edpt_xfer(uint8_t rhport, uint8_t ep_addr, uint8_t *buffer, uint16_t total_bytes)
 {
   (void) rhport;
@@ -267,6 +290,7 @@ bool dcd_edpt_xfer(uint8_t rhport, uint8_t ep_addr, uint8_t *buffer, uint16_t to
 
   /* store away the information we'll needing now and later */
   xfer->data_ptr = buffer;
+  // xfer->ff       = NULL; // TODO support dcd_edpt_xfer_fifo API
   xfer->in_remaining_bytes = total_bytes;
   xfer->total_bytes = total_bytes;
 
@@ -285,6 +309,36 @@ bool dcd_edpt_xfer(uint8_t rhport, uint8_t ep_addr, uint8_t *buffer, uint16_t to
 
   return true;
 }
+
+#if 0 // TODO support dcd_edpt_xfer_fifo API
+bool dcd_edpt_xfer_fifo (uint8_t rhport, uint8_t ep_addr, tu_fifo_t * ff, uint16_t total_bytes)
+{
+  (void) rhport;
+
+  /* mine the data for the information we need */
+  tusb_dir_t dir = tu_edpt_dir(ep_addr);
+  USBD_EP_T *ep = ep_entry(ep_addr, false);
+  struct xfer_ctl_t *xfer = &xfer_table[ep - USBD->EP];
+
+  /* store away the information we'll needing now and later */
+  xfer->data_ptr = NULL;      // Indicates a FIFO shall be used
+  xfer->ff       = ff;
+  xfer->in_remaining_bytes = total_bytes;
+  xfer->total_bytes = total_bytes;
+
+  if (TUSB_DIR_IN == dir)
+  {
+    dcd_in_xfer(xfer, ep);
+  }
+  else
+  {
+    xfer->out_bytes_so_far = 0;
+    ep->MXPLD = xfer->max_packet_size;
+  }
+
+  return true;
+}
+#endif
 
 void dcd_edpt_stall(uint8_t rhport, uint8_t ep_addr)
 {
@@ -389,9 +443,20 @@ void dcd_int_handler(uint8_t rhport)
         if (out_ep)
         {
           /* copy the data from the PC to the previously provided buffer */
-          memcpy(xfer->data_ptr, (uint8_t *)(USBD_BUF_BASE + ep->BUFSEG), available_bytes);
+#if 0 // // TODO support dcd_edpt_xfer_fifo API
+          if (xfer->ff)
+          {
+            tu_fifo_write_n(xfer->ff, (const void *) (USBD_BUF_BASE + ep->BUFSEG), available_bytes);
+          }
+          else
+#endif
+          {
+            // USB SRAM seems to only support byte access and memcpy could possibly do it by words
+            usb_memcpy(xfer->data_ptr, (uint8_t *)(USBD_BUF_BASE + ep->BUFSEG), available_bytes);
+            xfer->data_ptr += available_bytes;
+          }
+
           xfer->out_bytes_so_far += available_bytes;
-          xfer->data_ptr += available_bytes;
 
           /* when the transfer is finished, alert TinyUSB; otherwise, accept more data */
           if ( (xfer->total_bytes == xfer->out_bytes_so_far) || (available_bytes < xfer->max_packet_size) )
@@ -403,6 +468,7 @@ void dcd_int_handler(uint8_t rhport)
         {
           /* update the bookkeeping to reflect the data that has now been sent to the PC */
           xfer->in_remaining_bytes -= available_bytes;
+
           xfer->data_ptr += available_bytes;
 
           /* if more data to send, send it; otherwise, alert TinyUSB that we've finished */

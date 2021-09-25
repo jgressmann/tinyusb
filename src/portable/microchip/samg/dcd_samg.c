@@ -43,6 +43,7 @@
 typedef struct
 {
   uint8_t* buffer;
+  // tu_fifo_t* ff; // TODO support dcd_edpt_xfer_fifo API
   uint16_t total_len;
   volatile uint16_t actual_len;
   uint16_t  epsize;
@@ -59,6 +60,7 @@ void xfer_epsize_set(xfer_desc_t* xfer, uint16_t epsize)
 void xfer_begin(xfer_desc_t* xfer, uint8_t * buffer, uint16_t total_bytes)
 {
   xfer->buffer     = buffer;
+  // xfer->ff         = NULL; // TODO support dcd_edpt_xfer_fifo API
   xfer->total_len  = total_bytes;
   xfer->actual_len = 0;
 }
@@ -66,6 +68,7 @@ void xfer_begin(xfer_desc_t* xfer, uint8_t * buffer, uint16_t total_bytes)
 void xfer_end(xfer_desc_t* xfer)
 {
   xfer->buffer     = NULL;
+  // xfer->ff         = NULL; // TODO support dcd_edpt_xfer_fifo API
   xfer->total_len  = 0;
   xfer->actual_len = 0;
 }
@@ -266,6 +269,12 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * ep_desc)
   return true;
 }
 
+void dcd_edpt_close_all (uint8_t rhport)
+{
+  (void) rhport;
+  // TODO implement dcd_edpt_close_all()
+}
+
 // Submit a transfer, When complete dcd_event_xfer_complete() is invoked to notify the stack
 bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t total_bytes)
 {
@@ -292,6 +301,14 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
 
   return true;
 }
+
+#if 0 // TODO support dcd_edpt_xfer_fifo API
+bool dcd_edpt_xfer_fifo (uint8_t rhport, uint8_t ep_addr, tu_fifo_t * ff, uint16_t total_bytes)
+{
+  (void) rhport;
+  return true;
+}
+#endif
 
 // Stall endpoint
 void dcd_edpt_stall (uint8_t rhport, uint8_t ep_addr)
@@ -402,7 +419,16 @@ void dcd_int_handler(uint8_t rhport)
         if (xact_len)
         {
           // write to EP fifo
-          xact_ep_write(epnum, xfer->buffer, xact_len);
+#if 0 // TODO support dcd_edpt_xfer_fifo
+          if (xfer->ff)
+          {
+            tu_fifo_read_n_const_addr_full_words(xfer->ff, (void *) &UDP->UDP_FDR[epnum], xact_len);
+          }
+          else
+#endif
+          {
+            xact_ep_write(epnum, xfer->buffer, xact_len);
+          }
 
           // TX ready for transfer
           csr_set(epnum, UDP_CSR_TXPKTRDY_Msk);
@@ -428,7 +454,17 @@ void dcd_int_handler(uint8_t rhport)
         uint16_t const xact_len = (uint16_t) ((UDP->UDP_CSR[epnum] & UDP_CSR_RXBYTECNT_Msk) >> UDP_CSR_RXBYTECNT_Pos);
 
         // Read from EP fifo
-        xact_ep_read(epnum, xfer->buffer, xact_len);
+#if 0 // TODO support dcd_edpt_xfer_fifo API
+        if (xfer->ff)
+        {
+          tu_fifo_write_n_const_addr_full_words(xfer->ff, (const void *) &UDP->UDP_FDR[epnum], xact_len);
+        }
+        else
+#endif
+        {
+          xact_ep_read(epnum, xfer->buffer, xact_len);
+        }
+
         xfer_packet_done(xfer);
 
         if ( 0 == xfer_packet_len(xfer) )
