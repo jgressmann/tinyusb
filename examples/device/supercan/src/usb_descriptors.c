@@ -74,7 +74,7 @@ uint8_t const * tud_descriptor_device_cb(void)
 //--------------------------------------------------------------------+
 // Configuration Descriptor
 //--------------------------------------------------------------------+
-#if CFG_TUD_DFU_RT
+#if CFG_TUD_DFU_RUNTIME
 #	define DFU_DESC_LEN TUD_DFU_RT_DESC_LEN
 #	define DFU_INTERFACE_COUNT 1
 #else
@@ -103,7 +103,7 @@ static uint8_t const desc_configuration[] =
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG1_BULK_OUT, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG1_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 
-#if CFG_TUD_DFU_RT
+#if CFG_TUD_DFU_RUNTIME
 	9, TUSB_DESC_INTERFACE, DFU_INTERFACE_INDEX, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_RT, DFU_STR_INDEX, \
   	/* Function */
 #if 0
@@ -163,7 +163,7 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 #define MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN 0x14
 #define MS_OS_20_FEATURE_MODEL_ID_DESC_LEN 0x14
 
-#if CFG_TUD_DFU_RT
+#if CFG_TUD_DFU_RUNTIME
 #	define DFU_MS_OS_20_DESC_LEN (0x08+MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN)
 #else
 #	define DFU_MS_OS_20_DESC_LEN 0
@@ -222,7 +222,7 @@ uint8_t const desc_ms_os_20[] =
 	'8', 0x00, '6', 0x00, '6', 0x00, '0', 0x00, '-', 0x00, 'A', 0x00, 'E', 0x00, '5', 0x00, '0', 0x00, 'C', 0x00,
 	'B', 0x00, '3', 0x00, '1', 0x00, '4', 0x00, '9', 0x00, 'C', 0x00, '9', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00,
 
-#if CFG_TUD_DFU_RT
+#if CFG_TUD_DFU_RUNTIME
 	// Function Subset header: length, type, first interface, reserved, subset length
 	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), DFU_INTERFACE_INDEX, 0, U16_TO_U8S_LE(0x08 + MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN),
 
@@ -265,7 +265,7 @@ static char const* string_desc_arr [] =
 	"%s",                                                   // 3: Serial
 	BOARD_NAME " " SC_NAME " (%s) CAN ch0",
 	BOARD_NAME " " SC_NAME " (%s) CAN ch1",
-#if CFG_TUD_DFU_RT
+#if CFG_TUD_DFU_RUNTIME
 	BOARD_NAME " " SC_NAME " (%s) DFU",
 #endif
 };

@@ -29,6 +29,8 @@
 
 #include <bsp/board.h>
 #include <tusb.h>
+#include <usbd_pvt.h>
+#include <class/dfu/dfu.h>
 
 #include <sam.h>
 
@@ -514,30 +516,29 @@ static inline const char* dir_str(tusb_dir_t value)
 }
 #endif
 
-#if CFG_TUD_DFU_RT_CUSTOM
 
 
-void dfu_rtd_init(void)
+void sd_usb_init(void)
 {
-	LOG("dfu_rtd_init\n");
+	LOG("sd_usb_init\n");
 }
 
-void dfu_rtd_reset(uint8_t rhport)
+void sd_usb_reset(uint8_t rhport)
 {
 	(void)rhport;
-	LOG("dfu_rtd_reset\n");
+	LOG("sd_usb_reset\n");
 }
 
-bool dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t *p_length)
+uint16_t sd_usb_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t max_len)
 {
 	(void)rhport;
-	LOG("dfu_rtd_open\n");
+	(void)max_len;
+
+	LOG("sd_usb_open\n");
 	TU_VERIFY(itf_desc->bInterfaceSubClass == TUD_DFU_APP_SUBCLASS);
 	TU_VERIFY(itf_desc->bInterfaceProtocol == DFU_PROTOCOL_DFU);
 
-	*p_length = sizeof(tusb_desc_interface_t) + TUD_DFU_RT_DESC_LEN;
-
-	return true;
+	return sizeof(tusb_desc_interface_t) + TUD_DFU_RT_DESC_LEN;
 }
 
 _Static_assert(MCU_NVM_BLOCK_SIZE >= 2 * MCU_VECTOR_TABLE_ALIGNMENT, "block size must fit the vector table at least 2 times");
@@ -625,7 +626,7 @@ static bool dfu_state_download_sync_complete(tusb_control_request_t const *reque
 	return true;
 }
 
-bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * request)
+bool sd_usb_control_complete(uint8_t rhport, tusb_control_request_t const * request)
 {
 	(void)rhport;
 	// LOG("complete req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
@@ -638,7 +639,7 @@ bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * req
 
 	// LOG("DFU state=%u, status=%u\n", dfu.status.bState, dfu.status.bStatus);
 
-	// LOG("dfu_rtd_control_complete\n");
+	// LOG("sd_usb_control_complete\n");
 
 	switch (dfu.status.bState) {
 	case DFU_STATE_DFU_DNLOAD_SYNC:
@@ -952,9 +953,11 @@ static inline bool dfu_state_idle(tusb_control_request_t const *request)
 	return true;
 }
 
-bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const *request)
+bool sd_usb_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const *request)
 {
 	(void)rhport;
+	(void)stage;
+
 	LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
 		request->bmRequestType,
 		recipient_str(request->bmRequestType_bit.recipient),
@@ -993,16 +996,36 @@ bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const *reque
 	return false;
 }
 
-bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
+bool sd_usb_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
 {
-	LOG("dfu_rtd_xfer_cb\n");
+	LOG("sd_usb_xfer_cb\n");
 	(void) rhport;
 	(void) ep_addr;
 	(void) result;
 	(void) xferred_bytes;
 	return true;
 }
+
+static const usbd_class_driver_t sd_usb_driver = {
+#if CFG_TUSB_DEBUG >= 2
+	.name = "SD",
 #endif
+	.init = &sd_usb_init,
+	.reset = &sd_usb_reset,
+	.open = &sd_usb_open,
+	.control_xfer_cb = &sd_usb_control_xfer_cb,
+	.xfer_cb = NULL,
+	.sof = NULL,
+};
+
+usbd_class_driver_t const* usbd_app_driver_get_cb(uint8_t* driver_count)
+{
+	*driver_count = 1;
+	return &sd_usb_driver;
+}
+
+
+
 
 static void led_task(void)
 {

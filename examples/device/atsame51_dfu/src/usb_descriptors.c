@@ -24,6 +24,7 @@
  */
 
 #include <tusb.h>
+#include <class/dfu/dfu.h>
 
 #include <usb_descriptors.h>
 #include <sam.h>

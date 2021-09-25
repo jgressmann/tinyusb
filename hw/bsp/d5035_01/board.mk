@@ -47,7 +47,7 @@ CFLAGS += \
   -DBOARD_NAME="\"D5035-01\"" \
   -DSVC_Handler=SVCall_Handler
 
-CFLAGS += -Wno-error=undef
+CFLAGS += -Wno-error=undef -Wno-error=type-limits
 
 ifdef HWREV
   CFLAGS += -DHWREV=$(HWREV)

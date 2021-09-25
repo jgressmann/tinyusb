@@ -66,17 +66,7 @@
 #define CFG_TUD_ENDPOINT0_SIZE    64
 
 //------------- CLASS -------------//
-#define CFG_TUD_CUSTOM            0
-#define CFG_TUD_CDC               0
-#define CFG_TUD_MSC               0
-#define CFG_TUD_HID               0
-#define CFG_TUD_MIDI              0
-#define CFG_TUD_VENDOR            0
-#define CFG_TUD_DFU_RT            1
-
-// use custom dfu callbacks
-#define CFG_TUD_DFU_RT_CUSTOM     1
-
+// #define CFG_TUD_DFU               1
 
 
 #ifdef __cplusplus

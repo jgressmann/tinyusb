@@ -2132,101 +2132,101 @@ bool sc_usb_control_xfer_cb(uint8_t rhport, uint8_t ep, tusb_control_request_t c
 // 	return true;
 // }
 
-#if CFG_TUD_DFU_RT
+#if CFG_TUD_DFU_RUNTIME
 void tud_dfu_runtime_reboot_to_dfu_cb(void)
 {
 	dfu_request_dfu(1);
 	NVIC_SystemReset();
 }
 
-void dfu_rtd_init(void)
-{
-}
+// void dfu_rtd_init(void)
+// {
+// }
 
-void dfu_rtd_reset(uint8_t rhport)
-{
-	(void) rhport;
-	LOG("dfu_rtd_reset\n");
+// void dfu_rtd_reset(uint8_t rhport)
+// {
+// 	(void) rhport;
+// 	LOG("dfu_rtd_reset\n");
 
-	if (DFU_STATE_APP_DETACH == dfu.status.bState) {
-		LOG("Detected USB reset while DFU detach timer is running\n");
-		tud_dfu_runtime_reboot_to_dfu_cb();
-	} else {
-		dfu.status.bState = DFU_STATE_APP_IDLE;
-	}
-}
+// 	if (DFU_STATE_APP_DETACH == dfu.status.bState) {
+// 		LOG("Detected USB reset while DFU detach timer is running\n");
+// 		tud_dfu_runtime_reboot_to_dfu_cb();
+// 	} else {
+// 		dfu.status.bState = DFU_STATE_APP_IDLE;
+// 	}
+// }
 
-uint16_t dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t max_len)
-{
-	(void) rhport;
+// uint16_t dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t max_len)
+// {
+// 	(void) rhport;
 
-	if (unlikely(max_len < TUD_DFU_RT_DESC_LEN)) {
-		return 0;
-	}
+// 	if (unlikely(max_len < TUD_DFU_RT_DESC_LEN)) {
+// 		return 0;
+// 	}
 
-	// Ensure this is DFU Runtime
-	TU_VERIFY(itf_desc->bInterfaceSubClass == TUD_DFU_APP_SUBCLASS);
-	TU_VERIFY(itf_desc->bInterfaceProtocol == DFU_PROTOCOL_RT);
+// 	// Ensure this is DFU Runtime
+// 	TU_VERIFY(itf_desc->bInterfaceSubClass == TUD_DFU_APP_SUBCLASS);
+// 	TU_VERIFY(itf_desc->bInterfaceProtocol == DFU_PROTOCOL_RT);
 
-	uint8_t const * p_desc = tu_desc_next(itf_desc);
+// 	uint8_t const * p_desc = tu_desc_next(itf_desc);
 
-	if (TUSB_DESC_FUNCTIONAL == tu_desc_type(p_desc)) {
-		p_desc = tu_desc_next(p_desc);
-	}
+// 	if (TUSB_DESC_FUNCTIONAL == tu_desc_type(p_desc)) {
+// 		p_desc = tu_desc_next(p_desc);
+// 	}
 
-	return TUD_DFU_RT_DESC_LEN;
-}
+// 	return TUD_DFU_RT_DESC_LEN;
+// }
 
-bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * request)
-{
-	(void) rhport;
-	(void) request;
+// bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * request)
+// {
+// 	(void) rhport;
+// 	(void) request;
 
-	// nothing to do
-	return true;
-}
+// 	// nothing to do
+// 	return true;
+// }
 
-bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * request)
-{
-	// Handle class request only
-	// TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
-	// TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
+// bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * request)
+// {
+// 	// Handle class request only
+// 	// TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
+// 	// TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
 
-	switch (request->bRequest) {
-	case DFU_REQUEST_GETSTATUS:
-		return tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status));
-	case DFU_REQUEST_DETACH:
-		LOG("detach request, timeout %u [ms]\n", request->wValue);
-		if (!dfu_signature_compatible()) {
-			TU_LOG1("Bootloader runtime signature incompatible, not starting detach\n");
-		} else {
-			dfu.status.bState = DFU_STATE_APP_DETACH;
-			xTimerStart(dfu.timer_handle, pdMS_TO_TICKS(request->wValue));
-			return tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status));
-		}
-		break;
-	default:
-		LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
-			request->bmRequestType,
-			recipient_str(request->bmRequestType_bit.recipient),
-			type_str(request->bmRequestType_bit.type),
-			dir_str(request->bmRequestType_bit.direction),
-			request->bRequest, request->wValue, request->wIndex,
-			request->wLength);
-		break;
-	}
+// 	switch (request->bRequest) {
+// 	case DFU_REQUEST_GETSTATUS:
+// 		return tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status));
+// 	case DFU_REQUEST_DETACH:
+// 		LOG("detach request, timeout %u [ms]\n", request->wValue);
+// 		if (!dfu_signature_compatible()) {
+// 			TU_LOG1("Bootloader runtime signature incompatible, not starting detach\n");
+// 		} else {
+// 			dfu.status.bState = DFU_STATE_APP_DETACH;
+// 			xTimerStart(dfu.timer_handle, pdMS_TO_TICKS(request->wValue));
+// 			return tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status));
+// 		}
+// 		break;
+// 	default:
+// 		LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
+// 			request->bmRequestType,
+// 			recipient_str(request->bmRequestType_bit.recipient),
+// 			type_str(request->bmRequestType_bit.type),
+// 			dir_str(request->bmRequestType_bit.direction),
+// 			request->bRequest, request->wValue, request->wIndex,
+// 			request->wLength);
+// 		break;
+// 	}
 
-	return false;
-}
+// 	return false;
+// }
 
-bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
-{
-	(void) rhport;
-	(void) ep_addr;
-	(void) result;
-	(void) xferred_bytes;
-	return true;
-}
+// bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
+// {
+// 	(void) rhport;
+// 	(void) ep_addr;
+// 	(void) result;
+// 	(void) xferred_bytes;
+// 	return true;
+// }
 #endif // #if CFG_TUD_DFU_RT
 
 static const usbd_class_driver_t sc_usb_driver = {
