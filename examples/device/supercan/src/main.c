@@ -52,7 +52,7 @@
 #include <usb_descriptors.h>
 #include <m_can.h>
 #include <mcu.h>
-#include <usb_dfu_1_1.h>
+#include <class/dfu/dfu_rt_device.h>
 #include <dfu_ram.h>
 #include <dfu_app.h>
 #include <leds.h>
@@ -942,7 +942,6 @@ static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(DFU_APP_FTR_SE
 };
 
 static struct dfu {
-	struct dfu_get_status_reply status;
 	StaticTimer_t timer_mem;
 	TimerHandle_t timer_handle;
 } dfu;
@@ -954,8 +953,6 @@ static void dfu_timer_expired(TimerHandle_t t)
 
 	LOG("DFU detach timer expired\n");
 
-	dfu.status.bState = DFU_STATE_APP_IDLE;
-
 	/*
 	 * This is wrong. DFU 1.1. specification wants us to wait for USB reset.
 	 * However, without these lines, the device can't be updated on Windows using
@@ -964,7 +961,6 @@ static void dfu_timer_expired(TimerHandle_t t)
 	dfu_request_dfu(1);
 	NVIC_SystemReset();
 }
-
 #endif
 
 
@@ -1794,9 +1790,6 @@ int main(void)
 
 	dfu_request_dfu(0); // no bootloader request
 
-	dfu.status.bStatus = DFU_ERROR_OK;
-	dfu.status.bwPollTimeout = 100; // ms
-	dfu.status.bState = DFU_STATE_APP_IDLE;
 	dfu.timer_handle = xTimerCreateStatic("dfu", pdMS_TO_TICKS(DFU_USB_RESET_TIMEOUT_MS), pdFALSE, NULL, &dfu_timer_expired, &dfu.timer_mem);
 #endif
 
@@ -2133,100 +2126,17 @@ bool sc_usb_control_xfer_cb(uint8_t rhport, uint8_t ep, tusb_control_request_t c
 // }
 
 #if CFG_TUD_DFU_RUNTIME
-void tud_dfu_runtime_reboot_to_dfu_cb(void)
+void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
 {
-	dfu_request_dfu(1);
-	NVIC_SystemReset();
+	LOG("tud_dfu_runtime_reboot_to_dfu_cb\n");
+	/* The timer seems to be necessary, else dfu-util
+	 * will fail spurriously with EX_IOERR (74).
+	 */
+	xTimerStart(dfu.timer_handle, pdMS_TO_TICKS(ms));
+
+	// dfu_request_dfu(1);
+	// NVIC_SystemReset();
 }
-
-// void dfu_rtd_init(void)
-// {
-// }
-
-// void dfu_rtd_reset(uint8_t rhport)
-// {
-// 	(void) rhport;
-// 	LOG("dfu_rtd_reset\n");
-
-// 	if (DFU_STATE_APP_DETACH == dfu.status.bState) {
-// 		LOG("Detected USB reset while DFU detach timer is running\n");
-// 		tud_dfu_runtime_reboot_to_dfu_cb();
-// 	} else {
-// 		dfu.status.bState = DFU_STATE_APP_IDLE;
-// 	}
-// }
-
-// uint16_t dfu_rtd_open(uint8_t rhport, tusb_desc_interface_t const * itf_desc, uint16_t max_len)
-// {
-// 	(void) rhport;
-
-// 	if (unlikely(max_len < TUD_DFU_RT_DESC_LEN)) {
-// 		return 0;
-// 	}
-
-// 	// Ensure this is DFU Runtime
-// 	TU_VERIFY(itf_desc->bInterfaceSubClass == TUD_DFU_APP_SUBCLASS);
-// 	TU_VERIFY(itf_desc->bInterfaceProtocol == DFU_PROTOCOL_RT);
-
-// 	uint8_t const * p_desc = tu_desc_next(itf_desc);
-
-// 	if (TUSB_DESC_FUNCTIONAL == tu_desc_type(p_desc)) {
-// 		p_desc = tu_desc_next(p_desc);
-// 	}
-
-// 	return TUD_DFU_RT_DESC_LEN;
-// }
-
-// bool dfu_rtd_control_complete(uint8_t rhport, tusb_control_request_t const * request)
-// {
-// 	(void) rhport;
-// 	(void) request;
-
-// 	// nothing to do
-// 	return true;
-// }
-
-// bool dfu_rtd_control_request(uint8_t rhport, tusb_control_request_t const * request)
-// {
-// 	// Handle class request only
-// 	// TU_VERIFY(request->bmRequestType_bit.type == TUSB_REQ_TYPE_CLASS);
-// 	// TU_VERIFY(request->bmRequestType_bit.recipient == TUSB_REQ_RCPT_INTERFACE);
-
-// 	switch (request->bRequest) {
-// 	case DFU_REQUEST_GETSTATUS:
-// 		return tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status));
-// 	case DFU_REQUEST_DETACH:
-// 		LOG("detach request, timeout %u [ms]\n", request->wValue);
-// 		if (!dfu_signature_compatible()) {
-// 			TU_LOG1("Bootloader runtime signature incompatible, not starting detach\n");
-// 		} else {
-// 			dfu.status.bState = DFU_STATE_APP_DETACH;
-// 			xTimerStart(dfu.timer_handle, pdMS_TO_TICKS(request->wValue));
-// 			return tud_control_xfer(rhport, request, &dfu.status, sizeof(dfu.status));
-// 		}
-// 		break;
-// 	default:
-// 		LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
-// 			request->bmRequestType,
-// 			recipient_str(request->bmRequestType_bit.recipient),
-// 			type_str(request->bmRequestType_bit.type),
-// 			dir_str(request->bmRequestType_bit.direction),
-// 			request->bRequest, request->wValue, request->wIndex,
-// 			request->wLength);
-// 		break;
-// 	}
-
-// 	return false;
-// }
-
-// bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
-// {
-// 	(void) rhport;
-// 	(void) ep_addr;
-// 	(void) result;
-// 	(void) xferred_bytes;
-// 	return true;
-// }
 #endif // #if CFG_TUD_DFU_RT
 
 static const usbd_class_driver_t sc_usb_driver = {

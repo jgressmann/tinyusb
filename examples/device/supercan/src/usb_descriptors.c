@@ -104,37 +104,8 @@ static uint8_t const desc_configuration[] =
 	7, TUSB_DESC_ENDPOINT, SC_M1_EP_MSG1_BULK_IN, TUSB_XFER_BULK, U16_TO_U8S_LE(SC_M1_EP_SIZE), 0,
 
 #if CFG_TUD_DFU_RUNTIME
-	9, TUSB_DESC_INTERFACE, DFU_INTERFACE_INDEX, 0, 0, TUD_DFU_APP_CLASS, TUD_DFU_APP_SUBCLASS, DFU_PROTOCOL_RT, DFU_STR_INDEX, \
-  	/* Function */
-#if 0
-	DFU attributes
-Bit 7..4: reserved
-Bit 3: device will perform a bus
-detach-attach sequence when it
-receives a DFU_DETACH request.
-The host must not issue a USB
-Reset. (bitWillDetach)
-0 = no
-1 = yes
-Bit 2: device is able to communicate
-via USB after Manifestation phase.
-(bitManifestationTolerant)
-0 = no, must see bus reset
-1 = yes
-Bit 1: upload capable (bitCanUpload)
-0 = no
-1 = yes
-Bit 0: download capable
-(bitCanDnload)
-0 = no
-1 = yes
-#endif
-	9,
-	DFU_DESC_FUNCTIONAL,
-	(0<<3) | (1<<2) | (0<<1) | (1<<0) /*attrs*/,
-	U16_TO_U8S_LE(DFU_USB_RESET_TIMEOUT_MS) /* timeout [ms]*/,
-	U16_TO_U8S_LE(MCU_NVM_PAGE_SIZE)/* xfer size*/,
-	U16_TO_U8S_LE(0x0101)/*bcdVersion*/,
+	// Interface number, string index, attributes, detach timeout, transfer size */
+	TUD_DFU_RT_DESCRIPTOR(DFU_INTERFACE_INDEX, DFU_STR_INDEX, (DFU_ATTR_CAN_DOWNLOAD | DFU_ATTR_MANIFESTATION_TOLERANT), DFU_USB_RESET_TIMEOUT_MS, MCU_NVM_PAGE_SIZE),
 #endif
 };
 
