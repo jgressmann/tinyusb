@@ -1772,14 +1772,15 @@ static void enable_cache(void);
 
 int main(void)
 {
-	LOG("Vectors ROM @ %p\n", SCB->VTOR);
+	board_init();
+
+	LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
 	move_vector_table_to_ram();
-	LOG("Vectors RAM @ %p\n", SCB->VTOR);
+	LOG("Vectors RAM @ %p\n", (void*)SCB->VTOR);
 
 	LOG("Enabling cache\n");
 	enable_cache();
 
-	board_init();
 	init_device_identifier();
 
 
