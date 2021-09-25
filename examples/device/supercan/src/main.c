@@ -2230,6 +2230,9 @@ bool dfu_rtd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint
 #endif // #if CFG_TUD_DFU_RT
 
 static const usbd_class_driver_t sc_usb_driver = {
+#if CFG_TUSB_DEBUG >= 2
+	.name = "SC",
+#endif
 	.init = &sc_usb_init,
 	.reset = &sc_usb_reset,
 	.open = &sc_usb_open,
