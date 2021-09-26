@@ -2080,50 +2080,54 @@ SC_RAMFUNC static bool sc_usb_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_resu
 	return true;
 }
 
-bool sc_usb_control_xfer_cb(uint8_t rhport, uint8_t ep, tusb_control_request_t const * request)
+bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const * request)
 {
-	// LOG("port %u req\n", rhport);
+	LOG("port=%u stage=%u\n", rhport, stage);
 
-	(void)ep;
+	USB_TRAFFIC_DO_LED;
 
 	if (unlikely(rhport != usb.port)) {
 		return false;
 	}
 
-	USB_TRAFFIC_DO_LED;
-
-	switch (request->bRequest) {
-	case VENDOR_REQUEST_MICROSOFT:
-		if (request->wIndex == 7) {
-			// Get Microsoft OS 2.0 compatible descriptor
-			uint16_t total_len;
-			memcpy(&total_len, desc_ms_os_20+8, 2);
-			total_len = le16_to_cpu(total_len);
-			return tud_control_xfer(rhport, request, (void*)desc_ms_os_20, total_len);
+	switch (stage) {
+	case CONTROL_STAGE_SETUP: {
+		switch (request->bRequest) {
+		case VENDOR_REQUEST_MICROSOFT:
+			if (request->wIndex == 7) {
+				// Get Microsoft OS 2.0 compatible descriptor
+				uint16_t total_len;
+				memcpy(&total_len, desc_ms_os_20+8, 2);
+				total_len = le16_to_cpu(total_len);
+				return tud_control_xfer(rhport, request, (void*)desc_ms_os_20, total_len);
+			}
+			break;
+		default:
+			LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
+				request->bmRequestType,
+				recipient_str(request->bmRequestType_bit.recipient),
+				type_str(request->bmRequestType_bit.type),
+				dir_str(request->bmRequestType_bit.direction),
+				request->bRequest, request->wValue, request->wIndex,
+				request->wLength);
+			break;
 		}
-		break;
+	} break;
+	case CONTROL_STAGE_DATA:
+	case CONTROL_STAGE_ACK:
+		switch (request->bRequest) {
+		case VENDOR_REQUEST_MICROSOFT:
+			return true;
+		default:
+			break;
+		}
 	default:
-		LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
-			request->bmRequestType,
-			recipient_str(request->bmRequestType_bit.recipient),
-			type_str(request->bmRequestType_bit.type),
-			dir_str(request->bmRequestType_bit.direction),
-			request->bRequest, request->wValue, request->wIndex,
-			request->wLength);
 		break;
 	}
 
 	// stall unknown request
 	return false;
 }
-
-// bool tud_vendor_control_complete_cb(uint8_t rhport, tusb_control_request_t const *request)
-// {
-// 	(void) rhport;
-// 	(void) request;
-
-// 	return true;
-// }
 
 #if CFG_TUD_DFU_RUNTIME
 void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
@@ -2146,7 +2150,10 @@ static const usbd_class_driver_t sc_usb_driver = {
 	.init = &sc_usb_init,
 	.reset = &sc_usb_reset,
 	.open = &sc_usb_open,
-	.control_xfer_cb = &sc_usb_control_xfer_cb,
+	/* TinyUSB doesn't call this callback for vendor requests
+	 * but tud_vendor_control_xfer_cb. Sigh :/
+	 */
+	.control_xfer_cb = NULL,
 	.xfer_cb = &sc_usb_xfer_cb,
 	.sof = NULL,
 };
