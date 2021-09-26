@@ -74,6 +74,12 @@ ifneq ($(BOOTLOADER),0)
 endif
 endif
 
+
+$(LINKER_SCRIPT): $(OBJ_DIRS)
+	@cat "$(LD_FILE_IN)" | $(SED) 's/CHIP_ROM_SIZE/$(CHIP_ROM_SIZE)/g; s/CHIP_RAM_SIZE/$(CHIP_RAM_SIZE)/g;' >$@
+
+LINKER_SCRIPT_TARGET = $(LINKER_SCRIPT)
+
 SRC_C += \
   src/portable/microchip/samd/dcd_samd.c \
   hw/mcu/microchip/same51/gcc/gcc/startup_same51.c \
@@ -106,9 +112,6 @@ FREERTOS_PORT = ARM_CM4F
 
 # For flash-jlink target
 JLINK_IF = swd
-
-$(LINKER_SCRIPT): $(OBJ_DIRS)
-	@cat "$(LD_FILE_IN)" | $(SED) 's/CHIP_ROM_SIZE/$(CHIP_ROM_SIZE)/g; s/CHIP_RAM_SIZE/$(CHIP_RAM_SIZE)/g;' >$@
 
 # flash using jlink
 flash: flash-jlink

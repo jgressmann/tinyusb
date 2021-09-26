@@ -42,6 +42,7 @@ INC += $(TOP)/src
 
 CFLAGS += $(addprefix -I,$(INC))
 LINKER_SCRIPT ?= $(TOP)/$(LD_FILE)
+LINKER_SCRIPT_TARGET ?=
 
 LDFLAGS += $(CFLAGS) -Wl,-T,$(LINKER_SCRIPT) -Wl,-Map=$@.map -Wl,-cref -Wl,-gc-sections
 ifneq ($(SKIP_NANOLIB), 1)
@@ -79,7 +80,7 @@ else
 	@$(MKDIR) -p $@
 endif
 
-$(BUILD)/$(PROJECT).elf: $(OBJ) $(LINKER_SCRIPT)
+$(BUILD)/$(PROJECT).elf: $(OBJ) $(LINKER_SCRIPT_TARGET)
 	@echo LINK $@
 	@$(CC) -o $@ $(LDFLAGS) $(OBJ) -Wl,--start-group $(LIBS) -Wl,--end-group
 
