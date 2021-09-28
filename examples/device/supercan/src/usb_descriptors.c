@@ -26,11 +26,7 @@
 #include <tusb.h>
 #include <class/dfu/dfu_rt_device.h>
 
-#define SC_PACKED __packed
-#include <supercan.h>
 #include <supercan_m1.h>
-#include <supercan_debug.h>
-#include <supercan_version.h>
 #include <supercan_board.h>
 #include <usb_descriptors.h>
 #include <mcu.h>
