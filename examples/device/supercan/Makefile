@@ -1,6 +1,6 @@
-BOARD=d5035_01
-VID=1d50
-PID=5035
+BOARD ?= d5035_01
+VID = 1d50
+PID = 5035
 
 include ../../../tools/top.mk
 include ../../make.mk
@@ -23,6 +23,16 @@ ifdef SUPERCAN_DEBUG
   CFLAGS += -DSUPERCAN_DEBUG=$(SUPERCAN_DEBUG)
 else
   CFLAGS += -DSUPERCAN_DEBUG=0
+endif
+
+ifdef APP
+ifneq ($(APP),0)
+  CFLAGS += -DSUPERDFU_APP=1
+else
+  CFLAGS += -DSUPERDFU_APP=0
+endif
+else
+  CFLAGS += -DSUPERDFU_APP=0
 endif
 
 # Example source

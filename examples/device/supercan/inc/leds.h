@@ -28,34 +28,18 @@
 #include <FreeRTOS.h>
 #include <task.h>
 #include <stdbool.h>
-#include <sections.h>
 
 #define LED_STACK_SIZE configMINIMAL_STACK_SIZE
 
 extern StackType_t led_task_stack[LED_STACK_SIZE];
 extern StaticTask_t led_task_mem;
 
-SC_RAMFUNC extern void led_task(void *param);
+extern void led_task(void *param);
 
 
-enum {
-	LED_DEBUG_DEFAULT,
-	LED_DEBUG_0,
-	LED_DEBUG_1,
-	LED_DEBUG_2,
-	LED_DEBUG_3,
-	LED_CAN0_STATUS_GREEN,
-	LED_CAN0_STATUS_RED,
-	LED_CAN1_STATUS_GREEN,
-	LED_CAN1_STATUS_RED,
-	LED_COUNT
-};
+extern void led_set(uint8_t index, bool on);
+extern void led_toggle(uint8_t index);
+extern void led_blink(uint8_t index, uint16_t delay_ms);
+extern void led_burst(uint8_t index, uint16_t duration_ms);
 
-
-SC_RAMFUNC extern void led_init(void);
-SC_RAMFUNC extern void led_set(uint8_t index, bool on);
-SC_RAMFUNC extern void led_toggle(uint8_t index);
-SC_RAMFUNC extern void led_blink(uint8_t index, uint16_t delay_ms);
-SC_RAMFUNC extern void led_burst(uint8_t index, uint16_t duration_ms);
-SC_RAMFUNC extern void leds_on_unsafe(void);
 

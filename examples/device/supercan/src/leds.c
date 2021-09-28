@@ -25,11 +25,8 @@
 
 #include "leds.h"
 #include "supercan_debug.h"
+#include "supercan_board.h"
 
-
-#include <sam.h>
-
-#include <hal/include/hal_gpio.h>
 
 #ifndef ARRAY_SIZE
 #	define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
@@ -65,33 +62,9 @@ typedef union {
 
 struct led {
 	uint16_t cmd;
-	uint8_t pin;
 };
 
-#define LED_STATIC_INITIALIZER(name, pin) \
-	{ 0, pin }
-
-
-static struct led leds[] = {
-	LED_STATIC_INITIALIZER("debug", PIN_PA02), // board led
-	LED_STATIC_INITIALIZER("red", PIN_PA18),
-	LED_STATIC_INITIALIZER("orange", PIN_PA19),
-	LED_STATIC_INITIALIZER("green", PIN_PB16),
-	LED_STATIC_INITIALIZER("blue", PIN_PB17),
-	LED_STATIC_INITIALIZER("can1_red", PIN_PB00),
-	LED_STATIC_INITIALIZER("can1_green", PIN_PB01),
-	LED_STATIC_INITIALIZER("can0_red", PIN_PB02),
-	LED_STATIC_INITIALIZER("can0_green", PIN_PB03),
-};
-
-
-SC_RAMFUNC extern void led_init(void)
-{
-	PORT->Group[0].DIRSET.reg = PORT_PA18 | PORT_PA19;
-	PORT->Group[1].DIRSET.reg =
-		PORT_PB16 | PORT_PB17 | PORT_PB00 | PORT_PB01 | PORT_PB02 | PORT_PB03;
-}
-
+static struct led leds[SC_BOARD_LED_COUNT];
 
 SC_RAMFUNC extern void led_set(uint8_t index, bool on)
 {
@@ -135,8 +108,8 @@ SC_RAMFUNC extern void led_burst(uint8_t index, uint16_t duration_ms)
 
 SC_RAMFUNC extern void leds_on_unsafe(void)
 {
-	for (unsigned i = 0; i < LED_COUNT; ++i) {
-		gpio_set_pin_level(leds[i].pin, 1);
+	for (unsigned i = 0; i < ARRAY_SIZE(leds); ++i) {
+		sc_board_led_set(i, 1);
 	}
 }
 
@@ -145,10 +118,10 @@ SC_RAMFUNC extern void led_task(void *param)
 	(void) param;
 
 	const uint8_t TICK_MS = 8;
-	uint8_t cmd[ARRAY_SIZE(leds)];
-	uint8_t state[ARRAY_SIZE(leds)];
 	uint16_t interval[ARRAY_SIZE(leds)];
 	uint16_t left[ARRAY_SIZE(leds)];
+	uint8_t cmd[ARRAY_SIZE(leds)];
+	uint8_t state[ARRAY_SIZE(leds)];
 
 	memset(&cmd, 0, sizeof(cmd));
 	memset(&state, 0, sizeof(state));
@@ -239,7 +212,7 @@ SC_RAMFUNC extern void led_task(void *param)
 				break;
 			}
 
-			gpio_set_pin_level(leds[i].pin, state[i]);
+			sc_board_led_set(i, state[i]);
 		}
 
 		vTaskDelay(pdMS_TO_TICKS(TICK_MS));

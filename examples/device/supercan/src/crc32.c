@@ -22,6 +22,8 @@
  * THE SOFTWARE.
  */
 
+#if defined(D5035_01) || defined(SAME54XPLAINEDPRO)
+
 #include <crc32.h>
 #include <sam.h>
 
@@ -78,3 +80,5 @@ CRC32_FUNC int crc32(uint32_t addr, uint32_t bytes,  uint32_t *result)
 
 	return CRC32E_NONE;
 }
+
+#endif

@@ -24,6 +24,7 @@
  */
 
 #include <supercan_debug.h>
+#include <supercan_board.h>
 #include <leds.h>
 #include <FreeRTOS.h>
 
@@ -39,7 +40,7 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg)
 {
 	taskDISABLE_INTERRUPTS();
 	board_uart_write(msg, -1);
-	leds_on_unsafe();
+	sc_board_leds_on_unsafe();
 	while (1);
 }
 
