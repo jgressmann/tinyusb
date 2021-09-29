@@ -68,8 +68,8 @@ enum {
 	SC_BOARD_LED_COUNT
 };
 
-#define sc_board_can_ts_request() do { } while (0)
-#define sc_board_can_ts_wait() 0
+#define sc_board_can_ts_request(index) do { } while (0)
+#define sc_board_can_ts_wait(index) 0
 #define sc_board_led_usb_burst() do { } while (0)
 #define sc_board_led_can_traffic_burst(index) do { } while (0)
 #define sc_board_led_can_status_set(index, status) do { } while (0)

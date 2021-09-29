@@ -79,6 +79,7 @@ typedef struct _sc_can_bit_timing_range {
 } sc_can_bit_timing_range;
 
 
+__attribute__((noreturn)) extern void sc_board_reset(void);
 extern void sc_board_init_begin(void);
 extern void sc_board_init_end(void);
 extern void sc_board_led_set(uint8_t index, bool on);
@@ -92,7 +93,7 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 extern void sc_board_can_go_bus(uint8_t index, bool on);
 SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg);
 
-__attribute__((noreturn)) extern void sc_board_reset(void);
+
 extern void sc_board_can_reset(uint8_t index);
 SC_RAMFUNC extern void sc_board_can_status_fill(uint8_t index, struct sc_msg_can_status *msg);
 /* place rx / tx / error messages into buffer

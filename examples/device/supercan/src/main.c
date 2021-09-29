@@ -1329,7 +1329,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 				if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
 					done = false;
 					send_can_status = 0;
-					sc_board_can_ts_request();
+					sc_board_can_ts_request(index);
 
 
 
@@ -1350,7 +1350,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 						msg->flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;
 					}
 
-					msg->timestamp_us = sc_board_can_ts_wait();
+					msg->timestamp_us = sc_board_can_ts_wait(index);
 
 
 					// LOG("status store %u bytes\n", (unsigned)sizeof(*msg));
