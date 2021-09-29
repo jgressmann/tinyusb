@@ -25,4 +25,9 @@
 
 #pragma once
 
-#define SC_RAMFUNC __attribute__((section(SC_RAMFUNC_SECTION_NAME)))
+#ifdef SC_RAMFUNC_SECTION_NAME
+#	define SC_RAMFUNC __attribute__((section(SC_RAMFUNC_SECTION_NAME)))
+#else
+#	define SC_RAMFUNC
+#endif
+

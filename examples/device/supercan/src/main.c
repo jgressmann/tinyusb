@@ -90,13 +90,7 @@ static inline void can_log_bit_timing(sc_can_bit_timing const *c, char const* na
 }
 
 
-SC_RAMFUNC static inline uint8_t dlc_to_len(uint8_t dlc)
-{
-	static const uint8_t map[16] = {
-		0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64
-	};
-	return map[dlc & 0xf];
-}
+
 
 
 static StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
@@ -108,7 +102,7 @@ static void tusb_device_task(void* param);
 
 
 // #define USB_TRAFFIC_DO_LED led_burst(LED_DEBUG_3, LED_BURST_DURATION_MS)
-#define POWER_LED LED_DEBUG_0
+// #define POWER_LED LED_DEBUG_0
 // #define CAN0_TRAFFIC_LED LED_DEBUG_1
 // #define CAN1_TRAFFIC_LED LED_DEBUG_2
 
@@ -781,16 +775,18 @@ static void can_usb_task(void* param);
 
 int main(void)
 {
+	LOG("sc_board_init_begin\n");
 	sc_board_init_begin();
+	LOG("led_init\n");
 	led_init();
+	LOG("tusb_init\n");
 	tusb_init();
 
 
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
 
-	usb.can[0].mutex_handle = xSemaphoreCreateMutexStatic(&usb.can[0].mutex_mem);
-	usb.can[1].mutex_handle = xSemaphoreCreateMutexStatic(&usb.can[1].mutex_mem);
+
 
 
 	// cans.can[0].led_status_green = LED_CAN0_STATUS_GREEN;
@@ -805,7 +801,11 @@ int main(void)
 	sc_board_init_end();
 
 	for (unsigned i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
-		struct can* can = &cans[i];
+		struct can *can = &cans[i];
+		struct usb_can *usb_can = &usb.can[i];
+
+		usb_can->mutex_handle = xSemaphoreCreateMutexStatic(&usb_can->mutex_mem);
+
 		can->enabled = false;
 		can->desync = false;
 		can->tx_dropped = 0;
@@ -824,9 +824,12 @@ int main(void)
 	// 	LOG("c=%lx, wait=%lx\n", c, x);
 	// }
 
+	LOG("vTaskStartScheduler\n");
 	vTaskStartScheduler();
 
+	LOG("sc_board_reset\n");
 	sc_board_reset();
+
 
 	return 0;
 }
@@ -1319,7 +1322,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 			uint8_t * const tx_beg = usb_can->tx_buffers[usb_can->tx_bank];
 			uint8_t * const tx_end = tx_beg + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
 			uint8_t *tx_ptr = tx_beg + usb_can->tx_offsets[usb_can->tx_bank];
-			size_t consumed = 0;
+			int consumed = 0;
 
 			if (send_can_status) {
 				struct sc_msg_can_status *msg = NULL;
@@ -1367,16 +1370,22 @@ SC_RAMFUNC static void can_usb_task(void *param)
 
 			consumed = sc_board_can_place_msgs(index, tx_ptr, tx_end);
 
-			if (consumed) {
-				tx_ptr += consumed;
-				bus_activity_tc = xTaskGetTickCount();
-			} else {
+			switch (consumed) {
+			case -1:
+				break;
+			case 0:
 				if (sc_can_bulk_in_ep_ready(index)) {
 					sc_can_bulk_in_submit(index, __func__);
 				} else {
 					xTaskNotifyGive(can->usb_task_handle);
 					yield = true;
 				}
+				break;
+			default:
+				SC_DEBUG_ASSERT(consumed > 0);
+				tx_ptr += consumed;
+				bus_activity_tc = xTaskGetTickCount();
+				break;
 			}
 		}
 

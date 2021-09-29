@@ -102,8 +102,15 @@ extern void sc_board_can_reset(uint8_t index)
 
 extern void sc_board_init_begin(void)
 {
+	// NVIC_SetPriority(USB_PHY1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	// NVIC_SetPriority(USB_PHY2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+  	// NVIC_SetPriority(USB_OTG2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	// NVIC_SetPriority(USB_OTG1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 
+	board_init();
 }
+
+
 
 extern void sc_board_init_end(void)
 {
@@ -174,13 +181,13 @@ SC_RAMFUNC extern void sc_board_can_status_fill(uint8_t index, struct sc_msg_can
 	(void)msg;
 }
 
-SC_RAMFUNC extern uint16_t sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
+SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
 {
 	(void)index;
 	(void)tx_ptr;
 	(void)tx_end;
 
-	return 0;
+	return -1;
 }
 
 

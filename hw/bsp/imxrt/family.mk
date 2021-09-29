@@ -13,7 +13,8 @@ CFLAGS += \
   -D__ARMVFP__=0 -D__ARMFPV5__=0\
   -DXIP_EXTERNAL_FLASH=1 \
   -DXIP_BOOT_HEADER_ENABLE=1 \
-  -DCFG_TUSB_MCU=OPT_MCU_MIMXRT10XX
+  -DCFG_TUSB_MCU=OPT_MCU_MIMXRT10XX \
+  -DRAMFUNC_SECTION_NAME="\"CodeQuickAccess\""
 
 # mcu driver cause following warnings
 CFLAGS += -Wno-error=unused-parameter -Wno-error=implicit-fallthrough=
@@ -23,7 +24,7 @@ MCU_DIR = $(SDK_DIR)/devices/$(MCU_VARIANT)
 # All source paths should be relative to the top level.
 LD_FILE = $(MCU_DIR)/gcc/$(MCU_VARIANT)xxxxx_flexspi_nor.ld
 
-# TODO for net_lwip_webserver exmaple, but may not needed !! 
+# TODO for net_lwip_webserver exmaple, but may not needed !!
 LDFLAGS += \
 	-Wl,--defsym,__stack_size__=0x800 \
 

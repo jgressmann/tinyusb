@@ -58,7 +58,7 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg);
 #define configMINIMAL_SECURE_STACK_SIZE					( 1024 )
 
 #define configUSE_PREEMPTION                    1
-#define configUSE_PORT_OPTIMISED_TASK_SELECTION 1
+#define configUSE_PORT_OPTIMISED_TASK_SELECTION 0 /* doesn't seem to work for CM7 */
 #define configCPU_CLOCK_HZ                      SystemCoreClock
 #define configTICK_RATE_HZ                      ( 1000 )
 #define configMAX_PRIORITIES                    ( 5 )
@@ -150,7 +150,7 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg);
 /* FreeRTOS hooks to NVIC vectors */
 #define xPortPendSVHandler    PendSV_Handler
 #define xPortSysTickHandler   SysTick_Handler
-#define vPortSVCHandler       SVCall_Handler
+#define vPortSVCHandler       SVC_Handler
 
 //--------------------------------------------------------------------+
 // Interrupt nesting behavior configuration.

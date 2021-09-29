@@ -95,9 +95,21 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 __attribute__((noreturn)) extern void sc_board_reset(void);
 extern void sc_board_can_reset(uint8_t index);
 SC_RAMFUNC extern void sc_board_can_status_fill(uint8_t index, struct sc_msg_can_status *msg);
-SC_RAMFUNC extern uint16_t sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end);
+/* place rx / tx / error messages into buffer
+ *
+ * return  -1 if no messages
+ *         > 0 if messages placed
+ *         0 if insufficient space in buffer
+ */
+SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end);
 
-
+SC_RAMFUNC static inline uint8_t dlc_to_len(uint8_t dlc)
+{
+	static const uint8_t map[16] = {
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64
+	};
+	return map[dlc & 0xf];
+}
 
 #if defined(D5035_01)
 #	include "supercan_D5035_01.h"

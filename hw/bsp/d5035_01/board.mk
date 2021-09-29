@@ -45,6 +45,7 @@ CFLAGS += \
   -DCFG_TUSB_MCU=OPT_MCU_SAME5X \
   -DD5035_01=1 \
   -DBOARD_NAME="\"D5035-01\"" \
+  -DRAMFUNC_SECTION_NAME="\".ramfunc\"" \
   -DSVC_Handler=SVCall_Handler
 
 CFLAGS += -Wno-error=undef -Wno-error=type-limits
