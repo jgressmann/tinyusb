@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License (MIT)
  *
  * Copyright (c) 2018, hathach (tinyusb.org)
@@ -51,7 +51,15 @@ void board_init(void)
   SysTick_Config(SystemCoreClock / 1000);
 #elif CFG_TUSB_OS == OPT_OS_FREERTOS
   // If freeRTOS is used, IRQ priority is limit by max syscall ( smaller is higher )
-//  NVIC_SetPriority(USB0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY );
+  // NVIC_SetPriority(USB0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY );
+# if CFG_TUSB_RHPORT0_MODE
+  NVIC_SetPriority(USB_PHY1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+  NVIC_SetPriority(USB_OTG1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+# endif
+# if CFG_TUSB_RHPORT1_MODE
+  NVIC_SetPriority(USB_PHY2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+  NVIC_SetPriority(USB_OTG2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+# endif
 #endif
 
   // LED
