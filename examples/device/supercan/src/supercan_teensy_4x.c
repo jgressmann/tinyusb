@@ -213,7 +213,7 @@ extern void sc_board_init_begin(void)
 		can->flex_can->MCR = CAN_MCR_MDIS(1)  // module disable
 				| CAN_MCR_SUPV(0) // This bit configures the FlexCAN to be either in Supervisor or User mode
 				| CAN_MCR_WRNEN(1) // Warning Interrupt Enable
-				// | CAN_MCR_SOFTRST(1) // soft reset
+				| CAN_MCR_IRMQ(1) // Individual Rx Masking And Queue Enable
 				| CAN_MCR_SRXDIS(1) // disable self resception
 				| CAN_MCR_MAXMB(can->fd_capable ? 14 : 64)
 				| CAN_MCR_FRZ(1) // halt / debug should freeze
@@ -229,15 +229,14 @@ extern void sc_board_init_begin(void)
 				| CAN_CTRL1_ERRMSK(1) // Error interrupt enabled
 				| CAN_CTRL1_TWRNMSK(1) // tx warning interrupt enabled
 				| CAN_CTRL1_RWRNMSK(1) // rx warning interrupt enabled
-				| CAN_CTRL1_LBUF(1) // lowest number buffer is transmitted first
 				| (can->fd_capable ? CAN_CTRL1_CLKSRC(1) : 0) // use peripheral clock not oscillator
 				;
 
 		LOG("CTRL1=%lx ", can->flex_can->CTRL1);
 
-		can->flex_can->CTRL2 =  CAN_CTRL2_WRMFRZ(1)
-								| CAN_CTRL2_ERRMSK_FAST(1)  // Error Interrupt Mask for errors detected in the data phase of fast CAN FD frames
-								| CAN_CTRL2_BOFFDONEMSK(1) // Bus Off Done Interrupt Mask
+		can->flex_can->CTRL2 =  CAN_CTRL2_BOFFDONEMSK(1) // Bus Off Done Interrupt Mask
+								| CAN_CTRL2_RRS(1) // store remote request frames
+								| (can->fd_capable ? CAN_CTRL2_ERRMSK_FAST(1) : 0)  // Error Interrupt Mask for errors detected in the data phase of fast CAN FD frames
 								| (can->fd_capable ? CAN_CTRL2_ISOCANFDEN(1) : 0) // CAN-FD in ISO mode
 								;
 
@@ -277,6 +276,9 @@ extern void sc_board_init_begin(void)
 		LOG("MCR=%lx ", can->flex_can->MCR);
 
 		init_mailboxes(i);
+
+		// set rx individual mask to 'don't care'
+		memset((void*)can->flex_can->RXIMR, 0, sizeof(can->flex_can->RXIMR));
 
 		LOG("\n");
 	}
@@ -396,7 +398,7 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 		LOG("ch%u CBT brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u\n",
 			index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2);
 	} else {
-		uint32_t reg = can->flex_can->CTRL1 &  (
+		uint32_t reg = can->flex_can->CTRL1 & ~(
 			(CAN_CTRL1_PROPSEG_MASK << CAN_CTRL1_PROPSEG_SHIFT) |
 			(CAN_CTRL1_PSEG1_MASK << CAN_CTRL1_PSEG1_SHIFT) |
 			(CAN_CTRL1_PSEG2_MASK << CAN_CTRL1_PSEG2_SHIFT) |
@@ -449,9 +451,8 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 		can->flex_can->IFLAG1 = can->flex_can->IFLAG1;
 		can->flex_can->IFLAG2 = can->flex_can->IFLAG2;
 
-		// read out error regs to clean
-		(void)can->flex_can->ESR1;
-		(void)can->flex_can->ESR2;
+		// clear error flags
+		can->flex_can->ESR1 = can->flex_can->ESR1;
 
 		// reset mailboxes
 		init_mailboxes(index);
