@@ -80,12 +80,14 @@ typedef struct _sc_can_bit_timing_range {
 
 
 __attribute__((noreturn)) extern void sc_board_reset(void);
+extern uint32_t sc_board_identifier(void);
 extern void sc_board_init_begin(void);
 extern void sc_board_init_end(void);
 extern void sc_board_led_set(uint8_t index, bool on);
 extern void sc_board_leds_on_unsafe(void);
 extern uint16_t sc_board_can_feat_perm(uint8_t index);
 extern uint16_t sc_board_can_feat_conf(uint8_t index);
+extern void sc_board_can_feat_set(uint8_t index, uint16_t features);
 extern sc_can_bit_timing_range const* sc_board_can_nm_bit_timing_range(uint8_t index);
 extern sc_can_bit_timing_range const* sc_board_can_dt_bit_timing_range(uint8_t index);
 extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing const *bt);

@@ -47,7 +47,6 @@
 
 #include <leds.h>
 #include <crc32.h>
-#include <device.h>
 #include <sections.h>
 
 
@@ -82,8 +81,8 @@ static inline void can_log_bit_timing(sc_can_bit_timing const *c, char const* na
 	(void)c;
 	(void)name;
 
-	LOG("%s brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
-		name, c->brp, c->sjw, c->tseg1, c->tseg2,
+	LOG("%s clock[mhz]=%u brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
+		name, SC_BOARD_CAN_CLK_HZ / 1000000, c->brp, c->sjw, c->tseg1, c->tseg2,
 		SC_BOARD_CAN_CLK_HZ / ((uint32_t)c->brp * (1 + c->tseg1 + c->tseg2)),
 		((1 + c->tseg1) * 1000) / (1 + c->tseg1 + c->tseg2)
 	);
@@ -390,8 +389,11 @@ send_dev_info:
 			out_ptr = usb_cmd->tx_buffers[usb_cmd->tx_bank] + usb_cmd->tx_offsets[usb_cmd->tx_bank];
 			out_end = usb_cmd->tx_buffers[usb_cmd->tx_bank] + CMD_BUFFER_SIZE;
 			if (out_end - out_ptr >= bytes) {
-				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
 				struct sc_msg_dev_info *rep = (struct sc_msg_dev_info *)out_ptr;
+				const uint32_t device_identifier = sc_board_identifier();
+
+				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
+
 				rep->id = SC_MSG_DEVICE_INFO;
 				rep->len = bytes;
 				rep->feat_perm = sc_board_can_feat_perm(index);
@@ -457,6 +459,10 @@ send_can_info:
 				rep->tx_fifo_size = SC_BOARD_CAN_TX_FIFO_SIZE;
 				rep->rx_fifo_size = SC_BOARD_CAN_RX_FIFO_SIZE;
 				rep->msg_buffer_size = MSG_BUFFER_SIZE;
+
+				LOG("ch%u clk=%u ", index, SC_BOARD_CAN_CLK_HZ);
+				LOG("nm brp=%u..%u sjw=%u..%u tseg1=%u..%u tseg2=%u..%u\n",
+					nm_bt->min.brp, nm_bt->max.brp, 1, nm_bt->max.sjw, nm_bt->min.tseg1, nm_bt->max.tseg1, nm_bt->min.tseg2, nm_bt->max.tseg2);
 			} else {
 				if (sc_cmd_bulk_in_ep_ready(index)) {
 					sc_cmd_bulk_in_submit(index);
@@ -474,7 +480,6 @@ send_can_info:
 				LOG("ch%u ERROR: msg too short\n", index);
 				error = SC_ERROR_SHORT;
 			} else {
-
 				sc_can_bit_timing_range const *nm_bt = sc_board_can_nm_bit_timing_range(index);
 				sc_can_bit_timing bt_target;
 
@@ -499,7 +504,6 @@ send_can_info:
 				LOG("ch%u ERROR: msg too short\n", index);
 				error = SC_ERROR_SHORT;
 			} else {
-
 				sc_can_bit_timing_range const *dt_bt = sc_board_can_dt_bit_timing_range(index);
 				sc_can_bit_timing bt_target;
 
@@ -561,6 +565,9 @@ send_can_info:
 				bool is_enabled = tmsg->arg != 0;
 				if (was_enabled != is_enabled) {
 					LOG("ch%u enabled=%u\n", index, is_enabled);
+					if (is_enabled) {
+						sc_board_can_feat_set(index, can->features);
+					}
 					sc_board_can_go_bus(index, is_enabled);
 				}
 			}

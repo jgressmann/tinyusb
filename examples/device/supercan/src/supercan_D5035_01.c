@@ -1133,6 +1133,12 @@ extern void sc_board_counter_1MHz_init(void)
 	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
 }
 
+static uint32_t device_identifier;
+
+extern uint32_t sc_board_identifier(void)
+{
+	return device_identifier;
+}
 
 static void init_device_identifier(void)
 {

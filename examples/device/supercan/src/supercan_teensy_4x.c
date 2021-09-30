@@ -49,11 +49,23 @@
 #ifdef TEENSY_4X
 
 #include <bsp/board.h>
-#include "supercan_board.h"
-#include "leds.h"
+#include <supercan_board.h>
+#include <leds.h>
+#include <fsl_clock.h>
+#include <fsl_iomuxc.h>
 
 enum {
-	TX_MAILBOX_COUNT = 2
+	TX_MAILBOX_COUNT = 7,
+	MB_RX_INACTIVE = 0b0000,
+	MB_RX_EMPTY = 0b0100,
+	MB_RX_FULL = 0b0010,
+	MB_RX_OVERRUN = 0b0110,
+	MB_RX_RANSWER = 0b1010,
+	MB_TX_INACTIVE = 0b1000,
+	MB_TX_ABORT = 0b1001,
+	MB_TX_DATA = 0b1100,
+	MB_TX_REMOTE = 0b1100,
+	MB_TX_ANSWER = 0b1110,
 };
 
 struct can {
@@ -125,6 +137,37 @@ extern void sc_board_can_reset(uint8_t index)
 	(void)index;
 }
 
+static void init_mailboxes(uint8_t index)
+{
+	struct can *can = &cans[index];
+
+	if (can->fd_capable) {
+		uint8_t rx_count = 14 - TX_MAILBOX_COUNT;
+
+		for (uint8_t i = 0; i < TX_MAILBOX_COUNT; ++i) {
+			can->flex_can->MB_64B[i].ID = 0;
+			can->flex_can->MB_64B[i].CS = CAN_CS_CODE(MB_TX_INACTIVE);
+		}
+
+		for (uint8_t i = TX_MAILBOX_COUNT; i < TX_MAILBOX_COUNT + rx_count; ++i) {
+			can->flex_can->MB_64B[i].ID = 0;
+			can->flex_can->MB_64B[i].CS = CAN_CS_CODE(MB_RX_EMPTY);
+		}
+	} else {
+		uint8_t rx_count = 64 - TX_MAILBOX_COUNT;
+
+		for (uint8_t i = 0; i < TX_MAILBOX_COUNT; ++i) {
+			can->flex_can->MB_64B[i].ID = 0;
+			can->flex_can->MB_64B[i].CS = CAN_CS_CODE(MB_TX_INACTIVE);
+		}
+
+		for (uint8_t i = TX_MAILBOX_COUNT; i < TX_MAILBOX_COUNT + rx_count; ++i) {
+			can->flex_can->MB_8B[i].ID = 0;
+			can->flex_can->MB_8B[i].CS = CAN_CS_CODE(MB_RX_EMPTY);
+		}
+	}
+}
+
 extern void sc_board_init_begin(void)
 {
 	NVIC_SetPriority(CAN1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
@@ -133,18 +176,53 @@ extern void sc_board_init_begin(void)
 
 	board_init();
 
-	// TODO pins & mux setup
+	uint32_t reg = CCM->CSCMR2 & ~(
+		(CCM_CSCMR2_CAN_CLK_PODF_MASK << CCM_CSCMR2_CAN_CLK_PODF_SHIFT) |
+		(CCM_CSCMR2_CAN_CLK_SEL_MASK << CCM_CSCMR2_CAN_CLK_SEL_SHIFT));
+
+
+	CCM->CSCMR2 = reg
+					| CCM_CSCMR2_CAN_CLK_SEL(0b11)  // 80 MHz
+					| CCM_CSCMR2_CAN_CLK_PODF(0b000000) // prescaler of 1
+					;
+
+	//CLOCK_EnableUsbhs0PhyPllClock(kCLOCK_Usbphy480M, 480000000U);
+	CLOCK_EnableClock(kCLOCK_Can3);
+	CLOCK_EnableClock(kCLOCK_Can3S);
+	CLOCK_EnableClock(kCLOCK_Can1);
+	CLOCK_EnableClock(kCLOCK_Can1S);
+
+
+
+
+  IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0b11001000);
+  IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_37_FLEXCAN3_RX, 0b11000000);
+//   IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0x10B0u);
+//   IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_37_FLEXCAN3_RX, 0x10B0u);
+
 
 	for (size_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
 		struct can *can = &cans[i];
 
-		can->flex_can->MCR = CAN_MCR_MDIS(0)  // module disable
+		// LOG("CAN ch%u soft reset\n", (unsigned)i);
+		// can->flex_can->MCR = CAN_MCR_SOFTRST(1);
+		// while (can->flex_can->MCR & CAN_MCR_SOFTRST_MASK);
+
+		LOG("CAN ch%u ", (unsigned)i);
+
+		can->flex_can->MCR = CAN_MCR_MDIS(1)  // module disable
 				| CAN_MCR_SUPV(0) // This bit configures the FlexCAN to be either in Supervisor or User mode
 				| CAN_MCR_WRNEN(1) // Warning Interrupt Enable
-				| CAN_MCR_SOFTRST(1) // soft reset
+				// | CAN_MCR_SOFTRST(1) // soft reset
 				| CAN_MCR_SRXDIS(1) // disable self resception
-				| CAN_MCR_MAXMB(TX_MAILBOX_COUNT)
+				| CAN_MCR_MAXMB(can->fd_capable ? 14 : 64)
+				| CAN_MCR_FRZ(1) // halt / debug should freeze
+				| CAN_MCR_HALT(1) // halt
 				;
+
+		LOG("MCR=%lx ", can->flex_can->MCR);
+
+
 
 		can->flex_can->CTRL1 = CAN_CTRL1_LBUF(1)  // Lowest Buffer Transmitted First
 				| CAN_CTRL1_BOFFREC(1) // bus off interrupt enable
@@ -152,11 +230,20 @@ extern void sc_board_init_begin(void)
 				| CAN_CTRL1_TWRNMSK(1) // tx warning interrupt enabled
 				| CAN_CTRL1_RWRNMSK(1) // rx warning interrupt enabled
 				| CAN_CTRL1_LBUF(1) // lowest number buffer is transmitted first
+				| (can->fd_capable ? CAN_CTRL1_CLKSRC(1) : 0) // use peripheral clock not oscillator
 				;
 
-		can->flex_can->CTRL2 = CAN_CTRL2_ERRMSK_FAST(1)  // Error Interrupt Mask for errors detected in the data phase of fast CAN FD frames
+		LOG("CTRL1=%lx ", can->flex_can->CTRL1);
+
+		can->flex_can->CTRL2 =  CAN_CTRL2_WRMFRZ(1)
+								| CAN_CTRL2_ERRMSK_FAST(1)  // Error Interrupt Mask for errors detected in the data phase of fast CAN FD frames
 								| CAN_CTRL2_BOFFDONEMSK(1) // Bus Off Done Interrupt Mask
+								| (can->fd_capable ? CAN_CTRL2_ISOCANFDEN(1) : 0) // CAN-FD in ISO mode
 								;
+
+		LOG("CTRL2=%lx ", can->flex_can->CTRL2);
+
+
 
 		// enable all message buffer interrupts
 		can->flex_can->IFLAG1 = ~0;
@@ -169,7 +256,29 @@ extern void sc_board_init_begin(void)
 									| CAN_FDCTRL_MBDSR1(3) // 64 byte per box
 									| CAN_FDCTRL_TDCEN(1) // enable transmitter delay compensation
 									;
+
+
+		} else {
+
 		}
+
+		// LOG("CAN ch0 MCR=%lx CTRL1=%lx CTRL2=%lx",
+		// 	can->flex_can->MCR,
+		// 	can->flex_can->CTRL1,
+		// 	can->flex_can->CTRL2);
+
+		if (can->fd_capable) {
+			LOG("CBT=%lx FDCTRL=%lx ", can->flex_can->CBT, can->flex_can->FDCTRL);
+		}
+
+
+		can->flex_can->MCR &= ~CAN_MCR_MDIS(1);  // module enable
+
+		LOG("MCR=%lx ", can->flex_can->MCR);
+
+		init_mailboxes(i);
+
+		LOG("\n");
 	}
 
 
@@ -181,6 +290,27 @@ extern void sc_board_init_end(void)
 
 }
 
+// extern void sc_board_fill_can_info(uin8_t index, struct sc_msg_can_info* msg)
+// {
+// 	msg->can_clk_hz = SC_BOARD_CAN_CLK_HZ;
+// 	msg->nmbt_brp_min = nm_bt->min.brp;
+// 	msg->nmbt_brp_max = nm_bt->max.brp;
+// 	msg->nmbt_sjw_max = nm_bt->max.sjw;
+// 	msg->nmbt_tseg1_min = nm_bt->min.tseg1;
+// 	msg->nmbt_tseg1_max = nm_bt->max.tseg1;
+// 	msg->nmbt_tseg2_min = nm_bt->min.tseg2;
+// 	msg->nmbt_tseg2_max = nm_bt->max.tseg2;
+// 	msg->dtbt_brp_min = dt_bt->min.brp;
+// 	msg->dtbt_brp_max = dt_bt->max.brp;
+// 	msg->dtbt_sjw_max = dt_bt->max.sjw;
+// 	msg->dtbt_tseg1_min = dt_bt->min.tseg1;
+// 	msg->dtbt_tseg1_max = dt_bt->max.tseg1;
+// 	msg->dtbt_tseg2_min = dt_bt->min.tseg2;
+// 	msg->dtbt_tseg2_max = dt_bt->max.tseg2;
+// 	msg->tx_fifo_size = 32;
+// 	msg->rx_fifo_size = 32;
+// }
+
 extern sc_can_bit_timing_range const* sc_board_can_nm_bit_timing_range(uint8_t index)
 {
 	static const sc_can_bit_timing_range ranges[] = {
@@ -188,13 +318,13 @@ extern sc_can_bit_timing_range const* sc_board_can_nm_bit_timing_range(uint8_t i
 			.min = {
 				.brp = 1,
 				.tseg1 = 2,
-				.tseg2 = 32,
+				.tseg2 = 1,
 				.sjw = 1,
 			},
 			.max = {
 				.brp = 1024,
 				.tseg1 = 2048,
-				.tseg2 = 8,
+				.tseg2 = 32,
 				.sjw = 32,
 			},
 		},
@@ -242,8 +372,58 @@ extern sc_can_bit_timing_range const* sc_board_can_dt_bit_timing_range(uint8_t i
 
 extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing const *bt)
 {
-	(void)index;
-	(void)bt;
+	struct can* can = &cans[index];
+
+	if (can->fd_capable) {
+		uint16_t prop_seg = 0;
+		uint16_t tseg1 = 0;
+
+		if (bt->tseg1 > 64) {
+			prop_seg = 64;
+			tseg1 = bt->tseg1 - prop_seg;
+		} else {
+			prop_seg = bt->tseg1;
+		}
+
+		can->flex_can->CBT = CAN_CBT_BTF(1)
+								| CAN_CBT_EPRESDIV(bt->brp - 1)
+								| CAN_CBT_ERJW(bt->sjw - 1)
+								| CAN_CBT_EPROPSEG(prop_seg - 1)
+								| CAN_CBT_EPSEG1(tseg1 - 1)
+								| CAN_CBT_EPSEG2(bt->tseg2 - 1)
+								;
+
+		LOG("ch%u CBT brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u\n",
+			index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2);
+	} else {
+		uint32_t reg = can->flex_can->CTRL1 &  (
+			(CAN_CTRL1_PROPSEG_MASK << CAN_CTRL1_PROPSEG_SHIFT) |
+			(CAN_CTRL1_PSEG1_MASK << CAN_CTRL1_PSEG1_SHIFT) |
+			(CAN_CTRL1_PSEG2_MASK << CAN_CTRL1_PSEG2_SHIFT) |
+			(CAN_CTRL1_RJW_MASK << CAN_CTRL1_RJW_SHIFT));
+
+		uint16_t prop_seg = 0;
+		uint16_t tseg1 = 0;
+
+		if (bt->tseg1 > 8) {
+			prop_seg = 8;
+			tseg1 = bt->tseg1 - prop_seg;
+		} else {
+			prop_seg = bt->tseg1;
+		}
+
+		can->flex_can->CTRL1 = reg
+								| CAN_CTRL1_PRESDIV(bt->brp - 1)
+								| CAN_CTRL1_RJW(bt->sjw - 1)
+								| CAN_CTRL1_PROPSEG(prop_seg - 1)
+								| CAN_CTRL1_PSEG1(tseg1 - 1)
+								| CAN_CTRL1_PSEG2(bt->tseg2 - 1)
+								;
+
+		LOG("ch%u CTRL1 brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u\n",
+			index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2);
+	}
+
 }
 
 extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing const *bt)
@@ -254,10 +434,27 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 
 extern void sc_board_can_go_bus(uint8_t index, bool on)
 {
+	struct can *can = &cans[index];
+
 	if (on) {
-		cans[index].flex_can->MCR &= ~CAN_MCR_FRZ(1);
+		NVIC_EnableIRQ(can->irq);
+		can->flex_can->MCR &= ~CAN_MCR_HALT(1);
+		LOG("go on bus MCR=%lx\n", can->flex_can->MCR);
 	} else {
-		cans[index].flex_can->MCR |= CAN_MCR_FRZ(1);
+		can->flex_can->MCR |= CAN_MCR_HALT(1);
+		LOG("go off bus MCR=%lx\n", can->flex_can->MCR);
+		NVIC_DisableIRQ(can->irq);
+
+		// clear interrupts
+		can->flex_can->IFLAG1 = can->flex_can->IFLAG1;
+		can->flex_can->IFLAG2 = can->flex_can->IFLAG2;
+
+		// read out error regs to clean
+		(void)can->flex_can->ESR1;
+		(void)can->flex_can->ESR2;
+
+		// reset mailboxes
+		init_mailboxes(index);
 	}
 }
 
@@ -271,8 +468,12 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 
 SC_RAMFUNC extern void sc_board_can_status_fill(uint8_t index, struct sc_msg_can_status *msg)
 {
-	(void)index;
-	(void)msg;
+	struct can *can = &cans[index];
+	uint32_t ecr = can->flex_can->ECR;
+
+
+	msg->rx_errors = (ecr & CAN_ECR_RXERRCNT_MASK) >> CAN_ECR_RXERRCNT_SHIFT;
+	msg->tx_errors = (ecr & CAN_ECR_TXERRCNT_MASK) >> CAN_ECR_TXERRCNT_SHIFT;
 }
 
 SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
@@ -286,17 +487,28 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 
 SC_RAMFUNC void CAN1_IRQHandler(void)
 {
-
+	LOG(".");
 }
 
 SC_RAMFUNC void CAN2_IRQHandler(void)
 {
-
+	LOG("+");
 }
 
 SC_RAMFUNC void CAN3_IRQHandler(void)
 {
+	LOG("\\");
+}
 
+extern uint32_t sc_board_identifier(void)
+{
+	return 0;
+}
+
+extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
+{
+	(void)index;
+	(void)features;
 }
 
 #endif // defined(TEENSY_4X)

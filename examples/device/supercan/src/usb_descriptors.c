@@ -30,7 +30,6 @@
 #include <supercan_board.h>
 #include <usb_descriptors.h>
 #include <mcu.h>
-#include <device.h>
 #include <usnprintf.h>
 
 
@@ -274,7 +273,7 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 		int chars = 0;
 
 		memset(zero_padded, '0', 8);
-		serial_chars = usnprintf(&zero_padded[8], 24, "%x", device_identifier);
+		serial_chars = usnprintf(&zero_padded[8], 24, "%x", sc_board_identifier());
 		SC_DEBUG_ASSERT(serial_chars >= 0 && serial_chars <= 8);
 
 		chars = usnprintf(string_buffer, sizeof(string_buffer), string_desc_arr[index], &zero_padded[serial_chars]);
