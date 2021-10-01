@@ -159,8 +159,8 @@ static void init_mailboxes(uint8_t index)
 		uint8_t rx_count = 64 - TX_MAILBOX_COUNT;
 
 		for (uint8_t i = 0; i < TX_MAILBOX_COUNT; ++i) {
-			can->flex_can->MB_64B[i].ID = 0;
-			can->flex_can->MB_64B[i].CS = CAN_CS_CODE(MB_TX_INACTIVE);
+			can->flex_can->MB_8B[i].ID = 0;
+			can->flex_can->MB_8B[i].CS = CAN_CS_CODE(MB_TX_INACTIVE);
 		}
 
 		for (uint8_t i = TX_MAILBOX_COUNT; i < TX_MAILBOX_COUNT + rx_count; ++i) {
