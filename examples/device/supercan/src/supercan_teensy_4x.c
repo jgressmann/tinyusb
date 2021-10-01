@@ -56,6 +56,7 @@
 
 enum {
 	TX_MAILBOX_COUNT = 7,
+	RX_MAILBOX_COUNT = 7,
 	MB_RX_INACTIVE = 0b0000,
 	MB_RX_EMPTY = 0b0100,
 	MB_RX_FULL = 0b0010,
@@ -73,6 +74,7 @@ struct can {
 	IRQn_Type irq;
 	// const uint8_t rx_mailbox_count;
 	bool fd_capable;
+	// bool fd_enabled;
 };
 
 static struct can cans[] = {
@@ -124,7 +126,7 @@ extern uint16_t sc_board_can_feat_conf(uint8_t index)
 	switch (index) {
 	case 0: // FlexCAN3
 		return (MSG_BUFFER_SIZE >= 128 ? SC_FEATURE_FLAG_FDF : 0)
-					| SC_FEATURE_FLAG_TXP
+					// | SC_FEATURE_FLAG_TXP
 					| SC_FEATURE_FLAG_EHD;
 	case 1: // FlexCAN1
 		return SC_FEATURE_FLAG_TXP;
@@ -144,26 +146,22 @@ static void init_mailboxes(uint8_t index)
 	struct can *can = &cans[index];
 
 	if (can->fd_capable) {
-		uint8_t rx_count = 14 - TX_MAILBOX_COUNT;
-
 		for (uint8_t i = 0; i < TX_MAILBOX_COUNT; ++i) {
 			can->flex_can->MB_64B[i].ID = 0;
 			can->flex_can->MB_64B[i].CS = CAN_CS_CODE(MB_TX_INACTIVE);
 		}
 
-		for (uint8_t i = TX_MAILBOX_COUNT; i < TX_MAILBOX_COUNT + rx_count; ++i) {
+		for (uint8_t i = TX_MAILBOX_COUNT; i < TX_MAILBOX_COUNT + RX_MAILBOX_COUNT; ++i) {
 			can->flex_can->MB_64B[i].ID = 0;
 			can->flex_can->MB_64B[i].CS = CAN_CS_CODE(MB_RX_EMPTY);
 		}
 	} else {
-		uint8_t rx_count = 64 - TX_MAILBOX_COUNT;
-
 		for (uint8_t i = 0; i < TX_MAILBOX_COUNT; ++i) {
 			can->flex_can->MB_8B[i].ID = 0;
 			can->flex_can->MB_8B[i].CS = CAN_CS_CODE(MB_TX_INACTIVE);
 		}
 
-		for (uint8_t i = TX_MAILBOX_COUNT; i < TX_MAILBOX_COUNT + rx_count; ++i) {
+		for (uint8_t i = TX_MAILBOX_COUNT; i < TX_MAILBOX_COUNT + RX_MAILBOX_COUNT; ++i) {
 			can->flex_can->MB_8B[i].ID = 0;
 			can->flex_can->MB_8B[i].CS = CAN_CS_CODE(MB_RX_EMPTY);
 		}
@@ -190,24 +188,28 @@ extern void sc_board_init_begin(void)
 	device_identifier = OCOTP->CFG0 | OCOTP->CFG1; // 64 bit DEVICE_ID
 
 	uint32_t cscmr2 = CCM->CSCMR2 & ~(
-		(CCM_CSCMR2_CAN_CLK_PODF_MASK << CCM_CSCMR2_CAN_CLK_PODF_SHIFT) |
-		(CCM_CSCMR2_CAN_CLK_SEL_MASK << CCM_CSCMR2_CAN_CLK_SEL_SHIFT));
+		CCM_CSCMR2_CAN_CLK_PODF_MASK |
+		CCM_CSCMR2_CAN_CLK_SEL_MASK);
 
 
 
 
 	CCM->CSCMR2 = cscmr2
-					| CCM_CSCMR2_CAN_CLK_SEL(0b10)  // 80 MHz
+					| CCM_CSCMR2_CAN_CLK_SEL(0b00)  // 60
+					//| CCM_CSCMR2_CAN_CLK_SEL(0b10)  // 80
 					| CCM_CSCMR2_CAN_CLK_PODF(0b000000) // prescaler of 1
 					;
 
+	LOG("CSCMR2=%lx\n", CCM->CSCMR2);
 
 
-
-  IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0);
-  IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_37_FLEXCAN3_RX, 0);
-  IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0b11001000);
-  IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_37_FLEXCAN3_RX, 0b11000000);
+	IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0);
+	IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_37_FLEXCAN3_RX, 0);
+	// 0xC8 fastest, lowest drive strength
+	// 5–3 DSE 0 == off, 001 = low , 010 = better, ...111 best
+	// 7–6 SPEED 00 = low .. 11 fastest
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0b11001000);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_37_FLEXCAN3_RX, 0b11000000);
 
 
 	for (size_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
@@ -224,12 +226,15 @@ extern void sc_board_init_begin(void)
 				| CAN_MCR_WRNEN(1) // Warning Interrupt Enable
 				| CAN_MCR_IRMQ(1) // Individual Rx Masking And Queue Enable
 				| CAN_MCR_SRXDIS(1) // disable self resception
-				| CAN_MCR_MAXMB(can->fd_capable ? 14 : 64)
+				// | CAN_MCR_MAXMB(can->fd_capable ? 14 : 64)
+				| CAN_MCR_MAXMB((TX_MAILBOX_COUNT + RX_MAILBOX_COUNT))
 				| CAN_MCR_FRZ(1) // halt / debug should freeze
 				| CAN_MCR_HALT(1) // halt
 				;
 
 		LOG("MCR=%lx ", can->flex_can->MCR);
+
+
 
 
 
@@ -247,6 +252,7 @@ extern void sc_board_init_begin(void)
 								| CAN_CTRL2_RRS(1) // store remote request frames
 								| (can->fd_capable ? CAN_CTRL2_ERRMSK_FAST(1) : 0)  // Error Interrupt Mask for errors detected in the data phase of fast CAN FD frames
 								| (can->fd_capable ? CAN_CTRL2_ISOCANFDEN(1) : 0) // CAN-FD in ISO mode
+								| (can->fd_capable ? CAN_CTRL2_PREXCEN(1) : 0) // CAN-FD protocol exception handling
 								;
 
 		LOG("CTRL2=%lx ", can->flex_can->CTRL2);
@@ -260,7 +266,8 @@ extern void sc_board_init_begin(void)
 		if (can->fd_capable) {
 			can->flex_can->CBT = CAN_CBT_BTF(1); // mooar arbitration bits
 
-			can->flex_can->FDCTRL = CAN_FDCTRL_MBDSR0(3) // 64 byte per box
+			can->flex_can->FDCTRL = CAN_FDCTRL_FDRATE(1) // enable BRS
+									| CAN_FDCTRL_MBDSR0(3) // 64 byte per box
 									| CAN_FDCTRL_MBDSR1(3) // 64 byte per box
 									| CAN_FDCTRL_TDCEN(1) // enable transmitter delay compensation
 									;
@@ -270,26 +277,25 @@ extern void sc_board_init_begin(void)
 
 		}
 
-		// LOG("CAN ch0 MCR=%lx CTRL1=%lx CTRL2=%lx",
-		// 	can->flex_can->MCR,
-		// 	can->flex_can->CTRL1,
-		// 	can->flex_can->CTRL2);
-
 		if (can->fd_capable) {
 			LOG("CBT=%lx FDCTRL=%lx ", can->flex_can->CBT, can->flex_can->FDCTRL);
 		}
 
 
-		can->flex_can->MCR &= ~CAN_MCR_MDIS(1);  // module enable
+
+		can->flex_can->MCR &= ~CAN_MCR_MDIS_MASK;  // module enable
 
 		LOG("MCR=%lx ", can->flex_can->MCR);
 
-		init_mailboxes(i);
+		LOG("\n");
+
+
 
 		// set rx individual mask to 'don't care'
 		memset((void*)can->flex_can->RXIMR, 0, sizeof(can->flex_can->RXIMR));
 
-		LOG("\n");
+
+		init_mailboxes(i);
 	}
 
 
@@ -298,29 +304,8 @@ extern void sc_board_init_begin(void)
 
 extern void sc_board_init_end(void)
 {
-
 }
 
-// extern void sc_board_fill_can_info(uin8_t index, struct sc_msg_can_info* msg)
-// {
-// 	msg->can_clk_hz = SC_BOARD_CAN_CLK_HZ;
-// 	msg->nmbt_brp_min = nm_bt->min.brp;
-// 	msg->nmbt_brp_max = nm_bt->max.brp;
-// 	msg->nmbt_sjw_max = nm_bt->max.sjw;
-// 	msg->nmbt_tseg1_min = nm_bt->min.tseg1;
-// 	msg->nmbt_tseg1_max = nm_bt->max.tseg1;
-// 	msg->nmbt_tseg2_min = nm_bt->min.tseg2;
-// 	msg->nmbt_tseg2_max = nm_bt->max.tseg2;
-// 	msg->dtbt_brp_min = dt_bt->min.brp;
-// 	msg->dtbt_brp_max = dt_bt->max.brp;
-// 	msg->dtbt_sjw_max = dt_bt->max.sjw;
-// 	msg->dtbt_tseg1_min = dt_bt->min.tseg1;
-// 	msg->dtbt_tseg1_max = dt_bt->max.tseg1;
-// 	msg->dtbt_tseg2_min = dt_bt->min.tseg2;
-// 	msg->dtbt_tseg2_max = dt_bt->max.tseg2;
-// 	msg->tx_fifo_size = 32;
-// 	msg->rx_fifo_size = 32;
-// }
 
 extern sc_can_bit_timing_range const* sc_board_can_nm_bit_timing_range(uint8_t index)
 {
@@ -407,11 +392,16 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 		LOG("ch%u CBT brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u\n",
 			index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2);
 	} else {
+		// uint32_t reg = can->flex_can->CTRL1 & ~(
+		// 	(CAN_CTRL1_PROPSEG_MASK << CAN_CTRL1_PROPSEG_SHIFT) |
+		// 	(CAN_CTRL1_PSEG1_MASK << CAN_CTRL1_PSEG1_SHIFT) |
+		// 	(CAN_CTRL1_PSEG2_MASK << CAN_CTRL1_PSEG2_SHIFT) |
+		// 	(CAN_CTRL1_RJW_MASK << CAN_CTRL1_RJW_SHIFT));
 		uint32_t reg = can->flex_can->CTRL1 & ~(
-			(CAN_CTRL1_PROPSEG_MASK << CAN_CTRL1_PROPSEG_SHIFT) |
-			(CAN_CTRL1_PSEG1_MASK << CAN_CTRL1_PSEG1_SHIFT) |
-			(CAN_CTRL1_PSEG2_MASK << CAN_CTRL1_PSEG2_SHIFT) |
-			(CAN_CTRL1_RJW_MASK << CAN_CTRL1_RJW_SHIFT));
+			CAN_CTRL1_PROPSEG_MASK |
+			CAN_CTRL1_PSEG1_MASK |
+			CAN_CTRL1_PSEG2_MASK |
+			CAN_CTRL1_RJW_MASK);
 
 		uint16_t prop_seg = 0;
 		uint16_t tseg1 = 0;
@@ -449,10 +439,21 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 
 	if (on) {
 		NVIC_EnableIRQ(can->irq);
-		can->flex_can->MCR &= ~CAN_MCR_HALT(1);
-		LOG("go on bus MCR=%lx\n", can->flex_can->MCR);
+		// can->flex_can->MCR &= ~CAN_MCR_HALT(1);
+		LOG("go on bus pre MCR=%lx\n", can->flex_can->MCR);
+		can->flex_can->MCR &= ~CAN_MCR_HALT_MASK;
+		LOG("go on bus post MCR=%lx\n", can->flex_can->MCR);
+
+
+		can->flex_can->MB_64B[0].WORD[0] = 0xdeadbeef;
+		can->flex_can->MB_64B[0].ID = CAN_ID_STD(0x123);
+		can->flex_can->MB_64B[0].CS = CAN_CS_DLC(4) | CAN_CS_CODE(MB_TX_DATA);
+
+
+
 	} else {
-		can->flex_can->MCR |= CAN_MCR_HALT(1);
+		// can->flex_can->MCR |= CAN_MCR_HALT(1);
+		can->flex_can->MCR |= CAN_MCR_HALT_MASK;
 		LOG("go off bus MCR=%lx\n", can->flex_can->MCR);
 		NVIC_DisableIRQ(can->irq);
 
@@ -507,7 +508,20 @@ SC_RAMFUNC void CAN2_IRQHandler(void)
 
 SC_RAMFUNC void CAN3_IRQHandler(void)
 {
-	LOG("\\");
+	// LOG("\\");
+	const uint8_t index = 0;
+	struct can *can = &cans[index];
+	uint32_t esr1 = can->flex_can->ESR1;
+
+	LOG("IFLAG1=%lx\n", can->flex_can->IFLAG1);
+	LOG("ESR1=%lx\n", esr1);
+
+
+	// clear interrupts
+	can->flex_can->IFLAG1 = can->flex_can->IFLAG1;
+
+	// clear errors
+	can->flex_can->ESR1 = ~0;
 }
 
 
@@ -519,8 +533,21 @@ extern uint32_t sc_board_identifier(void)
 
 extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 {
-	(void)index;
-	(void)features;
+	struct can *can = &cans[index];
+
+	if (can->fd_capable) {
+		if (features & SC_FEATURE_FLAG_FDF) {
+			can->flex_can->MCR |= CAN_MCR_FDEN_MASK;
+		} else {
+			can->flex_can->MCR &= ~CAN_MCR_FDEN_MASK;
+		}
+
+		if (features & SC_FEATURE_FLAG_EHD) {
+			can->flex_can->CTRL2 &= ~CAN_CTRL2_PREXCEN_MASK;
+		} else {
+			can->flex_can->CTRL2 |= CAN_CTRL2_PREXCEN_MASK;
+		}
+	}
 }
 
 #endif // defined(TEENSY_4X)

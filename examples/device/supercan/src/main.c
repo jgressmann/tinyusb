@@ -569,6 +569,7 @@ send_can_info:
 						sc_board_can_feat_set(index, can->features);
 					}
 					sc_board_can_go_bus(index, is_enabled);
+					can->enabled = is_enabled;
 				}
 			}
 
