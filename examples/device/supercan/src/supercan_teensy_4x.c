@@ -90,6 +90,8 @@ static struct can cans[] = {
 	},
 };
 
+static uint32_t device_identifier;
+
 __attribute__((noreturn)) extern void sc_board_reset(void)
 {
 	NVIC_SystemReset();
@@ -176,6 +178,17 @@ extern void sc_board_init_begin(void)
 
 	board_init();
 
+
+
+	//CLOCK_EnableUsbhs0PhyPllClock(kCLOCK_Usbphy480M, 480000000U);
+	CLOCK_EnableClock(kCLOCK_Can3);
+	CLOCK_EnableClock(kCLOCK_Can3S);
+	CLOCK_EnableClock(kCLOCK_Can1);
+	CLOCK_EnableClock(kCLOCK_Can1S);
+	CLOCK_EnableClock(kCLOCK_Ocotp);
+
+	device_identifier = OCOTP->CFG0 | OCOTP->CFG1; // 64 bit DEVICE_ID
+
 	uint32_t reg = CCM->CSCMR2 & ~(
 		(CCM_CSCMR2_CAN_CLK_PODF_MASK << CCM_CSCMR2_CAN_CLK_PODF_SHIFT) |
 		(CCM_CSCMR2_CAN_CLK_SEL_MASK << CCM_CSCMR2_CAN_CLK_SEL_SHIFT));
@@ -185,12 +198,6 @@ extern void sc_board_init_begin(void)
 					| CCM_CSCMR2_CAN_CLK_SEL(0b11)  // 80 MHz
 					| CCM_CSCMR2_CAN_CLK_PODF(0b000000) // prescaler of 1
 					;
-
-	//CLOCK_EnableUsbhs0PhyPllClock(kCLOCK_Usbphy480M, 480000000U);
-	CLOCK_EnableClock(kCLOCK_Can3);
-	CLOCK_EnableClock(kCLOCK_Can3S);
-	CLOCK_EnableClock(kCLOCK_Can1);
-	CLOCK_EnableClock(kCLOCK_Can1S);
 
 
 
@@ -501,9 +508,11 @@ SC_RAMFUNC void CAN3_IRQHandler(void)
 	LOG("\\");
 }
 
+
+
 extern uint32_t sc_board_identifier(void)
 {
-	return 0;
+	return device_identifier;
 }
 
 extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
