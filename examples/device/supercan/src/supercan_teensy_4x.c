@@ -1,4 +1,30 @@
 /*
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ *
+ */
+
+
+/*
  * CCM_CSCMR2:
  * CAN_CLK_SEL
  *
@@ -48,6 +74,11 @@
  */
 #ifdef TEENSY_4X
 
+#include <FreeRTOS.h>
+#include <task.h>
+#include <semphr.h>
+#include <timers.h>
+
 #include <bsp/board.h>
 #include <supercan_board.h>
 #include <leds.h>
@@ -55,8 +86,8 @@
 #include <fsl_iomuxc.h>
 
 enum {
-	TX_MAILBOX_COUNT = 7,
-	RX_MAILBOX_COUNT = 7,
+	TX_MAILBOX_COUNT = 1,
+	RX_MAILBOX_COUNT = 14-TX_MAILBOX_COUNT,
 	MB_RX_INACTIVE = 0b0000,
 	MB_RX_EMPTY = 0b0100,
 	MB_RX_FULL = 0b0010,
@@ -69,32 +100,55 @@ enum {
 	MB_TX_ANSWER = 0b1110,
 };
 
+struct flexcan_mailbox {
+	volatile uint32_t CS;
+    volatile uint32_t ID;
+	uint32_t WORD[16];
+};
+
 struct can {
+	struct flexcan_mailbox rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
+	struct flexcan_mailbox tx_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
+	uint8_t tx_track_ids[SC_BOARD_CAN_TX_FIFO_SIZE];
+	uint8_t tx_lens[SC_BOARD_CAN_TX_FIFO_SIZE];
+	StackType_t tx_task_stack_mem[configMINIMAL_STACK_SIZE];
+	StaticTask_t tx_task_mem;
+	TaskHandle_t tx_task_handle;
+	StaticSemaphore_t tx_mutex_mem;
+	SemaphoreHandle_t tx_mutex_handle;
+
 	CAN_Type* const flex_can;
 	IRQn_Type irq;
-	// const uint8_t rx_mailbox_count;
 	bool fd_capable;
 	bool fd_enabled;
+	bool enabled;
+
+
+	volatile uint8_t rx_pi; // not index, uses full range of type
+	volatile uint8_t rx_gi; // not index, uses full range of type
+	volatile uint8_t tx_pi; // not index, uses full range of type
+	volatile uint8_t tx_gi; // not index, uses full range of type
+
 };
 
 static struct can cans[] = {
 	{
 		.flex_can = CAN3,
 		.irq = CAN3_IRQn,
-		// .rx_mailbox_count = 14 - TX_MAILBOX_COUNT,
 		.fd_capable = true,
 		.fd_enabled = false,
 	},
 	{
 		.flex_can = CAN1,
 		.irq = CAN1_IRQn,
-		// .rx_mailbox_count = 64 - TX_MAILBOX_COUNT,
 		.fd_capable = false,
 		.fd_enabled = false,
 	},
 };
 
 static uint32_t device_identifier;
+
+SC_RAMFUNC static void tx_task(void* param);
 
 __attribute__((noreturn)) extern void sc_board_reset(void)
 {
@@ -281,6 +335,11 @@ extern void sc_board_can_reset(uint8_t index)
 
 
 	init_mailboxes(index);
+
+	can->rx_gi = 0;
+	can->rx_pi = 0;
+	can->tx_gi = 0;
+	can->tx_pi = 0;
 }
 
 extern void sc_board_init_begin(void)
@@ -298,7 +357,7 @@ extern void sc_board_init_begin(void)
 	CLOCK_EnableClock(kCLOCK_Can3S);
 	CLOCK_EnableClock(kCLOCK_Can1);
 	CLOCK_EnableClock(kCLOCK_Can1S);
-	CLOCK_EnableClock(kCLOCK_Ocotp);
+	// CLOCK_EnableClock(kCLOCK_Ocotp);
 
 	device_identifier = OCOTP->CFG0 | OCOTP->CFG1; // 64 bit DEVICE_ID
 
@@ -342,10 +401,10 @@ extern void sc_board_init_begin(void)
 
 	IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_08_FLEXCAN1_TX, 0);
 	IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_09_FLEXCAN1_RX, 0);
-	// IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_08_FLEXCAN1_TX, 0b10001000);
-	// IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_09_FLEXCAN1_RX, 0b10000000);
-	IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_08_FLEXCAN1_TX, 0x10B0u);
-  	IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_09_FLEXCAN1_RX, 0x10B0u);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_08_FLEXCAN1_TX, 0b10001000);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_09_FLEXCAN1_RX, 0b10000000);
+	// IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_08_FLEXCAN1_TX, 0x10B0u);
+  	// IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_09_FLEXCAN1_RX, 0x10B0u);
 
 
 	for (uint8_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
@@ -355,12 +414,17 @@ extern void sc_board_init_begin(void)
 		can->flex_can->MCR &= ~CAN_MCR_MDIS_MASK;
 
 		sc_board_can_reset(i);
+
+		can->tx_mutex_handle = xSemaphoreCreateMutexStatic(&can->tx_mutex_mem);
+		can->tx_task_handle = xTaskCreateStatic(&tx_task, NULL, TU_ARRAY_SIZE(can->tx_task_stack_mem), (void*)(uintptr_t)i, configMAX_PRIORITIES-1, can->tx_task_stack_mem, &can->tx_task_mem);
 	}
 }
 
 
+
 extern void sc_board_init_end(void)
 {
+
 }
 
 
@@ -450,11 +514,6 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 		LOG("ch%u CBT brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u\n",
 			index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2);
 	} else {
-		// uint32_t reg = can->flex_can->CTRL1 & ~(
-		// 	(CAN_CTRL1_PROPSEG_MASK << CAN_CTRL1_PROPSEG_SHIFT) |
-		// 	(CAN_CTRL1_PSEG1_MASK << CAN_CTRL1_PSEG1_SHIFT) |
-		// 	(CAN_CTRL1_PSEG2_MASK << CAN_CTRL1_PSEG2_SHIFT) |
-		// 	(CAN_CTRL1_RJW_MASK << CAN_CTRL1_RJW_SHIFT));
 		uint32_t reg = can->flex_can->CTRL1 & ~(
 			CAN_CTRL1_PROPSEG_MASK |
 			CAN_CTRL1_PSEG1_MASK |
@@ -499,6 +558,8 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 {
 	struct can *can = &cans[index];
 
+	can->enabled = on;
+
 	if (on) {
 		NVIC_EnableIRQ(can->irq);
 		// can->flex_can->MCR &= ~CAN_MCR_HALT(1);
@@ -508,19 +569,19 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 		thaw(index);
 
 
-		if (can->fd_enabled) {
-			can->flex_can->MB_64B[0].WORD[0] = 0xdeadbeef;
-			can->flex_can->MB_64B[0].ID = CAN_ID_STD(0x123 << 11);
-			can->flex_can->MB_64B[0].CS =
-				// CAN_CS_SRR(1) |
-				CAN_CS_DLC(4) | CAN_CS_CODE(MB_TX_DATA);
-		} else {
-			can->flex_can->MB_8B[0].WORD[0] = 0xdeadbeef;
-			can->flex_can->MB_8B[0].ID = CAN_ID_STD(0x123 << 11);
-			can->flex_can->MB_8B[0].CS =
-				// CAN_CS_SRR(1) |
-				CAN_CS_DLC(4) | CAN_CS_CODE(MB_TX_DATA);
-		}
+		// if (can->fd_enabled) {
+		// 	can->flex_can->MB_64B[0].WORD[0] = 0xdeadbeef;
+		// 	can->flex_can->MB_64B[0].ID = CAN_ID_STD(0x123 << 11);
+		// 	can->flex_can->MB_64B[0].CS =
+		// 		// CAN_CS_SRR(1) |
+		// 		CAN_CS_DLC(4) | CAN_CS_CODE(MB_TX_DATA);
+		// } else {
+		// 	can->flex_can->MB_8B[0].WORD[0] = 0xdeadbeef;
+		// 	can->flex_can->MB_8B[0].ID = CAN_ID_STD(0x123 << 11);
+		// 	can->flex_can->MB_8B[0].CS =
+		// 		// CAN_CS_SRR(1) |
+		// 		CAN_CS_DLC(4) | CAN_CS_CODE(MB_TX_DATA);
+		// }
 
 
 	} else {
@@ -535,17 +596,76 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 		can->flex_can->IFLAG2 = can->flex_can->IFLAG2;
 
 		// clear error flags
-		can->flex_can->ESR1 = can->flex_can->ESR1;
+		can->flex_can->ESR1 = ~0;
 
 		// reset mailboxes
 		init_mailboxes(index);
 	}
 }
 
+SC_RAMFUNC static inline void transfer_to_box(
+	struct can *can,
+	struct flexcan_mailbox *box,
+	struct sc_msg_can_tx const * msg)
+{
+
+}
+
 SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
 {
-	(void)index;
-	(void)msg;
+	struct can *can = &cans[index];
+	struct flexcan_mailbox *box = NULL;
+	uint8_t gi = __atomic_load_n(&can->tx_gi, __ATOMIC_ACQUIRE);
+	uint8_t pi = can->tx_pi;
+	uint8_t used = pi = gi;
+	uint8_t mailbox_index = 0;
+	uint32_t id = 0;
+	uint32_t cs = CAN_CS_DLC(msg->dlc);
+	unsigned bytes = dlc_to_len(msg->dlc);
+
+	if (unlikely(used == TU_ARRAY_SIZE(can->tx_fifo))) {
+		return false;
+	}
+
+	mailbox_index = pi % TU_ARRAY_SIZE(can->tx_fifo);
+	box = &can->tx_fifo[mailbox_index];
+
+	can->tx_track_ids[mailbox_index] = msg->track_id;
+
+	if (can->fd_enabled && (msg->flags & SC_CAN_FRAME_FLAG_FDF)) {
+		memcpy(box->WORD, msg->data, bytes);
+		can->tx_lens[mailbox_index] = bytes;
+		cs |= CAN_CS_CODE(MB_TX_DATA);
+		if (msg->flags & SC_CAN_FRAME_FLAG_BRS) {
+			cs |= CAN_CS_BRS_MASK;
+		}
+		if (msg->flags & SC_CAN_FRAME_FLAG_ESI) {
+			cs |= CAN_CS_ESI_MASK;
+		}
+	} else if (unlikely(msg->flags & SC_CAN_FRAME_FLAG_RTR)) {
+		// RTR
+		can->tx_lens[mailbox_index] = 0;
+		cs |= CAN_CS_CODE(MB_TX_REMOTE);
+	} else {
+		memcpy(box->WORD, msg->data, bytes);
+		can->tx_lens[mailbox_index] = bytes;
+		cs |= CAN_CS_CODE(MB_TX_DATA);
+	}
+
+	if (msg->flags & SC_CAN_FRAME_FLAG_EXT) {
+		id = CAN_ID_EXT(msg->can_id);
+		cs |= CAN_CS_EDL_MASK;
+	} else {
+		id = CAN_ID_STD(msg->can_id);
+	}
+
+	box->ID = id;
+	box->CS = cs;
+
+	__atomic_store_n(&can->tx_pi, pi + 1, __ATOMIC_RELEASE);
+
+	// LOG("ch%u notify tx task\n", index);
+	xTaskNotifyGive(can->tx_task_handle);
 
 	return true;
 }
@@ -573,15 +693,47 @@ SC_RAMFUNC static void can_int(uint8_t index)
 {
 	struct can *can = &cans[index];
 	uint32_t esr1 = can->flex_can->ESR1;
+	uint32_t iflag1 = can->flex_can->IFLAG1;
+	uint32_t iflag2 = can->flex_can->IFLAG2;
+	unsigned give = 0;
 
-	if (can->flex_can->IFLAG1) {
-		LOG("IFLAG1=%lx\n", can->flex_can->IFLAG1);
+	if (iflag1) {
+		LOG("IFLAG1=%lx\n", iflag1);
 	}
+
+	if (iflag2) {
+		LOG("IFLAG1=%lx\n", iflag2);
+	}
+
+	for (uint32_t i = 0, j = 1, k = 0;
+		k < 32 && i < TX_MAILBOX_COUNT; ++i, j <<= 1, ++k) {
+		if (iflag1 & j) {
+			++give;
+			vTaskNotifyGiveFromISR(can->tx_task_handle, NULL);
+		}
+	}
+
+	for (uint32_t i = 32, j = 1, k = 0;
+		k < 32 && i < TX_MAILBOX_COUNT; ++i, j <<= 1, ++k) {
+		if (iflag2 & j) {
+			++give;
+			vTaskNotifyGiveFromISR(can->tx_task_handle, NULL);
+		}
+	}
+
+	for (unsigned i = 0; i < give; ++i) {
+		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+		vTaskNotifyGiveFromISR(can->tx_task_handle, &xHigherPriorityTaskWoken);
+		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+	}
+
+
 	// LOG("ESR1=%lx\n", esr1);
 
 
 	// clear interrupts
 	can->flex_can->IFLAG1 = can->flex_can->IFLAG1;
+	can->flex_can->IFLAG2 = can->flex_can->IFLAG2;
 
 	// clear errors
 	can->flex_can->ESR1 = ~0;
@@ -592,10 +744,10 @@ SC_RAMFUNC void CAN1_IRQHandler(void)
 	can_int(1);
 }
 
-SC_RAMFUNC void CAN2_IRQHandler(void)
-{
-	LOG("+");
-}
+// SC_RAMFUNC void CAN2_IRQHandler(void)
+// {
+// 	LOG("+");
+// }
 
 SC_RAMFUNC void CAN3_IRQHandler(void)
 {
@@ -627,6 +779,69 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 		} else {
 			can->flex_can->CTRL2 |= CAN_CTRL2_PREXCEN_MASK;
 		}
+	}
+}
+
+SC_RAMFUNC static void tx_task(void* param)
+{
+	const uint8_t index = (uint8_t)(uintptr_t)param;
+	SC_ASSERT(index < TU_ARRAY_SIZE(cans));
+
+	LOG("ch%u tx task start\n", index);
+
+	struct can *can = &cans[index];
+	uint8_t* box_mem = ((uint8_t*)can->flex_can) + 0x80;
+
+	while (42) {
+		(void)ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
+
+		// LOG("ch%u tx task take\n", index);
+
+		if (unlikely(!can->enabled)) {
+			LOG("ch%u tx task CAN disabled\n", index);
+			continue;
+		}
+
+		const size_t mailbox_step = can->fd_enabled ? 0x48 : 0x10;
+
+		while (pdTRUE != xSemaphoreTake(can->tx_mutex_handle, portMAX_DELAY));
+
+		LOG("ch%u tx task enter work\n", index);
+
+		for (bool done = false; !done; ) {
+			uint8_t gi = can->tx_gi;
+			uint8_t pi = __atomic_load_n(&can->tx_pi, __ATOMIC_ACQUIRE);
+			uint8_t tx_mailbox_index = gi % TU_ARRAY_SIZE(can->tx_fifo);
+
+			if (likely(pi != gi)) {
+				LOG("ch%u pi=%u gi=%u\n", index, pi, gi);
+				struct flexcan_mailbox *box = (struct flexcan_mailbox *)box_mem;
+				unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
+
+				switch (code) {
+				case MB_TX_INACTIVE:
+				case MB_RX_EMPTY:
+					LOG("ch%u empty FlexCAN mailbox found\n", index);
+					memcpy(box->WORD, can->tx_fifo[tx_mailbox_index].WORD, can->tx_lens[tx_mailbox_index]);
+					box->ID = can->tx_fifo[tx_mailbox_index].ID;
+					box->CS = can->tx_fifo[tx_mailbox_index].CS;
+
+					__atomic_store_n(&can->tx_gi, gi + 1, __ATOMIC_RELEASE);
+					break;
+				default:
+					done = true;
+					LOG("ch%u no mailbox found\n", index);
+					break;
+				}
+			} else {
+				LOG("ch%u tx fifo empty\n", index);
+				done = true;
+			}
+		}
+
+		LOG("ch%u tx task exit work\n", index);
+
+		xSemaphoreGive(can->tx_mutex_handle);
 	}
 }
 
