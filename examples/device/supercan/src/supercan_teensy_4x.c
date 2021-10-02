@@ -74,7 +74,7 @@ struct can {
 	IRQn_Type irq;
 	// const uint8_t rx_mailbox_count;
 	bool fd_capable;
-	// bool fd_enabled;
+	bool fd_enabled;
 };
 
 static struct can cans[] = {
@@ -83,12 +83,14 @@ static struct can cans[] = {
 		.irq = CAN3_IRQn,
 		// .rx_mailbox_count = 14 - TX_MAILBOX_COUNT,
 		.fd_capable = true,
+		.fd_enabled = false,
 	},
 	{
 		.flex_can = CAN1,
 		.irq = CAN1_IRQn,
 		// .rx_mailbox_count = 64 - TX_MAILBOX_COUNT,
 		.fd_capable = false,
+		.fd_enabled = false,
 	},
 };
 
@@ -129,17 +131,13 @@ extern uint16_t sc_board_can_feat_conf(uint8_t index)
 					// | SC_FEATURE_FLAG_TXP
 					| SC_FEATURE_FLAG_EHD;
 	case 1: // FlexCAN1
-		return SC_FEATURE_FLAG_TXP;
+		return 0;
 	}
 
 	__unreachable();
 	return 0;
 }
 
-extern void sc_board_can_reset(uint8_t index)
-{
-	(void)index;
-}
 
 static void init_mailboxes(uint8_t index)
 {
@@ -168,6 +166,123 @@ static void init_mailboxes(uint8_t index)
 	}
 }
 
+static inline void freeze(uint8_t index)
+{
+	struct can *can = &cans[index];
+
+	SC_DEBUG_ASSERT(!(can->flex_can->MCR & CAN_MCR_MDIS_MASK));
+
+	// enter freeze mode
+	can->flex_can->MCR |= CAN_MCR_FRZ(1) | CAN_MCR_HALT(1);
+	while (!(can->flex_can->MCR & CAN_MCR_FRZACK_MASK));
+}
+
+static inline void thaw(uint8_t index)
+{
+	struct can *can = &cans[index];
+
+	SC_DEBUG_ASSERT(!(can->flex_can->MCR & CAN_MCR_MDIS_MASK));
+
+	// enter freeze mode
+	can->flex_can->MCR &= ~CAN_MCR_HALT(1);
+	while ((can->flex_can->MCR & CAN_MCR_FRZACK_MASK));
+}
+
+extern void sc_board_can_reset(uint8_t index)
+{
+	struct can *can = &cans[index];
+
+	// LOG("CAN ch%u soft reset\n", (unsigned)i);
+	// can->flex_can->MCR = CAN_MCR_SOFTRST(1);
+	// while (can->flex_can->MCR & CAN_MCR_SOFTRST_MASK);
+
+	freeze(index);
+
+	can->flex_can->MCR |= CAN_MCR_SOFTRST_MASK;
+	while (can->flex_can->MCR & CAN_MCR_SOFTRST_MASK);
+
+	LOG("CAN ch%u ", (unsigned)index);
+
+
+
+	can->flex_can->MCR = 0
+			// | CAN_MCR_MDIS(1)  // module disable
+			| CAN_MCR_SUPV(1) // This bit configures the FlexCAN to be either in Supervisor or User mode
+			| CAN_MCR_WRNEN(1) // Warning Interrupt Enable
+			| CAN_MCR_IRMQ(1) // Individual Rx Masking And Queue Enable
+			| CAN_MCR_SRXDIS(1) // disable self resception
+			// | CAN_MCR_MAXMB(can->fd_capable ? 14 : 64)
+			| CAN_MCR_MAXMB((TX_MAILBOX_COUNT + RX_MAILBOX_COUNT - 1))
+			| CAN_MCR_FRZ(1) // halt / debug should freeze
+			| CAN_MCR_HALT(1) // halt
+			// | CAN_MCR_AEN(1)
+			// | CAN_MCR_LPRIO_EN(1)
+			;
+
+	LOG("MCR=%lx ", can->flex_can->MCR);
+
+
+	can->flex_can->CTRL1 = CAN_CTRL1_LBUF(1)  // Lowest Buffer Transmitted First
+			| CAN_CTRL1_BOFFREC(1) // bus off interrupt enable
+			| CAN_CTRL1_ERRMSK(1) // Error interrupt enabled
+			| CAN_CTRL1_TWRNMSK(1) // tx warning interrupt enabled
+			| CAN_CTRL1_RWRNMSK(1) // rx warning interrupt enabled
+			| (can->fd_capable ? CAN_CTRL1_CLKSRC(1) : 0) // use peripheral clock not oscillator
+			;
+
+	LOG("CTRL1=%lx ", can->flex_can->CTRL1);
+
+	can->flex_can->CTRL2 = CAN_CTRL2_BOFFDONEMSK(1) // Bus Off Done Interrupt Mask
+							| CAN_CTRL2_RRS(1) // store remote request frames
+							| CAN_CTRL2_MRP(1) // mailboxes first
+							| (can->fd_capable ? CAN_CTRL2_ERRMSK_FAST(1) : 0)  // Error Interrupt Mask for errors detected in the data phase of fast CAN FD frames
+							| (can->fd_capable ? CAN_CTRL2_ISOCANFDEN(1) : 0) // CAN-FD in ISO mode
+							| (can->fd_capable ? CAN_CTRL2_PREXCEN(1) : 0) // CAN-FD protocol exception handling
+							;
+
+	LOG("CTRL2=%lx ", can->flex_can->CTRL2);
+
+
+
+	// enable all message buffer interrupts
+	can->flex_can->IFLAG1 = ~0;
+	can->flex_can->IFLAG2 = ~0;
+
+	if (can->fd_capable) {
+		can->flex_can->CBT = CAN_CBT_BTF(1); // mooar arbitration bits
+
+		can->flex_can->FDCTRL = CAN_FDCTRL_FDRATE(1) // enable BRS
+								| CAN_FDCTRL_MBDSR0(3) // 64 byte per box
+								| CAN_FDCTRL_MBDSR1(3) // 64 byte per box
+								| CAN_FDCTRL_TDCEN(1) // enable transmitter delay compensation
+								;
+
+
+	} else {
+
+	}
+
+	if (can->fd_capable) {
+		LOG("CBT=%lx FDCTRL=%lx ", can->flex_can->CBT, can->flex_can->FDCTRL);
+	}
+
+	LOG("MCR=%lx ", can->flex_can->MCR);
+
+	LOG("\n");
+
+	// can->flex_can->RXMGMASK = 0;
+
+	// enable all buffer interrupts
+	can->flex_can->IMASK1 = ~0;
+	can->flex_can->IMASK2 = ~0;
+
+	// set rx individual mask to 'don't care'
+	memset((void*)can->flex_can->RXIMR, 0, sizeof(can->flex_can->RXIMR));
+
+
+	init_mailboxes(index);
+}
+
 extern void sc_board_init_begin(void)
 {
 	NVIC_SetPriority(CAN1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
@@ -193,14 +308,24 @@ extern void sc_board_init_begin(void)
 
 
 
-
 	CCM->CSCMR2 = cscmr2
-					| CCM_CSCMR2_CAN_CLK_SEL(0b00)  // 60
-					//| CCM_CSCMR2_CAN_CLK_SEL(0b10)  // 80
+					// | CCM_CSCMR2_CAN_CLK_SEL(0b00)  // derive clock from pll3_sw_clk divided clock (60M)
+					| CCM_CSCMR2_CAN_CLK_SEL(0b10) // derive clock from pll3_sw_clk divided clock (80M)
 					| CCM_CSCMR2_CAN_CLK_PODF(0b000000) // prescaler of 1
+					// | CCM_CSCMR2_CAN_CLK_PODF(0b000001) // prescaler of 2
 					;
 
 	LOG("CSCMR2=%lx\n", CCM->CSCMR2);
+
+	// CCM->CCGR0 &= ~(
+	// 	CCM_CCGR0_CG8_MASK | // CAN1 serial clock
+	// 	CCM_CCGR0_CG7_MASK); // CAN1 clock
+
+
+	LOG("CGR0=%lx\n", CCM->CCGR0);
+
+	// Grün TX = GPIO_EMC_36 (CAN3) = Board PIN 31
+	//           AD_B1_08 (CAN1) = Board PIN 22
 
 
 	IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0);
@@ -208,97 +333,29 @@ extern void sc_board_init_begin(void)
 	// 0xC8 fastest, lowest drive strength
 	// 5–3 DSE 0 == off, 001 = low , 010 = better, ...111 best
 	// 7–6 SPEED 00 = low .. 11 fastest
-	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0b11001000);
-	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_37_FLEXCAN3_RX, 0b11000000);
+	// 0 slew mode 0 = slow, 1 = fast
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0b10001000);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_37_FLEXCAN3_RX, 0b10000000);
+	// IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0x10B0);
+	// IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_37_FLEXCAN3_RX, 0x10B0);
 
 
-	for (size_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
+	IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_08_FLEXCAN1_TX, 0);
+	IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_09_FLEXCAN1_RX, 0);
+	// IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_08_FLEXCAN1_TX, 0b10001000);
+	// IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_09_FLEXCAN1_RX, 0b10000000);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_08_FLEXCAN1_TX, 0x10B0u);
+  	IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_09_FLEXCAN1_RX, 0x10B0u);
+
+
+	for (uint8_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
 		struct can *can = &cans[i];
 
-		// LOG("CAN ch%u soft reset\n", (unsigned)i);
-		// can->flex_can->MCR = CAN_MCR_SOFTRST(1);
-		// while (can->flex_can->MCR & CAN_MCR_SOFTRST_MASK);
+		// enable the module
+		can->flex_can->MCR &= ~CAN_MCR_MDIS_MASK;
 
-		LOG("CAN ch%u ", (unsigned)i);
-
-		can->flex_can->MCR = CAN_MCR_MDIS(1)  // module disable
-				| CAN_MCR_SUPV(0) // This bit configures the FlexCAN to be either in Supervisor or User mode
-				| CAN_MCR_WRNEN(1) // Warning Interrupt Enable
-				| CAN_MCR_IRMQ(1) // Individual Rx Masking And Queue Enable
-				| CAN_MCR_SRXDIS(1) // disable self resception
-				// | CAN_MCR_MAXMB(can->fd_capable ? 14 : 64)
-				| CAN_MCR_MAXMB((TX_MAILBOX_COUNT + RX_MAILBOX_COUNT))
-				| CAN_MCR_FRZ(1) // halt / debug should freeze
-				| CAN_MCR_HALT(1) // halt
-				;
-
-		LOG("MCR=%lx ", can->flex_can->MCR);
-
-
-
-
-
-		can->flex_can->CTRL1 = CAN_CTRL1_LBUF(1)  // Lowest Buffer Transmitted First
-				| CAN_CTRL1_BOFFREC(1) // bus off interrupt enable
-				| CAN_CTRL1_ERRMSK(1) // Error interrupt enabled
-				| CAN_CTRL1_TWRNMSK(1) // tx warning interrupt enabled
-				| CAN_CTRL1_RWRNMSK(1) // rx warning interrupt enabled
-				| (can->fd_capable ? CAN_CTRL1_CLKSRC(1) : 0) // use peripheral clock not oscillator
-				;
-
-		LOG("CTRL1=%lx ", can->flex_can->CTRL1);
-
-		can->flex_can->CTRL2 =  CAN_CTRL2_BOFFDONEMSK(1) // Bus Off Done Interrupt Mask
-								| CAN_CTRL2_RRS(1) // store remote request frames
-								| (can->fd_capable ? CAN_CTRL2_ERRMSK_FAST(1) : 0)  // Error Interrupt Mask for errors detected in the data phase of fast CAN FD frames
-								| (can->fd_capable ? CAN_CTRL2_ISOCANFDEN(1) : 0) // CAN-FD in ISO mode
-								| (can->fd_capable ? CAN_CTRL2_PREXCEN(1) : 0) // CAN-FD protocol exception handling
-								;
-
-		LOG("CTRL2=%lx ", can->flex_can->CTRL2);
-
-
-
-		// enable all message buffer interrupts
-		can->flex_can->IFLAG1 = ~0;
-		can->flex_can->IFLAG2 = ~0;
-
-		if (can->fd_capable) {
-			can->flex_can->CBT = CAN_CBT_BTF(1); // mooar arbitration bits
-
-			can->flex_can->FDCTRL = CAN_FDCTRL_FDRATE(1) // enable BRS
-									| CAN_FDCTRL_MBDSR0(3) // 64 byte per box
-									| CAN_FDCTRL_MBDSR1(3) // 64 byte per box
-									| CAN_FDCTRL_TDCEN(1) // enable transmitter delay compensation
-									;
-
-
-		} else {
-
-		}
-
-		if (can->fd_capable) {
-			LOG("CBT=%lx FDCTRL=%lx ", can->flex_can->CBT, can->flex_can->FDCTRL);
-		}
-
-
-
-		can->flex_can->MCR &= ~CAN_MCR_MDIS_MASK;  // module enable
-
-		LOG("MCR=%lx ", can->flex_can->MCR);
-
-		LOG("\n");
-
-
-
-		// set rx individual mask to 'don't care'
-		memset((void*)can->flex_can->RXIMR, 0, sizeof(can->flex_can->RXIMR));
-
-
-		init_mailboxes(i);
+		sc_board_can_reset(i);
 	}
-
-
 }
 
 
@@ -319,7 +376,7 @@ extern sc_can_bit_timing_range const* sc_board_can_nm_bit_timing_range(uint8_t i
 			},
 			.max = {
 				.brp = 1024,
-				.tseg1 = 2048,
+				.tseg1 = 64 + 32,
 				.tseg2 = 32,
 				.sjw = 32,
 			},
@@ -333,7 +390,7 @@ extern sc_can_bit_timing_range const* sc_board_can_nm_bit_timing_range(uint8_t i
 			},
 			.max = {
 				.brp = 256,
-				.tseg1 = 64,
+				.tseg1 = 8 + 8,
 				.tseg2 = 8,
 				.sjw = 4,
 			},
@@ -378,7 +435,8 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 			prop_seg = 64;
 			tseg1 = bt->tseg1 - prop_seg;
 		} else {
-			prop_seg = bt->tseg1;
+			prop_seg = bt->tseg1 - 1;
+			tseg1 = 1;
 		}
 
 		can->flex_can->CBT = CAN_CBT_BTF(1)
@@ -410,7 +468,8 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 			prop_seg = 8;
 			tseg1 = bt->tseg1 - prop_seg;
 		} else {
-			prop_seg = bt->tseg1;
+			prop_seg = bt->tseg1 - 1;
+			tseg1 = 1;
 		}
 
 		can->flex_can->CTRL1 = reg
@@ -421,8 +480,11 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 								| CAN_CTRL1_PSEG2(bt->tseg2 - 1)
 								;
 
-		LOG("ch%u CTRL1 brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u\n",
-			index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2);
+
+		LOG("ch%u brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u CTRL1=%lx\n",
+			index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2, can->flex_can->CTRL1);
+
+		// can->flex_can->CTRL1 = 0x9624002;
 	}
 
 }
@@ -440,20 +502,31 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 	if (on) {
 		NVIC_EnableIRQ(can->irq);
 		// can->flex_can->MCR &= ~CAN_MCR_HALT(1);
-		LOG("go on bus pre MCR=%lx\n", can->flex_can->MCR);
-		can->flex_can->MCR &= ~CAN_MCR_HALT_MASK;
-		LOG("go on bus post MCR=%lx\n", can->flex_can->MCR);
+		// LOG("go on bus pre MCR=%lx\n", can->flex_can->MCR);
+		// can->flex_can->MCR &= ~CAN_MCR_HALT_MASK;
+		// LOG("go on bus post MCR=%lx\n", can->flex_can->MCR);
+		thaw(index);
 
 
-		can->flex_can->MB_64B[0].WORD[0] = 0xdeadbeef;
-		can->flex_can->MB_64B[0].ID = CAN_ID_STD(0x123);
-		can->flex_can->MB_64B[0].CS = CAN_CS_DLC(4) | CAN_CS_CODE(MB_TX_DATA);
-
+		if (can->fd_enabled) {
+			can->flex_can->MB_64B[0].WORD[0] = 0xdeadbeef;
+			can->flex_can->MB_64B[0].ID = CAN_ID_STD(0x123 << 11);
+			can->flex_can->MB_64B[0].CS =
+				// CAN_CS_SRR(1) |
+				CAN_CS_DLC(4) | CAN_CS_CODE(MB_TX_DATA);
+		} else {
+			can->flex_can->MB_8B[0].WORD[0] = 0xdeadbeef;
+			can->flex_can->MB_8B[0].ID = CAN_ID_STD(0x123 << 11);
+			can->flex_can->MB_8B[0].CS =
+				// CAN_CS_SRR(1) |
+				CAN_CS_DLC(4) | CAN_CS_CODE(MB_TX_DATA);
+		}
 
 
 	} else {
 		// can->flex_can->MCR |= CAN_MCR_HALT(1);
-		can->flex_can->MCR |= CAN_MCR_HALT_MASK;
+		// can->flex_can->MCR |= CAN_MCR_HALT_MASK;
+		freeze(index);
 		LOG("go off bus MCR=%lx\n", can->flex_can->MCR);
 		NVIC_DisableIRQ(can->irq);
 
@@ -496,9 +569,27 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 	return -1;
 }
 
+SC_RAMFUNC static void can_int(uint8_t index)
+{
+	struct can *can = &cans[index];
+	uint32_t esr1 = can->flex_can->ESR1;
+
+	if (can->flex_can->IFLAG1) {
+		LOG("IFLAG1=%lx\n", can->flex_can->IFLAG1);
+	}
+	// LOG("ESR1=%lx\n", esr1);
+
+
+	// clear interrupts
+	can->flex_can->IFLAG1 = can->flex_can->IFLAG1;
+
+	// clear errors
+	can->flex_can->ESR1 = ~0;
+}
+
 SC_RAMFUNC void CAN1_IRQHandler(void)
 {
-	LOG(".");
+	can_int(1);
 }
 
 SC_RAMFUNC void CAN2_IRQHandler(void)
@@ -508,20 +599,7 @@ SC_RAMFUNC void CAN2_IRQHandler(void)
 
 SC_RAMFUNC void CAN3_IRQHandler(void)
 {
-	// LOG("\\");
-	const uint8_t index = 0;
-	struct can *can = &cans[index];
-	uint32_t esr1 = can->flex_can->ESR1;
-
-	LOG("IFLAG1=%lx\n", can->flex_can->IFLAG1);
-	LOG("ESR1=%lx\n", esr1);
-
-
-	// clear interrupts
-	can->flex_can->IFLAG1 = can->flex_can->IFLAG1;
-
-	// clear errors
-	can->flex_can->ESR1 = ~0;
+	can_int(0);
 }
 
 
@@ -537,8 +615,10 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 
 	if (can->fd_capable) {
 		if (features & SC_FEATURE_FLAG_FDF) {
+			can->fd_enabled = true;
 			can->flex_can->MCR |= CAN_MCR_FDEN_MASK;
 		} else {
+			can->fd_enabled = false;
 			can->flex_can->MCR &= ~CAN_MCR_FDEN_MASK;
 		}
 

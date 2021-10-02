@@ -37,28 +37,9 @@
 
 
 #define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
-#define SC_BOARD_USB_MANUFACTURER_STRING "2guys"
+#define SC_BOARD_USB_MANUFACTURER_STRING "PJRC / 2guys"
 #define SC_BOARD_CAN_CLK_HZ 80000000
 #define SC_BOARD_CAN_COUNT 2
-
-
-// #define SC_BOARD_CAN_NMBT_BRP_MIN           0x0001
-// #define SC_BOARD_CAN_NMBT_BRP_MAX           0x0200
-// #define SC_BOARD_CAN_NMBT_SJW_MIN           0x0001
-// #define SC_BOARD_CAN_NMBT_SJW_MAX           0x0080
-// #define SC_BOARD_CAN_NMBT_TSEG1_MIN         0x0002
-// #define SC_BOARD_CAN_NMBT_TSEG1_MAX         0x0100
-// #define SC_BOARD_CAN_NMBT_TSEG2_MIN         0x0002
-// #define SC_BOARD_CAN_NMBT_TSEG2_MAX         0x0080
-
-// #define SC_BOARD_CAN_DTBT_BRP_MIN           0x01
-// #define SC_BOARD_CAN_DTBT_BRP_MAX           0x20
-// #define SC_BOARD_CAN_DTBT_SJW_MIN           0x01
-// #define SC_BOARD_CAN_DTBT_SJW_MAX           0x10
-// #define SC_BOARD_CAN_DTBT_TSEG1_MIN         0x01
-// #define SC_BOARD_CAN_DTBT_TSEG1_MAX         0x20
-// #define SC_BOARD_CAN_DTBT_TSEG2_MIN         0x01
-// #define SC_BOARD_CAN_DTBT_TSEG2_MAX         0x10
 
 #define SC_BOARD_CAN_TX_FIFO_SIZE 8
 #define SC_BOARD_CAN_RX_FIFO_SIZE 8
