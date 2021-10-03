@@ -833,8 +833,10 @@ static void can_usb_task(void* param);
 
 int main(void)
 {
-	LOG("sc_board_init_begin\n");
+	// no uart here :(
 	sc_board_init_begin();
+	LOG("sc_board_init_begin\n");
+
 	LOG("led_init\n");
 	led_init();
 	LOG("tusb_init\n");
@@ -869,17 +871,6 @@ int main(void)
 	}
 
 	cans_reset();
-
-	// while (1) {
-	// 	uint32_t c = counter_1MHz_read_sync();
-	// 	counter_1MHz_request_current_value();
-	// 	uint32_t x = 0;
-	// 	while (!counter_1MHz_is_current_value_ready()) {
-	// 		++x;
-	// 	}
-
-	// 	LOG("c=%lx, wait=%lx\n", c, x);
-	// }
 
 	LOG("vTaskStartScheduler\n");
 	vTaskStartScheduler();

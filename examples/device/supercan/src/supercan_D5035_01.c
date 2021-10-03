@@ -1180,6 +1180,17 @@ extern void sc_board_init_begin(void)
 
 	counter_1MHz_init_clock();
 	counter_1MHz_reset();
+
+	// while (1) {
+	// 	uint32_t c = counter_1MHz_read_sync();
+	// 	counter_1MHz_request_current_value();
+	// 	uint32_t x = 0;
+	// 	while (!counter_1MHz_is_current_value_ready()) {
+	// 		++x;
+	// 	}
+
+	// 	LOG("c=%lx, wait=%lx\n", c, x);
+	// }
 }
 
 extern void sc_board_init_end(void)
