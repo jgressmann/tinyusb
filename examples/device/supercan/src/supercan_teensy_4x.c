@@ -946,12 +946,15 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 		case MB_TX_INACTIVE: {
 			LOG("ch%u tranfer %u bytes of data to mailbox\n", index, e->len);
 			can->isr_tx_track_id = e->track_id;
+
 			// LOG("ch%u 1\n", index);
+			box->ID = e->box.ID; // write ID first according to manual
+
+			// LOG("ch%u 2\n", index);
 			for (uint8_t i = 0, o = 0; o < e->len; ++i, o += 4) {
 				box->WORD[i] = e->box.WORD[i];
 			}
-			// LOG("ch%u 2\n", index);
-			box->ID = e->box.ID;
+
 			// LOG("ch%u 3\n", index);
 			box->CS = e->box.CS;
 			// LOG("ch%u 4\n", index);
