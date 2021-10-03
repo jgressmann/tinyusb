@@ -130,6 +130,8 @@ struct can {
 
 	CAN_Type* const flex_can;
 	const IRQn_Type irq;
+	uint32_t int_prev_esr1;
+	uint8_t int_prev_bus_state;
 	volatile uint8_t isr_tx_track_id;
 	volatile bool desync;
 	const bool fd_capable;
@@ -258,6 +260,27 @@ static inline void thaw(uint8_t index)
 	while ((can->flex_can->MCR & CAN_MCR_FRZACK_MASK));
 }
 
+static inline void can_reset_state(uint8_t index)
+{
+	struct can *can = &cans[index];
+
+	init_mailboxes(index);
+
+	can->rx_gi = 0;
+	can->rx_pi = 0;
+	can->tx_gi = 0;
+	can->tx_pi = 0;
+
+	can->txr_gi = 0;
+	can->txr_pi = 0;
+	can->desync = false;
+	can->fd_enabled = false;
+	can->enabled = false;
+	can->tx_box_busy = false;
+	can->int_prev_esr1 = 0;
+	can->int_prev_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
+}
+
 extern void sc_board_can_reset(uint8_t index)
 {
 	struct can *can = &cans[index];
@@ -343,20 +366,8 @@ extern void sc_board_can_reset(uint8_t index)
 	// set rx individual mask to 'don't care'
 	memset((void*)can->flex_can->RXIMR, 0, sizeof(can->flex_can->RXIMR));
 
+	can_reset_state(index);
 
-	init_mailboxes(index);
-
-	can->rx_gi = 0;
-	can->rx_pi = 0;
-	can->tx_gi = 0;
-	can->tx_pi = 0;
-
-	can->txr_gi = 0;
-	can->txr_pi = 0;
-	can->desync = false;
-	can->fd_enabled = false;
-	can->enabled = false;
-	can->tx_box_busy = false;
 }
 
 static inline void timer_1MHz_init(void)
@@ -738,39 +749,35 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 		// clear error flags
 		can->flex_can->ESR1 = ~0;
 
-		// reset mailboxes
-		init_mailboxes(index);
+
+
+		can_reset_state(index);
 	}
 }
 
-SC_RAMFUNC static inline void transfer_to_box(
-	struct can *can,
-	struct flexcan_mailbox *box,
-	struct sc_msg_can_tx const * msg)
-{
-
-}
 
 SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
 {
+	LOG("> ch%u tx queue\n", index);
+
 	struct can *can = &cans[index];
 	struct tx_fifo_element *e = NULL;
 	uint8_t gi = __atomic_load_n(&can->tx_gi, __ATOMIC_ACQUIRE);
 	uint8_t pi = can->tx_pi;
-	uint8_t used = pi = gi;
+	uint8_t used = pi - gi;
 	uint8_t mailbox_index = 0;
 	uint32_t id = 0;
 	uint32_t cs = CAN_CS_DLC(msg->dlc);
 	unsigned bytes = dlc_to_len(msg->dlc);
 
 	if (unlikely(used == TU_ARRAY_SIZE(can->tx_fifo))) {
+		LOG("< ch%u tx queue\n", index);
 		return false;
 	}
 
 	mailbox_index = pi % TU_ARRAY_SIZE(can->tx_fifo);
+	SC_ASSERT(mailbox_index < TU_ARRAY_SIZE(can->tx_fifo));
 	e = &can->tx_fifo[mailbox_index];
-
-	// can->tx_track_ids[mailbox_index] = msg->track_id;
 	e->track_id = msg->track_id;
 
 	if (can->fd_enabled && (msg->flags & SC_CAN_FRAME_FLAG_FDF)) {
@@ -808,6 +815,8 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	// LOG("ch%u notify tx task\n", index);
 	// xTaskNotifyGive(can->tx_task_handle);
 	GPIO1->DR_CLEAR |= ((uint32_t)1) << 19;
+
+	LOG("< ch%u tx queue\n", index);
 
 	return true;
 }
@@ -878,15 +887,17 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 }
 
 
-SC_RAMFUNC static inline void service_tx_box(uint8_t index)
+SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, uint32_t tsc)
 {
 	struct can *can = &cans[index];
 	uint8_t* box_mem = ((uint8_t*)can->flex_can) + 0x80;
 	struct flexcan_mailbox *box = (struct flexcan_mailbox *)box_mem;
 	uint32_t cs = box->CS;
 	unsigned code = (cs & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
-	uint8_t tx_fifo_gi = can->tx_gi;
-	uint8_t tx_fifo_pi = __atomic_load_n(&can->tx_pi, __ATOMIC_ACQUIRE);
+	const uint8_t tx_fifo_gi = can->tx_gi;
+	const uint8_t tx_fifo_pi = __atomic_load_n(&can->tx_pi, __ATOMIC_ACQUIRE);
+
+	LOG("> srv tx mb\n");
 
 	if (MB_RX_EMPTY == code) {
 		// remove rx empty for RTR frames
@@ -899,21 +910,25 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index)
 
 	if (can->tx_box_busy && MB_TX_INACTIVE == code) {
 		// tx done
-		uint8_t txr_pi = can->txr_pi;
-		uint8_t txr_gi = __atomic_load_n(&can->txr_gi, __ATOMIC_ACQUIRE);
-		uint8_t used = txr_pi - txr_gi;
+		const uint8_t txr_pi = can->txr_pi;
+		const uint8_t txr_gi = __atomic_load_n(&can->txr_gi, __ATOMIC_ACQUIRE);
+		const uint8_t used = txr_pi - txr_gi;
+		SC_ISR_ASSERT(used <= TU_ARRAY_SIZE(can->txr_fifo));
 
 		if (unlikely(used == TU_ARRAY_SIZE(can->txr_fifo))) {
 			LOG("ch%u txr desync\n", index);
 			can->desync = true;
 		} else {
-			struct txr_fifo_element *e = &can->txr_fifo[txr_pi % TU_ARRAY_SIZE(can->txr_fifo)];
+			const uint8_t txr_index = txr_pi % TU_ARRAY_SIZE(can->txr_fifo);
+			struct txr_fifo_element *e = &can->txr_fifo[txr_index];
 
 			e->track_id = can->isr_tx_track_id;
-			e->timestamp_us = GPT2->CNT;
+			e->timestamp_us = tsc;
 			__atomic_store_n(&can->txr_pi, txr_pi + 1, __ATOMIC_RELEASE);
 
-			sc_can_notify_task_isr(index, 1);
+			++*events;
+
+			LOG("ch%u sending txr %u\n", index, can->isr_tx_track_id);
 		}
 
 		can->tx_box_busy = false;
@@ -921,36 +936,170 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index)
 
 
 	if (!can->tx_box_busy && tx_fifo_pi != tx_fifo_gi) {
-		uint8_t tx_mailbox_index = tx_fifo_gi % TU_ARRAY_SIZE(can->tx_fifo);
+		const uint8_t tx_mailbox_index = tx_fifo_gi % TU_ARRAY_SIZE(can->tx_fifo);
+		const struct tx_fifo_element *e = &can->tx_fifo[tx_mailbox_index];
+		SC_ISR_ASSERT(tx_mailbox_index < TU_ARRAY_SIZE(can->tx_fifo));
 
-		LOG("ch%u tx fifo pi=%u gi=%u\n", index, tx_fifo_pi, tx_fifo_gi);
+		LOG("ch%u tx fifo pi=%u gi=%u tx_mailbox_index=%u\n", index, tx_fifo_pi, tx_fifo_gi, tx_mailbox_index);
 
 		switch (code) {
 		case MB_TX_INACTIVE: {
-			LOG("ch%u empty FlexCAN mailbox found\n", index);
-			can->isr_tx_track_id = can->tx_fifo[tx_mailbox_index].track_id;
-			memcpy(box->WORD, can->tx_fifo[tx_mailbox_index].box.WORD, can->tx_fifo[tx_mailbox_index].len);
-			box->ID = can->tx_fifo[tx_mailbox_index].box.ID;
-			box->CS = can->tx_fifo[tx_mailbox_index].box.CS;
+			LOG("ch%u tranfer %u bytes of data to mailbox\n", index, e->len);
+			can->isr_tx_track_id = e->track_id;
+			// LOG("ch%u 1\n", index);
+			for (uint8_t i = 0, o = 0; o < e->len; ++i, o += 4) {
+				box->WORD[i] = e->box.WORD[i];
+			}
+			// LOG("ch%u 2\n", index);
+			box->ID = e->box.ID;
+			// LOG("ch%u 3\n", index);
+			box->CS = e->box.CS;
+			// LOG("ch%u 4\n", index);
+
+			can->tx_box_busy = true;
 
 			__atomic_store_n(&can->tx_gi, tx_fifo_gi + 1, __ATOMIC_RELEASE);
 
-			can->tx_box_busy = true;
 		} break;
 		default:
 			LOG("ch%u no mailbox found\n", index);
 			break;
 		}
 	}
+
+	LOG("< srv tx mb\n");
+}
+
+
+SC_RAMFUNC static void can_int_update_status(
+	uint8_t index, uint32_t* events, uint32_t tsc)
+{
+	SC_DEBUG_ASSERT(events);
+
+	struct can *can = &cans[index];
+	uint8_t current_bus_state = 0;
+	uint32_t current_esr1 = can->flex_can->ESR1;
+	// uint32_t prev_esr1 = can->int_prev_esr1;
+	sc_can_status status;
+	uint8_t confinement = (current_esr1 & CAN_ESR1_FLTCONF_MASK) >> CAN_ESR1_FLTCONF_SHIFT;
+
+	// clear error flags
+	can->flex_can->ESR1 = ~0;
+
+	switch (confinement) {
+	case 0b00:
+		current_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
+		break;
+	case 0b01:
+		current_bus_state = SC_CAN_STATUS_ERROR_PASSIVE;
+		break;
+	case 0b10:
+	case 0b11:
+		current_bus_state = SC_CAN_STATUS_BUS_OFF;
+		break;
+	}
+
+	// store updated reg
+	// can->int_prev_esr1 = current_esr1;
+
+	if (unlikely(can->int_prev_bus_state != current_bus_state)) {
+		can->int_prev_bus_state = current_bus_state;
+
+		LOG("ch%u bus state ");
+		switch (current_bus_state) {
+		case SC_CAN_STATUS_ERROR_ACTIVE:
+			LOG("active");
+			break;
+		case SC_CAN_STATUS_ERROR_WARNING:
+			LOG("warning");
+			break;
+		case SC_CAN_STATUS_ERROR_PASSIVE:
+			LOG("passive");
+			break;
+		case SC_CAN_STATUS_BUS_OFF:
+			LOG("off");
+			break;
+		default:
+			LOG("unknown");
+			break;
+		}
+
+		LOG("\n");
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS;
+		status.payload = current_bus_state;
+		status.timestamp_us = tsc;
+
+		sc_can_status_queue(index, &status);
+		++*events;
+	}
+
+	if (current_esr1 & CAN_ESR1_ERRINT_FAST_MASK) {
+		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
+		status.timestamp_us = tsc;
+		status.data_part = 1;
+		status.tx = (current_esr1 & CAN_ESR1_TX_MASK) == CAN_ESR1_TX_MASK;
+		status.payload = SC_CAN_ERROR_NONE;
+
+		if (current_esr1 & CAN_ESR1_BIT1ERR_FAST_MASK) {
+			status.payload = SC_CAN_ERROR_BIT1;
+		} else if (current_esr1 & CAN_ESR1_BIT0ERR_FAST_MASK) {
+			status.payload = SC_CAN_ERROR_BIT0;
+		} else if (current_esr1 & CAN_ESR1_CRCERR_FAST_MASK) {
+			status.payload = SC_CAN_ERROR_CRC;
+		} else if (current_esr1 & CAN_ESR1_FRMERR_FAST_MASK) {
+			status.payload = SC_CAN_ERROR_FORM;
+		} else if (current_esr1 & CAN_ESR1_STFERR_FAST_MASK) {
+			status.payload = SC_CAN_ERROR_STUFF;
+		}
+
+		sc_can_status_queue(index, &status);
+		++*events;
+	}
+
+	if (current_esr1 & CAN_ESR1_ERRINT_MASK) {
+		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
+		status.timestamp_us = tsc;
+		status.data_part = 0;
+		status.tx = (current_esr1 & CAN_ESR1_TX_MASK) == CAN_ESR1_TX_MASK;
+		status.payload = SC_CAN_ERROR_NONE;
+
+		if (current_esr1 & CAN_ESR1_BIT1ERR_MASK) {
+			status.payload = SC_CAN_ERROR_BIT1;
+		} else if (current_esr1 & CAN_ESR1_BIT0ERR_MASK) {
+			status.payload = SC_CAN_ERROR_BIT0;
+		} else if (current_esr1 & CAN_ESR1_CRCERR_MASK) {
+			status.payload = SC_CAN_ERROR_CRC;
+		} else if (current_esr1 & CAN_ESR1_FRMERR_MASK) {
+			status.payload = SC_CAN_ERROR_FORM;
+		} else if (current_esr1 & CAN_ESR1_STFERR_MASK) {
+			status.payload = SC_CAN_ERROR_STUFF;
+		} else if (current_esr1 & CAN_ESR1_ACKERR_MASK) {
+			status.payload = SC_CAN_ERROR_ACK;
+		}
+
+		sc_can_status_queue(index, &status);
+		++*events;
+	}
 }
 
 SC_RAMFUNC static void can_int(uint8_t index)
 {
+	LOG("> ch%u int\n", index);
+
 	struct can *can = &cans[index];
-	uint32_t esr1 = can->flex_can->ESR1;
+
 	uint32_t iflag1 = can->flex_can->IFLAG1;
 	uint32_t iflag2 = can->flex_can->IFLAG2;
-	// unsigned give = 0;
+	uint32_t events = 0;
+	uint32_t tsc = GPT2->CNT;
+	uint8_t* box_mem = ((uint8_t*)can->flex_can) + 0x80;
+	const size_t step = can->fd_enabled ? 0x48 : 0x10;
+
+
+	// clear interrupts
+	can->flex_can->IFLAG1 = iflag1;
+	can->flex_can->IFLAG2 = iflag2;
 
 	if (iflag1) {
 		LOG("IFLAG1=%lx\n", iflag1);
@@ -960,45 +1109,30 @@ SC_RAMFUNC static void can_int(uint8_t index)
 		LOG("IFLAG1=%lx\n", iflag2);
 	}
 
-	// for (uint32_t i = 0, j = 1, k = 0;
-	// 	k < 32 && i < TX_MAILBOX_COUNT; ++i, j <<= 1, ++k) {
-	// 	if (iflag1 & j) {
-	// 		++give;
-	// 	}
-	// }
-
-	// for (uint32_t i = 32, j = 1, k = 0;
-	// 	k < 32 && i < TX_MAILBOX_COUNT; ++i, j <<= 1, ++k) {
-	// 	if (iflag2 & j) {
-	// 		++give;
-	// 	}
-	// }
-
-
-
-
-	// LOG("ESR1=%lx\n", esr1);
-
-
-	// clear interrupts
-	can->flex_can->IFLAG1 = iflag1;
-	can->flex_can->IFLAG2 = iflag2;
-
-	// clear errors
-	can->flex_can->ESR1 = ~0;
+	can_int_update_status(index, &events, tsc);
 
 	if (iflag1 & 1) {
 		// TX mailbox
-
+		service_tx_box(index, &events, tsc);
 	}
 
-	service_tx_box(index);
+	for (unsigned i = 0, j = 2, k = 1; i < RX_MAILBOX_COUNT; ++i, ++k, j <<= 1) {
+		struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * k);
 
-	// for (unsigned i = 0; i < give; ++i) {
-	// 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-	// 	vTaskNotifyGiveFromISR(can->tx_task_handle, &xHigherPriorityTaskWoken);
-	// 	portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-	// }
+		if (iflag1 & j) {
+			unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
+			SC_ISR_ASSERT(code != MB_RX_EMPTY);
+			box->CS = CAN_CS_CODE(MB_RX_EMPTY);
+		}
+	}
+
+
+	if (likely(events)) {
+		LOG("/");
+		sc_can_notify_task_isr(index, events);
+	}
+
+	LOG("< ch%u int\n", index);
 }
 
 
@@ -1028,9 +1162,12 @@ SC_RAMFUNC void GPT2_IRQHandler(void)
 
 SC_RAMFUNC void GPIO1_Combined_16_31_IRQHandler(void)
 {
-	// LOG("GPIO1_Combined_16_31_IRQHandler\n");
+	LOG("> GPIO1_Combined_16_31_IRQHandler\n");
 
+	const uint32_t tsc = GPT2->CNT;
+	uint32_t events = 0;
 	uint32_t isr = GPIO1->ISR;
+	const uint8_t index = 1; // FIX ME
 
 	// clear interrupts
 	GPIO1->ISR = isr;
@@ -1038,7 +1175,16 @@ SC_RAMFUNC void GPIO1_Combined_16_31_IRQHandler(void)
 	// reset output pin
 	GPIO1->DR_SET |= ((uint32_t)1) << 19;
 
-	service_tx_box(1); // FIX ME
+
+
+	service_tx_box(index, &events, tsc);
+
+	if (likely(events)) {
+		LOG("\\");
+		sc_can_notify_task_isr(index, events);
+	}
+
+	LOG("< GPIO1_Combined_16_31_IRQHandler\n");
 }
 
 extern uint32_t sc_board_identifier(void)
