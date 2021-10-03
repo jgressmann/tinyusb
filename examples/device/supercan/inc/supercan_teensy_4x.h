@@ -33,9 +33,10 @@
 #	error "Only include this file for Teensy 4.x boards"
 #endif
 
+#include <MIMXRT1062.h>
+
+
 #define SC_BOARD_NAME "Teensy 4.x"
-
-
 #define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
 #define SC_BOARD_USB_MANUFACTURER_STRING "2guys"
 #define SC_BOARD_CAN_CLK_HZ 80000000
@@ -50,7 +51,8 @@ enum {
 };
 
 #define sc_board_can_ts_request(index) do { } while (0)
-#define sc_board_can_ts_wait(index) 0
+// #define sc_board_can_ts_wait(index) 0
+#define sc_board_can_ts_wait(index) GPT2->CNT
 #define sc_board_led_usb_burst() do { } while (0)
 #define sc_board_led_can_traffic_burst(index) do { } while (0)
 #define sc_board_led_can_status_set(index, status) do { } while (0)

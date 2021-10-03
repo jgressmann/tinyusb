@@ -114,6 +114,8 @@ SC_RAMFUNC static inline uint8_t dlc_to_len(uint8_t dlc)
 	return map[dlc & 0xf];
 }
 
+SC_RAMFUNC extern void sc_can_notify_task(uint8_t index, bool from_isr);
+
 #if defined(D5035_01)
 #	include "supercan_D5035_01.h"
 #elif defined(SAME54XPLAINEDPRO)
