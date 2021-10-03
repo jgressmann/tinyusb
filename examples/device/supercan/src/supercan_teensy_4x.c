@@ -115,6 +115,7 @@ struct tx_fifo_element {
 struct txr_fifo_element {
 	volatile uint32_t timestamp_us;
 	volatile uint8_t track_id;
+	volatile uint8_t flags;
 };
 
 struct can {
@@ -921,9 +922,34 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 		} else {
 			const uint8_t txr_index = txr_pi % TU_ARRAY_SIZE(can->txr_fifo);
 			struct txr_fifo_element *e = &can->txr_fifo[txr_index];
+			uint8_t flags = 0;
 
 			e->track_id = can->isr_tx_track_id;
 			e->timestamp_us = tsc;
+
+
+			if (cs & CAN_CS_IDE_MASK) {
+				flags |= SC_CAN_FRAME_FLAG_EXT;
+			}
+
+			if (cs & CAN_CS_EDL_MASK) {
+				flags |= SC_CAN_FRAME_FLAG_FDF;
+
+				if (cs & CAN_CS_ESI_MASK) {
+					flags |= SC_CAN_FRAME_FLAG_ESI;
+				}
+
+				if (cs & CAN_CS_BRS_MASK) {
+					flags |= SC_CAN_FRAME_FLAG_BRS;
+				}
+			} else {
+				if (cs & CAN_CS_RTR_MASK) {
+					flags |= SC_CAN_FRAME_FLAG_RTR;
+				}
+			}
+
+			e->flags = flags;
+
 			__atomic_store_n(&can->txr_pi, txr_pi + 1, __ATOMIC_RELEASE);
 
 			++*events;
