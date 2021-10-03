@@ -396,6 +396,7 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 			// reset
 			sc_board_can_reset(index);
+			sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_BUS_OFF);
 
 			// transmit empty buffers (clear whatever was in there before)
 			(void)dcd_edpt_xfer(usb.port, 0x80 | usb_can->pipe, usb_can->tx_buffers[usb_can->tx_bank], usb_can->tx_offsets[usb_can->tx_bank]);
@@ -530,6 +531,7 @@ send_can_info:
 				bt_target.tseg1 = tu_max16(nm_bt->min.tseg1, tu_min16(tmsg->tseg1, nm_bt->max.tseg1));
 				bt_target.tseg2 = tu_max8(nm_bt->min.tseg2, tu_min8(tmsg->tseg2, nm_bt->max.tseg2));
 
+				LOG("ch%u ", index);
 				sc_can_log_bit_timing(&bt_target, "nominal");
 
 				sc_board_can_nm_bit_timing_set(index, &bt_target);
@@ -554,6 +556,7 @@ send_can_info:
 				bt_target.tseg1 = tu_max16(dt_bt->min.tseg1, tu_min16(tmsg->tseg1, dt_bt->max.tseg1));
 				bt_target.tseg2 = tu_max8(dt_bt->min.tseg2, tu_min8(tmsg->tseg2, dt_bt->max.tseg2));
 
+				LOG("ch%u ", index);
 				sc_can_log_bit_timing(&bt_target, "data");
 
 				sc_board_can_nm_bit_timing_set(index, &bt_target);
@@ -698,13 +701,8 @@ send_txr:
 SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
-	// SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans.can));
 
-	// struct can *can = &cans.can[index];
 	struct usb_can *usb_can = &usb.can[index];
-	// led_burst(can->led_traffic, LED_BURST_DURATION_MS);
-
-
 	const uint8_t rx_bank = usb_can->rx_bank;
 	(void)rx_bank;
 	uint8_t *in_beg = usb_can->rx_buffers[usb_can->rx_bank];
@@ -731,6 +729,7 @@ SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 	// process messages
 	while (in_ptr + SC_MSG_HEADER_LEN <= in_end) {
 		struct sc_msg_header const *msg = (struct sc_msg_header const *)in_ptr;
+
 		if (in_ptr + msg->len > in_end) {
 			LOG("ch%u offset=%u len=%u exceeds buffer size=%u\n", index, (unsigned)(in_ptr - in_beg), msg->len, (unsigned)xferred_bytes);
 			break;
@@ -828,7 +827,7 @@ send:
 	}
 }
 
-static void can_usb_task(void* param);
+SC_RAMFUNC static void can_usb_task(void* param);
 
 
 int main(void)
@@ -847,17 +846,6 @@ int main(void)
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
 
 
-
-
-	// cans.can[0].led_status_green = LED_CAN0_STATUS_GREEN;
-	// cans.can[0].led_status_red = LED_CAN0_STATUS_RED;
-	// cans.can[1].led_status_green = LED_CAN1_STATUS_GREEN;
-	// cans.can[1].led_status_red = LED_CAN1_STATUS_RED;
-	// cans.can[0].led_traffic = CAN0_TRAFFIC_LED;
-	// cans.can[1].led_traffic = CAN1_TRAFFIC_LED;
-
-
-
 	sc_board_init_end();
 
 	for (unsigned i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
@@ -865,9 +853,7 @@ int main(void)
 		struct usb_can *usb_can = &usb.can[i];
 
 		usb_can->mutex_handle = xSemaphoreCreateMutexStatic(&usb_can->mutex_mem);
-
 		can->usb_task_handle = xTaskCreateStatic(&can_usb_task, NULL, TU_ARRAY_SIZE(can->usb_task_stack_mem), (void*)(uintptr_t)i, configMAX_PRIORITIES-1, can->usb_task_stack_mem, &can->usb_task_mem);
-
 	}
 
 	cans_reset();
@@ -896,6 +882,13 @@ SC_RAMFUNC static void tusb_device_task(void* param)
 	}
 }
 
+static inline void can_led_set_disabled(void)
+{
+	for (uint8_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
+		sc_board_led_can_status_set(i, SC_CAN_LED_STATUS_DISABLED);
+	}
+}
+
 //--------------------------------------------------------------------+
 // Device callbacks
 //--------------------------------------------------------------------+
@@ -907,7 +900,7 @@ void tud_mount_cb(void)
 	led_blink(0, 250);
 	usb.mounted = true;
 
-	// cans_led_status_set(CANLED_STATUS_DISABLED);
+	can_led_set_disabled();
 }
 
 // Invoked when device is unmounted
@@ -918,7 +911,7 @@ void tud_umount_cb(void)
 	usb.mounted = false;
 
 	cans_reset();
-	// cans_led_status_set(CANLED_STATUS_DISABLED);
+	can_led_set_disabled();
 }
 
 // Invoked when usb bus is suspended
@@ -932,7 +925,7 @@ void tud_suspend_cb(bool remote_wakeup_en)
 	led_blink(0, 500);
 
 	cans_reset();
-	// cans_led_status_set(CANLED_STATUS_DISABLED);
+	can_led_set_disabled();
 }
 
 // Invoked when usb bus is resumed
@@ -1341,8 +1334,8 @@ SC_RAMFUNC static void can_usb_task(void *param)
 // 	uint32_t rx_ts_last = 0;
 // 	uint32_t tx_ts_last = 0;
 // #endif
-	uint8_t previous_bus_status = 0;
-	uint8_t current_bus_status = 0;
+	uint8_t previous_bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
+	uint8_t current_bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
 	TickType_t bus_activity_tc = 0;
 	bool had_bus_activity = false;
 	bool has_bus_error = false;
@@ -1361,7 +1354,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 		}
 
 		if (unlikely(!can->enabled)) {
-			current_bus_status = 0;
+			current_bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
 			bus_activity_tc = xTaskGetTickCount() - pdMS_TO_TICKS(BUS_ACTIVITY_TIMEOUT_MS);
 			had_bus_activity = false;
 			has_bus_error = false;
@@ -1382,7 +1375,6 @@ SC_RAMFUNC static void can_usb_task(void *param)
 		for (bool done = false; !done; ) {
 			done = true;
 
-			LOG("ch%u can usb\n", index);
 // #if SUPERCAN_DEBUG
 // 			// loop
 // 			{
@@ -1403,6 +1395,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 
 			if (send_can_status) {
 				struct sc_msg_can_status *msg = NULL;
+
 				if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
 					done = false;
 					send_can_status = 0;
@@ -1416,14 +1409,13 @@ SC_RAMFUNC static void can_usb_task(void *param)
 
 					sc_board_can_status_fill(index, msg);
 
-					current_bus_status = msg->bus_status;
-
 					uint16_t tx_dropped = can->tx_dropped;
 					can->tx_dropped = 0;
 
 					msg->id = SC_MSG_CAN_STATUS;
 					msg->len = sizeof(*msg);
 
+					msg->bus_status = current_bus_status;
 					msg->tx_dropped = tx_dropped;
 					if (can->desync) {
 						msg->flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;
@@ -1504,6 +1496,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 			}
 
 			consumed = sc_board_can_place_msgs(index, tx_ptr, tx_end);
+			// LOG("c=%d\n", consumed);
 
 			switch (consumed) {
 			case -1:
@@ -1527,7 +1520,6 @@ SC_RAMFUNC static void can_usb_task(void *param)
 		}
 
 		if (sc_can_bulk_in_ep_ready(index) && usb_can->tx_offsets[usb_can->tx_bank]) {
-			LOG("ch%u bulk in submit\n", index);
 			sc_can_bulk_in_submit(index, __func__);
 		}
 

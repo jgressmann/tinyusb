@@ -874,7 +874,7 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 		return bytes;
 	}
 
-	return have_data_to_send ? 0 : -1;
+	return have_data_to_send - 1;
 }
 
 

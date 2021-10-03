@@ -155,8 +155,6 @@ struct can {
 	CAN_PSR_Type int_prev_psr_reg;
 	uint16_t rx_lost;
 	uint16_t features;
-	uint16_t tx_dropped;
-	uint8_t int_comm_flags;
 	uint8_t int_prev_bus_state;
 	uint8_t led_status_green;
 	uint8_t led_status_red;
@@ -168,7 +166,6 @@ struct can {
 	uint8_t tx_put_index; // NOT an index, uses full range of type
 
 	bool enabled;
-	bool desync;
 };
 
 struct can cans[SC_BOARD_CAN_COUNT];
@@ -195,6 +192,7 @@ static inline void can_init_pins(void)
 		PORT_WRCONFIG_WRPMUX |
 		PORT_WRCONFIG_PMUX(7) |         // H, CAN1, DS60001507E page 32, 910
 		PORT_WRCONFIG_PMUXEN;
+
 }
 
 static inline void can_init_clock(void) // controller and hardware specific setup of clock for the m_can module
@@ -325,6 +323,12 @@ static void can_init_module(void)
 	cans[1].m_can = CAN1;
 	cans[0].interrupt_id = CAN0_IRQn;
 	cans[1].interrupt_id = CAN1_IRQn;
+	cans[0].led_traffic = CAN0_TRAFFIC_LED;
+	cans[1].led_traffic = CAN1_TRAFFIC_LED;
+	cans[0].led_status_green = LED_CAN0_STATUS_GREEN;
+	cans[1].led_status_green = LED_CAN1_STATUS_GREEN;
+	cans[0].led_status_red = LED_CAN0_STATUS_RED;
+	cans[1].led_status_red = LED_CAN1_STATUS_RED;
 
 	for (size_t j = 0; j < TU_ARRAY_SIZE(cans); ++j) {
 		struct can *can = &cans[j];
@@ -730,10 +734,12 @@ SC_RAMFUNC static void can_int(uint8_t index)
 
 		// LOG("CAN%u RX/TX\n", index);
 		can_poll(index, &events, tsc);
-
 	}
 
-	sc_can_notify_task_isr(index, events);
+	if (likely(events)) {
+		// LOG(">");
+		sc_can_notify_task_isr(index, events);
+	}
 }
 
 
@@ -775,11 +781,8 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 #endif
 
 	can->rx_lost = 0;
-	can->tx_dropped = 0;
 	can->tx_available = SC_BOARD_CAN_TX_FIFO_SIZE;
-	can->desync = false;
-	can->int_prev_bus_state = 0;
-	can->int_comm_flags = 0;
+	can->int_prev_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
 	can->int_prev_psr_reg.reg = 0;
 
 	// call this here to timestamp / last rx/tx values
@@ -788,8 +791,6 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 	can->rx_put_index = 0;
 	can->tx_get_index = 0;
 	can->tx_put_index = 0;
-	// can->status_put_index = 0;
-	// can->status_get_index = 0;
 
 	__atomic_thread_fence(__ATOMIC_RELEASE); // rx_lost
 }
@@ -875,14 +876,6 @@ struct led {
 	uint8_t pin;
 };
 
-// struct can {
-// 	Can *m_can;
-// 	IRQn_Type interrupt_id;
-// 	uint8_t led_status_green;
-// 	uint8_t led_status_red;
-// 	uint8_t led_traffic;
-// };
-
 #define LED_STATIC_INITIALIZER(name, pin) \
 	{ pin }
 
@@ -893,21 +886,19 @@ static const struct led leds[] = {
 	LED_STATIC_INITIALIZER("orange", PIN_PA19),
 	LED_STATIC_INITIALIZER("green", PIN_PB16),
 	LED_STATIC_INITIALIZER("blue", PIN_PB17),
-	LED_STATIC_INITIALIZER("can1_red", PIN_PB00),
-	LED_STATIC_INITIALIZER("can1_green", PIN_PB01),
-	LED_STATIC_INITIALIZER("can0_red", PIN_PB02),
-	LED_STATIC_INITIALIZER("can0_green", PIN_PB03),
+	LED_STATIC_INITIALIZER("can0_green", PIN_PB00),
+	LED_STATIC_INITIALIZER("can0_red", PIN_PB01),
+	LED_STATIC_INITIALIZER("can1_green", PIN_PB02),
+	LED_STATIC_INITIALIZER("can1_red", PIN_PB03),
 };
 
-extern void sc_board_led_init(void)
+static inline void leds_init(void)
 {
 	PORT->Group[0].DIRSET.reg = PORT_PA18 | PORT_PA19;
 	PORT->Group[1].DIRSET.reg = PORT_PB16 | PORT_PB17 | PORT_PB00 | PORT_PB01 | PORT_PB02 | PORT_PB03;
 }
 
 #define POWER_LED LED_DEBUG_0
-#define CAN0_TRAFFIC_LED LED_DEBUG_1
-#define CAN1_TRAFFIC_LED LED_DEBUG_2
 #define USB_LED LED_DEBUG_3
 
 
@@ -944,64 +935,6 @@ extern void sc_board_can_init_module(void)
 	cans[1].led_status_green = LED_CAN1_STATUS_GREEN;
 	cans[1].led_status_red = LED_CAN1_STATUS_RED;
 }
-
-
-// controller and hardware specific setup of i/o pins for CAN
-extern void sc_board_can_init_pins(void)
-{
-	// CAN0 port
-	PORT->Group[0].WRCONFIG.reg =
-		PORT_WRCONFIG_HWSEL |           // upper half
-		PORT_WRCONFIG_PINMASK(0x00c0) | // PA22/23
-		PORT_WRCONFIG_WRPINCFG |
-		PORT_WRCONFIG_WRPMUX |
-		PORT_WRCONFIG_PMUX(8) |         // I, CAN0, DS60001507E page 32, 910
-		PORT_WRCONFIG_PMUXEN;
-#if SC_BOARD_CAN_COUNT > 1
-	// CAN1 port
-	PORT->Group[1].WRCONFIG.reg =
-		PORT_WRCONFIG_PINMASK(0xc000) | // PB14/15 = 0xc000, PB12/13 = 0x3000
-		PORT_WRCONFIG_WRPINCFG |
-		PORT_WRCONFIG_WRPMUX |
-		PORT_WRCONFIG_PMUX(7) |         // H, CAN1, DS60001507E page 32, 910
-		PORT_WRCONFIG_PMUXEN;
-#endif
-}
-
-extern void sc_board_can_init_clock(void) // controller and hardware specific setup of clock for the m_can module
-{
-	MCLK->AHBMASK.bit.CAN0_ = 1;
-	GCLK->PCHCTRL[CAN0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0
-#if SC_BOARD_CAN_COUNT > 1
-	MCLK->AHBMASK.bit.CAN1_ = 1;
-	GCLK->PCHCTRL[CAN1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; // setup CAN1 to use GLCK0
-#endif
-}
-
-extern void sc_board_can_interrupt_enable(uint8_t index, bool on)
-{
-	SC_DEBUG_ASSERT(index < ARRAY_SIZE(cans));
-
-	if (on) {
-		NVIC_EnableIRQ(cans[index].interrupt_id);
-	} else {
-		NVIC_DisableIRQ(cans[index].interrupt_id);
-	}
-}
-
-extern void* sc_board_can_m_can(uint8_t index)
-{
-	SC_DEBUG_ASSERT(index < ARRAY_SIZE(cans));
-	return cans[index].m_can;
-}
-
-extern void sc_board_can_burst_led(uint8_t index, uint16_t duration_ms)
-{
-	SC_DEBUG_ASSERT(index < ARRAY_SIZE(cans));
-
-	led_burst(cans[index].led_traffic, duration_ms);
-}
-
 
 extern void sc_board_can_led_set_status(uint8_t index, int status)
 {
@@ -1173,6 +1106,7 @@ extern void sc_board_init_begin(void)
 
 	dfu.timer_handle = xTimerCreateStatic("dfu", pdMS_TO_TICKS(DFU_USB_RESET_TIMEOUT_MS), pdFALSE, NULL, &dfu_timer_expired, &dfu.timer_mem);
 #endif
+	leds_init();
 
 	can_init_pins();
 	can_init_clock();
@@ -1286,8 +1220,6 @@ SC_RAMFUNC extern void sc_board_can_status_fill(uint8_t index, struct sc_msg_can
 
 
 	msg->rx_lost = rx_lost;
-	msg->flags = __sync_or_and_fetch(&can->int_comm_flags, 0);
-	msg->bus_status = 0; // FIX ME
 	msg->tx_errors = ecr.bit.TEC;
 	msg->rx_errors = ecr.bit.REC;
 	msg->tx_fifo_size = SC_BOARD_CAN_TX_FIFO_SIZE - can->m_can->TXFQS.bit.TFFL;
@@ -1300,7 +1232,6 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 	int result = 0;
 	bool have_data_to_place = false;
 
-
 	for (bool done = false; !done; ) {
 		done = true;
 
@@ -1309,6 +1240,7 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 		if (can->rx_get_index != rx_put_index) {
 			have_data_to_place = true;
 			__atomic_thread_fence(__ATOMIC_ACQUIRE);
+
 			uint8_t rx_count = rx_put_index - can->rx_get_index;
 			if (unlikely(rx_count > SC_BOARD_CAN_RX_FIFO_SIZE)) {
 				LOG("ch%u rx count %u\n", index, rx_count);
@@ -1487,7 +1419,7 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 		return result;
 	}
 
-	return have_data_to_place * -1;
+	return have_data_to_place - 1;
 }
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
@@ -1897,14 +1829,14 @@ SC_RAMFUNC void CAN0_Handler(void)
 	can_int(0);
 }
 
-#if SC_BOARD_CAN_COUNT > 1
+
 SC_RAMFUNC void CAN1_Handler(void)
 {
 	// LOG("CAN1 int\n");
 
 	can_int(1);
 }
-#endif
+
 
 
 extern sc_can_bit_timing_range const* sc_board_can_nm_bit_timing_range(uint8_t index)
