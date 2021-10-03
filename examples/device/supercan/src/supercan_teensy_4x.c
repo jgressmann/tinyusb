@@ -839,30 +839,30 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 {
 	struct can *can = &cans[index];
 
-	unsigned txrs_removed = 0;
-	int bytes = 0;
+	int result = 0;
 	bool have_data_to_send = false;
 	uint8_t txr_gi = can->txr_gi;
 
 	for (;;) {
-		uint8_t txr_pi = __atomic_load_n(&can->txr_pi, __ATOMIC_ACQUIRE);
+		const uint8_t txr_pi = __atomic_load_n(&can->txr_pi, __ATOMIC_ACQUIRE);
 
 		if (txr_pi != txr_gi) {
-
-			LOG("ch%u have txr\n", index);;
 			struct sc_msg_can_txr *txr = (struct sc_msg_can_txr *)tx_ptr;
 			have_data_to_send = true;
+			LOG("ch%u have txr\n", index);
 
 			if (tx_ptr + sizeof(*txr) <= tx_end) {
-				struct txr_fifo_element *e = &can->txr_fifo[txr_gi % sizeof(can->txr_fifo)];
+				const uint8_t txr_index = txr_gi % TU_ARRAY_SIZE(can->txr_fifo);
+				SC_DEBUG_ASSERT(txr_index < TU_ARRAY_SIZE(can->txr_fifo));
+				struct txr_fifo_element *e = &can->txr_fifo[txr_index];
 
 				LOG("ch%u place txr %u\n", index, e->track_id);
-				bytes += sizeof(*txr);
+				result += sizeof(*txr);
 				tx_ptr += sizeof(*txr);
 
 				txr->id = SC_MSG_CAN_TXR;
 				txr->len = sizeof(*txr);
-				txr->flags = 0;
+				txr->flags = e->flags;
 				txr->track_id = e->track_id;
 				txr->timestamp_us = e->timestamp_us;
 
@@ -879,8 +879,8 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 		__atomic_store_n(&can->txr_gi, txr_gi, __ATOMIC_RELEASE);
 	}
 
-	if (bytes > 0) {
-		return bytes;
+	if (result > 0) {
+		return result;
 	}
 
 	return have_data_to_send - 1;
