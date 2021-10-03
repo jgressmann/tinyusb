@@ -16,6 +16,8 @@ CFLAGS += \
   -DCFG_TUSB_MCU=OPT_MCU_MIMXRT10XX \
   -DRAMFUNC_SECTION_NAME="\"CodeQuickAccess\""
 
+MIMXRT10XX ?= 1
+
 # mcu driver cause following warnings
 CFLAGS += -Wno-error=unused-parameter -Wno-error=implicit-fallthrough=
 
