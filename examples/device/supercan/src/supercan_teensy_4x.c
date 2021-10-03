@@ -913,7 +913,7 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index)
 			e->timestamp_us = GPT2->CNT;
 			__atomic_store_n(&can->txr_pi, txr_pi + 1, __ATOMIC_RELEASE);
 
-			sc_can_notify_task(index, true);
+			sc_can_notify_task_isr(index, 1);
 		}
 
 		can->tx_box_busy = false;

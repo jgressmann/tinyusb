@@ -43,11 +43,11 @@
 #include <supercan_board.h>
 #include <supercan_m1.h>
 #include <usb_descriptors.h>
-// #include <mcu.h>
+
 
 #include <leds.h>
-#include <crc32.h>
-#include <sections.h>
+// #include <crc32.h>
+// #include <sections.h>
 
 
 #define CLOCK_MAX 0xffffffff
@@ -76,7 +76,7 @@ static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(va
 
 
 
-static inline void can_log_bit_timing(sc_can_bit_timing const *c, char const* name)
+extern void sc_can_log_bit_timing(sc_can_bit_timing const *c, char const* name)
 {
 	(void)c;
 	(void)name;
@@ -340,6 +340,7 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 	// process messages
 	while (in_ptr + SC_MSG_HEADER_LEN <= in_end) {
 		struct sc_msg_header const *msg = (struct sc_msg_header const *)in_ptr;
+
 		if (in_ptr + msg->len > in_end) {
 			LOG("ch%u malformed msg\n", index);
 			break;
@@ -496,7 +497,7 @@ send_can_info:
 				bt_target.tseg1 = tu_max16(nm_bt->min.tseg1, tu_min16(tmsg->tseg1, nm_bt->max.tseg1));
 				bt_target.tseg2 = tu_max8(nm_bt->min.tseg2, tu_min8(tmsg->tseg2, nm_bt->max.tseg2));
 
-				can_log_bit_timing(&bt_target, "nominal");
+				sc_can_log_bit_timing(&bt_target, "nominal");
 
 				sc_board_can_nm_bit_timing_set(index, &bt_target);
 			}
@@ -520,7 +521,7 @@ send_can_info:
 				bt_target.tseg1 = tu_max16(dt_bt->min.tseg1, tu_min16(tmsg->tseg1, dt_bt->max.tseg1));
 				bt_target.tseg2 = tu_max8(dt_bt->min.tseg2, tu_min8(tmsg->tseg2, dt_bt->max.tseg2));
 
-				can_log_bit_timing(&bt_target, "data");
+				sc_can_log_bit_timing(&bt_target, "data");
 
 				sc_board_can_nm_bit_timing_set(index, &bt_target);
 			}
@@ -572,11 +573,20 @@ send_can_info:
 				bool is_enabled = tmsg->arg != 0;
 				if (was_enabled != is_enabled) {
 					LOG("ch%u enabled=%u\n", index, is_enabled);
+					// _With_ usb lock, since this isn't the interrupt handler
+					// and neither a higher priority task.
+					while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
+
 					if (is_enabled) {
 						sc_board_can_feat_set(index, can->features);
 					}
 					sc_board_can_go_bus(index, is_enabled);
 					can->enabled = is_enabled;
+
+					xSemaphoreGive(usb_can->mutex_handle);
+
+					// notify task to make sure its knows
+					xTaskNotifyGive(can->usb_task_handle);
 				}
 			}
 
@@ -624,7 +634,7 @@ SC_RAMFUNC static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header
 		uint8_t *tx_ptr = NULL;
 		struct sc_msg_can_txr* rep = NULL;
 
-		sc_board_can_ts_request();
+		sc_board_can_ts_request(index);
 		++can->tx_dropped;
 
 
@@ -638,7 +648,7 @@ send_txr:
 			rep->len = sizeof(*rep);
 			rep->track_id = tmsg->track_id;
 			rep->flags = SC_CAN_FRAME_FLAG_DRP;
-			uint32_t ts = sc_board_can_ts_wait();
+			uint32_t ts = sc_board_can_ts_wait(index);
 			rep->timestamp_us = ts;
 		} else {
 			if (sc_can_bulk_in_ep_ready(index)) {
@@ -1166,14 +1176,33 @@ usbd_class_driver_t const* usbd_app_driver_get_cb(uint8_t* driver_count)
 	return &sc_usb_driver;
 }
 
-SC_RAMFUNC extern void sc_can_notify_task(uint8_t index, bool isr)
+SC_RAMFUNC extern void sc_can_notify_task_def(uint8_t index, uint32_t count)
 {
 	struct can *can = &cans[index];
 
-	if (isr) {
-		vTaskNotifyGiveFromISR(can->usb_task_handle, NULL);
-	} else {
+	for (uint32_t i = 0; i < count; ++i) {
 		xTaskNotifyGive(can->usb_task_handle);
+	}
+}
+
+SC_RAMFUNC extern void sc_can_notify_task_isr(uint8_t index, uint32_t count)
+{
+	struct can *can = &cans[index];
+	bool notify_usb = false;
+
+	if (likely(count)) {
+		for (uint32_t i = 0; i < count - 1; ++i) {
+			vTaskNotifyGiveFromISR(can->usb_task_handle, NULL);
+		}
+
+		notify_usb = true;
+	}
+
+	if (likely(notify_usb)) {
+		// LOG("CAN%u notify\n", index);
+		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+		vTaskNotifyGiveFromISR(can->usb_task_handle, &xHigherPriorityTaskWoken);
+		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 	}
 }
 
@@ -1362,6 +1391,8 @@ SC_RAMFUNC static void can_usb_task(void *param)
 					tx_ptr += sizeof(*msg);
 
 					sc_board_can_status_fill(index, msg);
+
+					current_bus_status = msg->bus_status;
 
 					uint16_t tx_dropped = can->tx_dropped;
 					can->tx_dropped = 0;

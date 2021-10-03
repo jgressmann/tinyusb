@@ -38,10 +38,13 @@
 #	error "Define HWREV"
 #endif
 
+#include <sam.h>
+
 #define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
 #define SC_BOARD_USB_MANUFACTURER_STRING "2guys"
 #define SC_BOARD_CAN_CLK_HZ 80000000
 #define SC_BOARD_CAN_COUNT 2
+#define SC_BOARD_NAME BOARD_NAME
 
 enum {
 	SC_BOARD_DEBUG_DEFAULT,
@@ -61,30 +64,21 @@ enum {
 
 
 enum {
-	CAN_FEAT_PERM = SC_FEATURE_FLAG_TXR,
-	CAN_FEAT_CONF = (MSG_BUFFER_SIZE >= 128 ? SC_FEATURE_FLAG_FDF : 0)
-					| SC_FEATURE_FLAG_TXP
-					| SC_FEATURE_FLAG_EHD
-					// not yet implemented
-					// | SC_FEATURE_FLAG_DAR
-					| SC_FEATURE_FLAG_MON_MODE
-					| SC_FEATURE_FLAG_RES_MODE
-					| SC_FEATURE_FLAG_EXT_LOOP_MODE,
-
-	CAN_STATUS_FIFO_SIZE = 256,
-	CAN_STATUS_FIFO_TYPE_BUS_STATUS = 0,
-	CAN_STATUS_FIFO_TYPE_BUS_ERROR = 1,
+	SC_BOARD_CAN_TX_FIFO_SIZE = 32,
+	SC_BOARD_CAN_RX_FIFO_SIZE = 64,
 };
 
 
-SC_RAMFUNC static inline void sc_board_can_ts_request(void)
+SC_RAMFUNC static inline void sc_board_can_ts_request(uint8_t index)
 {
 	uint8_t reg;
+	(void)index;
 
 	reg = __atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE);
 
 	while (1) {
 		uint8_t cmd = reg & TC_CTRLBSET_CMD_Msk;
+
 		SC_DEBUG_ASSERT(cmd == TC_CTRLBSET_CMD_READSYNC || cmd == TC_CTRLBSET_CMD_NONE);
 		if (cmd == TC_CTRLBSET_CMD_READSYNC) {
 			break;
@@ -103,12 +97,17 @@ SC_RAMFUNC static inline void sc_board_can_ts_request(void)
 	}
 }
 
-#define sc_board_led_usb_burst() led_burst(LED_DEBUG_3, LED_BURST_DURATION_MS)
+SC_RAMFUNC extern uint32_t sc_board_can_ts_wait(uint8_t index);
+
+#define sc_board_led_usb_burst() led_burst(LED_DEBUG_3, SC_LED_BURST_DURATION_MS)
 #define sc_board_led_can_traffic_burst(index) \
 	do { \
 		switch (index) { \
-		case 0: led_burst(CAN0_TRAFFIC_LED, LED_BURST_DURATION_MS); break; \
-		case 1: led_burst(CAN1_TRAFFIC_LED, LED_BURST_DURATION_MS); break; \
+		case 0: led_burst(CAN0_TRAFFIC_LED, SC_LED_BURST_DURATION_MS); break; \
+		case 1: led_burst(CAN1_TRAFFIC_LED, SC_LED_BURST_DURATION_MS); break; \
 		default: break; \
 		} \
 	} while (0)
+
+
+SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status);

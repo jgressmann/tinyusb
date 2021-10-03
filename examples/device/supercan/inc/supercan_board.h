@@ -28,6 +28,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include <FreeRTOS.h>
+#include <task.h>
+#include <semphr.h>
+#include <timers.h>
+
 #include <sections.h>
 #include <supercan_debug.h>
 
@@ -48,10 +53,6 @@
 
 #define CMD_BUFFER_SIZE 64
 #define MSG_BUFFER_SIZE 512
-
-
-
-
 
 enum {
 	SC_LED_BURST_DURATION_MS = 8,
@@ -114,7 +115,9 @@ SC_RAMFUNC static inline uint8_t dlc_to_len(uint8_t dlc)
 	return map[dlc & 0xf];
 }
 
-SC_RAMFUNC extern void sc_can_notify_task(uint8_t index, bool from_isr);
+SC_RAMFUNC extern void sc_can_notify_task_def(uint8_t index, uint32_t count);
+SC_RAMFUNC extern void sc_can_notify_task_isr(uint8_t index, uint32_t count);
+extern void sc_can_log_bit_timing(sc_can_bit_timing const *c, char const* name);
 
 #if defined(D5035_01)
 #	include "supercan_D5035_01.h"
