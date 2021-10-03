@@ -66,6 +66,11 @@ enum {
 
 	SC_CAN_LED_BLINK_DELAY_PASSIVE_MS = 512,
 	SC_CAN_LED_BLINK_DELAY_ACTIVE_MS = 128,
+
+	SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS = 0,
+	SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR = 1,
+
+	SC_TS_MAX = 0xffffffff,
 };
 
 typedef struct _sc_can_bit_timing {
@@ -78,6 +83,16 @@ typedef struct _sc_can_bit_timing {
 typedef struct _sc_can_bit_timing_range {
 	sc_can_bit_timing min, max;
 } sc_can_bit_timing_range;
+
+
+typedef struct _sc_can_status {
+	volatile uint32_t timestamp_us;
+	volatile uint8_t type;
+	volatile uint8_t tx;
+	volatile uint8_t data_part;
+	volatile uint8_t payload;
+} sc_can_status;
+
 
 
 __attribute__((noreturn)) extern void sc_board_reset(void);
@@ -118,6 +133,7 @@ SC_RAMFUNC static inline uint8_t dlc_to_len(uint8_t dlc)
 SC_RAMFUNC extern void sc_can_notify_task_def(uint8_t index, uint32_t count);
 SC_RAMFUNC extern void sc_can_notify_task_isr(uint8_t index, uint32_t count);
 extern void sc_can_log_bit_timing(sc_can_bit_timing const *c, char const* name);
+SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *status);
 
 #if defined(D5035_01)
 #	include "supercan_D5035_01.h"

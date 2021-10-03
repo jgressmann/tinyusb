@@ -49,9 +49,12 @@
 // #include <crc32.h>
 // #include <sections.h>
 
+enum {
+	CAN_STATUS_FIFO_SIZE = 256,
+};
 
-#define CLOCK_MAX 0xffffffff
 #define SPAM 0
+
 
 
 #if TU_BIG_ENDIAN == TU_BYTE_ORDER
@@ -136,15 +139,36 @@ static struct usb {
 } usb;
 
 static struct can {
+	sc_can_status status_fifo[CAN_STATUS_FIFO_SIZE];
 	StackType_t usb_task_stack_mem[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_task_mem;
 	TaskHandle_t usb_task_handle;
+
 	uint16_t features;
 	uint16_t tx_dropped;
+	uint16_t status_get_index; // NOT an index, uses full range of type
+	uint16_t status_put_index; // NOT an index, uses full range of type
+	uint8_t int_comm_flags;
 	bool enabled;
 	bool desync;
 } cans[SC_BOARD_CAN_COUNT];
 
+
+SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *status)
+{
+	struct can *can = &cans[index];
+	uint16_t pi = can->status_put_index;
+	uint16_t gi = __atomic_load_n(&can->status_get_index, __ATOMIC_ACQUIRE);
+	uint16_t used = pi - gi;
+
+	if (likely(used < CAN_STATUS_FIFO_SIZE)) {
+		uint16_t fifo_index = pi & (CAN_STATUS_FIFO_SIZE-1);
+		can->status_fifo[fifo_index] = *status;
+		__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
+	} else {
+		__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
+	}
+}
 
 static inline void cans_reset(void)
 {
@@ -157,6 +181,15 @@ static inline void cans_reset(void)
 		can->desync = false;
 		can->tx_dropped = 0;
 		can->features = sc_board_can_feat_perm(i);
+		can->status_put_index = 0;
+		can->status_get_index = 0;
+		can->int_comm_flags = 0;
+#if SUPERCAN_DEBUG
+		memset(can->status_fifo, 0, sizeof(can->status_fifo));
+#endif
+
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+
 
 		sc_board_can_reset(i);
 	}
@@ -251,8 +284,8 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 			struct sc_msg_can_rx const *msg = (struct sc_msg_can_rx const *)hdr;
 			uint32_t ts = msg->timestamp_us;
 			if (rx_ts_last) {
-				uint32_t delta = (ts - rx_ts_last) & CLOCK_MAX;
-				bool rx_ts_ok = delta <= CLOCK_MAX / 4;
+				uint32_t delta = (ts - rx_ts_last) & SC_TS_MAX;
+				bool rx_ts_ok = delta <= SC_TS_MAX / 4;
 				if (unlikely(!rx_ts_ok)) {
 					LOG("ch%u rx ts=%lx prev=%lx\n", index, ts, rx_ts_last);
 					SC_ASSERT(false);
@@ -266,8 +299,8 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 			struct sc_msg_can_txr const *msg = (struct sc_msg_can_txr const *)hdr;
 			uint32_t ts = msg->timestamp_us;
 			if (tx_ts_last) {
-				uint32_t delta = (ts - tx_ts_last) & CLOCK_MAX;
-				bool tx_ts_ok = delta <= CLOCK_MAX / 4;
+				uint32_t delta = (ts - tx_ts_last) & SC_TS_MAX;
+				bool tx_ts_ok = delta <= SC_TS_MAX / 4;
 				if (unlikely(!tx_ts_ok)) {
 					LOG("ch%u tx ts=%lx prev=%lx\n", index, ts, tx_ts_last);
 					SC_ASSERT(false);
@@ -1421,6 +1454,62 @@ SC_RAMFUNC static void can_usb_task(void *param)
 						break;
 					}
 				}
+			}
+
+			uint16_t status_put_index = __atomic_load_n(&can->status_put_index, __ATOMIC_ACQUIRE);
+			if (can->status_get_index != status_put_index) {
+				uint16_t fifo_index = can->status_get_index % TU_ARRAY_SIZE(can->status_fifo);
+				sc_can_status *s = &can->status_fifo[fifo_index];
+
+				done = false;
+				bus_activity_tc = xTaskGetTickCount();
+
+				switch (s->type) {
+				case SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS: {
+					current_bus_status = s->payload;
+					LOG("ch%u bus status %#x\n", index, current_bus_status);
+					send_can_status = 1;
+				} break;
+				case SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR: {
+					struct sc_msg_can_error *msg = NULL;
+
+					has_bus_error = true;
+
+					if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
+						msg = (struct sc_msg_can_error *)tx_ptr;
+						usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
+						tx_ptr += sizeof(*msg);
+
+
+						msg->id = SC_MSG_CAN_ERROR;
+						msg->len = sizeof(*msg);
+						msg->error = s->payload;
+						msg->timestamp_us = s->timestamp_us;
+						msg->flags = 0;
+						if (s->tx) {
+							msg->flags |= SC_CAN_ERROR_FLAG_RXTX_TX;
+						}
+						if (s->data_part) {
+							msg->flags |= SC_CAN_ERROR_FLAG_NMDT_DT;
+						}
+					} else {
+						if (sc_can_bulk_in_ep_ready(index)) {
+							sc_can_bulk_in_submit(index, __func__);
+							continue;
+						} else {
+							// LOG("ch%u dropped CAN bus error msg\n", index);
+							// break;
+							xTaskNotifyGive(can->usb_task_handle);
+							yield = true;
+						}
+					}
+				} break;
+				default:
+					LOG("ch%u unhandled CAN status message type %#02x\n", index, s->type);
+					break;
+				}
+
+				__atomic_store_n(&can->status_get_index, can->status_get_index+1, __ATOMIC_RELEASE);
 			}
 
 			consumed = sc_board_can_place_msgs(index, tx_ptr, tx_end);
