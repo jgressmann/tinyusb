@@ -500,8 +500,8 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* events, ui
 
 		status.type = SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS;
 		status.timestamp_us = tsc;
-		status.rx_tx_errors.rx = can->int_prev_rx_errors;
-		status.rx_tx_errors.tx = can->int_prev_tx_errors;
+		status.counts.rx = can->int_prev_rx_errors;
+		status.counts.tx = can->int_prev_tx_errors;
 
 		sc_can_status_queue(index, &status);
 		++*events;
