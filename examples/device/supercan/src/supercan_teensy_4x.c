@@ -87,7 +87,7 @@
 
 enum {
 	TX_MAILBOX_COUNT = 1,
-	RX_MAILBOX_COUNT = 14-TX_MAILBOX_COUNT,
+	RX_MAILBOX_COUNT = 8-TX_MAILBOX_COUNT,
 	MB_RX_INACTIVE = 0b0000,
 	MB_RX_EMPTY = 0b0100,
 	MB_RX_FULL = 0b0010,
@@ -122,18 +122,15 @@ struct can {
 	struct flexcan_mailbox rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
 	struct tx_fifo_element tx_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
 	struct txr_fifo_element txr_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
-	// uint8_t tx_lens[SC_BOARD_CAN_TX_FIFO_SIZE];
-	// StackType_t tx_task_stack_mem[configMINIMAL_STACK_SIZE];
-	// StaticTask_t tx_task_mem;
-	// TaskHandle_t tx_task_handle;
-	// StaticSemaphore_t tx_mutex_mem;
-	// SemaphoreHandle_t tx_mutex_handle;
+
 
 	CAN_Type* const flex_can;
 	const IRQn_Type flex_can_irq;
 	const IRQn_Type tx_queue_irq;
 	uint32_t int_prev_esr1;
 	uint8_t int_prev_bus_state;
+	uint8_t int_prev_rx_errors;
+	uint8_t int_prev_tx_errors;
 	volatile uint8_t isr_tx_track_id;
 	volatile bool desync;
 	const bool fd_capable;
@@ -213,11 +210,11 @@ extern uint16_t sc_board_can_feat_conf(uint8_t index)
 }
 
 
-static void init_mailboxes(uint8_t index)
+static inline void init_mailboxes(uint8_t index)
 {
 	struct can *can = &cans[index];
 
-	if (can->fd_capable) {
+	if (can->fd_enabled) {
 		for (uint8_t i = 0; i < TX_MAILBOX_COUNT; ++i) {
 			can->flex_can->MB_64B[i].ID = 0;
 			can->flex_can->MB_64B[i].CS = CAN_CS_CODE(MB_TX_INACTIVE);
@@ -266,8 +263,6 @@ static inline void can_reset_state(uint8_t index)
 {
 	struct can *can = &cans[index];
 
-	init_mailboxes(index);
-
 	can->rx_gi = 0;
 	can->rx_pi = 0;
 	can->tx_gi = 0;
@@ -281,24 +276,21 @@ static inline void can_reset_state(uint8_t index)
 	can->tx_box_busy = false;
 	can->int_prev_esr1 = 0;
 	can->int_prev_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
+	can->int_prev_rx_errors = 0;
+	can->int_prev_tx_errors = 0;
 }
 
 extern void sc_board_can_reset(uint8_t index)
 {
 	struct can *can = &cans[index];
 
-	// LOG("CAN ch%u soft reset\n", (unsigned)i);
-	// can->flex_can->MCR = CAN_MCR_SOFTRST(1);
-	// while (can->flex_can->MCR & CAN_MCR_SOFTRST_MASK);
-
 	freeze(index);
 
+	// LOG("CAN ch%u soft reset\n", (unsigned)i);
 	can->flex_can->MCR |= CAN_MCR_SOFTRST_MASK;
 	while (can->flex_can->MCR & CAN_MCR_SOFTRST_MASK);
 
 	LOG("CAN ch%u ", (unsigned)index);
-
-
 
 	can->flex_can->MCR = 0
 			// | CAN_MCR_MDIS(1)  // module disable
@@ -341,7 +333,7 @@ extern void sc_board_can_reset(uint8_t index)
 
 	// enable all message buffer interrupts
 	can->flex_can->IFLAG1 = ~0;
-	can->flex_can->IFLAG2 = ~0;
+	// can->flex_can->IFLAG2 = ~0;
 
 	if (can->fd_capable) {
 		can->flex_can->CBT = CAN_CBT_BTF(1); // mooar arbitration bits
@@ -663,12 +655,10 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 	LOG("CNT=%lx\n", GPT2->CNT);
 
 	if (on) {
+		init_mailboxes(index);
+
 		NVIC_EnableIRQ(can->flex_can_irq);
 
-		// can->flex_can->MCR &= ~CAN_MCR_HALT(1);
-		// LOG("go on bus pre MCR=%lx\n", can->flex_can->MCR);
-		// can->flex_can->MCR &= ~CAN_MCR_HALT_MASK;
-		// LOG("go on bus post MCR=%lx\n", can->flex_can->MCR);
 		thaw(index);
 
 
@@ -697,7 +687,7 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 
 		// clear interrupts
 		can->flex_can->IFLAG1 = can->flex_can->IFLAG1;
-		can->flex_can->IFLAG2 = can->flex_can->IFLAG2;
+		// can->flex_can->IFLAG2 = can->flex_can->IFLAG2;
 
 		// clear error flags
 		can->flex_can->ESR1 = ~0;
@@ -709,7 +699,7 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 
 SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
 {
-	LOG("> ch%u tx queue\n", index);
+	// LOG("> ch%u tx queue\n", index);
 
 	struct can *can = &cans[index];
 	struct tx_fifo_element *e = NULL;
@@ -722,7 +712,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	unsigned bytes = dlc_to_len(msg->dlc);
 
 	if (unlikely(used == TU_ARRAY_SIZE(can->tx_fifo))) {
-		LOG("< ch%u tx queue\n", index);
+		// LOG("< ch%u tx queue\n", index);
 		return false;
 	}
 
@@ -766,24 +756,24 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	// trigger interrupt
 	NVIC->STIR = can->tx_queue_irq;
 
-	LOG("< ch%u tx queue\n", index);
+	// LOG("< ch%u tx queue\n", index);
 
 	return true;
 }
 
-SC_RAMFUNC extern void sc_board_can_status_fill(uint8_t index, struct sc_msg_can_status *msg)
-{
-	struct can *can = &cans[index];
-	uint32_t ecr = can->flex_can->ECR;
+// SC_RAMFUNC extern void sc_board_can_status_fill(uint8_t index, struct sc_msg_can_status *msg)
+// {
+// 	struct can *can = &cans[index];
+// 	uint32_t ecr = can->flex_can->ECR;
 
 
-	msg->flags = 0;
-	if (unlikely(can->desync)) {
-		msg->flags = SC_CAN_STATUS_FLAG_TXR_DESYNC;
-	}
-	msg->rx_errors = (ecr & CAN_ECR_RXERRCNT_MASK) >> CAN_ECR_RXERRCNT_SHIFT;
-	msg->tx_errors = (ecr & CAN_ECR_TXERRCNT_MASK) >> CAN_ECR_TXERRCNT_SHIFT;
-}
+// 	msg->flags = 0;
+// 	if (unlikely(can->desync)) {
+// 		msg->flags = SC_CAN_STATUS_FLAG_TXR_DESYNC;
+// 	}
+// 	msg->rx_errors = (ecr & CAN_ECR_RXERRCNT_MASK) >> CAN_ECR_RXERRCNT_SHIFT;
+// 	msg->tx_errors = (ecr & CAN_ECR_TXERRCNT_MASK) >> CAN_ECR_TXERRCNT_SHIFT;
+// }
 
 SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
 {
@@ -799,14 +789,14 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 		if (txr_pi != txr_gi) {
 			struct sc_msg_can_txr *txr = (struct sc_msg_can_txr *)tx_ptr;
 			have_data_to_send = true;
-			LOG("ch%u have txr\n", index);
+			// LOG("ch%u have txr\n", index);
 
 			if (tx_ptr + sizeof(*txr) <= tx_end) {
 				const uint8_t txr_index = txr_gi % TU_ARRAY_SIZE(can->txr_fifo);
 				SC_DEBUG_ASSERT(txr_index < TU_ARRAY_SIZE(can->txr_fifo));
 				struct txr_fifo_element *e = &can->txr_fifo[txr_index];
 
-				LOG("ch%u place txr %u\n", index, e->track_id);
+				// LOG("ch%u place txr %u\n", index, e->track_id);
 				result += sizeof(*txr);
 				tx_ptr += sizeof(*txr);
 
@@ -847,7 +837,7 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 	const uint8_t tx_fifo_gi = can->tx_gi;
 	const uint8_t tx_fifo_pi = __atomic_load_n(&can->tx_pi, __ATOMIC_ACQUIRE);
 
-	LOG("> srv tx mb\n");
+	// LOG("> srv tx mb\n");
 
 	if (MB_RX_EMPTY == code) {
 		// remove rx empty for RTR frames
@@ -866,8 +856,13 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 		SC_ISR_ASSERT(used <= TU_ARRAY_SIZE(can->txr_fifo));
 
 		if (unlikely(used == TU_ARRAY_SIZE(can->txr_fifo))) {
+			sc_can_status status;
+
 			LOG("ch%u txr desync\n", index);
-			can->desync = true;
+			status.type = SC_CAN_STATUS_FIFO_TYPE_TXR_DESYNC;
+			sc_can_status_queue(index, &status);
+
+			++*events;
 		} else {
 			const uint8_t txr_index = txr_pi % TU_ARRAY_SIZE(can->txr_fifo);
 			struct txr_fifo_element *e = &can->txr_fifo[txr_index];
@@ -903,7 +898,7 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 
 			++*events;
 
-			LOG("ch%u sending txr %u\n", index, can->isr_tx_track_id);
+			// LOG("ch%u sending txr %u\n", index, can->isr_tx_track_id);
 		}
 
 		can->tx_box_busy = false;
@@ -915,11 +910,11 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 		const struct tx_fifo_element *e = &can->tx_fifo[tx_mailbox_index];
 		SC_ISR_ASSERT(tx_mailbox_index < TU_ARRAY_SIZE(can->tx_fifo));
 
-		LOG("ch%u tx fifo pi=%u gi=%u tx_mailbox_index=%u\n", index, tx_fifo_pi, tx_fifo_gi, tx_mailbox_index);
+		// LOG("ch%u tx fifo pi=%u gi=%u tx_mailbox_index=%u\n", index, tx_fifo_pi, tx_fifo_gi, tx_mailbox_index);
 
 		switch (code) {
 		case MB_TX_INACTIVE: {
-			LOG("ch%u tranfer %u bytes of data to mailbox\n", index, e->len);
+			// LOG("ch%u tranfer %u bytes of data to mailbox\n", index, e->len);
 			can->isr_tx_track_id = e->track_id;
 
 			// LOG("ch%u 1\n", index);
@@ -940,12 +935,12 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 
 		} break;
 		default:
-			LOG("ch%u no mailbox found\n", index);
+			// LOG("ch%u no mailbox found\n", index);
 			break;
 		}
 	}
 
-	LOG("< srv tx mb\n");
+	// LOG("< srv tx mb\n");
 }
 
 
@@ -957,12 +952,29 @@ SC_RAMFUNC static void can_int_update_status(
 	struct can *can = &cans[index];
 	uint8_t current_bus_state = 0;
 	uint32_t current_esr1 = can->flex_can->ESR1;
+	uint32_t ecr = can->flex_can->ECR;
+	uint8_t rxe = (ecr & CAN_ECR_RXERRCNT_MASK) >> CAN_ECR_RXERRCNT_SHIFT;
+	uint8_t txe = (ecr & CAN_ECR_TXERRCNT_MASK) >> CAN_ECR_TXERRCNT_SHIFT;
 	// uint32_t prev_esr1 = can->int_prev_esr1;
 	sc_can_status status;
 	uint8_t confinement = (current_esr1 & CAN_ESR1_FLTCONF_MASK) >> CAN_ESR1_FLTCONF_SHIFT;
 
 	// clear error flags
 	can->flex_can->ESR1 = ~0;
+
+
+	if (unlikely(can->int_prev_rx_errors != rxe || can->int_prev_tx_errors != txe)) {
+		can->int_prev_rx_errors = rxe;
+		can->int_prev_tx_errors = txe;
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS;
+		status.timestamp_us = tsc;
+		status.rx_tx_errors.rx = rxe;
+		status.rx_tx_errors.tx = txe;
+
+		sc_can_status_queue(index, &status);
+		++*events;
+	}
 
 	switch (confinement) {
 	case 0b00:
@@ -1005,7 +1017,7 @@ SC_RAMFUNC static void can_int_update_status(
 		LOG("\n");
 
 		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS;
-		status.payload = current_bus_state;
+		status.bus_state = current_bus_state;
 		status.timestamp_us = tsc;
 
 		sc_can_status_queue(index, &status);
@@ -1015,20 +1027,20 @@ SC_RAMFUNC static void can_int_update_status(
 	if (current_esr1 & CAN_ESR1_ERRINT_FAST_MASK) {
 		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
 		status.timestamp_us = tsc;
-		status.data_part = 1;
-		status.tx = (current_esr1 & CAN_ESR1_TX_MASK) == CAN_ESR1_TX_MASK;
-		status.payload = SC_CAN_ERROR_NONE;
+		status.bus_error.data_part = 1;
+		status.bus_error.tx = (current_esr1 & CAN_ESR1_TX_MASK) == CAN_ESR1_TX_MASK;
+		status.bus_error.code = SC_CAN_ERROR_NONE;
 
 		if (current_esr1 & CAN_ESR1_BIT1ERR_FAST_MASK) {
-			status.payload = SC_CAN_ERROR_BIT1;
+			status.bus_error.code = SC_CAN_ERROR_BIT1;
 		} else if (current_esr1 & CAN_ESR1_BIT0ERR_FAST_MASK) {
-			status.payload = SC_CAN_ERROR_BIT0;
+			status.bus_error.code = SC_CAN_ERROR_BIT0;
 		} else if (current_esr1 & CAN_ESR1_CRCERR_FAST_MASK) {
-			status.payload = SC_CAN_ERROR_CRC;
+			status.bus_error.code = SC_CAN_ERROR_CRC;
 		} else if (current_esr1 & CAN_ESR1_FRMERR_FAST_MASK) {
-			status.payload = SC_CAN_ERROR_FORM;
+			status.bus_error.code = SC_CAN_ERROR_FORM;
 		} else if (current_esr1 & CAN_ESR1_STFERR_FAST_MASK) {
-			status.payload = SC_CAN_ERROR_STUFF;
+			status.bus_error.code = SC_CAN_ERROR_STUFF;
 		}
 
 		sc_can_status_queue(index, &status);
@@ -1038,22 +1050,22 @@ SC_RAMFUNC static void can_int_update_status(
 	if (current_esr1 & CAN_ESR1_ERRINT_MASK) {
 		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
 		status.timestamp_us = tsc;
-		status.data_part = 0;
-		status.tx = (current_esr1 & CAN_ESR1_TX_MASK) == CAN_ESR1_TX_MASK;
-		status.payload = SC_CAN_ERROR_NONE;
+		status.bus_error.data_part = 0;
+		status.bus_error.tx = (current_esr1 & CAN_ESR1_TX_MASK) == CAN_ESR1_TX_MASK;
+		status.bus_error.code = SC_CAN_ERROR_NONE;
 
 		if (current_esr1 & CAN_ESR1_BIT1ERR_MASK) {
-			status.payload = SC_CAN_ERROR_BIT1;
+			status.bus_error.code = SC_CAN_ERROR_BIT1;
 		} else if (current_esr1 & CAN_ESR1_BIT0ERR_MASK) {
-			status.payload = SC_CAN_ERROR_BIT0;
+			status.bus_error.code = SC_CAN_ERROR_BIT0;
 		} else if (current_esr1 & CAN_ESR1_CRCERR_MASK) {
-			status.payload = SC_CAN_ERROR_CRC;
+			status.bus_error.code = SC_CAN_ERROR_CRC;
 		} else if (current_esr1 & CAN_ESR1_FRMERR_MASK) {
-			status.payload = SC_CAN_ERROR_FORM;
+			status.bus_error.code = SC_CAN_ERROR_FORM;
 		} else if (current_esr1 & CAN_ESR1_STFERR_MASK) {
-			status.payload = SC_CAN_ERROR_STUFF;
+			status.bus_error.code = SC_CAN_ERROR_STUFF;
 		} else if (current_esr1 & CAN_ESR1_ACKERR_MASK) {
-			status.payload = SC_CAN_ERROR_ACK;
+			status.bus_error.code = SC_CAN_ERROR_ACK;
 		}
 
 		sc_can_status_queue(index, &status);
@@ -1063,12 +1075,12 @@ SC_RAMFUNC static void can_int_update_status(
 
 SC_RAMFUNC static void can_int(uint8_t index)
 {
-	LOG("> ch%u int\n", index);
+	// LOG("> ch%u int\n", index);
 
 	struct can *can = &cans[index];
 
 	uint32_t iflag1 = can->flex_can->IFLAG1;
-	uint32_t iflag2 = can->flex_can->IFLAG2;
+	// uint32_t iflag2 = can->flex_can->IFLAG2;
 	uint32_t events = 0;
 	uint32_t tsc = GPT2->CNT;
 	uint8_t* box_mem = ((uint8_t*)can->flex_can) + 0x80;
@@ -1077,22 +1089,23 @@ SC_RAMFUNC static void can_int(uint8_t index)
 
 	// clear interrupts
 	can->flex_can->IFLAG1 = iflag1;
-	can->flex_can->IFLAG2 = iflag2;
+	// can->flex_can->IFLAG2 = iflag2;
 
-	if (iflag1) {
-		LOG("IFLAG1=%lx\n", iflag1);
-	}
+	// if (iflag1) {
+	// 	LOG("IFLAG1=%lx\n", iflag1);
+	// }
 
-	if (iflag2) {
-		LOG("IFLAG1=%lx\n", iflag2);
-	}
-
-	can_int_update_status(index, &events, tsc);
+	// if (iflag2) {
+	// 	LOG("IFLAG1=%lx\n", iflag2);
+	// }
 
 	if (iflag1 & 1) {
 		// TX mailbox
 		service_tx_box(index, &events, tsc);
 	}
+
+	can_int_update_status(index, &events, tsc);
+
 
 	for (unsigned i = 0, j = 2, k = 1; i < RX_MAILBOX_COUNT; ++i, ++k, j <<= 1) {
 		struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * k);
@@ -1106,11 +1119,11 @@ SC_RAMFUNC static void can_int(uint8_t index)
 
 
 	if (likely(events)) {
-		LOG("/");
+		// LOG("/");
 		sc_can_notify_task_isr(index, events);
 	}
 
-	LOG("< ch%u int\n", index);
+	// LOG("< ch%u int\n", index);
 }
 
 
@@ -1122,7 +1135,7 @@ SC_RAMFUNC static inline void tx_frame_submitted(uint8_t index)
 	service_tx_box(index, &events, tsc);
 
 	if (likely(events)) {
-		LOG("\\");
+		// LOG("\\");
 		sc_can_notify_task_isr(index, events);
 	}
 }
@@ -1134,10 +1147,10 @@ SC_RAMFUNC void CAN1_IRQHandler(void)
 	can_int(1);
 }
 
-SC_RAMFUNC void CAN2_IRQHandler(void)
-{
-	LOG("+");
-}
+// SC_RAMFUNC void CAN2_IRQHandler(void)
+// {
+// 	LOG("+");
+// }
 
 SC_RAMFUNC void CAN3_IRQHandler(void)
 {
@@ -1194,68 +1207,5 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 		}
 	}
 }
-
-// SC_RAMFUNC static void tx_task(void* param)
-// {
-// 	const uint8_t index = (uint8_t)(uintptr_t)param;
-// 	SC_ASSERT(index < TU_ARRAY_SIZE(cans));
-
-// 	LOG("ch%u tx task start\n", index);
-
-// 	struct can *can = &cans[index];
-// 	uint8_t* box_mem = ((uint8_t*)can->flex_can) + 0x80;
-
-// 	while (42) {
-// 		(void)ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
-
-// 		// LOG("ch%u tx task take\n", index);
-
-// 		if (unlikely(!can->enabled)) {
-// 			LOG("ch%u tx task CAN disabled\n", index);
-// 			continue;
-// 		}
-
-// 		const size_t mailbox_step = can->fd_enabled ? 0x48 : 0x10;
-
-// 		while (pdTRUE != xSemaphoreTake(can->tx_mutex_handle, portMAX_DELAY));
-
-// 		LOG("ch%u tx task enter work\n", index);
-
-// 		for (bool done = false; !done; ) {
-// 			uint8_t gi = can->tx_gi;
-// 			uint8_t pi = __atomic_load_n(&can->tx_pi, __ATOMIC_ACQUIRE);
-// 			uint8_t tx_mailbox_index = gi % TU_ARRAY_SIZE(can->tx_fifo);
-
-// 			if (likely(pi != gi)) {
-// 				LOG("ch%u pi=%u gi=%u\n", index, pi, gi);
-// 				struct flexcan_mailbox *box = (struct flexcan_mailbox *)box_mem;
-// 				unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
-
-// 				switch (code) {
-// 				case MB_TX_INACTIVE:
-// 				case MB_RX_EMPTY:
-// 					LOG("ch%u empty FlexCAN mailbox found\n", index);
-// 					memcpy(box->WORD, can->tx_fifo[tx_mailbox_index].WORD, can->tx_lens[tx_mailbox_index]);
-// 					box->ID = can->tx_fifo[tx_mailbox_index].ID;
-// 					box->CS = can->tx_fifo[tx_mailbox_index].CS;
-
-// 					__atomic_store_n(&can->tx_gi, gi + 1, __ATOMIC_RELEASE);
-// 					break;
-// 				default:
-// 					done = true;
-// 					LOG("ch%u no mailbox found\n", index);
-// 					break;
-// 				}
-// 			} else {
-// 				LOG("ch%u tx fifo empty\n", index);
-// 				done = true;
-// 			}
-// 		}
-
-// 		LOG("ch%u tx task exit work\n", index);
-
-// 		xSemaphoreGive(can->tx_mutex_handle);
-// 	}
-// }
 
 #endif // defined(TEENSY_4X)

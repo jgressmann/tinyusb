@@ -68,7 +68,10 @@ enum {
 	SC_CAN_LED_BLINK_DELAY_ACTIVE_MS = 128,
 
 	SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS = 0,
-	SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR = 1,
+	SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR,
+	SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS,
+	SC_CAN_STATUS_FIFO_TYPE_TXR_DESYNC,
+	SC_CAN_STATUS_FIFO_TYPE_RX_LOST,
 
 	SC_TS_MAX = 0xffffffff,
 };
@@ -88,9 +91,24 @@ typedef struct _sc_can_bit_timing_range {
 typedef struct _sc_can_status {
 	volatile uint32_t timestamp_us;
 	volatile uint8_t type;
-	volatile uint8_t tx;
-	volatile uint8_t data_part;
-	volatile uint8_t payload;
+	// volatile uint8_t reserved;
+	union {
+		volatile struct {
+			uint8_t tx : 1;
+			uint8_t data_part : 1;
+			uint8_t code : 6;
+		} bus_error;
+
+		volatile uint8_t bus_state;
+
+		volatile struct {
+			uint8_t tx;
+			uint8_t rx;
+		} rx_tx_errors;
+
+		volatile uint8_t rx_lost;
+	};
+
 } sc_can_status;
 
 
@@ -113,7 +131,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 
 
 extern void sc_board_can_reset(uint8_t index);
-SC_RAMFUNC extern void sc_board_can_status_fill(uint8_t index, struct sc_msg_can_status *msg);
+// SC_RAMFUNC extern void sc_board_can_status_fill(uint8_t index, struct sc_msg_can_status *msg);
 /* place rx / tx / error messages into buffer
  *
  * return  -1 if no messages

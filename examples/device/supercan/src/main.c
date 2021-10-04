@@ -145,7 +145,8 @@ static struct can {
 	TaskHandle_t usb_task_handle;
 
 	uint16_t features;
-	uint16_t tx_dropped;
+	uint16_t tx_dropped; // summed for until next SC_MSG_CAN_STATUS
+	uint16_t rx_lost;    // summed for until next SC_MSG_CAN_STATUS
 	uint16_t status_get_index; // NOT an index, uses full range of type
 	uint16_t status_put_index; // NOT an index, uses full range of type
 	uint8_t int_comm_flags;
@@ -180,6 +181,7 @@ static inline void cans_reset(void)
 		can->enabled = false;
 		can->desync = false;
 		can->tx_dropped = 0;
+		can->rx_lost = 0;
 		can->features = sc_board_can_feat_perm(i);
 		can->status_put_index = 0;
 		can->status_get_index = 0;
@@ -1336,6 +1338,8 @@ SC_RAMFUNC static void can_usb_task(void *param)
 // #endif
 	uint8_t previous_bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
 	uint8_t current_bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
+	uint8_t tx_errors = 0;
+	uint8_t rx_errors = 0;
 	TickType_t bus_activity_tc = 0;
 	bool had_bus_activity = false;
 	bool has_bus_error = false;
@@ -1359,6 +1363,8 @@ SC_RAMFUNC static void can_usb_task(void *param)
 			had_bus_activity = false;
 			has_bus_error = false;
 			had_bus_error = false;
+			tx_errors = 0;
+			rx_errors = 0;
 // #if SUPERCAN_DEBUG
 // 			rx_ts_last = 0;
 // 			tx_ts_last = 0;
@@ -1401,22 +1407,28 @@ SC_RAMFUNC static void can_usb_task(void *param)
 					send_can_status = 0;
 					sc_board_can_ts_request(index);
 
-
-
 					msg = (struct sc_msg_can_status *)tx_ptr;
 					usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
 					tx_ptr += sizeof(*msg);
 
-					sc_board_can_status_fill(index, msg);
+					// sc_board_can_status_fill(index, msg);
 
 					uint16_t tx_dropped = can->tx_dropped;
 					can->tx_dropped = 0;
+					uint16_t rx_lost = can->rx_lost;
+					can->rx_lost = 0;
 
 					msg->id = SC_MSG_CAN_STATUS;
 					msg->len = sizeof(*msg);
-
 					msg->bus_status = current_bus_status;
 					msg->tx_dropped = tx_dropped;
+					msg->rx_lost = rx_lost;
+					msg->tx_fifo_size = 0;
+					msg->rx_fifo_size = 0;
+					msg->tx_errors = tx_errors;
+					msg->rx_errors = rx_errors;
+					msg->flags = __sync_fetch_and_and(&can->int_comm_flags, 0);
+
 					if (can->desync) {
 						msg->flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;
 					}
@@ -1449,7 +1461,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 
 				switch (s->type) {
 				case SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS: {
-					current_bus_status = s->payload;
+					current_bus_status = s->bus_state;
 					LOG("ch%u bus status %#x\n", index, current_bus_status);
 					send_can_status = 1;
 				} break;
@@ -1466,13 +1478,13 @@ SC_RAMFUNC static void can_usb_task(void *param)
 
 						msg->id = SC_MSG_CAN_ERROR;
 						msg->len = sizeof(*msg);
-						msg->error = s->payload;
+						msg->error = s->bus_error.code;
 						msg->timestamp_us = s->timestamp_us;
 						msg->flags = 0;
-						if (s->tx) {
+						if (s->bus_error.tx) {
 							msg->flags |= SC_CAN_ERROR_FLAG_RXTX_TX;
 						}
-						if (s->data_part) {
+						if (s->bus_error.data_part) {
 							msg->flags |= SC_CAN_ERROR_FLAG_NMDT_DT;
 						}
 					} else {
@@ -1487,6 +1499,17 @@ SC_RAMFUNC static void can_usb_task(void *param)
 						}
 					}
 				} break;
+				case SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS: {
+					rx_errors = s->rx_tx_errors.rx;
+					tx_errors = s->rx_tx_errors.tx;
+					send_can_status = 1;
+				} break;
+				case SC_CAN_STATUS_FIFO_TYPE_TXR_DESYNC:
+					can->desync = true;
+					break;
+				case SC_CAN_STATUS_FIFO_TYPE_RX_LOST:
+					can->rx_lost += s->rx_lost;
+					break;
 				default:
 					LOG("ch%u unhandled CAN status message type %#02x\n", index, s->type);
 					break;
