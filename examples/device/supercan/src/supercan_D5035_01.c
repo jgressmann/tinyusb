@@ -156,6 +156,8 @@ struct can {
 	uint16_t rx_lost;
 	uint16_t features;
 	uint8_t int_prev_bus_state;
+	uint8_t int_prev_rx_errors;
+	uint8_t int_prev_tx_errors;
 	uint8_t led_status_green;
 	uint8_t led_status_red;
 	uint8_t led_traffic;
@@ -490,6 +492,21 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* events, ui
 	(void)current_ecr;
 	sc_can_status status;
 
+
+
+	if (unlikely(current_ecr.bit.TEC != can->int_prev_tx_errors || current_ecr.bit.REC != can->int_prev_rx_errors)) {
+		can->int_prev_tx_errors = current_ecr.bit.TEC;
+		can->int_prev_rx_errors = current_ecr.bit.REC;
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS;
+		status.timestamp_us = tsc;
+		status.rx_tx_errors.rx = can->int_prev_rx_errors;
+		status.rx_tx_errors.tx = can->int_prev_tx_errors;
+
+		sc_can_status_queue(index, &status);
+		++*events;
+	}
+
 	// update NC (no change) from last value (which might also be NC)
 	if (CAN_PSR_LEC_NC_Val == current_psr.bit.LEC) {
 		current_psr.bit.LEC = prev_psr.bit.LEC;
@@ -526,33 +543,11 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* events, ui
 	if (unlikely(can->int_prev_bus_state != current_bus_state)) {
 		can->int_prev_bus_state = current_bus_state;
 
-		// uint16_t pi = can->status_put_index;
-		// uint16_t gi = __atomic_load_n(&can->status_get_index, __ATOMIC_ACQUIRE);
-		// uint16_t used = pi - gi;
-
-		// LOG("CAN%u bus status update\n", index);
-
-
 		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS;
-		status.payload = current_bus_state;
 		status.timestamp_us = tsc;
+		status.bus_state = current_bus_state;
+
 		sc_can_status_queue(index, &status);
-
-
-
-		// if (likely(used < CAN_STATUS_FIFO_SIZE)) {
-		// 	uint16_t fifo_index = pi & (CAN_STATUS_FIFO_SIZE-1);
-		// 	struct can_status *s = &can->status_fifo[fifo_index];
-
-		// 	s->type = SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS;
-		// 	s->payload = current_bus_state;
-		// 	s->ts = tsc;
-
-		// 	__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
-		// } else {
-		// 	__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
-		// }
-
 		++*events;
 	}
 
@@ -566,34 +561,15 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* events, ui
 	// 	current_psr.bit.LEC != CAN_PSR_LEC_NC_Val &&
 	// 	/* is_rx_tx_error */ true) {
 	if (current_psr.bit.LEC != CAN_PSR_LEC_NONE_Val && current_psr.bit.LEC != CAN_PSR_LEC_NC_Val) {
-		// uint16_t pi = can->status_put_index;
-		// uint16_t gi = __atomic_load_n(&can->status_get_index, __ATOMIC_ACQUIRE);
-		// uint16_t used = pi - gi;
-
 		// LOG("CAN%u lec %x\n", index, current_psr.bit.LEC);
 
 		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
-		status.tx = is_tx_error;
 		status.timestamp_us = tsc;
-		status.payload = can_map_m_can_ec(current_psr.bit.LEC),
-		status.data_part = 0;
+		status.bus_error.tx = is_tx_error;
+		status.bus_error.code = can_map_m_can_ec(current_psr.bit.LEC),
+		status.bus_error.data_part = 0;
+
 		sc_can_status_queue(index, &status);
-
-		// if (likely(used < CAN_STATUS_FIFO_SIZE)) {
-		// 	uint16_t fifo_index = pi & (CAN_STATUS_FIFO_SIZE-1);
-		// 	struct can_status *s = &can->status_fifo[fifo_index];
-
-		// 	s->type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
-		// 	s->tx = is_tx_error;
-		// 	s->data_part = 0;
-		// 	s->payload = can_map_m_can_ec(current_psr.bit.LEC),
-		// 	s->ts = tsc;
-
-		// 	__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
-		// } else {
-		// 	__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
-		// }
-
 		++*events;
 	}
 
@@ -603,34 +579,15 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* events, ui
 	// 	current_psr.bit.DLEC != CAN_PSR_DLEC_NC_Val &&
 	// 	/*is_rx_tx_error*/ true) {
 	if (current_psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val && current_psr.bit.DLEC != CAN_PSR_DLEC_NC_Val) {
-		// uint16_t pi = can->status_put_index;
-		// uint16_t gi = __atomic_load_n(&can->status_get_index, __ATOMIC_ACQUIRE);
-		// uint16_t used = pi - gi;
-
 		// LOG("CAN%u dlec %x\n", index, current_psr.bit.DLEC);
 
 		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
-		status.tx = is_tx_error;
 		status.timestamp_us = tsc;
-		status.payload = can_map_m_can_ec(current_psr.bit.LEC),
-		status.data_part = 1;
+		status.bus_error.tx = is_tx_error;
+		status.bus_error.code = can_map_m_can_ec(current_psr.bit.DLEC),
+		status.bus_error.data_part = 1;
+
 		sc_can_status_queue(index, &status);
-
-		// if (likely(used < CAN_STATUS_FIFO_SIZE)) {
-		// 	uint16_t fifo_index = pi & (CAN_STATUS_FIFO_SIZE-1);
-		// 	struct can_status *s = &can->status_fifo[fifo_index];
-
-		// 	s->type = CAN_STATUS_FIFO_TYPE_BUS_ERROR;
-		// 	s->tx = is_tx_error;
-		// 	s->data_part = 1;
-		// 	s->payload = can_map_m_can_ec(current_psr.bit.DLEC),
-		// 	s->ts = tsc;
-
-		// 	__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
-		// } else {
-		// 	__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
-		// }
-
 		++*events;
 	}
 
@@ -717,16 +674,22 @@ SC_RAMFUNC static void can_int(uint8_t index)
 
 
 
-	if (ir.bit.RF0L) {
-		LOG("CAN%u msg lost\n", index);
-		//__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
-		can_inc_sat_rx_lost(index);
-		// notify = true;
-	}
+
 
 	// Do this late to increase likelyhood that the counter
 	// is ready right away.
-	uint32_t tsc = counter_1MHz_wait_for_current_value();
+	const uint32_t tsc = counter_1MHz_wait_for_current_value();
+
+	if (unlikely(ir.bit.RF0L)) {
+		sc_can_status status;
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_RX_LOST;
+		status.timestamp_us = tsc;
+		status.rx_lost = 1;
+
+		sc_can_status_queue(index, &status);
+		++events;
+	}
 
 	can_int_update_status(index, &events, tsc);
 
@@ -784,6 +747,8 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 	can->tx_available = SC_BOARD_CAN_TX_FIFO_SIZE;
 	can->int_prev_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
 	can->int_prev_psr_reg.reg = 0;
+	can->int_prev_rx_errors = 0;
+	can->int_prev_tx_errors = 0;
 
 	// call this here to timestamp / last rx/tx values
 	// since we won't get any further interrupts
