@@ -130,7 +130,8 @@ struct can {
 	// SemaphoreHandle_t tx_mutex_handle;
 
 	CAN_Type* const flex_can;
-	const IRQn_Type irq;
+	const IRQn_Type flex_can_irq;
+	const IRQn_Type tx_queue_irq;
 	uint32_t int_prev_esr1;
 	uint8_t int_prev_bus_state;
 	volatile uint8_t isr_tx_track_id;
@@ -153,15 +154,15 @@ struct can {
 static struct can cans[] = {
 	{
 		.flex_can = CAN3,
-		.irq = CAN3_IRQn,
+		.flex_can_irq = CAN3_IRQn,
+		.tx_queue_irq = ADC1_IRQn,
 		.fd_capable = true,
-		.fd_enabled = false,
 	},
 	{
 		.flex_can = CAN1,
-		.irq = CAN1_IRQn,
+		.flex_can_irq = CAN1_IRQn,
+		.tx_queue_irq = ADC2_IRQn,
 		.fd_capable = false,
-		.fd_enabled = false,
 	},
 };
 
@@ -373,16 +374,6 @@ extern void sc_board_can_reset(uint8_t index)
 
 static inline void timer_1MHz_init(void)
 {
-	// GPT2 capture, input on field => GPIO1_IO19
-	// IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_03_GPT2_CAPTURE1, 1);
-	// IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_03_GPT2_CAPTURE1, 0b10001000);
-
-	// gpio_pin_config_t led_config = { kGPIO_DigitalOutput, 0, kGPIO_NoIntmode };
-  	// GPIO_PinInit(LED_PORT, LED_PIN, &led_config);
-
-
-
-
 	/* CCSR[pll3_sw_clk_se]
 	 * 0 pll3_main_clk _reset default_ -> 480MHz
 	 * 1 pll3 bypass clock
@@ -444,9 +435,14 @@ static inline void can_init_once(void)
 {
 	device_identifier = OCOTP->CFG0 | OCOTP->CFG1; // 64 bit DEVICE_ID
 
-	NVIC_SetPriority(CAN1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(CAN2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(CAN3_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	for (size_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
+		struct can *can = &cans[i];
+
+		NVIC_SetPriority(can->flex_can_irq, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+		NVIC_SetPriority(can->tx_queue_irq, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+		// should be no need to disable this one
+		NVIC_EnableIRQ(can->tx_queue_irq);
+	}
 
 
 	uint32_t cscmr2 = CCM->CSCMR2 & ~(
@@ -507,45 +503,9 @@ extern void sc_board_init_begin(void)
 {
 	board_init();
 
-
 	can_init_once();
 
 	timer_1MHz_init();
-
-
-	CLOCK_EnableClock(kCLOCK_Gpio1);
-
-	// Pin 15, Output
-	IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_03_GPIO1_IO19, 0);
-	// IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_03_GPIO1_IO19, 0b11001000);
-	GPIO1->GDIR |= ((uint32_t)1) << 19;
-	GPIO1->DR_SET |= ((uint32_t)1) << 19;
-
-
-	// Pin 14, Input
-	IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_02_GPIO1_IO18, 0);
-	// 100K Ohm Pull Up, disable pull up keeper, use input from pull up
-	//                                                       32109
-	IOMUXC_SetPinConfig(
-		IOMUXC_GPIO_AD_B1_02_GPIO1_IO18,
-		0
-		| IOMUXC_SW_PAD_CTL_PAD_PUS(0b10)
-		| IOMUXC_SW_PAD_CTL_PAD_SPEED(0b11) // fastest
-		// | IOMUXC_SW_PAD_CTL_PAD_HYS(1)
-		);
-	GPIO1->GDIR &= ~(((uint32_t)1) << 18);
-	// GPIO1->ICR2 |= GPIO_ICR2_ICR18(0b00); // low sensitive
-	// GPIO1->ICR2 |= GPIO_ICR2_ICR18(0b01); // high sensitive
-	// GPIO1->ICR2 |= GPIO_ICR2_ICR18(0b10); // rising edge sensitive
-	GPIO1->ICR2 |= GPIO_ICR2_ICR18(0b11); // falling edge sensitive
-	GPIO1->IMR |= ((uint32_t)1) << 18;
-
-	// LOG("GPIO1->PSR=%lx\n", GPIO1->PSR);
-
-
-	NVIC_SetPriority(GPIO1_Combined_16_31_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_EnableIRQ(GPIO1_Combined_16_31_IRQn);
-
 
 	for (uint8_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
 		struct can *can = &cans[i];
@@ -702,16 +662,9 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 
 	LOG("CNT=%lx\n", GPT2->CNT);
 
-	// GPIO1->DR_TOGGLE |= ((uint32_t)1) << 19;
-	// GPIO1->DR_CLEAR |= ((uint32_t)1) << 19;
-
-
-	// LOG("GPIO1->PSR=%lx\n", GPIO1->PSR);
-
-	// LOG("GPIO1->GDIR=%lx\n", GPIO1->GDIR);
-
 	if (on) {
-		NVIC_EnableIRQ(can->irq);
+		NVIC_EnableIRQ(can->flex_can_irq);
+
 		// can->flex_can->MCR &= ~CAN_MCR_HALT(1);
 		// LOG("go on bus pre MCR=%lx\n", can->flex_can->MCR);
 		// can->flex_can->MCR &= ~CAN_MCR_HALT_MASK;
@@ -737,11 +690,10 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 
 
 	} else {
-		// can->flex_can->MCR |= CAN_MCR_HALT(1);
-		// can->flex_can->MCR |= CAN_MCR_HALT_MASK;
 		freeze(index);
+
 		LOG("go off bus MCR=%lx\n", can->flex_can->MCR);
-		NVIC_DisableIRQ(can->irq);
+		NVIC_DisableIRQ(can->flex_can_irq);
 
 		// clear interrupts
 		can->flex_can->IFLAG1 = can->flex_can->IFLAG1;
@@ -749,8 +701,6 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 
 		// clear error flags
 		can->flex_can->ESR1 = ~0;
-
-
 
 		can_reset_state(index);
 	}
@@ -813,9 +763,8 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 
 	__atomic_store_n(&can->tx_pi, pi + 1, __ATOMIC_RELEASE);
 
-	// LOG("ch%u notify tx task\n", index);
-	// xTaskNotifyGive(can->tx_task_handle);
-	GPIO1->DR_CLEAR |= ((uint32_t)1) << 19;
+	// trigger interrupt
+	NVIC->STIR = can->tx_queue_irq;
 
 	LOG("< ch%u tx queue\n", index);
 
@@ -1165,46 +1114,10 @@ SC_RAMFUNC static void can_int(uint8_t index)
 }
 
 
-
-SC_RAMFUNC void CAN1_IRQHandler(void)
+SC_RAMFUNC static inline void tx_frame_submitted(uint8_t index)
 {
-	can_int(1);
-}
-
-// SC_RAMFUNC void CAN2_IRQHandler(void)
-// {
-// 	LOG("+");
-// }
-
-SC_RAMFUNC void CAN3_IRQHandler(void)
-{
-	can_int(0);
-}
-
-SC_RAMFUNC void GPT2_IRQHandler(void)
-{
-	LOG("GPT2 capture\n");
-
-	// clear status flags
-	GPT2->SR = ~0;
-}
-
-SC_RAMFUNC void GPIO1_Combined_16_31_IRQHandler(void)
-{
-	LOG("> GPIO1_Combined_16_31_IRQHandler\n");
-
 	const uint32_t tsc = GPT2->CNT;
 	uint32_t events = 0;
-	uint32_t isr = GPIO1->ISR;
-	const uint8_t index = 1; // FIX ME
-
-	// clear interrupts
-	GPIO1->ISR = isr;
-
-	// reset output pin
-	GPIO1->DR_SET |= ((uint32_t)1) << 19;
-
-
 
 	service_tx_box(index, &events, tsc);
 
@@ -1212,8 +1125,48 @@ SC_RAMFUNC void GPIO1_Combined_16_31_IRQHandler(void)
 		LOG("\\");
 		sc_can_notify_task_isr(index, events);
 	}
+}
 
-	LOG("< GPIO1_Combined_16_31_IRQHandler\n");
+
+
+SC_RAMFUNC void CAN1_IRQHandler(void)
+{
+	can_int(1);
+}
+
+SC_RAMFUNC void CAN2_IRQHandler(void)
+{
+	LOG("+");
+}
+
+SC_RAMFUNC void CAN3_IRQHandler(void)
+{
+	can_int(0);
+}
+
+
+SC_RAMFUNC void ADC1_IRQHandler(void)
+{
+	// LOG("> ADC1_IRQHandler\n");
+
+	// NVIC->STIR &= ~ADC1_IRQn;
+	// LOG("NVIC->STIR=%lx\n", NVIC->STIR);
+
+	tx_frame_submitted(0);
+
+	// LOG("< ADC1_IRQHandler\n");
+}
+
+SC_RAMFUNC void ADC2_IRQHandler(void)
+{
+	// LOG("> ADC2_IRQHandler\n");
+
+	// NVIC->STIR &= ~ADC2_IRQn;
+	// LOG("NVIC->STIR=%lx\n", NVIC->STIR);
+
+	tx_frame_submitted(1);
+
+	// LOG("< ADC2_IRQHandler\n");
 }
 
 extern uint32_t sc_board_identifier(void)
