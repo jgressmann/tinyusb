@@ -743,7 +743,6 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 	// memset(can->status_fifo, 0, sizeof(can->status_fifo));
 #endif
 
-	can->rx_lost = 0;
 	can->tx_available = SC_BOARD_CAN_TX_FIFO_SIZE;
 	can->int_prev_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
 	can->int_prev_psr_reg.reg = 0;
