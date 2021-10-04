@@ -104,7 +104,7 @@ typedef struct _sc_can_status {
 		volatile struct {
 			uint8_t tx;
 			uint8_t rx;
-		} rx_tx_errors;
+		} counts;
 
 		volatile uint8_t rx_lost;
 	};

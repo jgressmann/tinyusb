@@ -87,7 +87,7 @@
 
 enum {
 	TX_MAILBOX_COUNT = 1,
-	RX_MAILBOX_COUNT = 8-TX_MAILBOX_COUNT,
+	RX_MAILBOX_COUNT = 8,
 	MB_RX_INACTIVE = 0b0000,
 	MB_RX_EMPTY = 0b0100,
 	MB_RX_FULL = 0b0010,
@@ -103,7 +103,7 @@ enum {
 struct flexcan_mailbox {
 	volatile uint32_t CS;
     volatile uint32_t ID;
-	uint32_t WORD[16];
+	volatile uint32_t WORD[16];
 };
 
 struct tx_fifo_element {
@@ -118,8 +118,13 @@ struct txr_fifo_element {
 	volatile uint8_t flags;
 };
 
+struct rx_fifo_element {
+	struct flexcan_mailbox box;
+	volatile uint32_t timestamp_us;
+};
+
 struct can {
-	struct flexcan_mailbox rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
+	struct rx_fifo_element rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
 	struct tx_fifo_element tx_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
 	struct txr_fifo_element txr_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
 
@@ -353,9 +358,9 @@ extern void sc_board_can_reset(uint8_t index)
 
 	// can->flex_can->RXMGMASK = 0;
 
-	// enable all buffer interrupts
-	can->flex_can->IMASK1 = ~0;
-	can->flex_can->IMASK2 = ~0;
+	// enable buffer interrupts
+	can->flex_can->IMASK1 = (((uint32_t)1) << (TX_MAILBOX_COUNT + RX_MAILBOX_COUNT)) - 1;
+	can->flex_can->IMASK2 = 0;
 
 	// set rx individual mask to 'don't care'
 	memset((void*)can->flex_can->RXIMR, 0, sizeof(can->flex_can->RXIMR));
@@ -969,8 +974,8 @@ SC_RAMFUNC static void can_int_update_status(
 
 		status.type = SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS;
 		status.timestamp_us = tsc;
-		status.rx_tx_errors.rx = rxe;
-		status.rx_tx_errors.tx = txe;
+		status.counts.rx = rxe;
+		status.counts.tx = txe;
 
 		sc_can_status_queue(index, &status);
 		++*events;
@@ -1085,6 +1090,9 @@ SC_RAMFUNC static void can_int(uint8_t index)
 	uint32_t tsc = GPT2->CNT;
 	uint8_t* box_mem = ((uint8_t*)can->flex_can) + 0x80;
 	const size_t step = can->fd_enabled ? 0x48 : 0x10;
+	uint8_t rx_lost = 0;
+	uint8_t rx_pi = can->rx_pi;
+	uint8_t rx_gi = 0;
 
 
 	// clear interrupts
@@ -1101,21 +1109,152 @@ SC_RAMFUNC static void can_int(uint8_t index)
 
 	if (iflag1 & 1) {
 		// TX mailbox
+		iflag1 &= ~(uint32_t)1;
+
 		service_tx_box(index, &events, tsc);
 	}
 
-	can_int_update_status(index, &events, tsc);
+	if (iflag1) { // rx frames
+		uint16_t rx_timestamps[RX_MAILBOX_COUNT];
+		// uint32_t last_ts = 0xffffffff;
+		uint8_t rx_indices[RX_MAILBOX_COUNT];
+		// find starting point
+		uint8_t rx_count = 0;
+		LOG("IFLAG1=%lx\n", iflag1);
+		// unsigned last_shift = 31 - __builtin_clz(iflag1);
+		// unsigned first_shift = last_shift;
+		// while (iflag1 & (((uint32_t)1) << (first_shift-1))) {
+		// 	--first_shift;
+		// }
+
+		// LOG("first shift=%u\n", first_shift);
+
+		for (uint32_t i = 0, mask = ((uint32_t)1) << TX_MAILBOX_COUNT, k = TX_MAILBOX_COUNT; i < RX_MAILBOX_COUNT; ++i, ++k, mask <<= 1) {
+			if (iflag1 & mask) {
+				struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * k);
+				unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
+
+				if (likely(code == MB_RX_FULL)) {
+					rx_indices[rx_count] = k;
+					rx_timestamps[rx_count] = (box->CS & CAN_CS_TIME_STAMP_MASK) >> CAN_CS_TIME_STAMP_SHIFT;
+
+					++rx_count;
+
+					box->CS = CAN_CS_CODE(MB_RX_EMPTY);
+				}
 
 
-	for (unsigned i = 0, j = 2, k = 1; i < RX_MAILBOX_COUNT; ++i, ++k, j <<= 1) {
-		struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * k);
+				// SC_ISR_ASSERT(code != MB_RX_EMPTY);
 
-		if (iflag1 & j) {
-			unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
-			SC_ISR_ASSERT(code != MB_RX_EMPTY);
-			box->CS = CAN_CS_CODE(MB_RX_EMPTY);
+
+
+
+			}
 		}
+
+		// SC_ISR_ASSERT(__builtin_popcount(iflag1) == rx_count);
+		unsigned start = 0;
+
+		if (rx_count > 1) {
+			LOG("unsorted\n");
+			for (unsigned i = 0; i < rx_count; ++i) {
+				LOG("bit=%u ts=%x\n", rx_indices[i], rx_timestamps[i]);
+			}
+
+			// sort
+			for (unsigned i = 0; i < rx_count; ++i) {
+				for (unsigned j = i + 1; j < rx_count; ++j) {
+					if (rx_timestamps[j] < rx_timestamps[i]) {
+						uint16_t tmp_ts = rx_timestamps[j];
+						rx_timestamps[j] = rx_timestamps[i];
+						rx_timestamps[i] = tmp_ts;
+
+						uint8_t tmp_index = rx_indices[j];
+						rx_indices[j] = rx_indices[i];
+						rx_indices[i] = tmp_index;
+					}
+				}
+			}
+
+			LOG("sorted\n");
+			for (unsigned i = 0; i < rx_count; ++i) {
+				LOG("bit=%u ts=%x\n", rx_indices[i], rx_timestamps[i]);
+			}
+
+			for (unsigned i = 1, j = 0; i < rx_count; ++i, ++j) {
+				uint16_t ts_i = rx_timestamps[i];
+				uint16_t ts_j = rx_timestamps[j];
+				uint16_t ts_diff = ts_i - ts_j;
+
+				if (ts_diff >= 0x8000) {
+					LOG("i=%u diff=%lx\n", i, ts_diff);
+					start = i;
+					break;
+				}
+			}
+
+			LOG("start=%u\n", start);
+		}
+
+
+		// for (unsigned i = 0, mask = 2, k = 1; i < RX_MAILBOX_COUNT; ++i, ++k, mask <<= 1) {
+		// 	if (iflag1 & mask) {
+		// 		if (k == rx_end + 1) {
+		// 			++rx_end;
+		// 		}
+
+		// 		// uint16_t ts = 0;
+		// 		// unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
+		// 		// (void)code;
+		// 		// SC_ISR_ASSERT(code != MB_RX_EMPTY);
+		// 		// ts = (box->CS & CAN_CS_TIME_STAMP_MASK) >> CAN_CS_TIME_STAMP_MASK;
+
+		// 		// ++rx_count;
+		// 	}
+
+		// 	LOG("i=%u mask=%lx k=%u rx_end=%u\n", i, mask, k, rx_end);
+		// }
+
+		// rx_end -= TX_MAILBOX_COUNT;
+		// LOG("rx_end=%u\n", rx_end);
+
+		// for (unsigned i = 0, j = rx_end; i < RX_MAILBOX_COUNT; ++i, ++j) {
+		// 	const unsigned mailbox_index = (j % RX_MAILBOX_COUNT) + TX_MAILBOX_COUNT;
+		// 	const uint32_t mailbox_mask = ((uint32_t)1) << mailbox_index;
+
+		// 	if (iflag1 & mailbox_mask) {
+		// 		struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * mailbox_index);
+		// 		unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
+
+		// 		SC_ISR_ASSERT(code != MB_RX_EMPTY);
+
+		// 		box->CS = CAN_CS_CODE(MB_RX_EMPTY);
+		// 	}
+		// }
+
+
+
+		// rx_gi = __atomic_load_n(&can->rx_gi, __ATOMIC_ACQUIRE);
+		// uint8_t used = rx_pi - rx_gi;
+
+		// if (likely(used < TU_ARRAY_SIZE(can->rx_fifo))) {
+		// 	const uint8_t rx_index = rx_gi % TU_ARRAY_SIZE(can->rx_fifo);
+		// 	struct rx_fifo_element *e = &can->rx_fifo[rx_index];
+
+		// 	SC_ISR_ASSERT(rx_index < TU_ARRAY_SIZE(can->rx_fifo));
+		// 	e->timestamp_us = tsc;
+		// 	e->box = *box;
+
+		// 	++rx_pi;
+		// 	++events;
+		// } else {
+		// 	++rx_lost;
+		// }
+
+
 	}
+
+	can_int_update_status(index, &events, tsc);
 
 
 	if (likely(events)) {

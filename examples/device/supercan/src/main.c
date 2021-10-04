@@ -1500,8 +1500,8 @@ SC_RAMFUNC static void can_usb_task(void *param)
 					}
 				} break;
 				case SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS: {
-					rx_errors = s->rx_tx_errors.rx;
-					tx_errors = s->rx_tx_errors.tx;
+					rx_errors = s->counts.rx;
+					tx_errors = s->counts.tx;
 					send_can_status = 1;
 				} break;
 				case SC_CAN_STATUS_FIFO_TYPE_TXR_DESYNC:
