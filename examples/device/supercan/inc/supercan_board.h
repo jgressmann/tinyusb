@@ -28,11 +28,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include <FreeRTOS.h>
-#include <task.h>
-#include <semphr.h>
-#include <timers.h>
-
 #include <sections.h>
 #include <supercan_debug.h>
 
