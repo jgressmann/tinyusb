@@ -93,6 +93,14 @@ enum {
 	MB_TX_DATA = 0b1100,
 	MB_TX_REMOTE = 0b1100,
 	MB_TX_ANSWER = 0b1110,
+
+	MB_STEP_CAN = 0x10,
+	MB_STEP_CANFD = 0x48,
+};
+
+static const uint8_t flexcan_mb_step_size[2] = {
+	MB_STEP_CAN,
+	MB_STEP_CANFD,
 };
 
 struct flexcan_mailbox {
@@ -767,6 +775,7 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 	bool have_data_to_send = false;
 	uint8_t txr_gi = can->txr_gi;
 	uint8_t rx_gi = can->rx_gi;
+	// size_t step = flexcan_mb_step_size[can->fd_enabled];
 
 	for (;;) {
 		const uint8_t txr_pi = __atomic_load_n(&can->txr_pi, __ATOMIC_ACQUIRE);
@@ -807,32 +816,78 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 
 		if (rx_gi != rx_pi) {
 			have_data_to_send = true;
-			// LOG("ch%u have rx\n", index);
 
-			// if (tx_ptr + sizeof(*txr) <= tx_end) {
-			// 	const uint8_t txr_index = txr_gi % TU_ARRAY_SIZE(can->txr_fifo);
-			// 	SC_DEBUG_ASSERT(txr_index < TU_ARRAY_SIZE(can->txr_fifo));
-			// 	struct txr_fifo_element *e = &can->txr_fifo[txr_index];
+			const uint8_t rx_index = rx_gi % TU_ARRAY_SIZE(can->rx_fifo);
+			SC_DEBUG_ASSERT(rx_index < TU_ARRAY_SIZE(can->rx_fifo));
+			struct rx_fifo_element *e = &can->rx_fifo[rx_index];
 
-			// 	// LOG("ch%u place txr %u\n", index, e->track_id);
-			// 	result += sizeof(*txr);
-			// 	tx_ptr += sizeof(*txr);
 
-			// 	txr->id = SC_MSG_CAN_TXR;
-			// 	txr->len = sizeof(*txr);
-			// 	txr->flags = e->flags;
-			// 	txr->track_id = e->track_id;
-			// 	txr->timestamp_us = e->timestamp_us;
+			const uint32_t cs = e->box.CS;
+			const uint8_t dlc = (cs & CAN_CS_DLC_MASK) >> CAN_CS_DLC_SHIFT;
+			const bool rtr = (cs & CAN_CS_RTR_MASK) >> CAN_CS_RTR_SHIFT;
+			const uint8_t can_frame_len = dlc_to_len(dlc);
+			struct sc_msg_can_rx *msg = (struct sc_msg_can_rx *)tx_ptr;
+			uint8_t bytes = sizeof(*msg);
 
-			// 	++txr_gi;
-			// } else {
-			// 	break;
-			// }
+			if (!rtr) {
+				bytes += can_frame_len;
+			}
+
+			// align
+			if (bytes & (SC_MSG_CAN_LEN_MULTIPLE-1)) {
+				bytes += SC_MSG_CAN_LEN_MULTIPLE - (bytes & (SC_MSG_CAN_LEN_MULTIPLE-1));
+			}
+
+			if ((size_t)(tx_end - tx_ptr) >= bytes) {
+				uint32_t id = e->box.ID;
+
+				// usb_can->tx_offsets[usb_can->tx_bank] += bytes;
+				tx_ptr += bytes;
+				result += bytes;
+
+				msg->id = SC_MSG_CAN_RX;
+				msg->len = bytes;
+				msg->dlc = dlc;
+				msg->flags = 0;
+
+				if (cs & CAN_CS_IDE_MASK) {
+					msg->flags |= SC_CAN_FRAME_FLAG_EXT;
+				} else {
+					id >>= 18;
+				}
+				msg->can_id = id;
+				msg->timestamp_us = e->timestamp_us;
+
+				if (cs & CAN_CS_EDL_MASK) {
+					msg->flags |= SC_CAN_FRAME_FLAG_FDF;
+
+					if (cs & CAN_CS_BRS_MASK) {
+						msg->flags |= SC_CAN_FRAME_FLAG_BRS;
+					}
+
+					if (cs & CAN_CS_ESI_MASK) {
+						msg->flags |= SC_CAN_FRAME_FLAG_ESI;
+					}
+
+					memcpy(msg->data, e->box.WORD, can_frame_len);
+				} else {
+					if (rtr) {
+						msg->flags |= SC_CAN_FRAME_FLAG_RTR;
+					} else {
+						memcpy(msg->data, e->box.WORD, can_frame_len);
+					}
+				}
+
+				++rx_gi;
+			} else {
+				break;
+			}
 		} else {
 			break;
 		}
 	}
 
+	__atomic_store_n(&can->rx_gi, rx_gi, __ATOMIC_RELEASE);
 
 
 	if (result > 0) {
@@ -1099,7 +1154,7 @@ SC_RAMFUNC static void can_int(uint8_t index)
 	uint32_t events = 0;
 	uint32_t tsc = GPT2->CNT;
 	uint8_t* box_mem = ((uint8_t*)can->flex_can) + 0x80;
-	const size_t step = can->fd_enabled ? 0x48 : 0x10;
+	const size_t step = flexcan_mb_step_size[can->fd_enabled];
 	uint8_t rx_lost = 0;
 	uint8_t rx_pi = can->rx_pi;
 
