@@ -37,11 +37,16 @@
 // needed by fsl_flexspi_nor_boot
 const uint8_t dcd_data[] = { 0x00 };
 
-void board_init(void)
+TU_ATTR_WEAK void clock_init(void)
 {
-  // Init clock
+    // Init clock
   BOARD_BootClockRUN();
   SystemCoreClockUpdate();
+}
+
+void board_init(void)
+{
+  clock_init();
 
   // Enable IOCON clock
   CLOCK_EnableClock(kCLOCK_Iomuxc);
