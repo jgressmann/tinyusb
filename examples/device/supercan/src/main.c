@@ -561,7 +561,7 @@ send_can_info:
 				LOG("ch%u ", index);
 				sc_can_log_bit_timing(&bt_target, "data");
 
-				sc_board_can_nm_bit_timing_set(index, &bt_target);
+				sc_board_can_dt_bit_timing_set(index, &bt_target);
 			}
 
 			sc_cmd_place_error_reply(index, error);
