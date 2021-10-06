@@ -575,7 +575,7 @@ send_can_info:
 				error = SC_ERROR_SHORT;
 			} else {
 				const uint16_t perm = sc_board_can_feat_perm(index);
-				const uint16_t conf = sc_board_can_feat_perm(index);
+				const uint16_t conf = sc_board_can_feat_conf(index);
 
 				switch (tmsg->op) {
 				case SC_FEAT_OP_CLEAR:
@@ -584,6 +584,7 @@ send_can_info:
 					break;
 				case SC_FEAT_OP_OR: {
 					uint32_t mode_bits = tmsg->arg & (SC_FEATURE_FLAG_MON_MODE | SC_FEATURE_FLAG_RES_MODE | SC_FEATURE_FLAG_EXT_LOOP_MODE);
+
 					if (__builtin_popcount(mode_bits) > 1) {
 						error = SC_ERROR_PARAM;
 						LOG("ch%u ERROR: attempt to activate more than one mode %08lx\n", index, mode_bits);
