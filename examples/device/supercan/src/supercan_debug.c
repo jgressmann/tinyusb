@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -36,10 +36,10 @@
 char sc_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
 #endif
 
-__attribute__((noreturn)) extern void sc_assert_failed(char const * const msg)
+__attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, size_t len)
 {
 	taskDISABLE_INTERRUPTS();
-	board_uart_write(msg, -1);
+	board_uart_write(msg, len);
 	sc_board_leds_on_unsafe();
 	while (1);
 }

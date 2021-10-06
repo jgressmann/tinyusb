@@ -49,7 +49,7 @@
 
 extern uint32_t SystemCoreClock;
 extern int board_uart_write(void const * buf, int len);
-__attribute__((noreturn)) extern void sc_assert_failed(char const * const msg);
+__attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, size_t len);
 
 /* Cortex M23/M33 port configuration. */
 #define configENABLE_MPU								        0
@@ -140,7 +140,7 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg);
 #define configASSERT(x) \
   do { \
     if (__builtin_expect(!(x), 0)) { \
-      sc_assert_failed("FreeRTOS ASSERT FAILED: " #x "\n"); \
+      sc_assert_failed("FreeRTOS ASSERT FAILED: " #x "\n", sizeof("FreeRTOS ASSERT FAILED: " #x "\n")-1); \
     } \
   } while (0)
 #else
