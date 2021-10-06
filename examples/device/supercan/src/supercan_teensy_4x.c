@@ -278,7 +278,6 @@ static inline void can_reset_state(uint8_t index)
 	can->rx_pi = 0;
 	can->tx_gi = 0;
 	can->tx_pi = 0;
-
 	can->txr_gi = 0;
 	can->txr_pi = 0;
 	can->fd_enabled = false;
@@ -659,7 +658,7 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 
 	can->enabled = on;
 
-	LOG("CNT=%lx\n", GPT2->CNT);
+	// LOG("CNT=%lx\n", GPT2->CNT);
 
 	if (on) {
 		init_mailboxes(index);
@@ -913,7 +912,7 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 
 	if (MB_RX_EMPTY == code) {
 		// remove rx empty for RTR frames
-		LOG("ch%u RTR cleanup\n", index);
+		// LOG("ch%u RTR cleanup\n", index);
 		code = MB_TX_INACTIVE;
 		cs &= ~CAN_CS_CODE_MASK;
 		cs |= CAN_CS_CODE(code);
@@ -1184,7 +1183,7 @@ SC_RAMFUNC static void can_int(uint8_t index)
 		uint8_t rx_indices[RX_MAILBOX_COUNT];
 		uint8_t rx_count = 0;
 
-		LOG("IFLAG1=%lx\n", iflag1);
+		// LOG("IFLAG1=%lx\n", iflag1);
 
 		for (uint32_t i = 0, mask = ((uint32_t)1) << TX_MAILBOX_COUNT, k = TX_MAILBOX_COUNT; i < RX_MAILBOX_COUNT; ++i, ++k, mask <<= 1) {
 			if (iflag1 & mask) {
@@ -1207,10 +1206,10 @@ SC_RAMFUNC static void can_int(uint8_t index)
 		unsigned start = 0;
 
 		if (rx_count > 1) {
-			LOG("unsorted\n");
-			for (unsigned i = 0; i < rx_count; ++i) {
-				LOG("bit=%u ts=%x\n", rx_indices[i], rx_timestamps[i]);
-			}
+			// LOG("unsorted\n");
+			// for (unsigned i = 0; i < rx_count; ++i) {
+			// 	LOG("bit=%u ts=%x\n", rx_indices[i], rx_timestamps[i]);
+			// }
 
 			// sort
 			for (unsigned i = 0; i < rx_count; ++i) {
@@ -1227,10 +1226,10 @@ SC_RAMFUNC static void can_int(uint8_t index)
 				}
 			}
 
-			LOG("sorted\n");
-			for (unsigned i = 0; i < rx_count; ++i) {
-				LOG("bit=%u ts=%x\n", rx_indices[i], rx_timestamps[i]);
-			}
+			// LOG("sorted\n");
+			// for (unsigned i = 0; i < rx_count; ++i) {
+			// 	LOG("bit=%u ts=%x\n", rx_indices[i], rx_timestamps[i]);
+			// }
 
 			// detect wrap around
 			for (unsigned i = 1, j = 0; i < rx_count; ++i, ++j) {
@@ -1239,13 +1238,13 @@ SC_RAMFUNC static void can_int(uint8_t index)
 				uint16_t ts_diff = ts_i - ts_j;
 
 				if (ts_diff >= 0x8000) {
-					LOG("i=%u diff=%lx\n", i, ts_diff);
+					// LOG("i=%u diff=%lx\n", i, ts_diff);
 					start = i;
 					break;
 				}
 			}
 
-			LOG("start=%u\n", start);
+			// LOG("start=%u\n", start);
 		}
 
 		for (unsigned i = 0; i < rx_count; ++i) {
