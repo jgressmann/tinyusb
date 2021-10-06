@@ -221,7 +221,7 @@ extern uint16_t sc_board_can_feat_conf(uint8_t index)
 }
 
 
-static inline void init_mailboxes(uint8_t index)
+static void init_mailboxes(uint8_t index)
 {
 	struct can *can = &cans[index];
 
@@ -753,7 +753,6 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 			cs |= CAN_CS_ESI_MASK;
 		}
 	} else if (unlikely(msg->flags & SC_CAN_FRAME_FLAG_RTR)) {
-		// RTR
 		e->len = 0;
 		cs |= CAN_CS_CODE(MB_TX_REMOTE) | CAN_CS_RTR_MASK;
 	} else {
@@ -1096,7 +1095,7 @@ SC_RAMFUNC static void can_int_update_status(
 			LOG("off");
 			break;
 		default:
-			LOG("unknown");
+			LOG("unknown %x", current_bus_state);
 			break;
 		}
 
@@ -1373,9 +1372,11 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 
 	if (can->fd_capable) {
 		if (features & SC_FEATURE_FLAG_FDF) {
+			LOG("ch%u CAN-FD enabled\n");
 			can->fd_enabled = true;
 			can->flex_can->MCR |= CAN_MCR_FDEN_MASK;
 		} else {
+			LOG("ch%u CAN-FD disabled\n");
 			can->fd_enabled = false;
 			can->flex_can->MCR &= ~CAN_MCR_FDEN_MASK;
 		}
