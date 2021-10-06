@@ -570,7 +570,7 @@ extern sc_can_bit_timing_range const* sc_board_can_dt_bit_timing_range(uint8_t i
 			.sjw = 1,
 		},
 		.max = {
-			.brp = 1024,
+			.brp = 0xff, // 1024 is what the device supports, Linux seems to handle one byte only
 			.tseg1 = 32 + 8,
 			.tseg2 = 8,
 			.sjw = 8,
