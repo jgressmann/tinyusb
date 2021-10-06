@@ -576,7 +576,7 @@ extern sc_can_bit_timing_range const* sc_board_can_dt_bit_timing_range(uint8_t i
 		},
 		.max = {
 			.brp = 1024,
-			.tseg1 = 256,
+			.tseg1 = 32 + 8,
 			.tseg2 = 8,
 			.sjw = 8,
 		},
@@ -648,8 +648,28 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 
 extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing const *bt)
 {
-	(void)index;
-	(void)bt;
+	struct can* can = &cans[index];
+
+	uint16_t prop_seg = 0;
+	uint16_t tseg1 = 0;
+
+	if (bt->tseg1 > 32) {
+		prop_seg = 32;
+		tseg1 = bt->tseg1 - prop_seg;
+	} else {
+		prop_seg = bt->tseg1 - 1;
+		tseg1 = 1;
+	}
+
+	can->flex_can->FDCBT = CAN_FDCBT_FPRESDIV(bt->brp - 1)
+							| CAN_FDCBT_FRJW(bt->sjw - 1)
+							| CAN_FDCBT_FPROPSEG(prop_seg - 1)
+							| CAN_FDCBT_FPSEG1(tseg1 - 1)
+							| CAN_FDCBT_FPSEG2(bt->tseg2 - 1)
+							;
+
+	LOG("ch%u FDCBT brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u\n",
+		index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2);
 }
 
 extern void sc_board_can_go_bus(uint8_t index, bool on)
