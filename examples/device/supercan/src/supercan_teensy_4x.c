@@ -728,7 +728,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	e->track_id = msg->track_id;
 
 	if (can->fd_enabled && (msg->flags & SC_CAN_FRAME_FLAG_FDF)) {
-		memcpy(e->box.WORD, msg->data, bytes);
+		memcpy((void*)e->box.WORD, msg->data, bytes);
 		e->len = 0;
 		cs |= CAN_CS_CODE(MB_TX_DATA);
 		if (msg->flags & SC_CAN_FRAME_FLAG_BRS) {
@@ -742,7 +742,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 		e->len = 0;
 		cs |= CAN_CS_CODE(MB_TX_REMOTE) | CAN_CS_RTR_MASK;
 	} else {
-		memcpy(e->box.WORD, msg->data, bytes);
+		memcpy((void*)e->box.WORD, msg->data, bytes);
 		e->len = bytes;
 		cs |= CAN_CS_CODE(MB_TX_DATA);
 	}
@@ -869,12 +869,12 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 						msg->flags |= SC_CAN_FRAME_FLAG_ESI;
 					}
 
-					memcpy(msg->data, e->box.WORD, can_frame_len);
+					memcpy(msg->data, (void*)e->box.WORD, can_frame_len);
 				} else {
 					if (rtr) {
 						msg->flags |= SC_CAN_FRAME_FLAG_RTR;
 					} else {
-						memcpy(msg->data, e->box.WORD, can_frame_len);
+						memcpy(msg->data, (void*)e->box.WORD, can_frame_len);
 					}
 				}
 
