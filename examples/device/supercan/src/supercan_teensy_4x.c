@@ -1066,7 +1066,7 @@ SC_RAMFUNC static void can_int_update_status(
 	if (unlikely(can->int_prev_bus_state != current_bus_state)) {
 		can->int_prev_bus_state = current_bus_state;
 
-		LOG("ch%u bus state ");
+		LOG("ch%u bus state ", index);
 		switch (current_bus_state) {
 		case SC_CAN_STATUS_ERROR_ACTIVE:
 			LOG("active");
