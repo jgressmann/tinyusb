@@ -401,21 +401,16 @@ static inline void timer_1MHz_init(void)
 	CLOCK_EnableClock(kCLOCK_Gpt2);
 	// CLOCK_EnableClock(kCLOCK_Gpt2S);
 
-	LOG("CSCMR1[PERCLK_PODF]=%x\n", (CCM->CSCMR1 & CCM_CSCMR1_PERCLK_PODF_MASK) >> CCM_CSCMR1_PERCLK_PODF_SHIFT);
-	LOG("CSCMR1[PERCLK_CLK_SEL]=%x\n", (CCM->CSCMR1 & CCM_CSCMR1_PERCLK_CLK_SEL_MASK) >> CCM_CSCMR1_PERCLK_CLK_SEL_SHIFT);
-	LOG("CBCDR[IPG_PODF]=%x\n", (CCM->CBCDR & CCM_CBCDR_IPG_PODF_MASK) >> CCM_CBCDR_IPG_PODF_SHIFT);
-	LOG("CBCDR[PERIPH_CLK_SEL]=%x\n", (CCM->CBCDR & CCM_CBCDR_PERIPH_CLK_SEL_MASK) >> CCM_CBCDR_PERIPH_CLK_SEL_SHIFT);
-	LOG("CBCMR[PRE_PERIPH_CLK_SEL]=%x\n", (CCM->CBCMR & CCM_CBCMR_PRE_PERIPH_CLK_SEL_MASK) >> CCM_CBCMR_PRE_PERIPH_CLK_SEL_SHIFT);
-	LOG("CACRR[ARM_PODF]=%x\n", (CCM->CACRR & CCM_CACRR_ARM_PODF_MASK) >> CCM_CACRR_ARM_PODF_SHIFT);
-	LOG("ipg clock f=%lu [Hz]\n", CLOCK_GetIpgFreq());
-	LOG("per clock f=%lu [Hz]\n", CLOCK_GetPerClkFreq());
-	LOG("cpu clock f=%lu [Hz]\n", CLOCK_GetCpuClkFreq());
-	LOG("arm clock f=%lu [Hz]\n", CLOCK_GetFreq(kCLOCK_ArmPllClk));
-
-
-	// LOG("CCM->CSCMR1=%lx\n", CCM->CSCMR1);
-	// LOG("CCM->CBCDR=%lx\n", CCM->CBCDR);
-	// LOG("CCM->CBCMR=%lx\n", CCM->CBCMR);
+	// LOG("CSCMR1[PERCLK_PODF]=%x\n", (CCM->CSCMR1 & CCM_CSCMR1_PERCLK_PODF_MASK) >> CCM_CSCMR1_PERCLK_PODF_SHIFT);
+	// LOG("CSCMR1[PERCLK_CLK_SEL]=%x\n", (CCM->CSCMR1 & CCM_CSCMR1_PERCLK_CLK_SEL_MASK) >> CCM_CSCMR1_PERCLK_CLK_SEL_SHIFT);
+	// LOG("CBCDR[IPG_PODF]=%x\n", (CCM->CBCDR & CCM_CBCDR_IPG_PODF_MASK) >> CCM_CBCDR_IPG_PODF_SHIFT);
+	// LOG("CBCDR[PERIPH_CLK_SEL]=%x\n", (CCM->CBCDR & CCM_CBCDR_PERIPH_CLK_SEL_MASK) >> CCM_CBCDR_PERIPH_CLK_SEL_SHIFT);
+	// LOG("CBCMR[PRE_PERIPH_CLK_SEL]=%x\n", (CCM->CBCMR & CCM_CBCMR_PRE_PERIPH_CLK_SEL_MASK) >> CCM_CBCMR_PRE_PERIPH_CLK_SEL_SHIFT);
+	// LOG("CACRR[ARM_PODF]=%x\n", (CCM->CACRR & CCM_CACRR_ARM_PODF_MASK) >> CCM_CACRR_ARM_PODF_SHIFT);
+	// LOG("ipg clock f=%lu [Hz]\n", CLOCK_GetIpgFreq());
+	// LOG("per clock f=%lu [Hz]\n", CLOCK_GetPerClkFreq());
+	// LOG("cpu clock f=%lu [Hz]\n", CLOCK_GetCpuClkFreq());
+	// LOG("arm clock f=%lu [Hz]\n", CLOCK_GetFreq(kCLOCK_ArmPllClk));
 
 
 	// reset
@@ -470,7 +465,7 @@ static inline void can_init_once(void)
 
 	// Grün TX = GPIO_EMC_36 (CAN3) = Board PIN 31
 	//           AD_B1_08 (CAN1) = Board PIN 22
-	// Blau RX =
+	// Blau RX = GPIO_EMC_37 (CAN3) = Board PIN 30
 	//           AD_B1_09 (CAN1) = Board PIN 23
 
 
