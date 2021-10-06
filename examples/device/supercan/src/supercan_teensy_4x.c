@@ -1262,7 +1262,7 @@ SC_RAMFUNC static void can_int(uint8_t index)
 				struct rx_fifo_element *e = &can->rx_fifo[rx_index];
 
 				SC_ISR_ASSERT(rx_index < TU_ARRAY_SIZE(can->rx_fifo));
-				e->timestamp_us = tsc;
+				e->timestamp_us = tsc - (rx_timestamps[rx_count-1] - rx_timestamps[i]);
 				e->box = *box;
 
 				++rx_pi;
