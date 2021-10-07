@@ -721,10 +721,10 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 	}
 }
 
-SC_RAMFUNC static inline void copy_swap_data_words(struct flexcan_mailbox* dst, struct flexcan_mailbox const* src, unsigned words)
+SC_RAMFUNC static inline void copy_swap_data_words(volatile uint32_t* dst, volatile uint32_t* src, unsigned count)
 {
-	for (unsigned i = 0; i < words; ++i) {
-		dst->WORD[i] = __builtin_bswap32(src->WORD[i]);
+	for (unsigned i = 0; i < count; ++i) {
+		dst[i] = __builtin_bswap32(src[i]);
 	}
 }
 
@@ -740,7 +740,13 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	uint8_t mailbox_index = 0;
 	uint32_t id = 0;
 	uint32_t cs = CAN_CS_DLC(msg->dlc);
-	unsigned bytes = dlc_to_len(msg->dlc);
+	const unsigned len = dlc_to_len(msg->dlc);
+	unsigned words = len;
+
+	if (words & 3) {
+		words += 4 - (words & 3);
+	}
+
 
 	if (unlikely(used == TU_ARRAY_SIZE(can->tx_fifo))) {
 		// LOG("< ch%u tx queue\n", index);
@@ -753,8 +759,9 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	e->track_id = msg->track_id;
 
 	if (can->fd_enabled && (msg->flags & SC_CAN_FRAME_FLAG_FDF)) {
-		memcpy((void*)e->box.WORD, msg->data, bytes);
-		e->len = bytes;
+		copy_swap_data_words(e->box.WORD, (uint32_t*)msg->data, words);
+		//memcpy((void*)e->box.WORD, msg->data, bytes);
+		e->len = len;
 		cs |= CAN_CS_CODE(MB_TX_DATA) | CAN_CS_EDL_MASK;
 		if (msg->flags & SC_CAN_FRAME_FLAG_BRS) {
 			cs |= CAN_CS_BRS_MASK;
@@ -766,8 +773,9 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 		e->len = 0;
 		cs |= CAN_CS_CODE(MB_TX_REMOTE) | CAN_CS_RTR_MASK;
 	} else {
-		memcpy((void*)e->box.WORD, msg->data, bytes);
-		e->len = bytes;
+		// memcpy((void*)e->box.WORD, msg->data, bytes);
+		copy_swap_data_words(e->box.WORD, (uint32_t*)msg->data, words);
+		e->len = len;
 		cs |= CAN_CS_CODE(MB_TX_DATA);
 	}
 
@@ -1295,7 +1303,7 @@ SC_RAMFUNC static void can_int(uint8_t index)
 
 				e->box.ID = box->ID;
 				e->box.CS = cs;
-				copy_swap_data_words(&e->box, box, words);
+				copy_swap_data_words(e->box.WORD, box->WORD, words);
 
 				++rx_pi;
 				++events;
