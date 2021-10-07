@@ -721,6 +721,12 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 	}
 }
 
+SC_RAMFUNC static inline void copy_swap_data_words(struct flexcan_mailbox* dst, struct flexcan_mailbox const* src, unsigned words)
+{
+	for (unsigned i = 0; i < words; ++i) {
+		dst->WORD[i] = __builtin_bswap32(src->WORD[i]);
+	}
+}
 
 SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
 {
@@ -1274,10 +1280,22 @@ SC_RAMFUNC static void can_int(uint8_t index)
 			if (likely(used < TU_ARRAY_SIZE(can->rx_fifo))) {
 				const uint8_t rx_index = rx_gi % TU_ARRAY_SIZE(can->rx_fifo);
 				struct rx_fifo_element *e = &can->rx_fifo[rx_index];
+				const uint32_t cs = box->CS;
+				const unsigned len = dlc_to_len((cs & CAN_CS_DLC_MASK) >> CAN_CS_DLC_SHIFT);
+				unsigned words = len;
+
+				if (words & 3) {
+					words += 4 - (words & 3);
+				}
+
+				words /= 4;
 
 				SC_ISR_ASSERT(rx_index < TU_ARRAY_SIZE(can->rx_fifo));
 				e->timestamp_us = tsc - (rx_timestamps[rx_count-1] - rx_timestamps[i]);
-				e->box = *box;
+
+				e->box.ID = box->ID;
+				e->box.CS = cs;
+				copy_swap_data_words(&e->box, box, words);
 
 				++rx_pi;
 				++events;
