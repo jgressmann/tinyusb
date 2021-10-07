@@ -83,7 +83,9 @@
 
 enum {
 	TX_MAILBOX_COUNT = 1,
+	// 14 requires 2 ram regions
 	RX_MAILBOX_COUNT = 14-TX_MAILBOX_COUNT,
+	// RX_MAILBOX_COUNT = 7-TX_MAILBOX_COUNT,
 	MB_RX_INACTIVE = 0b0000,
 	MB_RX_EMPTY = 0b0100,
 	MB_RX_FULL = 0b0010,
@@ -173,7 +175,22 @@ static struct can cans[] = {
 static uint32_t device_identifier;
 
 
-// SC_RAMFUNC static void tx_task(void* param);
+static inline void dump_can_regs(uint8_t index)
+{
+	struct can *can = &cans[index];
+	(void)can;
+
+	LOG("ch%u MCR=%lx CTRL1=%lx CTRL2=%lx ",
+		index, can->flex_can->MCR, can->flex_can->CTRL1, can->flex_can->CTRL2);
+
+	if (can->fd_capable) {
+		LOG("CBT=%lx FDCTRL=%lx FDCBT=%lx",
+		can->flex_can->CBT, can->flex_can->FDCTRL, can->flex_can->FDCBT
+		);
+	}
+
+	LOG("\n");
+}
 
 __attribute__((noreturn)) extern void sc_board_reset(void)
 {
@@ -226,7 +243,7 @@ static void init_mailboxes(uint8_t index)
 
 	if (can->fd_enabled) {
 		for (uint8_t i = 0; i < TX_MAILBOX_COUNT; ++i) {
-			can->flex_can->MB_64B[i].ID = 0;
+			can->flex_can->MB_64B[i].ID = 0; // see i.MX RT1060 Processor Reference Manual, Rev. 2, 12/2019, p. 2607
 			can->flex_can->MB_64B[i].CS = CAN_CS_CODE(MB_TX_INACTIVE);
 		}
 
@@ -298,23 +315,15 @@ extern void sc_board_can_reset(uint8_t index)
 	can->flex_can->MCR |= CAN_MCR_SOFTRST_MASK;
 	while (can->flex_can->MCR & CAN_MCR_SOFTRST_MASK);
 
-	LOG("CAN ch%u ", (unsigned)index);
-
 	can->flex_can->MCR = 0
-			// | CAN_MCR_MDIS(1)  // module disable
 			| CAN_MCR_SUPV(1) // This bit configures the FlexCAN to be either in Supervisor or User mode
 			| CAN_MCR_WRNEN(1) // Warning Interrupt Enable
 			| CAN_MCR_IRMQ(1) // Individual Rx Masking And Queue Enable
 			| CAN_MCR_SRXDIS(1) // disable self resception
-			// | CAN_MCR_MAXMB(can->fd_capable ? 14 : 64)
 			| CAN_MCR_MAXMB((TX_MAILBOX_COUNT + RX_MAILBOX_COUNT - 1))
 			| CAN_MCR_FRZ(1) // halt / debug should freeze
 			| CAN_MCR_HALT(1) // halt
-			// | CAN_MCR_AEN(1)
-			// | CAN_MCR_LPRIO_EN(1)
 			;
-
-	LOG("MCR=%lx ", can->flex_can->MCR);
 
 
 	can->flex_can->CTRL1 = CAN_CTRL1_LBUF(1)  // Lowest Buffer Transmitted First
@@ -325,8 +334,6 @@ extern void sc_board_can_reset(uint8_t index)
 			| (can->fd_capable ? CAN_CTRL1_CLKSRC(1) : 0) // use peripheral clock not oscillator
 			;
 
-	LOG("CTRL1=%lx ", can->flex_can->CTRL1);
-
 	can->flex_can->CTRL2 = CAN_CTRL2_BOFFDONEMSK(1) // Bus Off Done Interrupt Mask
 							| CAN_CTRL2_RRS(1) // store remote request frames
 							| CAN_CTRL2_MRP(1) // mailboxes first
@@ -334,14 +341,6 @@ extern void sc_board_can_reset(uint8_t index)
 							| (can->fd_capable ? CAN_CTRL2_ISOCANFDEN(1) : 0) // CAN-FD in ISO mode
 							| (can->fd_capable ? CAN_CTRL2_PREXCEN(1) : 0) // CAN-FD protocol exception handling
 							;
-
-	LOG("CTRL2=%lx ", can->flex_can->CTRL2);
-
-
-
-	// enable all message buffer interrupts
-	can->flex_can->IFLAG1 = ~0;
-	// can->flex_can->IFLAG2 = ~0;
 
 	if (can->fd_capable) {
 		can->flex_can->CBT = CAN_CBT_BTF(1); // mooar arbitration bits
@@ -351,25 +350,22 @@ extern void sc_board_can_reset(uint8_t index)
 								| CAN_FDCTRL_MBDSR1(3) // 64 byte per box
 								| CAN_FDCTRL_TDCEN(1) // enable transmitter delay compensation
 								;
-
-		LOG("CBT=%lx FDCTRL=%lx ", can->flex_can->CBT, can->flex_can->FDCTRL);
 	}
-
-	LOG("MCR=%lx ", can->flex_can->MCR);
-
-	LOG("\n");
 
 	// can->flex_can->RXMGMASK = 0;
 
 	// enable buffer interrupts
 	can->flex_can->IMASK1 = (((uint32_t)1) << (TX_MAILBOX_COUNT + RX_MAILBOX_COUNT)) - 1;
 	can->flex_can->IMASK2 = 0;
+	// can->flex_can->IMASK1 = ~0;
+	// can->flex_can->IMASK2 = ~0;
 
 	// set rx individual mask to 'don't care'
 	memset((void*)can->flex_can->RXIMR, 0, sizeof(can->flex_can->RXIMR));
 
 	can_reset_state(index);
 
+	dump_can_regs(index);
 }
 
 static inline void timer_1MHz_init(void)
@@ -604,6 +600,7 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 
 		LOG("ch%u CBT brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u\n",
 			index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2);
+
 	} else {
 		uint32_t reg = can->flex_can->CTRL1 & ~(
 			CAN_CTRL1_PROPSEG_MASK |
@@ -633,10 +630,9 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 
 		LOG("ch%u brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u CTRL1=%lx\n",
 			index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2, can->flex_can->CTRL1);
-
-		// can->flex_can->CTRL1 = 0x9624002;
 	}
 
+	dump_can_regs(index);
 }
 
 extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing const *bt)
@@ -665,10 +661,12 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 		index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2);
 
 	// transmitter delay compensation
-	// const unsigned tdco = (1 + bt->tseg1 + bt->tseg2) / 2;
-	const unsigned tdco = 1 + bt->tseg1 - bt->tseg2 / 2;
-	can->flex_can->FDCTRL &= CAN_FDCTRL_TDCOFF_MASK;
+	const unsigned tdco = (1 + bt->tseg1 + bt->tseg2) / 2;
+	// const unsigned tdco = 5;
+	can->flex_can->FDCTRL &= ~CAN_FDCTRL_TDCOFF_MASK;
 	can->flex_can->FDCTRL |= CAN_FDCTRL_TDCOFF(tdco);
+
+	dump_can_regs(index);
 }
 
 extern void sc_board_can_go_bus(uint8_t index, bool on)
@@ -683,6 +681,8 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 		init_mailboxes(index);
 
 		NVIC_EnableIRQ(can->flex_can_irq);
+
+		dump_can_regs(index);
 
 		thaw(index);
 
@@ -730,8 +730,6 @@ SC_RAMFUNC static inline void copy_swap_data_words(volatile uint32_t* dst, volat
 
 SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
 {
-	// LOG("> ch%u tx queue\n", index);
-
 	struct can *can = &cans[index];
 	struct tx_fifo_element *e = NULL;
 	uint8_t gi = __atomic_load_n(&can->tx_gi, __ATOMIC_ACQUIRE);
@@ -743,15 +741,18 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	const unsigned len = dlc_to_len(msg->dlc);
 	unsigned words = len;
 
+
+	if (unlikely(used == TU_ARRAY_SIZE(can->tx_fifo))) {
+		return false;
+	}
+
 	if (words & 3) {
 		words += 4 - (words & 3);
 	}
 
+	words /= 4;
+	// LOG("dlc=%u len=%u words=%u\n", msg->dlc, len, words);
 
-	if (unlikely(used == TU_ARRAY_SIZE(can->tx_fifo))) {
-		// LOG("< ch%u tx queue\n", index);
-		return false;
-	}
 
 	mailbox_index = pi % TU_ARRAY_SIZE(can->tx_fifo);
 	SC_ASSERT(mailbox_index < TU_ARRAY_SIZE(can->tx_fifo));
@@ -760,7 +761,6 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 
 	if (can->fd_enabled && (msg->flags & SC_CAN_FRAME_FLAG_FDF)) {
 		copy_swap_data_words(e->box.WORD, (uint32_t*)msg->data, words);
-		//memcpy((void*)e->box.WORD, msg->data, bytes);
 		e->len = len;
 		cs |= CAN_CS_CODE(MB_TX_DATA) | CAN_CS_EDL_MASK;
 		if (msg->flags & SC_CAN_FRAME_FLAG_BRS) {
@@ -773,7 +773,6 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 		e->len = 0;
 		cs |= CAN_CS_CODE(MB_TX_REMOTE) | CAN_CS_RTR_MASK;
 	} else {
-		// memcpy((void*)e->box.WORD, msg->data, bytes);
 		copy_swap_data_words(e->box.WORD, (uint32_t*)msg->data, words);
 		e->len = len;
 		cs |= CAN_CS_CODE(MB_TX_DATA);
@@ -781,7 +780,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 
 	if (msg->flags & SC_CAN_FRAME_FLAG_EXT) {
 		id = CAN_ID_EXT(msg->can_id);
-		cs |= CAN_CS_EDL_MASK;
+		cs |= CAN_CS_IDE_MASK;
 	} else {
 		id = CAN_ID_STD(msg->can_id);
 	}
@@ -793,8 +792,6 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 
 	// trigger interrupt
 	NVIC->STIR = can->tx_queue_irq;
-
-	// LOG("< ch%u tx queue\n", index);
 
 	return true;
 }
@@ -848,6 +845,7 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 
 		if (rx_gi != rx_pi) {
 			have_data_to_send = true;
+			// LOG("ch%u have rx\n", index);
 
 			const uint8_t rx_index = rx_gi % TU_ARRAY_SIZE(can->rx_fifo);
 			SC_DEBUG_ASSERT(rx_index < TU_ARRAY_SIZE(can->rx_fifo));
@@ -911,6 +909,7 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 				}
 
 				++rx_gi;
+				// LOG("ch%u placed rx\n", index);
 			} else {
 				break;
 			}
@@ -1017,20 +1016,16 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 
 		switch (code) {
 		case MB_TX_INACTIVE: {
-			// LOG("ch%u tranfer %u bytes of data to mailbox\n", index, e->len);
 			can->int_tx_track_id = e->track_id;
-
-			// LOG("ch%u 1\n", index);
 			box->ID = e->box.ID; // write ID first according to manual
 
-			// LOG("ch%u 2\n", index);
-			for (uint8_t i = 0, o = 0; o < e->len; ++i, o += 4) {
+			for (unsigned i = 0, o = 0; o < e->len; ++i, o += 4) {
 				box->WORD[i] = e->box.WORD[i];
 			}
 
-			// LOG("ch%u 3\n", index);
 			box->CS = e->box.CS;
-			// LOG("ch%u 4\n", index);
+
+			// LOG("ch%u dlc=%u len=%u cs=%lx\n", index, (box->CS & CAN_CS_DLC_MASK) >> CAN_CS_DLC_SHIFT, e->len, box->CS);
 
 			can->int_tx_box_busy = true;
 
@@ -1064,6 +1059,16 @@ SC_RAMFUNC static void can_int_update_status(
 
 	// clear error flags
 	can->flex_can->ESR1 = ~0;
+
+	// if (can->fd_enabled) {
+	// 	if (can->flex_can->FDCTRL & CAN_FDCTRL_TDCFAIL_MASK) {
+	// 		LOG("TDCFAIL\n");
+	// 		can->flex_can->FDCTRL &= ~CAN_FDCTRL_TDCFAIL_MASK;
+	// 	}
+
+	// 	unsigned tdcval = (can->flex_can->FDCTRL & CAN_FDCTRL_TDCVAL_MASK) >> CAN_FDCTRL_TDCVAL_SHIFT;
+	// 	LOG("TDCVAL=%u\n", tdcval);
+	// }
 
 
 	if (unlikely(can->int_prev_rx_errors != rxe || can->int_prev_tx_errors != txe)) {
@@ -1192,13 +1197,6 @@ SC_RAMFUNC static void can_int(uint8_t index)
 	can->flex_can->IFLAG1 = iflag1;
 	// can->flex_can->IFLAG2 = iflag2;
 
-	// if (iflag1) {
-	// 	LOG("IFLAG1=%lx\n", iflag1);
-	// }
-
-	// if (iflag2) {
-	// 	LOG("IFLAG1=%lx\n", iflag2);
-	// }
 
 	if (iflag1 & 1) {
 		// TX mailbox
@@ -1207,15 +1205,17 @@ SC_RAMFUNC static void can_int(uint8_t index)
 		service_tx_box(index, &events, tsc);
 	}
 
+	// if (iflag1 || iflag2) { // rx frames
 	if (iflag1) { // rx frames
 		uint16_t rx_timestamps[RX_MAILBOX_COUNT];
 		uint8_t rx_indices[RX_MAILBOX_COUNT];
 		uint8_t rx_count = 0;
 
 		// LOG("IFLAG1=%lx\n", iflag1);
+		// LOG("IFLAG2=%lx\n", iflag2);
 
 		for (uint32_t i = 0, mask = ((uint32_t)1) << TX_MAILBOX_COUNT, k = TX_MAILBOX_COUNT; i < RX_MAILBOX_COUNT; ++i, ++k, mask <<= 1) {
-			if (iflag1 & mask) {
+			// if (iflag1 & mask) {
 				struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * k);
 				unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
 
@@ -1228,13 +1228,20 @@ SC_RAMFUNC static void can_int(uint8_t index)
 
 					// box->CS = CAN_CS_CODE(MB_RX_EMPTY);
 				}
-			}
+			// }
+
+			// struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * k);
+			// unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
+			// if (code == MB_RX_FULL || code == MB_RX_OVERRUN) {
+			// 	LOG("rx in mailbox index %u\n", k);
+			// }
 		}
 
-		// SC_ISR_ASSERT(__builtin_popcount(iflag1) == rx_count);
-		unsigned start = 0;
+		// LOG("rx count=%u\n", rx_count);
 
 		if (rx_count > 1) {
+			unsigned start = 0;
+
 			// LOG("unsorted\n");
 			// for (unsigned i = 0; i < rx_count; ++i) {
 			// 	LOG("bit=%u ts=%x\n", rx_indices[i], rx_timestamps[i]);
@@ -1274,6 +1281,7 @@ SC_RAMFUNC static void can_int(uint8_t index)
 			}
 
 			// LOG("start=%u\n", start);
+			(void)start;
 		}
 
 		for (unsigned i = 0; i < rx_count; ++i) {
@@ -1299,6 +1307,7 @@ SC_RAMFUNC static void can_int(uint8_t index)
 				words /= 4;
 
 				SC_ISR_ASSERT(rx_index < TU_ARRAY_SIZE(can->rx_fifo));
+				// FIX ME convert CAN bit time to us
 				e->timestamp_us = tsc - (rx_timestamps[rx_count-1] - rx_timestamps[i]);
 
 				e->box.ID = box->ID;
@@ -1413,6 +1422,8 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 		} else {
 			can->flex_can->CTRL2 |= CAN_CTRL2_PREXCEN_MASK;
 		}
+
+		dump_can_regs(index);
 	}
 }
 
@@ -1541,19 +1552,19 @@ static const clock_sys_pll_config_t sc_sysPllConfig_BOARD_BootClockRUN =
         .denominator = 1,                         /* 30 bit denominator of fractional loop divider */
         .src = 0,                                 /* Bypass clock source, 0 - OSC 24M, 1 - CLK1_P and CLK1_N */
     };
-static const clock_usb_pll_config_t sc_usb1PllConfig_BOARD_BootClockRUN =
-    {
-        .loopDivider = 0,                         /* PLL loop divider, Fout = Fin * 20 */
-        .src = 0,                                 /* Bypass clock source, 0 - OSC 24M, 1 - CLK1_P and CLK1_N */
-    };
-static const clock_video_pll_config_t sc_videoPllConfig_BOARD_BootClockRUN =
-    {
-        .loopDivider = 31,                        /* PLL loop divider, Fout = Fin * ( loopDivider + numerator / denominator ) */
-        .postDivider = 8,                         /* Divider after PLL */
-        .numerator = 0,                           /* 30 bit numerator of fractional loop divider, Fout = Fin * ( loopDivider + numerator / denominator ) */
-        .denominator = 1,                         /* 30 bit denominator of fractional loop divider, Fout = Fin * ( loopDivider + numerator / denominator ) */
-        .src = 0,                                 /* Bypass clock source, 0 - OSC 24M, 1 - CLK1_P and CLK1_N */
-    };
+// static const clock_usb_pll_config_t sc_usb1PllConfig_BOARD_BootClockRUN =
+//     {
+//         .loopDivider = 0,                         /* PLL loop divider, Fout = Fin * 20 */
+//         .src = 0,                                 /* Bypass clock source, 0 - OSC 24M, 1 - CLK1_P and CLK1_N */
+//     };
+// static const clock_video_pll_config_t sc_videoPllConfig_BOARD_BootClockRUN =
+//     {
+//         .loopDivider = 31,                        /* PLL loop divider, Fout = Fin * ( loopDivider + numerator / denominator ) */
+//         .postDivider = 8,                         /* Divider after PLL */
+//         .numerator = 0,                           /* 30 bit numerator of fractional loop divider, Fout = Fin * ( loopDivider + numerator / denominator ) */
+//         .denominator = 1,                         /* 30 bit denominator of fractional loop divider, Fout = Fin * ( loopDivider + numerator / denominator ) */
+//         .src = 0,                                 /* Bypass clock source, 0 - OSC 24M, 1 - CLK1_P and CLK1_N */
+//     };
 
     /* Init RTC OSC clock frequency. */
     CLOCK_SetRtcXtalFreq(32768U);
