@@ -136,7 +136,6 @@ struct can {
 	CAN_Type* const flex_can;
 	const IRQn_Type flex_can_irq;
 	const IRQn_Type tx_queue_irq;
-	uint32_t int_prev_esr1;
 	uint8_t int_prev_bus_state;
 	uint8_t int_prev_rx_errors;
 	uint8_t int_prev_tx_errors;
@@ -284,7 +283,6 @@ static inline void can_reset_state(uint8_t index)
 	can->enabled = false;
 	can->int_tx_box_busy = false;
 	can->int_tx_track_id = 0;
-	can->int_prev_esr1 = 0;
 	can->int_prev_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
 	can->int_prev_rx_errors = 0;
 	can->int_prev_tx_errors = 0;
@@ -1079,9 +1077,6 @@ SC_RAMFUNC static void can_int_update_status(
 		current_bus_state = SC_CAN_STATUS_BUS_OFF;
 		break;
 	}
-
-	// store updated reg
-	// can->int_prev_esr1 = current_esr1;
 
 	if (unlikely(can->int_prev_bus_state != current_bus_state)) {
 		can->int_prev_bus_state = current_bus_state;
