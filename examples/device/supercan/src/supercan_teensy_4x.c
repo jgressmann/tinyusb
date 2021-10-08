@@ -1293,7 +1293,6 @@ SC_RAMFUNC static void can_int(uint8_t index)
 
 		for (unsigned i = 0; i < rx_count; ++i) {
 			const unsigned rx_index = (i + start) % rx_count;
-			const unsigned rx_index = i;
 			const unsigned mailbox_index = rx_indices[rx_index];
 			struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * mailbox_index);
 			SC_ISR_ASSERT(mailbox_index < TX_MAILBOX_COUNT + RX_MAILBOX_COUNT);
