@@ -347,7 +347,8 @@ extern void sc_board_can_reset(uint8_t index)
 	if (can->fd_capable) {
 		can->flex_can->CBT = CAN_CBT_BTF(1); // mooar arbitration bits
 
-		can->flex_can->FDCTRL = CAN_FDCTRL_FDRATE(1) // enable BRS
+		can->flex_can->FDCTRL = 0
+								| CAN_FDCTRL_FDRATE(1) // enable BRS
 								| CAN_FDCTRL_MBDSR0(3) // 64 byte per box
 								| CAN_FDCTRL_MBDSR1(3) // 64 byte per box
 								| CAN_FDCTRL_TDCEN(1) // enable transmitter delay compensation
@@ -667,7 +668,8 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 
 	// transmitter delay compensation
 	const unsigned tdco = (1 + bt->tseg1 + bt->tseg2) / 2;
-	// const unsigned tdco = 5;
+	// const unsigned tdco = 19;
+	// const unsigned tdco = 1;
 	can->flex_can->FDCTRL &= ~CAN_FDCTRL_TDCOFF_MASK;
 	can->flex_can->FDCTRL |= CAN_FDCTRL_TDCOFF(tdco);
 
@@ -1724,7 +1726,7 @@ static const clock_sys_pll_config_t sc_sysPllConfig_BOARD_BootClockRUN =
     CLOCK_DisableClock(kCLOCK_Can2S);
     CLOCK_DisableClock(kCLOCK_Can3S);
     /* Set CAN_CLK_PODF. */
-    CLOCK_SetDiv(kCLOCK_CanDiv, 0);
+    CLOCK_SetDiv(kCLOCK_CanDiv, SC_BOARD_CAN_CLK_HZ == 40000000 ? 1 : 0);
     /* Set Can clock source. */
     CLOCK_SetMux(kCLOCK_CanMux, 2);
     /* Disable UART clock gate. */
