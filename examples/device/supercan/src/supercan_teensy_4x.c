@@ -1068,7 +1068,7 @@ SC_RAMFUNC static void can_int_update_status(
 	// if (can->fd_enabled) {
 	// 	if (can->flex_can->FDCTRL & CAN_FDCTRL_TDCFAIL_MASK) {
 	// 		LOG("TDCFAIL\n");
-	// 		can->flex_can->FDCTRL &= ~CAN_FDCTRL_TDCFAIL_MASK;
+	// 		can->flex_can->FDCTRL |= CAN_FDCTRL_TDCFAIL_MASK;
 	// 	}
 
 	// 	unsigned tdcval = (can->flex_can->FDCTRL & CAN_FDCTRL_TDCVAL_MASK) >> CAN_FDCTRL_TDCVAL_SHIFT;
