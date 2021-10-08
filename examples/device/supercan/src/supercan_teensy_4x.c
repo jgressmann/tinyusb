@@ -138,6 +138,7 @@ struct can {
 	CAN_Type* const flex_can;
 	const IRQn_Type flex_can_irq;
 	const IRQn_Type tx_queue_irq;
+	uint32_t ts_to_us;
 	uint8_t int_prev_bus_state;
 	uint8_t int_prev_rx_errors;
 	uint8_t int_prev_tx_errors;
@@ -303,6 +304,7 @@ static inline void can_reset_state(uint8_t index)
 	can->int_prev_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
 	can->int_prev_rx_errors = 0;
 	can->int_prev_tx_errors = 0;
+	can->ts_to_us = 0;
 }
 
 extern void sc_board_can_reset(uint8_t index)
@@ -577,6 +579,9 @@ extern sc_can_bit_timing_range const* sc_board_can_dt_bit_timing_range(uint8_t i
 extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing const *bt)
 {
 	struct can* can = &cans[index];
+
+	can->ts_to_us = 1000000u / ((SC_BOARD_CAN_CLK_HZ / bt->brp) / (1 + bt->tseg1 + bt->tseg2));
+	LOG("ch%u ts_to_us=%u\n", index, can->ts_to_us);
 
 	if (can->fd_capable) {
 		uint16_t prop_seg = 0;
@@ -1307,9 +1312,8 @@ SC_RAMFUNC static void can_int(uint8_t index)
 				words /= 4;
 
 				SC_ISR_ASSERT(rx_index < TU_ARRAY_SIZE(can->rx_fifo));
-				// FIX ME convert CAN bit time to us
-				e->timestamp_us = tsc - (rx_timestamps[rx_count-1] - rx_timestamps[i]);
 
+				e->timestamp_us = tsc - (rx_timestamps[rx_count-1] - rx_timestamps[i]) * can->ts_to_us;
 				e->box.ID = box->ID;
 				e->box.CS = cs;
 				copy_swap_data_words(e->box.WORD, box->WORD, words);
