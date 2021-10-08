@@ -1415,10 +1415,14 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 			LOG("ch%u CAN-FD enabled\n");
 			can->fd_enabled = true;
 			can->flex_can->MCR |= CAN_MCR_FDEN_MASK;
+			can->flex_can->CTRL2 &= ~CAN_CTRL2_TASD_MASK;
+			can->flex_can->CTRL2 |= CAN_CTRL2_TASD(31); // see i.MX RT1060 Processor Reference Manual, Rev. 2, 12/2019, p. 2639
 		} else {
 			LOG("ch%u CAN-FD disabled\n");
 			can->fd_enabled = false;
 			can->flex_can->MCR &= ~CAN_MCR_FDEN_MASK;
+			can->flex_can->CTRL2 &= ~CAN_CTRL2_TASD_MASK;
+			can->flex_can->CTRL2 |= CAN_CTRL2_TASD(25);
 		}
 
 		if (features & SC_FEATURE_FLAG_EHD) {
