@@ -1245,9 +1245,10 @@ SC_RAMFUNC static void can_int(uint8_t index)
 		}
 
 		// LOG("rx count=%u\n", rx_count);
+		unsigned start = 0;
 
 		if (rx_count > 1) {
-			unsigned start = 0;
+
 
 			// LOG("unsorted\n");
 			// for (unsigned i = 0; i < rx_count; ++i) {
@@ -1288,11 +1289,12 @@ SC_RAMFUNC static void can_int(uint8_t index)
 			}
 
 			// LOG("start=%u\n", start);
-			(void)start;
 		}
 
 		for (unsigned i = 0; i < rx_count; ++i) {
-			const unsigned mailbox_index = rx_indices[i];
+			const unsigned rx_index = (i + start) % rx_count;
+			const unsigned rx_index = i;
+			const unsigned mailbox_index = rx_indices[rx_index];
 			struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * mailbox_index);
 			SC_ISR_ASSERT(mailbox_index < TX_MAILBOX_COUNT + RX_MAILBOX_COUNT);
 
@@ -1301,8 +1303,8 @@ SC_RAMFUNC static void can_int(uint8_t index)
 			uint8_t used = rx_pi - rx_gi;
 
 			if (likely(used < TU_ARRAY_SIZE(can->rx_fifo))) {
-				const uint8_t rx_index = rx_gi % TU_ARRAY_SIZE(can->rx_fifo);
-				struct rx_fifo_element *e = &can->rx_fifo[rx_index];
+				const uint8_t rx_fifo_index = rx_gi % TU_ARRAY_SIZE(can->rx_fifo);
+				struct rx_fifo_element *e = &can->rx_fifo[rx_fifo_index];
 				const uint32_t cs = box->CS;
 				const unsigned len = dlc_to_len((cs & CAN_CS_DLC_MASK) >> CAN_CS_DLC_SHIFT);
 				unsigned words = len;
