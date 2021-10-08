@@ -1245,9 +1245,10 @@ SC_RAMFUNC static void can_int(uint8_t index)
 		}
 
 		// LOG("rx count=%u\n", rx_count);
-		unsigned start = 0;
+		unsigned rx_start = 0;
+		unsigned rx_end = 0;
 
-		if (rx_count > 1) {
+		if (unlikely(rx_count > 1)) {
 
 
 			// LOG("unsorted\n");
@@ -1283,16 +1284,17 @@ SC_RAMFUNC static void can_int(uint8_t index)
 
 				if (ts_diff >= 0x8000) {
 					// LOG("i=%u diff=%lx\n", i, ts_diff);
-					start = i;
+					rx_start = i;
 					break;
 				}
 			}
 
-			// LOG("start=%u\n", start);
+			rx_end = (rx_start + rx_count - 1) % rx_count;
+			// LOG("start=%u end=%u\n", rx_start, rx_end);
 		}
 
 		for (unsigned i = 0; i < rx_count; ++i) {
-			const unsigned rx_index = (i + start) % rx_count;
+			const unsigned rx_index = (i + rx_start) % rx_count;
 			const unsigned mailbox_index = rx_indices[rx_index];
 			struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * mailbox_index);
 			SC_ISR_ASSERT(mailbox_index < TX_MAILBOX_COUNT + RX_MAILBOX_COUNT);
@@ -1314,9 +1316,9 @@ SC_RAMFUNC static void can_int(uint8_t index)
 
 				words /= 4;
 
-				SC_ISR_ASSERT(rx_index < TU_ARRAY_SIZE(can->rx_fifo));
+				SC_ISR_ASSERT(rx_fifo_index < TU_ARRAY_SIZE(can->rx_fifo));
 
-				e->timestamp_us = tsc - (rx_timestamps[rx_count-1] - rx_timestamps[i]) * can->ts_to_us;
+				e->timestamp_us = tsc - (rx_timestamps[rx_end] - rx_timestamps[rx_index]) * can->ts_to_us;
 				e->box.ID = box->ID;
 				e->box.CS = cs;
 				copy_swap_data_words(e->box.WORD, box->WORD, words);
