@@ -446,7 +446,7 @@ static inline void timer_1MHz_init(void)
 
 static inline void can_init_once(void)
 {
-	device_identifier = OCOTP->CFG0 | OCOTP->CFG1; // 64 bit DEVICE_ID
+	device_identifier = OCOTP->CFG0 ^ OCOTP->CFG1; // 64 bit DEVICE_ID
 
 	for (size_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
 		struct can *can = &cans[i];
