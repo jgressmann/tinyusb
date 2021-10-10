@@ -1438,8 +1438,18 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 			can->flex_can->CTRL2 |= CAN_CTRL2_PREXCEN_MASK;
 		}
 
-		dump_can_regs(index);
+
 	}
+
+	if (features & SC_FEATURE_FLAG_MON_MODE) {
+		LOG("ch%u LOM enabled\n", index);
+		can->flex_can->CTRL1 |= CAN_CTRL1_LOM_MASK;
+	} else {
+		LOG("ch%u LOM disabled\n", index);
+		can->flex_can->CTRL1 &= ~CAN_CTRL1_LOM_MASK;
+	}
+
+	dump_can_regs(index);
 }
 
 //////////////////////////////////////////////////////////////////////////////
