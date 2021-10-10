@@ -804,7 +804,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	}
 
 	if (msg->flags & SC_CAN_FRAME_FLAG_EXT) {
-		id = CAN_ID_EXT(msg->can_id);
+		id = msg->can_id;
 		cs |= CAN_CS_IDE_MASK;
 	} else {
 		id = CAN_ID_STD(msg->can_id);
@@ -905,9 +905,11 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 				msg->flags = 0;
 
 				if (cs & CAN_CS_IDE_MASK) {
+					id &= ~CAN_ID_PRIO_MASK;
 					msg->flags |= SC_CAN_FRAME_FLAG_EXT;
 				} else {
-					id >>= 18;
+					id &= CAN_ID_STD_MASK;
+					id >>= CAN_ID_STD_SHIFT;
 				}
 				msg->can_id = id;
 				msg->timestamp_us = e->timestamp_us;
