@@ -329,7 +329,8 @@ extern void sc_board_can_reset(uint8_t index)
 
 
 	can->flex_can->CTRL1 = CAN_CTRL1_LBUF(1)  // Lowest Buffer Transmitted First
-			| CAN_CTRL1_BOFFREC(1) // bus off interrupt enable
+			| CAN_CTRL1_BOFFMSK_MASK // bus off interrupt enable
+			| CAN_CTRL1_BOFFREC(1) // bus off recovery interrupt enable
 			| CAN_CTRL1_ERRMSK(1) // Error interrupt enabled
 			| CAN_CTRL1_TWRNMSK(1) // tx warning interrupt enabled
 			| CAN_CTRL1_RWRNMSK(1) // rx warning interrupt enabled
