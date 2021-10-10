@@ -659,13 +659,15 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 
 	can->flex_can->FDCBT = CAN_FDCBT_FPRESDIV(bt->brp - 1)
 							| CAN_FDCBT_FRJW(bt->sjw - 1)
-							| CAN_FDCBT_FPROPSEG(prop_seg - 1)
+							| CAN_FDCBT_FPROPSEG(prop_seg)
 							| CAN_FDCBT_FPSEG1(tseg1 - 1)
 							| CAN_FDCBT_FPSEG2(bt->tseg2 - 1)
 							;
 
-	LOG("ch%u FDCBT brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u\n",
-		index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2);
+	LOG("ch%u FDCBT brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u FDCBT=%lx\n",
+		index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2, can->flex_can->FDCBT);
+
+	dump_can_regs(index);
 
 	// transmitter delay compensation
 	const unsigned tdco = bt->tseg1 + 2;
