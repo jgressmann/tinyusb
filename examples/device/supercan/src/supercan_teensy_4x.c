@@ -99,6 +99,9 @@ enum {
 
 	MB_STEP_CAN = 0x10,
 	MB_STEP_CANFD = 0x48,
+
+	//MB_RX_CS_EMPTY_MUX = CAN_CS_CODE(MB_RX_EMPTY) | CAN_CS_IDE_MASK,
+	MB_RX_CS_EMPTY_MUX = CAN_CS_CODE(MB_RX_EMPTY),
 };
 
 static const uint8_t flexcan_mb_step_size[2] = {
@@ -250,7 +253,7 @@ static void init_mailboxes(uint8_t index)
 
 		for (uint8_t i = TX_MAILBOX_COUNT; i < TX_MAILBOX_COUNT + RX_MAILBOX_COUNT; ++i) {
 			can->flex_can->MB_64B[i].ID = 0;
-			can->flex_can->MB_64B[i].CS = CAN_CS_CODE(MB_RX_EMPTY);
+			can->flex_can->MB_64B[i].CS = MB_RX_CS_EMPTY_MUX;
 		}
 	} else {
 		for (uint8_t i = 0; i < TX_MAILBOX_COUNT; ++i) {
@@ -260,7 +263,7 @@ static void init_mailboxes(uint8_t index)
 
 		for (uint8_t i = TX_MAILBOX_COUNT; i < TX_MAILBOX_COUNT + RX_MAILBOX_COUNT; ++i) {
 			can->flex_can->MB_8B[i].ID = 0;
-			can->flex_can->MB_8B[i].CS = CAN_CS_CODE(MB_RX_EMPTY);
+			can->flex_can->MB_8B[i].CS = MB_RX_CS_EMPTY_MUX;
 		}
 	}
 }
@@ -340,6 +343,7 @@ extern void sc_board_can_reset(uint8_t index)
 	can->flex_can->CTRL2 = CAN_CTRL2_BOFFDONEMSK(1) // Bus Off Done Interrupt Mask
 							| CAN_CTRL2_RRS(1) // store remote request frames
 							| CAN_CTRL2_MRP(1) // mailboxes first
+							| CAN_CTRL2_EACEN_MASK // Enables the comparison of both Rx mailbox filter’s IDE and RTR bit with their corresponding bits within the incoming frame. Mask bits do apply.
 							| (can->fd_capable ? CAN_CTRL2_ERRMSK_FAST(1) : 0)  // Error Interrupt Mask for errors detected in the data phase of fast CAN FD frames
 							| (can->fd_capable ? CAN_CTRL2_ISOCANFDEN(1) : 0) // CAN-FD in ISO mode
 							| (can->fd_capable ? CAN_CTRL2_PREXCEN(1) : 0) // CAN-FD protocol exception handling
@@ -355,8 +359,6 @@ extern void sc_board_can_reset(uint8_t index)
 								| CAN_FDCTRL_TDCEN(1) // enable transmitter delay compensation
 								;
 	}
-
-	// can->flex_can->RXMGMASK = 0;
 
 	// enable buffer interrupts
 	can->flex_can->IMASK1 = (((uint32_t)1) << (TX_MAILBOX_COUNT + RX_MAILBOX_COUNT)) - 1;
@@ -619,8 +621,8 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 								| CAN_CBT_EPSEG2(bt->tseg2 - 1)
 								;
 
-		LOG("ch%u CBT brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u\n",
-			index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2);
+		LOG("ch%u CBT brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u CBT=%lx\n",
+			index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2, can->flex_can->CBT);
 
 	} else {
 		uint32_t reg = can->flex_can->CTRL1 & ~(
@@ -760,7 +762,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	uint8_t used = pi - gi;
 	uint8_t mailbox_index = 0;
 	uint32_t id = 0;
-	uint32_t cs = CAN_CS_DLC(msg->dlc);
+	uint32_t cs = CAN_CS_DLC(msg->dlc) | CAN_CS_SRR_MASK;
 	const unsigned len = dlc_to_len(msg->dlc);
 	unsigned words = len;
 
@@ -894,7 +896,6 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 			if ((size_t)(tx_end - tx_ptr) >= bytes) {
 				uint32_t id = e->box.ID;
 
-				// usb_can->tx_offsets[usb_can->tx_bank] += bytes;
 				tx_ptr += bytes;
 				result += bytes;
 
@@ -1345,7 +1346,7 @@ SC_RAMFUNC static void can_int(uint8_t index)
 				++rx_lost;
 			}
 
-			box->CS = CAN_CS_CODE(MB_RX_EMPTY);
+			box->CS = MB_RX_CS_EMPTY_MUX;
 		}
 
 		__atomic_store_n(&can->rx_pi, rx_pi, __ATOMIC_RELEASE);
