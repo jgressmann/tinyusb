@@ -667,9 +667,11 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 		index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2);
 
 	// transmitter delay compensation
-	const unsigned tdco = (1 + bt->tseg1 + bt->tseg2) / 2;
+	const unsigned tdco = bt->tseg1 + 2;
+	// const unsigned tdco = (1 + bt->tseg1 + bt->tseg2) / 2;
 	// const unsigned tdco = 19;
 	// const unsigned tdco = 1;
+	// const unsigned tdco = bt->tseg2;
 	can->flex_can->FDCTRL &= ~CAN_FDCTRL_TDCOFF_MASK;
 	can->flex_can->FDCTRL |= CAN_FDCTRL_TDCOFF(tdco);
 
