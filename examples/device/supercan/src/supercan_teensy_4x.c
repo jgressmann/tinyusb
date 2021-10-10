@@ -424,8 +424,6 @@ static inline void timer_1MHz_init(void)
 	 * 101 Crystal oscillator as Reference Clock (ipg_clk_24M)
 	 * others reserved
 	 */
-
-
 	GPT2->CR |= 0
 		// | GPT_CR_IM1(0b11) // both edges
 		| GPT_CR_FRR_MASK // free run
@@ -457,6 +455,22 @@ static inline void can_init_once(void)
 		// should be no need to disable this one
 		NVIC_EnableIRQ(can->tx_queue_irq);
 	}
+
+	// // 24MHz
+	// CCM->CSCMR2 &= ~CCM_CSCMR2_CAN_CLK_PODF_MASK; // device by 1
+	// CCM->CSCMR2 &= ~CCM_CSCMR2_CAN_CLK_SEL_MASK;
+	// CCM->CSCMR2 |= CCM_CSCMR2_CAN_CLK_SEL(1);
+
+	// // 40MHz
+	// CCM->CSCMR2 &= ~CCM_CSCMR2_CAN_CLK_PODF_MASK;
+	// CCM->CSCMR2 |= CCM_CSCMR2_CAN_CLK_PODF(1); // device by 2
+	// CCM->CSCMR2 &= ~CCM_CSCMR2_CAN_CLK_SEL_MASK;
+	// CCM->CSCMR2 |= CCM_CSCMR2_CAN_CLK_SEL(2);
+
+	// // 80MHz
+	// CCM->CSCMR2 &= ~CCM_CSCMR2_CAN_CLK_PODF_MASK; // device by 1
+	// CCM->CSCMR2 &= ~CCM_CSCMR2_CAN_CLK_SEL_MASK;
+	// CCM->CSCMR2 |= CCM_CSCMR2_CAN_CLK_SEL(2);
 
 	LOG("CAN root clock f=%lu [Hz]\n", CLOCK_GetClockRootFreq(kCLOCK_CanClkRoot));
 
@@ -672,9 +686,6 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 	// transmitter delay compensation
 	const unsigned tdco = bt->tseg1 + 2;
 	// const unsigned tdco = (1 + bt->tseg1 + bt->tseg2) / 2;
-	// const unsigned tdco = 19;
-	// const unsigned tdco = 1;
-	// const unsigned tdco = bt->tseg2;
 	can->flex_can->FDCTRL &= ~CAN_FDCTRL_TDCOFF_MASK;
 	can->flex_can->FDCTRL |= CAN_FDCTRL_TDCOFF(tdco);
 
