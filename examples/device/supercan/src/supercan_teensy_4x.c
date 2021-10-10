@@ -589,12 +589,12 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 		uint16_t prop_seg = 0;
 		uint16_t tseg1 = 0;
 
-		if (bt->tseg1 > 64) {
-			prop_seg = 64;
-			tseg1 = bt->tseg1 - prop_seg;
+		if (bt->tseg1 > 32) {
+			prop_seg = bt->tseg1 - 32;
+			tseg1 = 32;
 		} else {
-			prop_seg = bt->tseg1 - 1;
-			tseg1 = 1;
+			prop_seg = 1;
+			tseg1 = bt->tseg1 - 1;
 		}
 
 		can->flex_can->CBT = CAN_CBT_BTF(1)
@@ -619,11 +619,11 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 		uint16_t tseg1 = 0;
 
 		if (bt->tseg1 > 8) {
-			prop_seg = 8;
-			tseg1 = bt->tseg1 - prop_seg;
+			prop_seg = bt->tseg1 - 8;
+			tseg1 = 8;
 		} else {
-			prop_seg = bt->tseg1 - 1;
-			tseg1 = 1;
+			prop_seg = 1;
+			tseg1 = bt->tseg1 - 1;
 		}
 
 		can->flex_can->CTRL1 = reg
@@ -649,12 +649,12 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 	uint16_t prop_seg = 0;
 	uint16_t tseg1 = 0;
 
-	if (bt->tseg1 > 32) {
-		prop_seg = 32;
-		tseg1 = bt->tseg1 - prop_seg;
+	if (bt->tseg1 >= 8) {
+		prop_seg = bt->tseg1 - 8;
+		tseg1 = 8;
 	} else {
-		prop_seg = bt->tseg1 - 1;
-		tseg1 = 1;
+		prop_seg = 0;
+		tseg1 = bt->tseg1;
 	}
 
 	can->flex_can->FDCBT = CAN_FDCBT_FPRESDIV(bt->brp - 1)
