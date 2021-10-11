@@ -33,12 +33,13 @@
 #	error "Only include this file for Teensy 4.x boards"
 #endif
 
+#ifndef D5035_03
+	#define D5035_03 0
+#endif
+
 #include <MIMXRT1062.h>
 
 
-#define SC_BOARD_NAME "Teensy 4.x"
-#define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
-#define SC_BOARD_USB_MANUFACTURER_STRING "2guys"
 #define SC_BOARD_CAN_CLK_HZ 80000000
 #define SC_BOARD_CAN_COUNT 2
 
@@ -47,11 +48,46 @@
 
 enum {
 	SC_BOARD_DEBUG_DEFAULT,
-	SC_BOARD_LED_COUNT
+#if D5035_03
+	LED_DEBUG_0,
+	LED_DEBUG_1,
+	LED_DEBUG_2,
+	LED_DEBUG_3,
+	LED_CAN0_STATUS_GREEN,
+	LED_CAN0_STATUS_RED,
+	LED_CAN1_STATUS_GREEN,
+	LED_CAN1_STATUS_RED,
+#endif
+	SC_BOARD_LED_COUNT,
 };
 
 #define sc_board_can_ts_request(index) do { } while (0)
-#define sc_board_can_ts_wait(index) GPT2->CNT
+#define sc_board_can_ts_wait(index) (GPT2->CNT)
+
+
+#if D5035_03
+#define SC_BOARD_NAME "D5035-03"
+#define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
+#define SC_BOARD_USB_MANUFACTURER_STRING "2guys"
+#define CAN0_TRAFFIC_LED LED_DEBUG_1
+#define CAN1_TRAFFIC_LED LED_DEBUG_2
+
+#define sc_board_led_usb_burst() led_burst(LED_DEBUG_3, SC_LED_BURST_DURATION_MS)
+#define sc_board_led_can_traffic_burst(index) \
+	do { \
+		switch (index) { \
+		case 0: led_burst(CAN0_TRAFFIC_LED, SC_LED_BURST_DURATION_MS); break; \
+		case 1: led_burst(CAN1_TRAFFIC_LED, SC_LED_BURST_DURATION_MS); break; \
+		default: break; \
+		} \
+	} while (0)
+
+SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status);
+#else
+#define SC_BOARD_NAME "Teensy 4.x"
+#define SC_BOARD_USB_BCD_DEVICE (4 << 8)
+#define SC_BOARD_USB_MANUFACTURER_STRING "PJRC"
 #define sc_board_led_usb_burst() do { } while (0)
 #define sc_board_led_can_traffic_burst(index) do { } while (0)
 #define sc_board_led_can_status_set(index, status) do { } while (0)
+#endif // #if D5035_03

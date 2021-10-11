@@ -73,7 +73,7 @@
  * 0430 MB13
  *
  */
-#ifdef TEENSY_4X
+#if defined(TEENSY_4X) || defined(D5035_03)
 
 #include <bsp/board.h>
 #include <supercan_board.h>
@@ -204,15 +204,100 @@ __attribute__((noreturn)) extern void sc_board_reset(void)
 
 SC_RAMFUNC extern void sc_board_led_set(uint8_t index, bool on)
 {
-	(void)index;
-	(void)on;
+	// LOG("led index=%u %d\n", index, (int)on);
+
+	switch (index) {
+	case 0: // debug led low = on, high = off
+		if (on) {
+			GPIO2->DR_CLEAR |= ((uint32_t)1) << 3;
+		} else {
+			GPIO2->DR_SET |= ((uint32_t)1) << 3;
+		}
+		break;
+#if D5035_03
+	case 1:
+		// pin 10
+		if (on) {
+			GPIO2->DR_SET |= ((uint32_t)1) << 0;
+		} else {
+			GPIO2->DR_CLEAR |= ((uint32_t)1) << 0;
+		}
+		break;
+	case 2:
+		// pin 9
+		if (on) {
+			GPIO2->DR_SET |= ((uint32_t)1) << 17;
+		} else {
+			GPIO2->DR_CLEAR |= ((uint32_t)1) << 17;
+		}
+		break;
+	case 3:
+		// pin 8
+		if (on) {
+			GPIO2->DR_SET |= ((uint32_t)1) << 22;
+		} else {
+			GPIO2->DR_CLEAR |= ((uint32_t)1) << 22;
+		}
+		break;
+	case 4:
+		// pin 7
+		if (on) {
+			GPIO2->DR_SET |= ((uint32_t)1) << 23;
+		} else {
+			GPIO2->DR_CLEAR |= ((uint32_t)1) << 23;
+		}
+		break;
+	case 5:
+		// pin 6
+		if (on) {
+			GPIO2->DR_SET |= ((uint32_t)1) << 16;
+		} else {
+			GPIO2->DR_CLEAR |= ((uint32_t)1) << 16;
+		}
+		break;
+	case 6:
+		// pin 5
+		if (on) {
+			GPIO4->DR_SET |= ((uint32_t)1) << 8;
+		} else {
+			GPIO4->DR_CLEAR |= ((uint32_t)1) << 8;
+		}
+		break;
+	case 7:
+		// pin 4
+		if (on) {
+			GPIO4->DR_SET |= ((uint32_t)1) << 6;
+		} else {
+			GPIO4->DR_CLEAR |= ((uint32_t)1) << 6;
+		}
+		break;
+	case 8:
+		// pin 3
+		if (on) {
+			GPIO4->DR_SET |= ((uint32_t)1) << 5;
+		} else {
+			GPIO4->DR_CLEAR |= ((uint32_t)1) << 5;
+		}
+		break;
+	case 9:
+		// pin 2
+		if (on) {
+			GPIO4->DR_SET |= ((uint32_t)1) << 4;
+		} else {
+			GPIO4->DR_CLEAR |= ((uint32_t)1) << 4;
+		}
+		break;
+#endif // D5035_03
+	default:
+		break;
+	}
 }
 
 extern void sc_board_leds_on_unsafe(void)
 {
-	// for (size_t i = 0; i < ARRAY_SIZE(leds); ++i) {
-	// 	gpio_set_pin_level(leds[i].pin, 1);
-	// }
+	for (uint8_t i = 0; i < SC_BOARD_LED_COUNT; ++i) {
+		sc_board_led_set(i, true);
+	}
 }
 
 extern uint16_t sc_board_can_feat_perm(uint8_t index)
@@ -509,9 +594,47 @@ static inline void can_init_once(void)
 	CLOCK_EnableClock(kCLOCK_Can1S);
 }
 
+static inline void leds_init(void)
+{
+	// // debug led
+	// IOMUXC_SetPinMux(IOMUXC_GPIO_B0_03_GPIO2_IO03, 0);
+	// IOMUXC_SetPinConfig(IOMUXC_GPIO_B0_03_GPIO2_IO03, 0b000000000000110000);
+#if D5035_03
+	// pin 10
+	IOMUXC_SetPinMux(IOMUXC_GPIO_B0_00_GPIO2_IO00, 0);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_B0_00_GPIO2_IO00, 0b000000000000110000);
+	// pin 9
+	IOMUXC_SetPinMux(IOMUXC_GPIO_B0_11_GPIO2_IO11, 0);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_B0_11_GPIO2_IO11, 0b000000000000110000);
+	// pin 8
+	IOMUXC_SetPinMux(IOMUXC_GPIO_B1_00_GPIO2_IO16, 0);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_B1_00_GPIO2_IO16, 0b000000000000110000);
+	// pin 7
+	IOMUXC_SetPinMux(IOMUXC_GPIO_B1_01_GPIO2_IO17, 0);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_B1_01_GPIO2_IO17, 0b000000000000110000);
+	// pin 6
+	IOMUXC_SetPinMux(IOMUXC_GPIO_B0_10_GPIO2_IO10, 0);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_B0_10_GPIO2_IO10, 0b000000000000110000);
+	// pin 5
+	IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_08_GPIO4_IO08, 0);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_08_GPIO4_IO08, 0b000000000000110000);
+	// pin 4
+	IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_06_GPIO4_IO06, 0);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_06_GPIO4_IO06, 0b000000000000110000);
+	// pin 3
+	IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_05_GPIO4_IO05, 0);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_05_GPIO4_IO05, 0b000000000000110000);
+	// pin 2
+	IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_04_GPIO4_IO04, 0);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_04_GPIO4_IO04, 0b000000000000110000);
+#endif // #if D5035_03
+}
+
 extern void sc_board_init_begin(void)
 {
 	board_init();
+
+	leds_init();
 
 	can_init_once();
 
@@ -1469,6 +1592,15 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 	dump_can_regs(index);
 }
 
+#if D5035_03
+SC_RAMFUNC void sc_board_led_can_status_set(uint8_t index, int status)
+{
+	(void)index;
+	(void)staus;
+}
+#endif
+
+#if !D5035_03
 //////////////////////////////////////////////////////////////////////////////
 
 /*
@@ -1949,6 +2081,6 @@ static const clock_sys_pll_config_t sc_sysPllConfig_BOARD_BootClockRUN =
 
 
 //////////////////////////////////////////////////////////////////////////////
-
+#endif // !D5035_03
 
 #endif // defined(TEENSY_4X)
