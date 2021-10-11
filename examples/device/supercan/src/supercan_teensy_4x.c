@@ -109,6 +109,35 @@ static const uint8_t flexcan_mb_step_size[2] = {
 	MB_STEP_CANFD,
 };
 
+struct led {
+	volatile uint32_t* const on_reg;
+	volatile uint32_t* const off_reg;
+	uint32_t iomux_mux_reg;
+	uint32_t iomux_pad_reg;
+	uint8_t shift;
+};
+
+#define LED_REG_MUX_PAD(mux, a, b, c, pad) mux, pad
+#define LED_STATIC_INITIALIZER(name, on_reg, off_reg, iomux_macro, shift) \
+	{ on_reg, off_reg, LED_REG_MUX_PAD(iomux_macro), shift }
+
+
+
+static const struct led leds[] = {
+	LED_STATIC_INITIALIZER("debug", &GPIO2->DR_CLEAR, &GPIO2->DR_SET, IOMUXC_GPIO_B0_01_GPIO2_IO01, 3), // board led
+#if D5035_03
+	LED_STATIC_INITIALIZER("red", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_B0_00_GPIO2_IO00, 0),
+	LED_STATIC_INITIALIZER("orange", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_B0_11_GPIO2_IO11, 17),
+	LED_STATIC_INITIALIZER("green", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_B1_00_GPIO2_IO16, 22),
+	LED_STATIC_INITIALIZER("blue", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_B1_01_GPIO2_IO17, 23),
+	LED_STATIC_INITIALIZER("?", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_B0_10_GPIO2_IO10, 16),
+	LED_STATIC_INITIALIZER("can0_green", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_EMC_08_GPIO4_IO08, 8),
+	LED_STATIC_INITIALIZER("can0_red", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_EMC_06_GPIO4_IO06, 6),
+	LED_STATIC_INITIALIZER("can1_green", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_EMC_05_GPIO4_IO05, 5),
+	LED_STATIC_INITIALIZER("can1_red", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_EMC_04_GPIO4_IO04, 4),
+#endif
+};
+
 struct flexcan_mailbox {
 	volatile uint32_t CS;
     volatile uint32_t ID;
@@ -159,6 +188,10 @@ struct can {
 	volatile uint8_t txr_pi; // not index, uses full range of type
 	volatile uint8_t txr_gi; // not index, uses full range of type
 
+#if D5035_03
+	const uint8_t led_status_green;
+	const uint8_t led_status_red;
+#endif
 };
 
 static struct can cans[] = {
@@ -167,12 +200,20 @@ static struct can cans[] = {
 		.flex_can_irq = CAN3_IRQn,
 		.tx_queue_irq = ADC1_IRQn,
 		.fd_capable = true,
+#if D5035_03
+		.led_status_green = LED_CAN0_STATUS_GREEN,
+		.led_status_red = LED_CAN0_STATUS_RED,
+#endif
 	},
 	{
 		.flex_can = CAN1,
 		.flex_can_irq = CAN1_IRQn,
 		.tx_queue_irq = ADC2_IRQn,
 		.fd_capable = false,
+#if D5035_03
+		.led_status_green = LED_CAN1_STATUS_GREEN,
+		.led_status_red = LED_CAN1_STATUS_RED,
+#endif
 	},
 };
 
@@ -204,92 +245,17 @@ __attribute__((noreturn)) extern void sc_board_reset(void)
 
 SC_RAMFUNC extern void sc_board_led_set(uint8_t index, bool on)
 {
+	struct led const * const led = &leds[index];
+	uint32_t bit = ((uint32_t)1) << led->shift;
+
 	// LOG("led index=%u %d\n", index, (int)on);
 
-	switch (index) {
-	case 0: // debug led low = on, high = off
-		if (on) {
-			GPIO2->DR_CLEAR |= ((uint32_t)1) << 3;
-		} else {
-			GPIO2->DR_SET |= ((uint32_t)1) << 3;
-		}
-		break;
-#if D5035_03
-	case 1:
-		// pin 10
-		if (on) {
-			GPIO2->DR_SET |= ((uint32_t)1) << 0;
-		} else {
-			GPIO2->DR_CLEAR |= ((uint32_t)1) << 0;
-		}
-		break;
-	case 2:
-		// pin 9
-		if (on) {
-			GPIO2->DR_SET |= ((uint32_t)1) << 17;
-		} else {
-			GPIO2->DR_CLEAR |= ((uint32_t)1) << 17;
-		}
-		break;
-	case 3:
-		// pin 8
-		if (on) {
-			GPIO2->DR_SET |= ((uint32_t)1) << 22;
-		} else {
-			GPIO2->DR_CLEAR |= ((uint32_t)1) << 22;
-		}
-		break;
-	case 4:
-		// pin 7
-		if (on) {
-			GPIO2->DR_SET |= ((uint32_t)1) << 23;
-		} else {
-			GPIO2->DR_CLEAR |= ((uint32_t)1) << 23;
-		}
-		break;
-	case 5:
-		// pin 6
-		if (on) {
-			GPIO2->DR_SET |= ((uint32_t)1) << 16;
-		} else {
-			GPIO2->DR_CLEAR |= ((uint32_t)1) << 16;
-		}
-		break;
-	case 6:
-		// pin 5
-		if (on) {
-			GPIO4->DR_SET |= ((uint32_t)1) << 8;
-		} else {
-			GPIO4->DR_CLEAR |= ((uint32_t)1) << 8;
-		}
-		break;
-	case 7:
-		// pin 4
-		if (on) {
-			GPIO4->DR_SET |= ((uint32_t)1) << 6;
-		} else {
-			GPIO4->DR_CLEAR |= ((uint32_t)1) << 6;
-		}
-		break;
-	case 8:
-		// pin 3
-		if (on) {
-			GPIO4->DR_SET |= ((uint32_t)1) << 5;
-		} else {
-			GPIO4->DR_CLEAR |= ((uint32_t)1) << 5;
-		}
-		break;
-	case 9:
-		// pin 2
-		if (on) {
-			GPIO4->DR_SET |= ((uint32_t)1) << 4;
-		} else {
-			GPIO4->DR_CLEAR |= ((uint32_t)1) << 4;
-		}
-		break;
-#endif // D5035_03
-	default:
-		break;
+	SC_DEBUG_ASSERT(index < ARRAY_SIZE(leds));
+
+	if (on) {
+		*led->on_reg |= bit;
+	} else {
+		*led->off_reg |= bit;
 	}
 }
 
@@ -596,38 +562,14 @@ static inline void can_init_once(void)
 
 static inline void leds_init(void)
 {
-	// // debug led
-	// IOMUXC_SetPinMux(IOMUXC_GPIO_B0_03_GPIO2_IO03, 0);
-	// IOMUXC_SetPinConfig(IOMUXC_GPIO_B0_03_GPIO2_IO03, 0b000000000000110000);
-#if D5035_03
-	// pin 10
-	IOMUXC_SetPinMux(IOMUXC_GPIO_B0_00_GPIO2_IO00, 0);
-	IOMUXC_SetPinConfig(IOMUXC_GPIO_B0_00_GPIO2_IO00, 0b000000000000110000);
-	// pin 9
-	IOMUXC_SetPinMux(IOMUXC_GPIO_B0_11_GPIO2_IO11, 0);
-	IOMUXC_SetPinConfig(IOMUXC_GPIO_B0_11_GPIO2_IO11, 0b000000000000110000);
-	// pin 8
-	IOMUXC_SetPinMux(IOMUXC_GPIO_B1_00_GPIO2_IO16, 0);
-	IOMUXC_SetPinConfig(IOMUXC_GPIO_B1_00_GPIO2_IO16, 0b000000000000110000);
-	// pin 7
-	IOMUXC_SetPinMux(IOMUXC_GPIO_B1_01_GPIO2_IO17, 0);
-	IOMUXC_SetPinConfig(IOMUXC_GPIO_B1_01_GPIO2_IO17, 0b000000000000110000);
-	// pin 6
-	IOMUXC_SetPinMux(IOMUXC_GPIO_B0_10_GPIO2_IO10, 0);
-	IOMUXC_SetPinConfig(IOMUXC_GPIO_B0_10_GPIO2_IO10, 0b000000000000110000);
-	// pin 5
-	IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_08_GPIO4_IO08, 0);
-	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_08_GPIO4_IO08, 0b000000000000110000);
-	// pin 4
-	IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_06_GPIO4_IO06, 0);
-	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_06_GPIO4_IO06, 0b000000000000110000);
-	// pin 3
-	IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_05_GPIO4_IO05, 0);
-	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_05_GPIO4_IO05, 0b000000000000110000);
-	// pin 2
-	IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_04_GPIO4_IO04, 0);
-	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_04_GPIO4_IO04, 0b000000000000110000);
-#endif // #if D5035_03
+	for (size_t i = 0; i < TU_ARRAY_SIZE(leds); ++i) {
+		struct led const *l = &leds[i];
+
+		// LOG("mux_reg=%p pad_reg=%p\n", l->iomux_mux_reg, l->iomux_pad_reg);
+
+		*((volatile uint32_t *)l->iomux_mux_reg) = 5; // GPIO function
+		*((volatile uint32_t *)l->iomux_pad_reg) = 0b000000000000110000; // default drive strength
+	}
 }
 
 extern void sc_board_init_begin(void)
@@ -1595,8 +1537,40 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 #if D5035_03
 SC_RAMFUNC void sc_board_led_can_status_set(uint8_t index, int status)
 {
-	(void)index;
-	(void)status;
+	struct can* can = &cans[index];
+
+	SC_DEBUG_ASSERT(index < ARRAY_SIZE(cans));
+
+	switch (status) {
+	case SC_CAN_LED_STATUS_DISABLED:
+		led_set(can->led_status_green, 0);
+		led_set(can->led_status_red, 0);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_BUS_OFF:
+		led_set(can->led_status_green, 1);
+		led_set(can->led_status_red, 0);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_BUS_ON_PASSIVE:
+		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_PASSIVE_MS);
+		led_set(can->led_status_red, 0);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_BUS_ON_ACTIVE:
+		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
+		led_set(can->led_status_red, 0);
+		break;
+	case SC_CAN_LED_STATUS_ERROR_PASSIVE:
+		led_set(can->led_status_green, 0);
+		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
+		break;
+	case SC_CAN_LED_STATUS_ERROR_ACTIVE:
+		led_set(can->led_status_green, 0);
+		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
+		break;
+	default:
+		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS / 2);
+		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS / 2);
+		break;
+	}
 }
 #endif
 
