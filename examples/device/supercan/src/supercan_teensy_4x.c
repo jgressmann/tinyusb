@@ -1596,7 +1596,7 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 SC_RAMFUNC void sc_board_led_can_status_set(uint8_t index, int status)
 {
 	(void)index;
-	(void)staus;
+	(void)status;
 }
 #endif
 
