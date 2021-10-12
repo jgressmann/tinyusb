@@ -1302,113 +1302,95 @@ SC_RAMFUNC static void can_int_update_status(
 	}
 }
 
-SC_RAMFUNC static void can_int(uint8_t index)
+SC_RAMFUNC static void can_int_rx(
+	uint8_t index, uint32_t* events, uint32_t tsc)
 {
-	// LOG("> ch%u int\n", index);
-
 	struct can *can = &cans[index];
-	uint32_t iflag1 = can->flex_can->IFLAG1;
-	// uint32_t iflag2 = can->flex_can->IFLAG2;
-	uint32_t events = 0;
-	uint32_t tsc = GPT2->CNT;
 	uint8_t* box_mem = ((uint8_t*)can->flex_can) + 0x80;
 	const size_t step = flexcan_mb_step_size[can->fd_enabled];
 	uint8_t rx_lost = 0;
 	uint8_t rx_pi = can->rx_pi;
 
+	uint16_t rx_timestamps[RX_MAILBOX_COUNT];
+	uint8_t rx_indices[RX_MAILBOX_COUNT];
+	uint8_t rx_count = 0;
 
-	// clear interrupts
-	can->flex_can->IFLAG1 = iflag1;
-	// can->flex_can->IFLAG2 = iflag2;
+	// LOG("IFLAG1=%lx\n", iflag1);
+	// LOG("IFLAG2=%lx\n", iflag2);
 
+	for (uint32_t i = 0, mask = ((uint32_t)1) << TX_MAILBOX_COUNT, k = TX_MAILBOX_COUNT; i < RX_MAILBOX_COUNT; ++i, ++k, mask <<= 1) {
+		// if (iflag1 & mask) {
+			struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * k);
+			unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
 
-	if (iflag1 & 1) {
-		// TX mailbox
-		iflag1 &= ~(uint32_t)1;
+			if (likely(code == MB_RX_FULL || code == MB_RX_OVERRUN)) {
+				rx_indices[rx_count] = k;
+				rx_timestamps[rx_count] = (box->CS & CAN_CS_TIME_STAMP_MASK) >> CAN_CS_TIME_STAMP_SHIFT;
 
-		service_tx_box(index, &events, tsc);
+				++rx_count;
+				rx_lost += code == MB_RX_OVERRUN;
+
+				// box->CS = CAN_CS_CODE(MB_RX_EMPTY);
+			}
+		// }
+
+		// struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * k);
+		// unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
+		// if (code == MB_RX_FULL || code == MB_RX_OVERRUN) {
+		// 	LOG("rx in mailbox index %u\n", k);
+		// }
 	}
 
-	// if (iflag1 || iflag2) { // rx frames
-	if (iflag1) { // rx frames
-		uint16_t rx_timestamps[RX_MAILBOX_COUNT];
-		uint8_t rx_indices[RX_MAILBOX_COUNT];
-		uint8_t rx_count = 0;
+	// LOG("rx count=%u\n", rx_count);
+	unsigned rx_start = 0;
+	unsigned rx_end = 0;
 
-		// LOG("IFLAG1=%lx\n", iflag1);
-		// LOG("IFLAG2=%lx\n", iflag2);
-
-		for (uint32_t i = 0, mask = ((uint32_t)1) << TX_MAILBOX_COUNT, k = TX_MAILBOX_COUNT; i < RX_MAILBOX_COUNT; ++i, ++k, mask <<= 1) {
-			// if (iflag1 & mask) {
-				struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * k);
-				unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
-
-				if (likely(code == MB_RX_FULL || code == MB_RX_OVERRUN)) {
-					rx_indices[rx_count] = k;
-					rx_timestamps[rx_count] = (box->CS & CAN_CS_TIME_STAMP_MASK) >> CAN_CS_TIME_STAMP_SHIFT;
-
-					++rx_count;
-					rx_lost += code == MB_RX_OVERRUN;
-
-					// box->CS = CAN_CS_CODE(MB_RX_EMPTY);
-				}
-			// }
-
-			// struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * k);
-			// unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
-			// if (code == MB_RX_FULL || code == MB_RX_OVERRUN) {
-			// 	LOG("rx in mailbox index %u\n", k);
-			// }
-		}
-
-		// LOG("rx count=%u\n", rx_count);
-		unsigned rx_start = 0;
-		unsigned rx_end = 0;
-
-		if (unlikely(rx_count > 1)) {
+	if (unlikely(rx_count > 1)) {
 
 
-			// LOG("unsorted\n");
-			// for (unsigned i = 0; i < rx_count; ++i) {
-			// 	LOG("bit=%u ts=%x\n", rx_indices[i], rx_timestamps[i]);
-			// }
+		// LOG("unsorted\n");
+		// for (unsigned i = 0; i < rx_count; ++i) {
+		// 	LOG("bit=%u ts=%x\n", rx_indices[i], rx_timestamps[i]);
+		// }
 
-			// sort
-			for (unsigned i = 0; i < rx_count; ++i) {
-				for (unsigned j = i + 1; j < rx_count; ++j) {
-					if (rx_timestamps[j] < rx_timestamps[i]) {
-						uint16_t tmp_ts = rx_timestamps[j];
-						rx_timestamps[j] = rx_timestamps[i];
-						rx_timestamps[i] = tmp_ts;
+		// sort
+		for (unsigned i = 0; i < rx_count; ++i) {
+			for (unsigned j = i + 1; j < rx_count; ++j) {
+				if (rx_timestamps[j] < rx_timestamps[i]) {
+					uint16_t tmp_ts = rx_timestamps[j];
+					rx_timestamps[j] = rx_timestamps[i];
+					rx_timestamps[i] = tmp_ts;
 
-						uint8_t tmp_index = rx_indices[j];
-						rx_indices[j] = rx_indices[i];
-						rx_indices[i] = tmp_index;
-					}
+					uint8_t tmp_index = rx_indices[j];
+					rx_indices[j] = rx_indices[i];
+					rx_indices[i] = tmp_index;
 				}
 			}
-
-			// LOG("sorted\n");
-			// for (unsigned i = 0; i < rx_count; ++i) {
-			// 	LOG("bit=%u ts=%x\n", rx_indices[i], rx_timestamps[i]);
-			// }
-
-			// detect wrap around
-			for (unsigned i = 1, j = 0; i < rx_count; ++i, ++j) {
-				uint16_t ts_i = rx_timestamps[i];
-				uint16_t ts_j = rx_timestamps[j];
-				uint16_t ts_diff = ts_i - ts_j;
-
-				if (ts_diff >= 0x8000) {
-					// LOG("i=%u diff=%lx\n", i, ts_diff);
-					rx_start = i;
-					break;
-				}
-			}
-
-			rx_end = (rx_start + rx_count - 1) % rx_count;
-			// LOG("start=%u end=%u\n", rx_start, rx_end);
 		}
+
+		// LOG("sorted\n");
+		// for (unsigned i = 0; i < rx_count; ++i) {
+		// 	LOG("bit=%u ts=%x\n", rx_indices[i], rx_timestamps[i]);
+		// }
+
+		// detect wrap around
+		for (unsigned i = 1, j = 0; i < rx_count; ++i, ++j) {
+			uint16_t ts_i = rx_timestamps[i];
+			uint16_t ts_j = rx_timestamps[j];
+			uint16_t ts_diff = ts_i - ts_j;
+
+			if (ts_diff >= 0x8000) {
+				// LOG("i=%u diff=%lx\n", i, ts_diff);
+				rx_start = i;
+				break;
+			}
+		}
+
+		rx_end = (rx_start + rx_count - 1) % rx_count;
+		// LOG("start=%u end=%u\n", rx_start, rx_end);
+	}
+
+	if (likely(rx_count > 0)) {
 
 		for (unsigned i = 0; i < rx_count; ++i) {
 			const unsigned rx_index = (i + rx_start) % rx_count;
@@ -1450,16 +1432,46 @@ SC_RAMFUNC static void can_int(uint8_t index)
 		}
 
 		__atomic_store_n(&can->rx_pi, rx_pi, __ATOMIC_RELEASE);
+	}
 
-		if (unlikely(rx_lost)) {
-			sc_can_status status;
-			status.type = SC_CAN_STATUS_FIFO_TYPE_RX_LOST;
-			status.timestamp_us = tsc;
-			status.rx_lost = rx_lost;
+	if (unlikely(rx_lost)) {
+		sc_can_status status;
+		status.type = SC_CAN_STATUS_FIFO_TYPE_RX_LOST;
+		status.timestamp_us = tsc;
+		status.rx_lost = rx_lost;
 
-			sc_can_status_queue(index, &status);
-			++events;
-		}
+		sc_can_status_queue(index, &status);
+		++events;
+	}
+}
+
+SC_RAMFUNC static void can_int(uint8_t index)
+{
+	// LOG("> ch%u int\n", index);
+
+	struct can *can = &cans[index];
+	uint32_t iflag1 = can->flex_can->IFLAG1;
+	// uint32_t iflag2 = can->flex_can->IFLAG2;
+	uint32_t events = 0;
+	uint32_t tsc = GPT2->CNT;
+
+
+	// clear interrupts
+	can->flex_can->IFLAG1 = iflag1;
+	// can->flex_can->IFLAG2 = iflag2;
+
+
+	if (iflag1 & 1) {
+		// TX mailbox
+		iflag1 &= ~(uint32_t)1;
+
+		service_tx_box(index, &events, tsc);
+	}
+
+	// if (iflag1 || iflag2) { // rx frames
+	if (iflag1) { // rx frames
+
+		can_int_rx(index, &events, tsc);
 	}
 
 	can_int_update_status(index, &events, tsc);
