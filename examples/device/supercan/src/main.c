@@ -1357,9 +1357,9 @@ SC_RAMFUNC static void can_usb_task(void *param)
 	uint8_t current_bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
 	uint8_t tx_errors = 0;
 	uint8_t rx_errors = 0;
-	TickType_t bus_activity_tc = 0;
+	TickType_t bus_activity_ts = 0;
+	TickType_t error_ts = 0;
 	bool had_bus_activity = false;
-	bool has_bus_error = false;
 	bool had_bus_error = false;
 	bool send_can_status = 0;
 	bool yield = false;
@@ -1375,10 +1375,11 @@ SC_RAMFUNC static void can_usb_task(void *param)
 		}
 
 		if (unlikely(!can->enabled)) {
+			const TickType_t no_error_ts = xTaskGetTickCount() - pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
 			current_bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
-			bus_activity_tc = xTaskGetTickCount() - pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
+			bus_activity_ts = no_error_ts;
+			error_ts = no_error_ts;
 			had_bus_activity = false;
-			has_bus_error = false;
 			had_bus_error = false;
 			tx_errors = 0;
 			rx_errors = 0;
@@ -1397,6 +1398,8 @@ SC_RAMFUNC static void can_usb_task(void *param)
 
 		for (bool done = false; !done; ) {
 			done = true;
+
+			const TickType_t now = xTaskGetTickCount();
 
 // #if SUPERCAN_DEBUG
 // 			// loop
@@ -1477,7 +1480,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 
 				switch (s->type) {
 				case SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS: {
-					bus_activity_tc = xTaskGetTickCount();
+					bus_activity_ts = now;
 					current_bus_status = s->bus_state;
 					LOG("ch%u bus status %#x\n", index, current_bus_status);
 					send_can_status = 1;
@@ -1485,8 +1488,10 @@ SC_RAMFUNC static void can_usb_task(void *param)
 				case SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR: {
 					struct sc_msg_can_error *msg = NULL;
 
-					bus_activity_tc = xTaskGetTickCount();
-					has_bus_error = true;
+					bus_activity_ts = now;
+					if (likely(s->bus_error.code)) {
+						error_ts = now;
+					}
 
 					if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
 						msg = (struct sc_msg_can_error *)tx_ptr;
@@ -1523,7 +1528,8 @@ SC_RAMFUNC static void can_usb_task(void *param)
 					send_can_status = 1;
 				} break;
 				case SC_CAN_STATUS_FIFO_TYPE_TXR_DESYNC:
-					bus_activity_tc = xTaskGetTickCount();
+					bus_activity_ts = now;
+					error_ts = now;
 					can->desync = true;
 					break;
 				case SC_CAN_STATUS_FIFO_TYPE_RX_LOST:
@@ -1556,7 +1562,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 				SC_DEBUG_ASSERT((size_t)consumed + usb_can->tx_offsets[usb_can->tx_bank] <= TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]));
 				usb_can->tx_offsets[usb_can->tx_bank] += consumed;
 				tx_ptr += consumed;
-				bus_activity_tc = xTaskGetTickCount();
+				bus_activity_ts = now;
 				break;
 			}
 		}
@@ -1566,7 +1572,9 @@ SC_RAMFUNC static void can_usb_task(void *param)
 		}
 
 
-		const bool has_bus_activity = xTaskGetTickCount() - bus_activity_tc < pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
+
+		const bool has_bus_activity = xTaskGetTickCount() - bus_activity_ts < pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
+		const bool has_bus_error = xTaskGetTickCount() - error_ts < pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
 		bool led_change =
 			has_bus_activity != had_bus_activity ||
 			has_bus_error != had_bus_error;
