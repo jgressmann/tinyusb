@@ -171,6 +171,21 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 	}
 }
 
+static inline void can_state_reset(uint8_t index)
+{
+	struct can *can = &cans[index];
+
+	can->desync = false;
+	can->tx_dropped = 0;
+	can->rx_lost = 0;
+	can->status_put_index = 0;
+	can->status_get_index = 0;
+	can->int_comm_flags = 0;
+#if SUPERCAN_DEBUG
+	memset(can->status_fifo, 0, sizeof(can->status_fifo));
+#endif
+}
+
 static inline void cans_reset(void)
 {
 		// cans_reset();
@@ -618,8 +633,14 @@ send_can_info:
 
 					if (is_enabled) {
 						sc_board_can_feat_set(index, can->features);
+						sc_board_can_go_bus(index, is_enabled);
+						sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_BUS_ON_PASSIVE);
+					} else {
+						sc_board_can_go_bus(index, is_enabled);
+						can_state_reset(index);
+						sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_BUS_OFF);
 					}
-					sc_board_can_go_bus(index, is_enabled);
+
 					can->enabled = is_enabled;
 
 					xSemaphoreGive(usb_can->mutex_handle);
