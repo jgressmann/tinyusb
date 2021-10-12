@@ -1229,7 +1229,6 @@ SC_RAMFUNC extern void sc_can_notify_task_def(uint8_t index, uint32_t count)
 SC_RAMFUNC extern void sc_can_notify_task_isr(uint8_t index, uint32_t count)
 {
 	struct can *can = &cans[index];
-	bool notify_usb = false;
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
 	if (likely(count)) {
