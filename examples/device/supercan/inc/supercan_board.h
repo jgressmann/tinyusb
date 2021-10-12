@@ -51,6 +51,7 @@
 
 enum {
 	SC_LED_BURST_DURATION_MS = 8,
+	SC_BUS_ACTIVITY_TIMEOUT_MS = 256,
 
 	SC_CAN_LED_STATUS_DISABLED = 0,
 	SC_CAN_LED_STATUS_ENABLED_BUS_OFF,
@@ -86,7 +87,7 @@ typedef struct _sc_can_bit_timing_range {
 typedef struct _sc_can_status {
 	volatile uint32_t timestamp_us;
 	volatile uint8_t type;
-	// volatile uint8_t reserved;
+
 	union {
 		volatile struct {
 			uint8_t tx : 1;

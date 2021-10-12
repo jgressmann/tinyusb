@@ -1323,7 +1323,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 #else
 SC_RAMFUNC static void can_usb_task(void *param)
 {
-	const unsigned BUS_ACTIVITY_TIMEOUT_MS = 256;
+
 
 	const uint8_t index = (uint8_t)(uintptr_t)param;
 	SC_ASSERT(index < TU_ARRAY_SIZE(cans));
@@ -1360,7 +1360,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 
 		if (unlikely(!can->enabled)) {
 			current_bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
-			bus_activity_tc = xTaskGetTickCount() - pdMS_TO_TICKS(BUS_ACTIVITY_TIMEOUT_MS);
+			bus_activity_tc = xTaskGetTickCount() - pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
 			had_bus_activity = false;
 			has_bus_error = false;
 			had_bus_error = false;
@@ -1547,10 +1547,12 @@ SC_RAMFUNC static void can_usb_task(void *param)
 			sc_can_bulk_in_submit(index, __func__);
 		}
 
-		const bool has_bus_activity = xTaskGetTickCount() - bus_activity_tc < pdMS_TO_TICKS(BUS_ACTIVITY_TIMEOUT_MS);
+
+		const bool has_bus_activity = xTaskGetTickCount() - bus_activity_tc < pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
 		bool led_change =
 			has_bus_activity != had_bus_activity ||
 			has_bus_error != had_bus_error;
+
 		if (!led_change) {
 			if (previous_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE &&
 				current_bus_status < SC_CAN_STATUS_ERROR_PASSIVE) {
