@@ -1475,10 +1475,10 @@ SC_RAMFUNC static void can_usb_task(void *param)
 				sc_can_status *s = &can->status_fifo[fifo_index];
 
 				done = false;
-				bus_activity_tc = xTaskGetTickCount();
 
 				switch (s->type) {
 				case SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS: {
+					bus_activity_tc = xTaskGetTickCount();
 					current_bus_status = s->bus_state;
 					LOG("ch%u bus status %#x\n", index, current_bus_status);
 					send_can_status = 1;
@@ -1486,6 +1486,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 				case SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR: {
 					struct sc_msg_can_error *msg = NULL;
 
+					bus_activity_tc = xTaskGetTickCount();
 					has_bus_error = true;
 
 					if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
@@ -1523,6 +1524,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 					send_can_status = 1;
 				} break;
 				case SC_CAN_STATUS_FIFO_TYPE_TXR_DESYNC:
+					bus_activity_tc = xTaskGetTickCount();
 					can->desync = true;
 					break;
 				case SC_CAN_STATUS_FIFO_TYPE_RX_LOST:

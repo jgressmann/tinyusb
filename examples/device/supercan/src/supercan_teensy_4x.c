@@ -75,6 +75,11 @@
  */
 #if defined(TEENSY_4X) || defined(D5035_03)
 
+#include <FreeRTOS.h>
+// #include <task.h>
+// #include <semphr.h>
+#include <timers.h>
+
 #include <bsp/board.h>
 #include <supercan_board.h>
 #include <leds.h>
@@ -110,33 +115,56 @@ static const uint8_t flexcan_mb_step_size[2] = {
 };
 
 struct led {
-	volatile uint32_t* const on_reg;
-	volatile uint32_t* const off_reg;
+	GPIO_Type* const gpio;
 	uint32_t iomux_mux_reg;
 	uint32_t iomux_pad_reg;
 	uint8_t shift;
 };
 
 #define LED_REG_MUX_PAD(mux, a, b, c, pad) mux, pad
-#define LED_STATIC_INITIALIZER(name, on_reg, off_reg, iomux_macro, shift) \
-	{ on_reg, off_reg, LED_REG_MUX_PAD(iomux_macro), shift }
+#define LED_STATIC_INITIALIZER(name, gpio, iomux_macro, shift) \
+	{ gpio, LED_REG_MUX_PAD(iomux_macro), shift }
 
 
 
 static const struct led leds[] = {
-	LED_STATIC_INITIALIZER("debug", &GPIO2->DR_CLEAR, &GPIO2->DR_SET, IOMUXC_GPIO_B0_01_GPIO2_IO01, 3), // board led
+	LED_STATIC_INITIALIZER("debug", GPIO2, IOMUXC_GPIO_B0_01_GPIO2_IO01, 3), // board led
 #if D5035_03
-	LED_STATIC_INITIALIZER("red", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_B0_00_GPIO2_IO00, 0),
-	LED_STATIC_INITIALIZER("orange", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_B0_11_GPIO2_IO11, 17),
-	LED_STATIC_INITIALIZER("green", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_B1_00_GPIO2_IO16, 22),
-	LED_STATIC_INITIALIZER("blue", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_B1_01_GPIO2_IO17, 23),
-	LED_STATIC_INITIALIZER("?", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_B0_10_GPIO2_IO10, 16),
-	LED_STATIC_INITIALIZER("can0_green", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_EMC_08_GPIO4_IO08, 8),
-	LED_STATIC_INITIALIZER("can0_red", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_EMC_06_GPIO4_IO06, 6),
-	LED_STATIC_INITIALIZER("can1_green", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_EMC_05_GPIO4_IO05, 5),
-	LED_STATIC_INITIALIZER("can1_red", &GPIO2->DR_SET, &GPIO2->DR_CLEAR, IOMUXC_GPIO_EMC_04_GPIO4_IO04, 4),
+	LED_STATIC_INITIALIZER("can0_green", GPIO2, IOMUXC_GPIO_B1_01_GPIO2_IO17, 17),
+	LED_STATIC_INITIALIZER("can0_red", GPIO2, IOMUXC_GPIO_B1_00_GPIO2_IO16, 16),
+	LED_STATIC_INITIALIZER("can1_green", GPIO2, IOMUXC_GPIO_B0_11_GPIO2_IO11, 11),
+	LED_STATIC_INITIALIZER("can1_red", GPIO2, IOMUXC_GPIO_B0_00_GPIO2_IO00, 0),
+	LED_STATIC_INITIALIZER("?", GPIO4, IOMUXC_GPIO_EMC_04_GPIO4_IO04, 4),
+	LED_STATIC_INITIALIZER("?", GPIO4, IOMUXC_GPIO_EMC_05_GPIO4_IO05, 5),
+	LED_STATIC_INITIALIZER("?", GPIO4, IOMUXC_GPIO_EMC_06_GPIO4_IO06, 6),
+	LED_STATIC_INITIALIZER("?", GPIO4, IOMUXC_GPIO_EMC_08_GPIO4_IO08, 8),
+	LED_STATIC_INITIALIZER("?", GPIO2, IOMUXC_GPIO_B0_10_GPIO2_IO10, 10),
 #endif
 };
+
+
+static inline void leds_init(void)
+{
+	for (size_t i = 0; i < TU_ARRAY_SIZE(leds); ++i) {
+		struct led const *l = &leds[i];
+
+		// LOG("mux_reg=%p pad_reg=%p\n", l->iomux_mux_reg, l->iomux_pad_reg);
+
+		*((volatile uint32_t *)l->iomux_mux_reg) = 5; // GPIO function
+		*((volatile uint32_t *)l->iomux_pad_reg) = 0b000000000000110000; // default drive strength
+
+		// output
+		l->gpio->GDIR |= ((uint32_t)1) << l->shift;
+	}
+
+	// int l = LED_CAN0_STATUS_GREEN;
+	// leds[l].gpio->DR_SET |= 1u << leds[l].shift;
+
+	// for (int i = 0; i < SC_BOARD_LED_COUNT; ++i) {
+
+
+	// }
+}
 
 struct flexcan_mailbox {
 	volatile uint32_t CS;
@@ -165,8 +193,8 @@ struct can {
 	struct rx_fifo_element rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
 	struct tx_fifo_element tx_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
 	struct txr_fifo_element txr_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
-
-
+	StaticTimer_t timer_mem;
+	TimerHandle_t timer_handle;
 	CAN_Type* const flex_can;
 	const IRQn_Type flex_can_irq;
 	const IRQn_Type tx_queue_irq;
@@ -253,9 +281,9 @@ SC_RAMFUNC extern void sc_board_led_set(uint8_t index, bool on)
 	SC_DEBUG_ASSERT(index < ARRAY_SIZE(leds));
 
 	if (on) {
-		*led->on_reg |= bit;
+		led->gpio->DR_SET |= bit;
 	} else {
-		*led->off_reg |= bit;
+		led->gpio->DR_CLEAR |= bit;
 	}
 }
 
@@ -496,6 +524,8 @@ static inline void timer_1MHz_init(void)
 	GPT2->CR |= GPT_CR_EN_MASK;
 }
 
+SC_RAMFUNC static void bus_activity_timer_expired(TimerHandle_t xTimer);
+
 static inline void can_init_once(void)
 {
 	device_identifier = OCOTP->CFG0 ^ OCOTP->CFG1; // 64 bit DEVICE_ID
@@ -507,6 +537,14 @@ static inline void can_init_once(void)
 		NVIC_SetPriority(can->tx_queue_irq, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 		// should be no need to disable this one
 		NVIC_EnableIRQ(can->tx_queue_irq);
+
+		can->timer_handle = xTimerCreateStatic(
+							"leds",
+							pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS / 2),
+							pdTRUE /* auto reload */,
+							(void*)(uintptr_t)i,
+							&bus_activity_timer_expired,
+							&can->timer_mem);
 	}
 
 	// // 24MHz
@@ -558,19 +596,11 @@ static inline void can_init_once(void)
 	CLOCK_EnableClock(kCLOCK_Can3S);
 	CLOCK_EnableClock(kCLOCK_Can1);
 	CLOCK_EnableClock(kCLOCK_Can1S);
+
+
+
 }
 
-static inline void leds_init(void)
-{
-	for (size_t i = 0; i < TU_ARRAY_SIZE(leds); ++i) {
-		struct led const *l = &leds[i];
-
-		// LOG("mux_reg=%p pad_reg=%p\n", l->iomux_mux_reg, l->iomux_pad_reg);
-
-		*((volatile uint32_t *)l->iomux_mux_reg) = 5; // GPIO function
-		*((volatile uint32_t *)l->iomux_pad_reg) = 0b000000000000110000; // default drive strength
-	}
-}
 
 extern void sc_board_init_begin(void)
 {
@@ -776,6 +806,9 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 
 		thaw(index);
 
+		(void)xTimerStart(can->timer_handle, pdMS_TO_TICKS(0));
+
+
 
 		// if (can->fd_enabled) {
 		// 	can->flex_can->MB_64B[0].WORD[0] = 0xdeadbeef;
@@ -808,6 +841,8 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 		can->flex_can->ESR1 = ~0;
 
 		can_reset_state(index);
+
+		(void)xTimerStop(can->timer_handle, pdMS_TO_TICKS(0));
 	}
 }
 
@@ -889,12 +924,10 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
 {
 	struct can *can = &cans[index];
-
 	int result = 0;
 	bool have_data_to_send = false;
 	uint8_t txr_gi = can->txr_gi;
 	uint8_t rx_gi = can->rx_gi;
-	// size_t step = flexcan_mb_step_size[can->fd_enabled];
 
 	for (;;) {
 		const uint8_t txr_pi = __atomic_load_n(&can->txr_pi, __ATOMIC_ACQUIRE);
@@ -1541,6 +1574,8 @@ SC_RAMFUNC void sc_board_led_can_status_set(uint8_t index, int status)
 
 	SC_DEBUG_ASSERT(index < ARRAY_SIZE(cans));
 
+	LOG("ch%u LED status=%d\n", index, status);
+
 	switch (status) {
 	case SC_CAN_LED_STATUS_DISABLED:
 		led_set(can->led_status_green, 0);
@@ -1573,6 +1608,24 @@ SC_RAMFUNC void sc_board_led_can_status_set(uint8_t index, int status)
 	}
 }
 #endif
+
+SC_RAMFUNC static void bus_activity_timer_expired(TimerHandle_t xTimer)
+{
+	sc_can_status status;
+	uint8_t index = (uintptr_t)pvTimerGetTimerID(xTimer);
+
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans));
+
+	// LOG("ch%u bus activity message\n", index);
+
+	// queue dummy status mesage to force re-evaluation of bus activity
+	status.type = SC_CAN_STATUS_FIFO_TYPE_RX_LOST;
+	status.rx_lost = 0;
+	status.timestamp_us = GPT2->CNT;
+
+	sc_can_status_queue(index, &status);
+	sc_can_notify_task_def(index, 1);
+}
 
 #if !D5035_03
 //////////////////////////////////////////////////////////////////////////////
