@@ -1209,18 +1209,14 @@ SC_RAMFUNC extern void sc_can_notify_task_isr(uint8_t index, uint32_t count)
 {
 	struct can *can = &cans[index];
 	bool notify_usb = false;
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
 	if (likely(count)) {
 		for (uint32_t i = 0; i < count - 1; ++i) {
 			vTaskNotifyGiveFromISR(can->usb_task_handle, NULL);
 		}
 
-		notify_usb = true;
-	}
-
-	if (likely(notify_usb)) {
 		// LOG("CAN%u notify\n", index);
-		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 		vTaskNotifyGiveFromISR(can->usb_task_handle, &xHigherPriorityTaskWoken);
 		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 	}
