@@ -35,9 +35,9 @@
 
 #include <bsp/board.h>
 #include <tusb.h>
-#include <usbd_pvt.h>
+#include <device/usbd_pvt.h>
 #include <class/dfu/dfu_rt_device.h>
-#include <dcd.h>
+#include <device/dcd.h>
 
 
 #include <supercan_board.h>
