@@ -43,11 +43,8 @@
 #include <supercan_board.h>
 #include <supercan_m1.h>
 #include <usb_descriptors.h>
-
-
 #include <leds.h>
-// #include <crc32.h>
-// #include <sections.h>
+
 
 enum {
 	CAN_STATUS_FIFO_SIZE = 256,
