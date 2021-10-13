@@ -1258,7 +1258,7 @@ SC_RAMFUNC static void can_int_update_status(
 }
 
 SC_RAMFUNC static void can_int_rx(
-	uint8_t index, uint32_t* events, uint32_t tsc)
+	uint8_t index, uint32_t* const events, uint32_t tsc)
 {
 	const uint16_t TS_WRAP_THRESHOLD = 0x8000;
 	struct can *can = &cans[index];
@@ -1387,7 +1387,7 @@ SC_RAMFUNC static void can_int_rx(
 				copy_swap_data_words(e->box.WORD, box->WORD, words);
 
 				++rx_pi;
-				++events;
+				++*events;
 			} else {
 				++rx_lost;
 			}
@@ -1408,7 +1408,7 @@ SC_RAMFUNC static void can_int_rx(
 		status.rx_lost = rx_lost;
 
 		sc_can_status_queue(index, &status);
-		++events;
+		++*events;
 	}
 }
 
