@@ -1309,19 +1309,25 @@ SC_RAMFUNC static void can_int_rx(
 		// 	LOG("bit=%u ts=%x\n", rx_indices[i], rx_timestamps[i]);
 		// }
 
-		// sort
-		for (unsigned i = 0; i < rx_count; ++i) {
-			for (unsigned j = i + 1; j < rx_count; ++j) {
-				if (rx_timestamps[j] < rx_timestamps[i]) {
-					uint16_t tmp_ts = rx_timestamps[j];
-					rx_timestamps[j] = rx_timestamps[i];
-					rx_timestamps[i] = tmp_ts;
+		// selection sort
 
-					uint8_t tmp_index = rx_indices[j];
-					rx_indices[j] = rx_indices[i];
-					rx_indices[i] = tmp_index;
+		for (unsigned i = 0; i < rx_count; ++i) {
+			unsigned best = i;
+
+			for (unsigned j = i + 1; j < rx_count; ++j) {
+				if (rx_timestamps[j] < rx_timestamps[best]) {
+					best = j;
 				}
 			}
+
+			uint16_t best_ts = rx_timestamps[best];
+			uint8_t best_index = rx_indices[best];
+
+			rx_timestamps[best] = rx_timestamps[i];
+			rx_indices[best] = rx_indices[i];
+
+			rx_timestamps[i] = best_ts;
+			rx_indices[i] = best_index;
 		}
 
 		// LOG("sorted\n");
