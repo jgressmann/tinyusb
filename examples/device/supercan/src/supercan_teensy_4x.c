@@ -1271,17 +1271,15 @@ SC_RAMFUNC static void can_int_rx(
 	uint8_t rx_indices[RX_MAILBOX_COUNT];
 	uint8_t rx_count = 0;
 
-	// LOG("IFLAG1=%lx\n", iflag1);
-	// LOG("IFLAG2=%lx\n", iflag2);
-
 	for (uint32_t i = 0, mask = ((uint32_t)1) << TX_MAILBOX_COUNT, k = TX_MAILBOX_COUNT; i < RX_MAILBOX_COUNT; ++i, ++k, mask <<= 1) {
 		// if (iflag1 & mask) {
 			struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * k);
-			unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
+			unsigned cs = box->CS;
+			unsigned code = (cs & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
 
 			if (likely(code == MB_RX_FULL || code == MB_RX_OVERRUN)) {
 				rx_indices[rx_count] = k;
-				rx_timestamps[rx_count] = (box->CS & CAN_CS_TIME_STAMP_MASK) >> CAN_CS_TIME_STAMP_SHIFT;
+				rx_timestamps[rx_count] = (cs & CAN_CS_TIME_STAMP_MASK) >> CAN_CS_TIME_STAMP_SHIFT;
 
 				++rx_count;
 				rx_lost += code == MB_RX_OVERRUN;
@@ -1302,7 +1300,6 @@ SC_RAMFUNC static void can_int_rx(
 	unsigned rx_end = 0;
 
 	if (unlikely(rx_count > 1)) {
-
 
 		// LOG("unsorted\n");
 		// for (unsigned i = 0; i < rx_count; ++i) {
