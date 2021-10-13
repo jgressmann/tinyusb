@@ -86,6 +86,9 @@
 #include <fsl_clock.h>
 #include <fsl_iomuxc.h>
 
+// disable warning for message box pointer alignment
+#pragma GCC diagnostic ignored "-Wcast-align"
+
 enum {
 	TX_MAILBOX_COUNT = 1,
 	// 14 requires 2 ram regions
