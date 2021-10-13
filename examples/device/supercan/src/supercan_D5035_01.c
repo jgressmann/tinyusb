@@ -60,9 +60,6 @@ enum {
 					| SC_FEATURE_FLAG_MON_MODE
 					| SC_FEATURE_FLAG_RES_MODE
 					| SC_FEATURE_FLAG_EXT_LOOP_MODE,
-
-	CAN_STATUS_FIFO_SIZE = 256,
-
 };
 
 
@@ -153,7 +150,6 @@ struct can {
 	uint32_t nm_us_per_bit;
 	uint32_t dt_us_per_bit_factor_shift8;
 	CAN_PSR_Type int_prev_psr_reg;
-	uint16_t rx_lost;
 	uint16_t features;
 	uint8_t int_prev_bus_state;
 	uint8_t int_prev_rx_errors;
@@ -384,34 +380,7 @@ SC_RAMFUNC static inline uint8_t can_map_m_can_ec(uint8_t value)
 	return can_map_m_can_ec_table[value & 7];
 }
 
-SC_RAMFUNC static bool can_poll(uint8_t index, uint32_t *events, uint32_t tsc);
-
-SC_RAMFUNC static void sat_u16(volatile uint16_t* sat)
-{
-	uint16_t prev = 0;
-	uint16_t curr = 0;
-
-	do {
-		curr = __atomic_load_n(sat, __ATOMIC_ACQUIRE);
-
-		if (curr == 0xffff) {
-			break;
-		}
-
-		prev = curr;
-		++curr;
-	} while (!__atomic_compare_exchange_n(sat, &prev, curr, 0 /* weak */, __ATOMIC_RELEASE, __ATOMIC_RELAXED));
-}
-
-SC_RAMFUNC static inline void can_inc_sat_rx_lost(uint8_t index)
-{
-	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans));
-
-	struct can *can = &cans[index];
-
-	sat_u16(&can->rx_lost);
-}
-
+SC_RAMFUNC static bool can_poll(uint8_t index, uint32_t * const events, uint32_t tsc);
 
 
 static inline void counter_1MHz_init_clock(void)
@@ -698,6 +667,9 @@ SC_RAMFUNC static void can_int(uint8_t index)
 		// LOG("CAN%u RX/TX\n", index);
 		can_poll(index, &events, tsc);
 	}
+
+	// msg->tx_fifo_size = SC_BOARD_CAN_TX_FIFO_SIZE - can->m_can->TXFQS.bit.TFFL;
+	// msg->rx_fifo_size = can->m_can->RXF0S.bit.F0FL;
 
 	if (likely(events)) {
 		// LOG(">");
@@ -1173,23 +1145,6 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	return queued;
 }
 
-SC_RAMFUNC extern void sc_board_can_status_fill(uint8_t index, struct sc_msg_can_status *msg)
-{
-	struct can *can = &cans[index];
-
-	uint16_t rx_lost = __sync_fetch_and_and(&can->rx_lost, 0);
-
-	// LOG("status ts %lu\n", ts);
-	CAN_ECR_Type ecr = can->m_can->ECR;
-
-
-	msg->rx_lost = rx_lost;
-	msg->tx_errors = ecr.bit.TEC;
-	msg->rx_errors = ecr.bit.REC;
-	msg->tx_fifo_size = SC_BOARD_CAN_TX_FIFO_SIZE - can->m_can->TXFQS.bit.TFFL;
-	msg->rx_fifo_size = can->m_can->RXF0S.bit.F0FL;
-}
-
 SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
 {
 	struct can *can = &cans[index];
@@ -1593,7 +1548,7 @@ static volatile uint32_t rx_lost_reported[TU_ARRAY_SIZE(cans)];
 
 SC_RAMFUNC static bool can_poll(
 	uint8_t index,
-	uint32_t* events,
+	uint32_t* const events,
 	uint32_t tsc)
 {
 	SC_DEBUG_ASSERT(events);
@@ -1604,17 +1559,9 @@ SC_RAMFUNC static bool can_poll(
 	uint32_t tsv[SC_BOARD_CAN_RX_FIFO_SIZE];
 	uint8_t count = 0;
 	uint8_t pi = 0;
+	unsigned rx_lost = 0;
 
 	count = can->m_can->RXF0S.bit.F0FL;
-	// static volatile uint32_t c = 0;
-	// tsc = c++;
-	// if (!counter_1MHz_is_current_value_ready()) {
-	// 	LOG("ch%u counter not ready\n", index);
-	// }
-	//tsc = counter_1MHz_wait_for_current_value(index);
-	// counter_1MHz_request_current_value();
-	//tsc = counter_1MHz_read_unsafe(index);
-
 
 
 	if (count) {
@@ -1667,7 +1614,7 @@ SC_RAMFUNC static bool can_poll(
 
 			if (unlikely(used == SC_BOARD_CAN_RX_FIFO_SIZE)) {
 				//__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
-				can_inc_sat_rx_lost(index);
+				++rx_lost;
 
 #ifdef SUPERCAN_DEBUG
 				{
@@ -1772,8 +1719,16 @@ SC_RAMFUNC static bool can_poll(
 		__atomic_store_n(&can->tx_put_index, pi, __ATOMIC_RELEASE);
 	}
 
-	// Because this task runs at a higher priority, it is ok to do this last
-	//__atomic_thread_fence(__ATOMIC_RELEASE);
+	if (unlikely(rx_lost)) {
+		sc_can_status status;
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_RX_LOST;
+		status.timestamp_us = tsc;
+		status.rx_lost = rx_lost;
+
+		sc_can_status_queue(index, &status);
+		++*events;
+	}
 
 	return more;
 }
