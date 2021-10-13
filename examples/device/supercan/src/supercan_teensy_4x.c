@@ -25,59 +25,9 @@
  */
 
 
-/*
- * CCM_CSCMR2:
- * CAN_CLK_SEL
- *
- * 00 derive clock from pll3_sw_clk divided clock (60M)
- * 01 derive clock from osc_clk (24M)
- * 10 derive clock from pll3_sw_clk divided clock (80M)
- * 11 Disable FlexCAN clock
- *
- * reset default 11
- *
- * CAN_CLK_PODF
- * 000000 devide by 1
- * ...
- * 000111 devide by 8
- * ...
- * 111111 devide by 2^6
- *
- * reset default 000001
- *
- *
- * Handler: CAN3_IRQHandler
- *
- * kCLOCK_Can3
- * kCLOCK_Can3S
- *
- * IOMUXC_GPIO_EMC_36_FLEXCAN3_TX
- * IOMUXC_GPIO_EMC_37_FLEXCAN3_RX
- *
- * Message buffer address offset 0x80, 14 for 64 byte message
- * i.MX RT1060 Processor Reference Manual, Rev. 2, 12/2019 p. 2715
- * offset	message buffer
- * 0080 	MB0
- * 00C8 MB1
- * 0110 MB2
- * 0158 MB3
- * 01A0 MB4
- * 01E8 MB5
- * 0230 MB6
- * 0280 MB7
- * 02C8 MB8
- * 0310 MB9
- * 0358 MB10
- * 03A0 MB11
- * 03E8 MB12
- * 0430 MB13
- *
- */
 #if defined(TEENSY_4X) || defined(D5035_03)
 
 #include <FreeRTOS.h>
-// #include <task.h>
-// #include <semphr.h>
 #include <timers.h>
 
 #include <bsp/board.h>
