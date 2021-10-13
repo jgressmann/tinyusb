@@ -1308,6 +1308,7 @@ SC_RAMFUNC static void can_int_update_status(
 SC_RAMFUNC static void can_int_rx(
 	uint8_t index, uint32_t* events, uint32_t tsc)
 {
+	const uint16_t TS_WRAP_THRESHOLD = 0x8000;
 	struct can *can = &cans[index];
 	uint8_t* box_mem = ((uint8_t*)can->flex_can) + 0x80;
 	const size_t step = flexcan_mb_step_size[can->fd_enabled];
@@ -1382,7 +1383,7 @@ SC_RAMFUNC static void can_int_rx(
 			uint16_t ts_j = rx_timestamps[j];
 			uint16_t ts_diff = ts_i - ts_j;
 
-			if (ts_diff >= 0x8000) {
+			if (ts_diff >= TS_WRAP_THRESHOLD) {
 				// LOG("i=%u diff=%lx\n", i, ts_diff);
 				rx_start = i;
 				break;
@@ -1410,6 +1411,7 @@ SC_RAMFUNC static void can_int_rx(
 				struct rx_fifo_element *e = &can->rx_fifo[rx_fifo_index];
 				const uint32_t cs = box->CS;
 				const unsigned len = dlc_to_len((cs & CAN_CS_DLC_MASK) >> CAN_CS_DLC_SHIFT);
+				const uint16_t delta_ts = rx_timestamps[rx_end] - rx_timestamps[rx_index]; // must be in type!
 				unsigned words = len;
 
 				if (words & 3) {
@@ -1419,8 +1421,9 @@ SC_RAMFUNC static void can_int_rx(
 				words /= 4;
 
 				SC_ISR_ASSERT(rx_fifo_index < TU_ARRAY_SIZE(can->rx_fifo));
+				SC_ISR_ASSERT(delta_ts < TS_WRAP_THRESHOLD);
 
-				e->timestamp_us = tsc - (rx_timestamps[rx_end] - rx_timestamps[rx_index]) * can->ts_to_us;
+				e->timestamp_us = tsc - delta_ts * can->ts_to_us;
 				e->box.ID = box->ID;
 				e->box.CS = cs;
 				copy_swap_data_words(e->box.WORD, box->WORD, words);
