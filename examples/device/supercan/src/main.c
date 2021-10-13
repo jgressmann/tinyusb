@@ -54,28 +54,6 @@ enum {
 
 
 
-#if TU_BIG_ENDIAN == TU_BYTE_ORDER
-static inline uint16_t le16_to_cpu(uint16_t value) { return __builtin_bswap16(value); }
-static inline uint32_t le32_to_cpu(uint32_t value) { return __builtin_bswap32(value); }
-static inline uint16_t cpu_to_le16(uint16_t value) { return __builtin_bswap16(value); }
-static inline uint32_t cpu_to_le32(uint32_t value) { return __builtin_bswap32(value); }
-static inline uint16_t be16_to_cpu(uint16_t value) { return value; }
-static inline uint32_t be32_to_cpu(uint32_t value) { return value; }
-static inline uint16_t cpu_to_be16(uint16_t value) { return value; }
-static inline uint32_t cpu_to_be32(uint32_t value) { return value; }
-#else
-static inline uint16_t le16_to_cpu(uint16_t value) { return value; }
-static inline uint32_t le32_to_cpu(uint32_t value) { return value; }
-static inline uint16_t cpu_to_le16(uint16_t value) { return value; }
-static inline uint32_t cpu_to_le32(uint32_t value) { return value; }
-static inline uint16_t be16_to_cpu(uint16_t value) { return __builtin_bswap16(value); }
-static inline uint32_t be32_to_cpu(uint32_t value) { return __builtin_bswap32(value); }
-static inline uint16_t cpu_to_be16(uint16_t value) { return __builtin_bswap16(value); }
-static inline uint32_t cpu_to_be32(uint32_t value) { return __builtin_bswap32(value); }
-#endif
-
-
-
 extern void sc_can_log_bit_timing(sc_can_bit_timing const *c, char const* name)
 {
 	(void)c;
@@ -427,7 +405,7 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 #else
 			rep->byte_order = SC_BYTE_ORDER_LE;
 #endif
-			rep->cmd_buffer_size = cpu_to_be16(CMD_BUFFER_SIZE);
+			rep->cmd_buffer_size = tu_htons(CMD_BUFFER_SIZE);
 
 			// don't process any more messages
 			in_ptr = in_end;
@@ -1147,7 +1125,7 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
 				// Get Microsoft OS 2.0 compatible descriptor
 				uint16_t total_len;
 				memcpy(&total_len, desc_ms_os_20+8, 2);
-				total_len = le16_to_cpu(total_len);
+				total_len = tu_le16toh(total_len);
 				return tud_control_xfer(rhport, request, (void*)desc_ms_os_20, total_len);
 			}
 			break;
