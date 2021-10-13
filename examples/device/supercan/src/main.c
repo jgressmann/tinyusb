@@ -69,7 +69,7 @@ extern void sc_can_log_bit_timing(sc_can_bit_timing const *c, char const* name)
 
 
 
-
+// FIX ME: move to struct usb
 static StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
 static StaticTask_t usb_device_stack_mem;
 
@@ -312,8 +312,6 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 
 		ptr += hdr->len;
 	}
-
-
 #endif
 
 	// Required to immediately send URBs when buffer size > endpoint size
