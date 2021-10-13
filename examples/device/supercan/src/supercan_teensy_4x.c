@@ -970,13 +970,13 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 		const uint8_t rx_pi = __atomic_load_n(&can->rx_pi, __ATOMIC_ACQUIRE);
 
 		if (rx_gi != rx_pi) {
-			have_data_to_send = true;
-			// LOG("ch%u have rx\n", index);
-
 			const uint8_t rx_index = rx_gi % TU_ARRAY_SIZE(can->rx_fifo);
-			SC_DEBUG_ASSERT(rx_index < TU_ARRAY_SIZE(can->rx_fifo));
 			struct rx_fifo_element *e = &can->rx_fifo[rx_index];
 
+			have_data_to_send = true;
+			SC_DEBUG_ASSERT(rx_index < TU_ARRAY_SIZE(can->rx_fifo));
+
+			// LOG("ch%u have rx i=%u\n", index, rx_index);
 
 			const uint32_t cs = e->box.CS;
 			const uint8_t dlc = (cs & CAN_CS_DLC_MASK) >> CAN_CS_DLC_SHIFT;
@@ -1014,6 +1014,7 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 				}
 				msg->can_id = id;
 				msg->timestamp_us = e->timestamp_us;
+				// LOG("ch%u rx ts=%lx\n", index, msg->timestamp_us);
 
 				if (cs & CAN_CS_EDL_MASK) {
 					msg->flags |= SC_CAN_FRAME_FLAG_FDF;
@@ -1038,6 +1039,7 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 				++rx_gi;
 				// LOG("ch%u placed rx\n", index);
 			} else {
+				// LOG("ch%u full\n", index);
 				break;
 			}
 		} else {
@@ -1407,7 +1409,7 @@ SC_RAMFUNC static void can_int_rx(
 			uint8_t used = rx_pi - rx_gi;
 
 			if (likely(used < TU_ARRAY_SIZE(can->rx_fifo))) {
-				const uint8_t rx_fifo_index = rx_gi % TU_ARRAY_SIZE(can->rx_fifo);
+				const uint8_t rx_fifo_index = rx_pi % TU_ARRAY_SIZE(can->rx_fifo);
 				struct rx_fifo_element *e = &can->rx_fifo[rx_fifo_index];
 				const uint32_t cs = box->CS;
 				const unsigned len = dlc_to_len((cs & CAN_CS_DLC_MASK) >> CAN_CS_DLC_SHIFT);
@@ -1438,10 +1440,13 @@ SC_RAMFUNC static void can_int_rx(
 		}
 
 		__atomic_store_n(&can->rx_pi, rx_pi, __ATOMIC_RELEASE);
+
+		// LOG("ch%u ts=%lx\n", index, tsc);
 	}
 
 	if (unlikely(rx_lost)) {
 		sc_can_status status;
+
 		status.type = SC_CAN_STATUS_FIFO_TYPE_RX_LOST;
 		status.timestamp_us = tsc;
 		status.rx_lost = rx_lost;
