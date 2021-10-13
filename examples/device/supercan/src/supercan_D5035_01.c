@@ -479,7 +479,7 @@ static inline void counter_1MHz_reset(void)
 		counter; \
 	})
 
-SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* events, uint32_t tsc)
+SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const events, uint32_t tsc)
 {
 	// SC_ISR_ASSERT(index < TU_ARRAY_SIZE(cans));
 	SC_DEBUG_ASSERT(events);
