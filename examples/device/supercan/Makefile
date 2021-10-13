@@ -2,10 +2,12 @@ BOARD ?= d5035_01
 VID = 1d50
 PID = 5035
 
+DEPS_SUBMODULES += lib/FreeRTOS-Kernel
+
 include ../../../tools/top.mk
 include ../../make.mk
 
-FREERTOS_SRC = lib/FreeRTOS/FreeRTOS/Source
+FREERTOS_SRC = lib/FreeRTOS-Kernel
 
 INC += \
 	inc \

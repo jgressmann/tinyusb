@@ -75,6 +75,7 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, s
 #define configUSE_TIME_SLICING                  0
 #define configUSE_NEWLIB_REENTRANT              0
 #define configENABLE_BACKWARD_COMPATIBILITY     0
+#define configSTACK_ALLOCATION_FROM_SEPARATE_HEAP   0
 
 #define configSUPPORT_STATIC_ALLOCATION         1
 #define configSUPPORT_DYNAMIC_ALLOCATION        0
@@ -159,7 +160,7 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, s
 #ifdef __NVIC_PRIO_BITS
 	#define configPRIO_BITS       __NVIC_PRIO_BITS
 #else
-  #error "This port requires __NVIC_PRIO_BITS to be defined"
+  #error "FreeRTOS configPRIO_BITS to be defined"
 #endif
 
 /* The lowest interrupt priority that can be used in a call to a "set priority" function. */

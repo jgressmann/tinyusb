@@ -30,18 +30,20 @@
 #include "supercan_debug.h"
 
 
-void vApplicationStackOverflowHook(TaskHandle_t pxTask, signed char *pcTaskName)
+void vApplicationStackOverflowHook(TaskHandle_t pxTask, char *pcTaskName)
 {
 	(void) pxTask;
 
 	taskDISABLE_INTERRUPTS();
+
 	if (pcTaskName) {
-		board_uart_write("task ", -1);
-		board_uart_write(pcTaskName, -1);
-		board_uart_write("\n", -1);
+		board_uart_write("task '", 6);
+		board_uart_write(pcTaskName, configMAX_TASK_NAME_LEN); // may write nonsense !
+		board_uart_write("'\n", 2);
 	} else {
-		board_uart_write("stack overflow\n", -1);
+		board_uart_write("stack overflow\n", 15);
 	}
+
 	while (1);
 }
 
