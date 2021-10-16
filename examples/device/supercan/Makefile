@@ -13,9 +13,14 @@ INC += \
 	src \
 	$(TOP)/hw \
 	$(TOP)/$(FREERTOS_SRC)/include \
-	$(TOP)/$(FREERTOS_SRC)/portable/GCC/$(FREERTOS_PORT) \
-	$(TOP)/examples/device/atsame51_dfu/inc \
+	$(TOP)/$(FREERTOS_SRC)/portable/GCC/$(FREERTOS_PORT)
 
+
+ifdef D5035_01
+ifeq ($(D5035_01),1)
+INC += $(TOP)/examples/device/atsame51_dfu/inc
+endif
+endif
 
 CFLAGS += -Wno-error
 

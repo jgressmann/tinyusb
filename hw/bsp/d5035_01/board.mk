@@ -1,5 +1,7 @@
 DEPS_SUBMODULES += hw/mcu/microchip
 
+D5035_01 = 1
+
 CHIP ?= SAME51J18A
 ifdef CHIP
   ifeq ($(CHIP),SAME51J18A)
