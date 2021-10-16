@@ -74,14 +74,6 @@ static void tusb_device_task(void* param);
 
 
 
-
-// #define USB_TRAFFIC_DO_LED led_burst(LED_DEBUG_3, LED_BURST_DURATION_MS)
-// #define POWER_LED LED_DEBUG_0
-// #define CAN0_TRAFFIC_LED LED_DEBUG_1
-// #define CAN1_TRAFFIC_LED LED_DEBUG_2
-
-
-
 struct usb_can {
 	CFG_TUSB_MEM_ALIGN uint8_t tx_buffers[2][MSG_BUFFER_SIZE];
 	CFG_TUSB_MEM_ALIGN uint8_t rx_buffers[2][MSG_BUFFER_SIZE];
