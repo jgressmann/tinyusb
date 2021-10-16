@@ -39,6 +39,7 @@
 #include <mcu.h>
 #include <dfu_ram.h>
 #include <dfu_app.h>
+#include <leds.h>
 
 #include <tusb.h>
 #include <class/dfu/dfu_rt_device.h>

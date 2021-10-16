@@ -27,8 +27,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <supercan.h>
-#include "leds.h"
+
 
 #ifndef D5035_01
 #	error "Only include this file for D5035-01 boards"
@@ -39,6 +38,7 @@
 #endif
 
 #include <sam.h>
+#include <mcu.h>
 
 #define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
 #define SC_BOARD_USB_MANUFACTURER_STRING "2guys"
