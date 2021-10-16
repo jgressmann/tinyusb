@@ -50,10 +50,8 @@ CFLAGS += \
 
 CFLAGS += -Wno-error=undef -Wno-error=type-limits
 
-ifdef HWREV
-  CFLAGS += -DHWREV=$(HWREV)
-endif
-
+HWREV ?= 3
+CFLAGS += -DHWREV=$(HWREV)
 
 
 LD_FILE_IN = $(TOP)/hw/bsp/$(BOARD)/same51jxxa_flash.ld
