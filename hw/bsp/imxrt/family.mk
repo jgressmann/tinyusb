@@ -19,7 +19,9 @@ CFLAGS += \
 MIMXRT10XX ?= 1
 
 # mcu driver cause following warnings
-CFLAGS += -Wno-error=unused-parameter -Wno-error=implicit-fallthrough=
+CFLAGS += -Wno-error=unused-parameter
+# AppVeyor image gcc doesn't have this option
+#-Wno-error=implicit-fallthrough=
 
 MCU_DIR = $(SDK_DIR)/devices/$(MCU_VARIANT)
 
