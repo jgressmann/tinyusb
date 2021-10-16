@@ -29,9 +29,7 @@
 #include <supercan_m1.h>
 #include <supercan_board.h>
 #include <usb_descriptors.h>
-#include <mcu.h>
 #include <usnprintf.h>
-
 
 #ifndef SC_BOARD_CAN_COUNT
 #	error "Define SC_BOARD_CAN_COUNT!"

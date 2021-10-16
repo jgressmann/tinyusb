@@ -27,6 +27,9 @@
 
 #ifdef D5035_01
 
+#include <FreeRTOS.h>
+#include <timers.h>
+
 #include <supercan_debug.h>
 #include <supercan_board.h>
 #include <m_can.h>
@@ -36,6 +39,11 @@
 #include <mcu.h>
 #include <dfu_ram.h>
 #include <dfu_app.h>
+
+#include <tusb.h>
+#include <class/dfu/dfu_rt_device.h>
+
+#include <usb_descriptors.h>
 
 #ifndef ARRAY_SIZE
 #	define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
@@ -131,6 +139,20 @@ static void dfu_timer_expired(TimerHandle_t t)
 	dfu_request_dfu(1);
 	NVIC_SystemReset();
 }
+
+#if CFG_TUD_DFU_RUNTIME
+void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
+{
+	LOG("tud_dfu_runtime_reboot_to_dfu_cb\n");
+	/* The timer seems to be necessary, else dfu-util
+	 * will fail spurriously with EX_IOERR (74).
+	 */
+	xTimerStart(dfu.timer_handle, pdMS_TO_TICKS(ms));
+
+	// dfu_request_dfu(1);
+	// NVIC_SystemReset();
+}
+#endif // #if CFG_TUD_DFU_RT
 #endif
 
 

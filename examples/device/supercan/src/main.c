@@ -30,15 +30,12 @@
 #include <FreeRTOS.h>
 #include <task.h>
 #include <semphr.h>
-#include <timers.h>
 
 
 #include <bsp/board.h>
 #include <tusb.h>
 #include <device/usbd_pvt.h>
-#include <class/dfu/dfu_rt_device.h>
 #include <device/dcd.h>
-
 
 #include <supercan_board.h>
 #include <supercan_m1.h>
@@ -1154,19 +1151,7 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
 	return false;
 }
 
-#if CFG_TUD_DFU_RUNTIME
-void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
-{
-	LOG("tud_dfu_runtime_reboot_to_dfu_cb\n");
-	/* The timer seems to be necessary, else dfu-util
-	 * will fail spurriously with EX_IOERR (74).
-	 */
-	xTimerStart(dfu.timer_handle, pdMS_TO_TICKS(ms));
 
-	// dfu_request_dfu(1);
-	// NVIC_SystemReset();
-}
-#endif // #if CFG_TUD_DFU_RT
 
 static const usbd_class_driver_t sc_usb_driver = {
 #if CFG_TUSB_DEBUG >= 2
