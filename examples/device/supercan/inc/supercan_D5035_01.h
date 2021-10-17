@@ -25,10 +25,6 @@
 
 #pragma once
 
-#include <stdbool.h>
-#include <stdint.h>
-
-
 #ifndef D5035_01
 #	error "Only include this file for D5035-01 boards"
 #endif
@@ -40,9 +36,9 @@
 #include <sam.h>
 #include <mcu.h>
 
+
 #define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
 #define SC_BOARD_USB_MANUFACTURER_STRING "2guys"
-#define SC_BOARD_CAN_CLK_HZ 80000000
 #define SC_BOARD_CAN_COUNT 2
 #define SC_BOARD_NAME BOARD_NAME
 
@@ -63,42 +59,6 @@ enum {
 #define CAN1_TRAFFIC_LED LED_DEBUG_2
 
 
-enum {
-	SC_BOARD_CAN_TX_FIFO_SIZE = 32,
-	SC_BOARD_CAN_RX_FIFO_SIZE = 64,
-};
-
-
-SC_RAMFUNC static inline void sc_board_can_ts_request(uint8_t index)
-{
-	uint8_t reg;
-	(void)index;
-
-	reg = __atomic_load_n(&TC0->COUNT32.CTRLBSET.reg, __ATOMIC_ACQUIRE);
-
-	while (1) {
-		uint8_t cmd = reg & TC_CTRLBSET_CMD_Msk;
-
-		SC_DEBUG_ASSERT(cmd == TC_CTRLBSET_CMD_READSYNC || cmd == TC_CTRLBSET_CMD_NONE);
-		if (cmd == TC_CTRLBSET_CMD_READSYNC) {
-			break;
-		}
-
-		if (likely(__atomic_compare_exchange_n(
-			&TC0->COUNT32.CTRLBSET.reg,
-			&reg,
-			TC_CTRLBSET_CMD_READSYNC,
-			false, /* weak? */
-			__ATOMIC_RELEASE,
-			__ATOMIC_ACQUIRE))) {
-				break;
-			}
-
-	}
-}
-
-SC_RAMFUNC extern uint32_t sc_board_can_ts_wait(uint8_t index);
-
 #define sc_board_led_usb_burst() led_burst(LED_DEBUG_3, SC_LED_BURST_DURATION_MS)
 #define sc_board_led_can_traffic_burst(index) \
 	do { \
@@ -111,3 +71,6 @@ SC_RAMFUNC extern uint32_t sc_board_can_ts_wait(uint8_t index);
 
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status);
+
+#include <supercan_same5x.h>
+

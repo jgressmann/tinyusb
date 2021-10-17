@@ -1,5 +1,6 @@
 DEPS_SUBMODULES += hw/mcu/microchip
 
+SAME54XPLAINEDPRO = 1
 CONF_CPU_FREQUENCY ?= 48000000
 
 CFLAGS += \
@@ -13,7 +14,9 @@ CFLAGS += \
   -D__SAME54P20A__ \
   -DCONF_CPU_FREQUENCY=$(CONF_CPU_FREQUENCY) \
   -DCFG_TUSB_MCU=OPT_MCU_SAME5X \
-  -DBOARD_NAME="\"Microchip SAM E54 Xplained Pro\""
+  -DSAME54XPLAINEDPRO \
+  -DBOARD_NAME="\"Microchip SAM E54 Xplained Pro\"" \
+  -DRAMFUNC_SECTION_NAME="\".ramfunc\"" \
 
 
 # All source paths should be relative to the top level.

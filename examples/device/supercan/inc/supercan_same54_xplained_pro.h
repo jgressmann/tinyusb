@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,23 +25,24 @@
 
 #pragma once
 
-#include <FreeRTOS.h>
-#include <task.h>
-#include <stdbool.h>
-#include <stdint.h>
-
-#define LED_STACK_SIZE configMINIMAL_STACK_SIZE
-
-extern StackType_t led_task_stack[LED_STACK_SIZE];
-extern StaticTask_t led_task_mem;
-
-extern void led_task(void *param);
+#ifndef SAME54XPLAINEDPRO
+#	error "Only include this file for AT SAM E54 Xplained Pro boards"
+#endif
 
 
-extern void led_set(uint8_t index, bool on);
-extern void led_toggle(uint8_t index);
-extern void led_blink(uint8_t index, uint16_t delay_ms);
-extern void led_burst(uint8_t index, uint16_t duration_ms);
-#define led_init() do { } while (0)
+#define SC_BOARD_USB_BCD_DEVICE (1 << 8)
+#define SC_BOARD_USB_MANUFACTURER_STRING "Microchip"
+#define SC_BOARD_CAN_COUNT 1
+#define SC_BOARD_NAME BOARD_NAME
 
 
+enum {
+	SC_BOARD_DEBUG_DEFAULT,
+	SC_BOARD_LED_COUNT
+};
+
+#define sc_board_led_can_status_set(index, on)
+#define sc_board_led_usb_burst()
+#define sc_board_led_can_traffic_burst(index)
+
+#include <supercan_same5x.h>

@@ -16,11 +16,18 @@ INC += \
 	$(TOP)/$(FREERTOS_SRC)/portable/GCC/$(FREERTOS_PORT)
 
 
-ifdef D5035_01
+
 ifeq ($(D5035_01),1)
 INC += $(TOP)/examples/device/atsame51_dfu/inc
 endif
+
+
+ifeq ($(SAME54XPLAINEDPRO),1)
+INC += $(TOP)/examples/device/atsame51_dfu/inc
+CONF_CPU_FREQUENCY = 120000000
 endif
+
+
 
 CFLAGS += -Wno-error
 

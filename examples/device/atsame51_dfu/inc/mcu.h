@@ -27,7 +27,9 @@
 
 #include <stdint.h>
 
-#if defined(__SAME51J18A__) || defined(__SAME51J19A__) || defined(__SAME51J20A__)
+#if defined(__SAME51J18A__) || defined(__SAME51J19A__) || defined(__SAME51J20A__) || \
+	defined(__SAME54P20A__ )
+
 
 #include <sam.h>
 
@@ -57,7 +59,7 @@ static inline int mcu_nvm_boot_bank_index(void)
 	#define MCU_NVM_SIZE (1ul<<18)
 #elif defined(__SAME51J19A__)
 	#define MCU_NVM_SIZE (1ul<<19)
-#elif defined(__SAME51J20A__)
+#elif defined(__SAME51J20A__) || defined(__SAME54P20A__ )
 	#define MCU_NVM_SIZE (1ul<<20)
 #else
 	#error Unknown SAME51J chip

@@ -26,7 +26,8 @@
 #include <supercan_debug.h>
 #include <supercan_board.h>
 #include <leds.h>
-#include <FreeRTOS.h>
+
+
 
 #ifndef ARRAY_SIZE
 #	define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))

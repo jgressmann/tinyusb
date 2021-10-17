@@ -971,9 +971,6 @@ static inline const char* dir_str(tusb_dir_t value)
 }
 
 
-
-
-
 static void sc_usb_init(void)
 {
 	LOG("SC init\n");
@@ -987,15 +984,17 @@ static void sc_usb_reset(uint8_t rhport)
 	usb.cmd[0].pipe = SC_M1_EP_CMD0_BULK_OUT;
 	usb.cmd[0].tx_offsets[0] = 0;
 	usb.cmd[0].tx_offsets[1] = 0;
-	usb.cmd[1].pipe = SC_M1_EP_CMD1_BULK_OUT;
-	usb.cmd[1].tx_offsets[0] = 0;
-	usb.cmd[1].tx_offsets[1] = 0;
 	usb.can[0].pipe = SC_M1_EP_MSG0_BULK_OUT;
 	usb.can[0].tx_offsets[0] = 0;
 	usb.can[0].tx_offsets[1] = 0;
+#if SC_BOARD_CAN_COUNT > 1
+	usb.cmd[1].pipe = SC_M1_EP_CMD1_BULK_OUT;
+	usb.cmd[1].tx_offsets[0] = 0;
+	usb.cmd[1].tx_offsets[1] = 0;
 	usb.can[1].pipe = SC_M1_EP_MSG1_BULK_OUT;
 	usb.can[1].tx_offsets[0] = 0;
 	usb.can[1].tx_offsets[1] = 0;
+#endif
 }
 
 static uint16_t sc_usb_open(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t max_len)

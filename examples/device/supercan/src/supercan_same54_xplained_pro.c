@@ -23,41 +23,108 @@
  *
  */
 
-#include <sam.h>
-#include "bsp/board.h"
+#ifdef SAME54XPLAINEDPRO
+
+#include <supercan_debug.h>
+#include <supercan_board.h>
+
 
 #include <hal/include/hal_gpio.h>
 
-
-//--------------------------------------------------------------------+
-// Forward USB interrupt events to TinyUSB IRQ Handler
-//--------------------------------------------------------------------+
-void USB_0_Handler(void)
+// controller and hardware specific setup of i/o pins for CAN
+static inline void can_init_pins(void)
 {
-	tud_int_handler(0);
+	gpio_set_pin_function(PIN_PC13, GPIO_PIN_FUNCTION_OFF);
+	gpio_set_pin_direction(PIN_PC13, GPIO_DIRECTION_OUT);
+	gpio_set_pin_level(PIN_PC13, false);
+	gpio_set_pin_pull_mode(PIN_PC13, GPIO_PULL_OFF);
+
+	PORT->Group[1].WRCONFIG.reg =
+		PORT_WRCONFIG_PINMASK(0x3000) | // PB12/13 = 0x3000
+		PORT_WRCONFIG_WRPINCFG |
+		PORT_WRCONFIG_WRPMUX |
+		PORT_WRCONFIG_PMUX(7) |         // H, CAN1, DS60001507E page 32, 910
+		PORT_WRCONFIG_PMUXEN;
 }
 
-void USB_1_Handler(void)
+
+extern void sc_board_led_set(uint8_t index, bool on)
 {
-	tud_int_handler(0);
+	SC_DEBUG_ASSERT(0 == index);
+	(void)index;
+
+	board_led_write(on);
 }
 
-void USB_2_Handler(void)
+
+extern void sc_board_leds_on_unsafe(void)
 {
-	tud_int_handler(0);
+	board_led_write(true);
 }
 
-void USB_3_Handler(void)
+static void can_init_module(void)
 {
-	tud_int_handler(0);
+	memset(&same5x_cans, 0, sizeof(same5x_cans));
+
+	same5x_cans[0].m_can = CAN1;
+	same5x_cans[0].interrupt_id = CAN1_IRQn;
+
+	for (size_t j = 0; j < TU_ARRAY_SIZE(same5x_cans); ++j) {
+		struct same5x_can *can = &same5x_cans[j];
+
+		can->features = CAN_FEAT_PERM;
+
+		for (size_t i = 0; i < TU_ARRAY_SIZE(same5x_cans[0].rx_fifo); ++i) {
+			SC_DEBUG_ASSERT(can->rx_frames[i].ts == 0);
+		}
+
+		for (size_t i = 0; i < TU_ARRAY_SIZE(same5x_cans[0].tx_fifo); ++i) {
+			can->tx_fifo[i].T1.bit.EFC = 1; // store tx events
+
+			SC_DEBUG_ASSERT(can->tx_frames[i].ts == 0);
+		}
+	}
+
+	m_can_init_begin(CAN1);
+
+	NVIC_SetPriority(CAN1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 }
 
-//--------------------------------------------------------------------+
-// MACRO TYPEDEF CONSTANT ENUM DECLARATION
-//--------------------------------------------------------------------+
-#define LED_PIN PIN_PC18
-#define BUTTON_PIN PIN_PB31
-#define BOARD_SERCOM SERCOM2
+
+
+static inline void can_init_clock(void) // controller and hardware specific setup of clock for the m_can module
+{
+	// PLL output must be >= 96 MHz, see DS60001507E, p. 763, configure for 160 MHz
+	OSCCTRL->Dpll[1].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(2) | OSCCTRL_DPLLCTRLB_REFCLK_XOSC1; /* 12 MHz / 6 = 2 Mhz, input = XOSC1 */
+	OSCCTRL->Dpll[1].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(79);
+	OSCCTRL->Dpll[1].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
+	while(0 == OSCCTRL->Dpll[1].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL to be ready */
+
+	// Setup GCLK4 to provide 80 MHz
+	GCLK->GENCTRL[4].reg =
+		GCLK_GENCTRL_DIV(2) |
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_DPLL1 |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL4); /* wait for the synchronization between clock domains to be complete */
+
+
+	MCLK->AHBMASK.bit.CAN1_ = 1;
+	GCLK->PCHCTRL[CAN1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
+}
+
+
+SC_RAMFUNC extern void CAN1_Handler(void)
+{
+	// LOG("CAN1 int\n");
+
+	same5x_can_int(0); // map to index 0
+}
+
+
+
+
 
 /** Initializes the clocks from the external 12 MHz crystal
  *
@@ -71,7 +138,7 @@ void USB_3_Handler(void)
  * DFLL48M: closed loop from GLCK2
  * GCLK3:   48 MHz
  */
-static inline void init_clock_xtal(void)
+static inline void clock_init(void)
 {
 	/* configure for a 12MHz crystal connected to XIN1/XOUT1 */
 	OSCCTRL->XOSCCTRL[1].reg =
@@ -130,6 +197,7 @@ static inline void init_clock_xtal(void)
 	while(1 == GCLK->SYNCBUSY.bit.GENCTRL3);
 }
 
+
 /* Initialize SERCOM2 for 115200 bps 8N1 using a 48 MHz clock */
 static inline void uart_init(void)
 {
@@ -137,12 +205,12 @@ static inline void uart_init(void)
 	gpio_set_pin_function(PIN_PB25, PINMUX_PB25D_SERCOM2_PAD0);
 
 	MCLK->APBBMASK.bit.SERCOM2_ = 1;
-	GCLK->PCHCTRL[SERCOM2_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
+	GCLK->PCHCTRL[SERCOM2_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN;
 
-	BOARD_SERCOM->USART.CTRLA.bit.SWRST = 1; /* reset and disable SERCOM -> enable configuration */
-	while (BOARD_SERCOM->USART.SYNCBUSY.bit.SWRST);
+	SERCOM2->USART.CTRLA.bit.SWRST = 1; /* reset and disable SERCOM -> enable configuration */
+	while (SERCOM2->USART.SYNCBUSY.bit.SWRST);
 
-	BOARD_SERCOM->USART.CTRLA.reg  =
+	SERCOM2->USART.CTRLA.reg  =
 		SERCOM_USART_CTRLA_SAMPR(0) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
 		SERCOM_USART_CTRLA_SAMPA(0) | /* 16x over sampling */
 		SERCOM_USART_CTRLA_FORM(0) | /* 0x0 USART frame, 0x1 USART frame with parity, ... */
@@ -151,87 +219,29 @@ static inline void uart_init(void)
 		SERCOM_USART_CTRLA_RXPO(1) | /* SERCOM PAD[1] is used for data reception */
 		SERCOM_USART_CTRLA_TXPO(0); /* SERCOM PAD[0] is used for data transmission */
 
-	BOARD_SERCOM->USART.CTRLB.reg = /* RXEM = 0 -> receiver disabled, LINCMD = 0 -> normal USART transmission, SFDE = 0 -> start-of-frame detection disabled, SBMODE = 0 -> one stop bit, CHSIZE = 0 -> 8 bits */
+	SERCOM2->USART.CTRLB.reg = /* RXEM = 0 -> receiver disabled, LINCMD = 0 -> normal USART transmission, SFDE = 0 -> start-of-frame detection disabled, SBMODE = 0 -> one stop bit, CHSIZE = 0 -> 8 bits */
 		SERCOM_USART_CTRLB_TXEN | /* transmitter enabled */
 		SERCOM_USART_CTRLB_RXEN; /* receiver enabled */
-	// BOARD_SERCOM->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(0) | SERCOM_USART_BAUD_FRAC_BAUD(26); /* 48000000/(16*115200) = 26.041666667 */
-	BOARD_SERCOM->USART.BAUD.reg = SERCOM_USART_BAUD_BAUD(63019); /* 65536*(1−16*115200/48000000) */
+	// SERCOM2->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(0) | SERCOM_USART_BAUD_FRAC_BAUD(26); /* 48000000/(16*115200) = 26.041666667 */
+	SERCOM2->USART.BAUD.reg = SERCOM_USART_BAUD_BAUD(63019); /* 65536*(1−16*115200/48000000) */
 
-	BOARD_SERCOM->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
-	while (BOARD_SERCOM->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
+	SERCOM2->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
+	while (SERCOM2->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
 }
 
-static inline void uart_send_buffer(uint8_t const *text, size_t len)
+static inline void usb_init(void)
 {
-	for (size_t i = 0; i < len; ++i) {
-		BOARD_SERCOM->USART.DATA.reg = text[i];
-		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_TXC) == 0);
-	}
-}
-
-static inline void uart_send_str(const char* text)
-{
-	while (*text) {
-		BOARD_SERCOM->USART.DATA.reg = *text++;
-		while((BOARD_SERCOM->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_TXC) == 0);
-	}
-}
-
-TU_ATTR_WEAK void board_init_app(void)
-{
-	// Uncomment this line and change the GCLK for UART/USB to run off the XTAL.
-	// init_clock_xtal();
-	SystemCoreClock = CONF_CPU_FREQUENCY;
-
-	#if CFG_TUSB_OS  == OPT_OS_NONE
-	SysTick_Config(CONF_CPU_FREQUENCY / 1000);
-#endif
-
-	uart_init();
-
-
-#if CFG_TUSB_DEBUG >= 2
-	uart_send_str(BOARD_NAME " UART initialized\n");
-	tu_printf(BOARD_NAME " reset cause %#02x\n", RSTC->RCAUSE.reg);
-#endif
-
-	// LED0 init
-	gpio_set_pin_function(LED_PIN, GPIO_PIN_FUNCTION_OFF);
-	gpio_set_pin_direction(LED_PIN, GPIO_DIRECTION_OUT);
-	board_led_write(0);
-
-#if CFG_TUSB_DEBUG >= 2
-	uart_send_str(BOARD_NAME " LED pin configured\n");
-#endif
-
-	// BTN0 init
-	gpio_set_pin_function(BUTTON_PIN, GPIO_PIN_FUNCTION_OFF);
-	gpio_set_pin_direction(BUTTON_PIN, GPIO_DIRECTION_IN);
-	gpio_set_pin_pull_mode(BUTTON_PIN, GPIO_PULL_UP);
-
-#if CFG_TUSB_DEBUG >= 2
-	uart_send_str(BOARD_NAME " Button pin configured\n");
-#endif
-
-#if CFG_TUSB_OS == OPT_OS_FREERTOS
-	// If freeRTOS is used, IRQ priority is limit by max syscall ( smaller is higher )
 	NVIC_SetPriority(USB_0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 	NVIC_SetPriority(USB_1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 	NVIC_SetPriority(USB_2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 	NVIC_SetPriority(USB_3_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-#endif
 
-
-#if TUSB_OPT_DEVICE_ENABLED
-#if CFG_TUSB_DEBUG >= 2
-	uart_send_str(BOARD_NAME " USB device enabled\n");
-#endif
 
 	/* USB clock init
 	 * The USB module requires a GCLK_USB of 48 MHz ~ 0.25% clock
 	 * for low speed and full speed operation.
 	 */
-	hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK0_Val | GCLK_PCHCTRL_CHEN);
+	hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK3_Val | GCLK_PCHCTRL_CHEN);
 	hri_mclk_set_AHBMASK_USB_bit(MCLK);
 	hri_mclk_set_APBBMASK_USB_bit(MCLK);
 
@@ -245,67 +255,71 @@ TU_ATTR_WEAK void board_init_app(void)
 
 	gpio_set_pin_function(PIN_PA24, PINMUX_PA24H_USB_DM);
 	gpio_set_pin_function(PIN_PA25, PINMUX_PA25H_USB_DP);
-
-
-#if CFG_TUSB_DEBUG >= 2
-	uart_send_str(BOARD_NAME " USB device configured\n");
-#endif
-#endif
 }
 
-void board_init(void)
+void board_init_app(void)
+{
+	clock_init();
+
+	SystemCoreClock = CONF_CPU_FREQUENCY;
+
+	uart_init();
+	LOG("CONF_CPU_FREQUENCY=%lu\n", (unsigned long)CONF_CPU_FREQUENCY);
+
+	// LED0 init
+	gpio_set_pin_function(PIN_PC18, GPIO_PIN_FUNCTION_OFF);
+	gpio_set_pin_direction(PIN_PC18, GPIO_DIRECTION_OUT);
+	board_led_write(0);
+
+	usb_init();
+}
+
+static inline void counter_1MHz_init(void)
+{
+	GCLK->GENCTRL[5].reg =
+		GCLK_GENCTRL_DIV(10) |	/* 160Mhz -> 16MHz */
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_DPLL1 |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL5); /* wait for the synchronization between clock domains to be complete */
+
+	// TC0 and TC1 pair to form a single 32 bit counter
+	// TC1 is enslaved to TC0 and doesn't need to be configured.
+	// DS60001507E-page 1716, 48.6.2.4 Counter Mode
+	MCLK->APBAMASK.bit.TC0_ = 1;
+	MCLK->APBAMASK.bit.TC1_ = 1;
+	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK5 | GCLK_PCHCTRL_CHEN;
+	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK5 | GCLK_PCHCTRL_CHEN;
+
+	TC0->COUNT32.CTRLA.reg = TC_CTRLA_SWRST;
+	while(1 == TC0->COUNT32.SYNCBUSY.bit.SWRST);
+
+	/* 16MHz -> 1MHz */
+	TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT32 | TC_CTRLA_PRESCALER_DIV16;
+	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
+}
+
+extern void sc_board_init_begin(void)
 {
 	board_init_app();
 
+	LOG("Enabling cache\n");
+	same5x_enable_cache();
+
+	same5x_init_device_identifier();
+
+
+	can_init_pins();
+	can_init_clock();
+	can_init_module();
+
+	counter_1MHz_init();
 }
 
-//--------------------------------------------------------------------+
-// Board porting API
-//--------------------------------------------------------------------+
-
-void board_led_write(bool state)
-{
-	gpio_set_pin_level(LED_PIN, !state);
-}
-
-uint32_t board_button_read(void)
-{
-	return (PORT->Group[1].IN.reg & 0x80000000) != 0x80000000;
-}
-
-int board_uart_read(uint8_t* buf, int len)
-{
-  (void) buf; (void) len;
-  return 0;
-}
-
-int board_uart_write(void const * buf, int len)
-{
-	if (len < 0) {
-		uart_send_str(buf);
-	} else {
-		uart_send_buffer(buf, len);
-	}
-	return len;
-}
-
-#if CFG_TUSB_OS  == OPT_OS_NONE
-volatile uint32_t system_ticks = 0;
-
-void SysTick_Handler(void)
-{
-	system_ticks++;
-}
-
-uint32_t board_millis(void)
-{
-	return system_ticks;
-}
-#endif
-
-// Required by __libc_init_array in startup code if we are compiling using
-// -nostdlib/-nostartfiles.
-void _init(void)
+extern void sc_board_init_end(void)
 {
 
 }
+
+#endif // #ifdef SAME54XPLAINEDPRO

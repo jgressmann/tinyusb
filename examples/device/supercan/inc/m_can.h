@@ -24,6 +24,8 @@
  * Code to support Bosch's M_CAN CAN-FD
  */
 
+#pragma once
+
 #include <sam.h>
 
 
@@ -75,96 +77,96 @@ static inline void m_can_conf_end(Can *can)
     can->CCCR.reg &= ~CAN_CCCR_CCE; // clear CCE bit
 }
 
-static inline uint32_t m_can_compute_nbtp(
-	uint8_t sjw,
-	uint32_t bitrate_bps,
-	uint8_t sample_point_01,
-	uint32_t can_clock_hz)
-{
-	// assert(sjw > 0);
-	// assert(bitrate_bps > 0 && bitrate_bps <= 10000000);
-	// assert(sample_point_pct > 0 && sample_point_pct < 100);
-	// assert(can_clock_hz > 0);
+// static inline uint32_t m_can_compute_nbtp(
+// 	uint8_t sjw,
+// 	uint32_t bitrate_bps,
+// 	uint8_t sample_point_01,
+// 	uint32_t can_clock_hz)
+// {
+// 	// assert(sjw > 0);
+// 	// assert(bitrate_bps > 0 && bitrate_bps <= 10000000);
+// 	// assert(sample_point_pct > 0 && sample_point_pct < 100);
+// 	// assert(can_clock_hz > 0);
 
-	// The [nominal] CAN bit time may be programed in the range of 4 to 385 time quanta.
-	// mcan_users_manual_v330.pdf p13
+// 	// The [nominal] CAN bit time may be programed in the range of 4 to 385 time quanta.
+// 	// mcan_users_manual_v330.pdf p13
 
-	// The [data] CAN bit time may be programed in the range of 4 to 49 time quanta.
-	// mcan_users_manual_v330.pdf p8
-
-
-
-	const uint32_t ticks_per_bit = can_clock_hz / bitrate_bps;
-	uint32_t prescaler = ticks_per_bit / 385;
-	prescaler += prescaler * 385 != ticks_per_bit;
-	const uint32_t tqs = ticks_per_bit / prescaler;
-	const uint32_t tseg2 = ((255 - sample_point_01) * tqs) / 255;
-	const uint32_t tseg1 = tqs - sjw - tseg2;
+// 	// The [data] CAN bit time may be programed in the range of 4 to 49 time quanta.
+// 	// mcan_users_manual_v330.pdf p8
 
 
-	return CAN_NBTP_NSJW(sjw-1)
-			| CAN_NBTP_NBRP(prescaler-1)
-			| CAN_NBTP_NTSEG1(tseg1-1)
-			| CAN_NBTP_NTSEG2(tseg2-1);
-}
 
-static inline uint32_t m_can_compute_dbtp(
-	uint8_t sjw,
-	uint32_t bitrate_bps,
-	uint8_t sample_point_01,
-	uint32_t can_clock_hz)
-{
-	// assert(sjw > 0);
-	// assert(bitrate_bps > 0 && bitrate_bps <= 10000000);
-	// assert(sample_point_pct > 0 && sample_point_pct < 100);
-	// assert(can_clock_hz > 0);
-
-	// The [data] CAN bit time may be programed in the range of 4 to 49 time quanta.
-	// mcan_users_manual_v330.pdf p8
+// 	const uint32_t ticks_per_bit = can_clock_hz / bitrate_bps;
+// 	uint32_t prescaler = ticks_per_bit / 385;
+// 	prescaler += prescaler * 385 != ticks_per_bit;
+// 	const uint32_t tqs = ticks_per_bit / prescaler;
+// 	const uint32_t tseg2 = ((255 - sample_point_01) * tqs) / 255;
+// 	const uint32_t tseg1 = tqs - sjw - tseg2;
 
 
-	////REG_CAN0_DBTP = CAN_DBTP_DBRP(2) | CAN_DBTP_DTSEG1(12) | CAN_DBTP_DTSEG2(5) | CAN_DBTP_DSJW (5); /* 2MBit @ 120 / 3 = 40MHz, 70% */
-	const uint32_t ticks_per_bit = can_clock_hz / bitrate_bps;
-	uint32_t prescaler = ticks_per_bit / 49;
-	prescaler += prescaler * 49 != ticks_per_bit;
-	const uint32_t tqs = ticks_per_bit / prescaler;
-	const uint32_t tseg2 = ((255 - sample_point_01) * tqs) / 255;
-	const uint32_t tseg1 = tqs - sjw - tseg2;
+// 	return CAN_NBTP_NSJW(sjw-1)
+// 			| CAN_NBTP_NBRP(prescaler-1)
+// 			| CAN_NBTP_NTSEG1(tseg1-1)
+// 			| CAN_NBTP_NTSEG2(tseg2-1);
+// }
+
+// static inline uint32_t m_can_compute_dbtp(
+// 	uint8_t sjw,
+// 	uint32_t bitrate_bps,
+// 	uint8_t sample_point_01,
+// 	uint32_t can_clock_hz)
+// {
+// 	// assert(sjw > 0);
+// 	// assert(bitrate_bps > 0 && bitrate_bps <= 10000000);
+// 	// assert(sample_point_pct > 0 && sample_point_pct < 100);
+// 	// assert(can_clock_hz > 0);
+
+// 	// The [data] CAN bit time may be programed in the range of 4 to 49 time quanta.
+// 	// mcan_users_manual_v330.pdf p8
 
 
-	return CAN_DBTP_DBRP(prescaler-1)
-			| CAN_DBTP_DTSEG1(tseg1-1)
-			| CAN_DBTP_DTSEG2(tseg2-1)
-			| CAN_DBTP_DSJW(sjw-1);
-}
+// 	////REG_CAN0_DBTP = CAN_DBTP_DBRP(2) | CAN_DBTP_DTSEG1(12) | CAN_DBTP_DTSEG2(5) | CAN_DBTP_DSJW (5); /* 2MBit @ 120 / 3 = 40MHz, 70% */
+// 	const uint32_t ticks_per_bit = can_clock_hz / bitrate_bps;
+// 	uint32_t prescaler = ticks_per_bit / 49;
+// 	prescaler += prescaler * 49 != ticks_per_bit;
+// 	const uint32_t tqs = ticks_per_bit / prescaler;
+// 	const uint32_t tseg2 = ((255 - sample_point_01) * tqs) / 255;
+// 	const uint32_t tseg1 = tqs - sjw - tseg2;
 
 
-static inline bool m_can_rx0_msg_fifo_avail(Can *can)
-{
-	return (can->RXF0S.reg & CAN_RXF0S_F0FL_Msk) != 0;
-}
+// 	return CAN_DBTP_DBRP(prescaler-1)
+// 			| CAN_DBTP_DTSEG1(tseg1-1)
+// 			| CAN_DBTP_DTSEG2(tseg2-1)
+// 			| CAN_DBTP_DSJW(sjw-1);
+// }
 
-static inline bool m_can_rx0_msg_fifo_full(Can *can)
-{
-	return (can->RXF0S.reg & CAN_RXF0S_F0F) != 0;
-}
 
-static inline void m_can_rx0_pop(Can *can)
-{
-	uint8_t index = can->RXF0S.bit.F0GI;
-	can->RXF0A.reg = CAN_RXF0A_F0AI(index);
-}
+// static inline bool m_can_rx0_msg_fifo_avail(Can *can)
+// {
+// 	return (can->RXF0S.reg & CAN_RXF0S_F0FL_Msk) != 0;
+// }
 
-static inline void m_can_rx0_clear(Can *can)
-{
-	while (m_can_rx0_msg_fifo_avail(can)) {
-#if CFG_TUSB_DEBUG > 1
-		uint8_t index = can->RXF0S.bit.F0GI;
-		TU_LOG2("msg @ %u\n", index);
-#endif
-		m_can_rx0_pop(can);
-	}
-}
+// static inline bool m_can_rx0_msg_fifo_full(Can *can)
+// {
+// 	return (can->RXF0S.reg & CAN_RXF0S_F0F) != 0;
+// }
+
+// static inline void m_can_rx0_pop(Can *can)
+// {
+// 	uint8_t index = can->RXF0S.bit.F0GI;
+// 	can->RXF0A.reg = CAN_RXF0A_F0AI(index);
+// }
+
+// static inline void m_can_rx0_clear(Can *can)
+// {
+// 	while (m_can_rx0_msg_fifo_avail(can)) {
+// #if CFG_TUSB_DEBUG > 1
+// 		uint8_t index = can->RXF0S.bit.F0GI;
+// 		TU_LOG2("msg @ %u\n", index);
+// #endif
+// 		m_can_rx0_pop(can);
+// 	}
+// }
 
 static inline bool m_can_tx_event_fifo_avail(Can *can)
 {
