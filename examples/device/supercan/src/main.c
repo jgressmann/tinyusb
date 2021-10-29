@@ -150,30 +150,16 @@ static inline void can_state_reset(uint8_t index)
 #endif
 }
 
-static inline void cans_reset(void)
+static inline void can_state_initial(uint8_t index)
 {
-		// cans_reset();
-	// cans_led_status_set(CANLED_STATUS_DISABLED);
-	for (uint8_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
-		struct can *can = &cans[i];
+	struct can *can = &cans[index];
 
-		can->enabled = false;
-		can->desync = false;
-		can->tx_dropped = 0;
-		can->rx_lost = 0;
-		can->features = sc_board_can_feat_perm(i);
-		can->status_put_index = 0;
-		can->status_get_index = 0;
-		can->int_comm_flags = 0;
-#if SUPERCAN_DEBUG
-		memset(can->status_fifo, 0, sizeof(can->status_fifo));
-#endif
+	can->enabled = false;
+	can->features = sc_board_can_feat_perm(index);
 
-		__atomic_thread_fence(__ATOMIC_RELEASE);
-
-
-		sc_board_can_reset(i);
-	}
+	can_state_reset(index);
+	sc_board_can_reset(index);
+	sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_BUS_OFF);
 }
 
 static inline bool sc_cmd_bulk_in_ep_ready(uint8_t index)
@@ -373,9 +359,13 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 		case SC_MSG_HELLO_DEVICE: {
 			LOG("ch%u SC_MSG_HELLO_DEVICE\n", index);
 
-			// reset
-			sc_board_can_reset(index);
-			sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_BUS_OFF);
+			// _With_ usb lock, since this isn't the interrupt handler
+			// and neither a higher priority task.
+			while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
+
+			can_state_initial(index);
+
+			xSemaphoreGive(usb_can->mutex_handle);
 
 			// transmit empty buffers (clear whatever was in there before)
 			(void)dcd_edpt_xfer(usb.port, 0x80 | usb_can->pipe, usb_can->tx_buffers[usb_can->tx_bank], usb_can->tx_offsets[usb_can->tx_bank]);
@@ -587,8 +577,12 @@ send_can_info:
 			} else {
 				bool was_enabled = can->enabled;
 				bool is_enabled = tmsg->arg != 0;
+
+
+				LOG("ch%u go bus=%d\n", index, is_enabled);
+
 				if (was_enabled != is_enabled) {
-					LOG("ch%u enabled=%u\n", index, is_enabled);
+					LOG("ch%u go bus %s -> %s\n", index, (was_enabled ? "online" : "offline"), (is_enabled ? "online" : "offline"));
 					// _With_ usb lock, since this isn't the interrupt handler
 					// and neither a higher priority task.
 					while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
@@ -815,6 +809,13 @@ send:
 
 SC_RAMFUNC static void can_usb_task(void* param);
 
+static inline void can_usb_disconnect(void)
+{
+	for (uint8_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
+		can_state_initial(i);
+		sc_board_led_can_status_set(i, SC_CAN_LED_STATUS_DISABLED);
+	}
+}
 
 int main(void)
 {
@@ -842,7 +843,7 @@ int main(void)
 		can->usb_task_handle = xTaskCreateStatic(&can_usb_task, NULL, TU_ARRAY_SIZE(can->usb_task_stack_mem), (void*)(uintptr_t)i, configMAX_PRIORITIES-1, can->usb_task_stack_mem, &can->usb_task_mem);
 	}
 
-	cans_reset();
+	can_usb_disconnect();
 
 	LOG("vTaskStartScheduler\n");
 	vTaskStartScheduler();
@@ -868,13 +869,6 @@ SC_RAMFUNC static void tusb_device_task(void* param)
 	}
 }
 
-static inline void can_led_set_disabled(void)
-{
-	for (uint8_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
-		sc_board_led_can_status_set(i, SC_CAN_LED_STATUS_DISABLED);
-	}
-}
-
 //--------------------------------------------------------------------+
 // Device callbacks
 //--------------------------------------------------------------------+
@@ -885,8 +879,6 @@ void tud_mount_cb(void)
 	LOG("mounted\n");
 	led_blink(0, 250);
 	usb.mounted = true;
-
-	can_led_set_disabled();
 }
 
 // Invoked when device is unmounted
@@ -896,8 +888,7 @@ void tud_umount_cb(void)
 	led_blink(0, 1000);
 	usb.mounted = false;
 
-	cans_reset();
-	can_led_set_disabled();
+	can_usb_disconnect();
 }
 
 // Invoked when usb bus is suspended
@@ -910,8 +901,7 @@ void tud_suspend_cb(bool remote_wakeup_en)
 	usb.mounted = false;
 	led_blink(0, 500);
 
-	cans_reset();
-	can_led_set_disabled();
+	can_usb_disconnect();
 }
 
 // Invoked when usb bus is resumed
