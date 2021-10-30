@@ -448,6 +448,12 @@ send_can_info:
 				sc_can_bit_timing_range const *nm_bt = sc_board_can_nm_bit_timing_range(index);
 				sc_can_bit_timing_range const *dt_bt = sc_board_can_dt_bit_timing_range(index);
 
+				SC_DEBUG_ASSERT(nm_bt);
+
+				if (!dt_bt) {
+					dt_bt = nm_bt;
+				}
+
 				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
 
 				rep->id = SC_MSG_CAN_INFO;
@@ -474,6 +480,8 @@ send_can_info:
 				LOG("ch%u clk=%u ", index, SC_BOARD_CAN_CLK_HZ);
 				LOG("nm brp=%u..%u sjw=%u..%u tseg1=%u..%u tseg2=%u..%u\n",
 					nm_bt->min.brp, nm_bt->max.brp, 1, nm_bt->max.sjw, nm_bt->min.tseg1, nm_bt->max.tseg1, nm_bt->min.tseg2, nm_bt->max.tseg2);
+				LOG("dt brp=%u..%u sjw=%u..%u tseg1=%u..%u tseg2=%u..%u\n",
+					dt_bt->min.brp, dt_bt->max.brp, 1, dt_bt->max.sjw, dt_bt->min.tseg1, dt_bt->max.tseg1, dt_bt->min.tseg2, dt_bt->max.tseg2);
 			} else {
 				if (sc_cmd_bulk_in_ep_ready(index)) {
 					sc_cmd_bulk_in_submit(index);
