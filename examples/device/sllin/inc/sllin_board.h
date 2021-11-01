@@ -57,7 +57,7 @@ extern void sllin_board_leds_on_unsafe(void);
 
 #if defined(SAME54XPLAINEDPRO)
 #	include "sllin_same54_xplained_pro.h"
-#elif defined __SAMD__
+#elif defined(__SAMD21E18A__)
 #	include "sllin_samd.h"
 #else
 #	error "Unknown board"

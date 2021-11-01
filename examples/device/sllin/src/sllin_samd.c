@@ -23,26 +23,12 @@
  *
  */
 
-#ifdef __SAMD__
+#if defined(__SAMD21E18A__)
 
 #include <FreeRTOS.h>
 
 #include <sllin_debug.h>
 #include <sllin_board.h>
-
-
-#include "sam.h"
-#include "bsp/board.h"
-#include "board.h"
-
-#include "hal/include/hal_gpio.h"
-#include "hal/include/hal_init.h"
-#include "hri/hri_nvmctrl_d21.h"
-
-#include "hpl/gclk/hpl_gclk_base.h"
-#include "hpl_pm_config.h"
-#include "hpl/pm/hpl_pm_base.h"
-
 #include <leds.h>
 #include <tusb.h>
 #include <bsp/board.h>
@@ -158,70 +144,10 @@ void init_device_identifier(void)
 #endif
 }
 
-void uart_init(void);
-
-/* Referenced GCLKs, should be initialized firstly */
-#define _GCLK_INIT_1ST (1 << 0 | 1 << 1)
-
-/* Not referenced GCLKs, initialized last */
-#define _GCLK_INIT_LAST (~_GCLK_INIT_1ST)
-
-static inline void board_init_samd21(void)
-{
-	// Clock init ( follow hpl_init.c )
-	hri_nvmctrl_set_CTRLB_RWS_bf(NVMCTRL, 2);
-
-	_pm_init();
-	_sysctrl_init_sources();
-#if _GCLK_INIT_1ST
-	_gclk_init_generators_by_fref(_GCLK_INIT_1ST);
-#endif
-	_sysctrl_init_referenced_generators();
-	_gclk_init_generators_by_fref(_GCLK_INIT_LAST);
-
-	SystemCoreClock = CONF_CPU_FREQUENCY;
-
-	// Led init
-#ifdef LED_PIN
-	gpio_set_pin_direction(LED_PIN, GPIO_DIRECTION_OUT);
-	board_led_write(false);
-#endif
-
-	// Button init
-#ifdef BUTTON_PIN
-	gpio_set_pin_direction(BUTTON_PIN, GPIO_DIRECTION_IN);
-	gpio_set_pin_pull_mode(BUTTON_PIN, BUTTON_STATE_ACTIVE ? GPIO_PULL_DOWN : GPIO_PULL_UP);
-#endif
-
-	uart_init();
-	board_uart_write("USART initialized\n", sizeof("USART initialized\n")-1);
-
-	// If freeRTOS is used, IRQ priority is limit by max syscall ( smaller is higher )
-	NVIC_SetPriority(USB_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-
-
-	/* USB Clock init
-	 * The USB module requires a GCLK_USB of 48 MHz ~ 0.25% clock
-	 * for low speed and full speed operation. */
-	_pm_enable_bus_clock(PM_BUS_APBB, USB);
-	_pm_enable_bus_clock(PM_BUS_AHB, USB);
-	_gclk_enable_channel(USB_GCLK_ID, GCLK_CLKCTRL_GEN_GCLK0_Val);
-
-	// USB Pin Init
-	gpio_set_pin_direction(PIN_PA24, GPIO_DIRECTION_OUT);
-	gpio_set_pin_level(PIN_PA24, false);
-	gpio_set_pin_pull_mode(PIN_PA24, GPIO_PULL_OFF);
-	gpio_set_pin_direction(PIN_PA25, GPIO_DIRECTION_OUT);
-	gpio_set_pin_level(PIN_PA25, false);
-	gpio_set_pin_pull_mode(PIN_PA25, GPIO_PULL_OFF);
-
-	gpio_set_pin_function(PIN_PA24, PINMUX_PA24G_USB_DM);
-	gpio_set_pin_function(PIN_PA25, PINMUX_PA25G_USB_DP);
-}
 
 extern void sllin_board_init_begin(void)
 {
-	board_init_samd21();
+	board_init();
 
 	init_device_identifier();
 
@@ -230,8 +156,7 @@ extern void sllin_board_init_begin(void)
 
 extern void sllin_board_init_end(void)
 {
-	LOG("SysTick enabled\n");
-	SysTick_Config(SystemCoreClock / configTICK_RATE_HZ);
+
 }
 
-#endif // defined(__SAMD__)
+#endif // defined(__SAMD21E18A__)
