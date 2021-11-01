@@ -23,7 +23,7 @@
  *
  */
 
-// #include <sllin_board.h>
+#include <sllin_board.h>
 
 #pragma once
 
@@ -69,7 +69,7 @@
 #define CFG_TUD_ENDPOINT0_SIZE    64
 
 //------------- CLASS -------------//
-#define CFG_TUD_CDC               1
+#define CFG_TUD_CDC               SLLIN_BOARD_LIN_COUNT
 #define CFG_TUD_DFU_RUNTIME       SUPERDFU_APP
 
 // CDC FIFO size of TX and RX
@@ -84,3 +84,10 @@
 } // extern "C" {
 #endif
 
+#if 1 != CFG_TUD_CDC
+#error borken
+#endif
+
+#if 0 != CFG_TUD_DFU_RUNTIME
+#error borken
+#endif

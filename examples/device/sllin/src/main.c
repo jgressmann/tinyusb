@@ -70,7 +70,7 @@ static struct usb {
 } usb;
 
 static struct lin {
-	StackType_t usb_task_stack_mem[configMINIMAL_SECURE_STACK_SIZE];
+	StackType_t usb_task_stack[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_task_mem;
 	TaskHandle_t usb_task_handle;
 	uint8_t rx_buffer[33];
@@ -85,7 +85,9 @@ static struct lin {
 } lins[SLLIN_BOARD_LIN_COUNT];
 
 
-
+#if SLLIN_BOARD_LIN_COUNT != 1
+#error broken
+#endif
 
 int main(void)
 {
@@ -96,12 +98,26 @@ int main(void)
 	LOG("led_init\n");
 	led_init();
 
+
 	LOG("tusb_init\n");
 	tusb_init();
 
-
-	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb.usb_device_stack), NULL, configMAX_PRIORITIES-1, usb.usb_device_stack, &usb.usb_device_stack_mem);
-	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
+	(void) xTaskCreateStatic(
+		&tusb_device_task,
+		"tusb",
+		TU_ARRAY_SIZE(usb.usb_device_stack),
+		NULL,
+		configMAX_PRIORITIES-1,
+		usb.usb_device_stack,
+		&usb.usb_device_stack_mem);
+	(void) xTaskCreateStatic(
+		&led_task,
+		"led",
+		TU_ARRAY_SIZE(led_task_stack),
+		NULL,
+		configMAX_PRIORITIES-1,
+		led_task_stack,
+		&led_task_mem);
 
 
 	sllin_board_init_end();
@@ -111,10 +127,15 @@ int main(void)
 	// 	struct usb_lin *usb_lin = &usb.lin[i];
 
 	// 	usb_lin->mutex_handle = xSemaphoreCreateMutexStatic(&usb_lin->mutex_mem);
-		lin->usb_task_handle = xTaskCreateStatic(&lin_usb_task, NULL, TU_ARRAY_SIZE(lin->usb_task_stack_mem), (void*)(uintptr_t)i, configMAX_PRIORITIES-1, lin->usb_task_stack_mem, &lin->usb_task_mem);
+		lin->usb_task_handle = xTaskCreateStatic(
+								&lin_usb_task,
+								"lin",
+								TU_ARRAY_SIZE(lin->usb_task_stack),
+								(void*)(uintptr_t)i,
+								configMAX_PRIORITIES-1,
+								lin->usb_task_stack,
+								&lin->usb_task_mem);
 	}
-
-	// can_usb_disconnect();
 
 
 	LOG("vTaskStartScheduler\n");
@@ -133,44 +154,44 @@ int main(void)
 // Device callbacks
 //--------------------------------------------------------------------+
 
-// // Invoked when device is mounted
-// void tud_mount_cb(void)
-// {
-// 	LOG("mounted\n");
-// 	led_blink(0, 250);
-// 	usb.mounted = true;
-// }
+// Invoked when device is mounted
+void tud_mount_cb(void)
+{
+	LOG("mounted\n");
+	led_blink(0, 250);
+	usb.mounted = true;
+}
 
-// // Invoked when device is unmounted
-// void tud_umount_cb(void)
-// {
-// 	LOG("unmounted\n");
-// 	led_blink(0, 1000);
-// 	usb.mounted = false;
+// Invoked when device is unmounted
+void tud_umount_cb(void)
+{
+	LOG("unmounted\n");
+	led_blink(0, 1000);
+	usb.mounted = false;
 
-// 	// can_usb_disconnect();
-// }
+	// can_usb_disconnect();
+}
 
-// // Invoked when usb bus is suspended
-// // remote_wakeup_en : if host allow us to perform remote wakeup
-// // Within 7ms, device must draw an average of current less than 2.5 mA from bus
-// void tud_suspend_cb(bool remote_wakeup_en)
-// {
-// 	(void) remote_wakeup_en;
-// 	LOG("suspend\n");
-// 	usb.mounted = false;
-// 	led_blink(0, 500);
+// Invoked when usb bus is suspended
+// remote_wakeup_en : if host allow us to perform remote wakeup
+// Within 7ms, device must draw an average of current less than 2.5 mA from bus
+void tud_suspend_cb(bool remote_wakeup_en)
+{
+	(void) remote_wakeup_en;
+	LOG("suspend\n");
+	usb.mounted = false;
+	led_blink(0, 500);
 
-// 	// can_usb_disconnect();
-// }
+	// can_usb_disconnect();
+}
 
-// // Invoked when usb bus is resumed
-// void tud_resume_cb(void)
-// {
-// 	LOG("resume\n");
-// 	usb.mounted = true;
-// 	led_blink(0, 250);
-// }
+// Invoked when usb bus is resumed
+void tud_resume_cb(void)
+{
+	LOG("resume\n");
+	usb.mounted = true;
+	led_blink(0, 250);
+}
 
 static inline uint8_t char_to_nibble(char c)
 {
@@ -289,8 +310,20 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		lin->tx_buffer[1] = nibble_to_char(flags >> 4);
 		lin->tx_buffer[2] = nibble_to_char(flags);
 		lin->tx_buffer[3] = SLLIN_OK_TERMINATOR;
-		lin->tx_offset = 2;
+		lin->tx_offset = 4;
 	} break;
+	case 'V': {
+		lin->tx_buffer[0] = 'V';
+		lin->tx_buffer[1] = '0';
+		lin->tx_buffer[2] = '1';
+		lin->tx_buffer[3] = '0' + SLLIN_VERSION_MAJOR;
+		lin->tx_buffer[4] = '0' + SLLIN_VERSION_MINOR;
+		lin->tx_buffer[5] = SLLIN_OK_TERMINATOR;
+		lin->tx_offset = 6;
+	} break;
+	case 'N':
+		lin->tx_offset = usnprintf((char *)lin->tx_buffer, sizeof(lin->tx_buffer), "N%x%c", sllin_board_identifier() & 0xffff, SLLIN_OK_TERMINATOR);
+		break;
 	default:
 		LOG("ch%u unhandled command '%s'\n", index, lin->rx_buffer);
 		lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
@@ -354,8 +387,9 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 			lin->enabled = false;
 			lin->setup = false;
 			lin->tx_full = false;
+			lin->master = true;
 
-			tud_cdc_n_read_flush(index);
+			// tud_cdc_n_read_flush(index);
 
 			yield = true;
 		}
@@ -366,40 +400,33 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 			yield = false;
 			// taskYIELD();
 			vTaskDelay(pdMS_TO_TICKS(1)); // 1ms for USB FS
+			// LOG(".");
 		}
 	}
+}
 
-// 	// RTOS forever loop
-// while ( 1 )
+// void tud_cdc_rx_cb(uint8_t itf)
+// {
+// 	(void)itf;
+// }
+
+
+// void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
+// {
+//   (void) itf;
+//   (void) rts;
+
+//   // TODO set some indicator
+//   if ( dtr )
 //   {
-//     // connected() check for DTR bit
-//     // Most but not all terminal client set this when making connection
-//     // if ( tud_cdc_connected() )
-//     {
-//       // There are data available
-//       if ( tud_cdc_available() )
-//       {
-//         uint8_t buf[64];
-
-//         // read and echo back
-//         uint32_t count = tud_cdc_read(buf, sizeof(buf));
-//         (void) count;
-
-//         // Echo back
-//         // Note: Skip echo by commenting out write() and write_flush()
-//         // for throughput test e.g
-//         //    $ dd if=/dev/zero of=/dev/ttyACM0 count=10000
-//         tud_cdc_write(buf, count);
-//         tud_cdc_write_flush();
-//       }
-//     }
-
-//     // For ESP32-S2 this delay is essential to allow idle how to run and reset wdt
-//     vTaskDelay(pdMS_TO_TICKS(10));
+//     // Terminal connected
 //   }
-}
+//   else
+//   {
+//     // Terminal disconnected
+//   }
+// }
 
-void tud_cdc_rx_cb(uint8_t itf)
-{
-	(void)itf;
-}
+
+
+
