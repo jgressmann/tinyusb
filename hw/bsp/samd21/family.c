@@ -75,7 +75,9 @@ void board_init(void)
   // Update SystemCoreClock since it is hard coded with asf4 and not correct
   // Init 1ms tick timer (samd SystemCoreClock may not correct)
   SystemCoreClock = CONF_CPU_FREQUENCY;
+#if CFG_TUSB_OS  == OPT_OS_NONE
   SysTick_Config(CONF_CPU_FREQUENCY / 1000);
+#endif
 
   // Led init
   gpio_set_pin_direction(LED_PIN, GPIO_DIRECTION_OUT);
