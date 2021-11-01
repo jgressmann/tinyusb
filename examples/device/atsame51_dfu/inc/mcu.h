@@ -28,7 +28,7 @@
 #include <stdint.h>
 
 #if defined(__SAME51J18A__) || defined(__SAME51J19A__) || defined(__SAME51J20A__) || \
-	defined(__SAME54P20A__ )
+	defined(__SAME54P20A__)
 
 
 #include <sam.h>
