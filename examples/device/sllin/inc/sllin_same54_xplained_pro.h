@@ -25,40 +25,34 @@
 
 #pragma once
 
-#include <stdbool.h>
-#include <stdint.h>
 
-#include <sections.h>
-#include <sllin_debug.h>
-#include <sllin_version.h>
-
-#ifndef likely
-#define likely(x) __builtin_expect(!!(x),1)
-#endif
-
-#ifndef unlikely
-#define unlikely(x) __builtin_expect(!!(x),0)
-#endif
-
-
-#define SLLIN_NAME "slLIN"
-#define CMD_BUFFER_SIZE 64
-#define MSG_BUFFER_SIZE 512
+#include <sam.h>
 
 
 
-__attribute__((noreturn)) extern void sllin_board_reset(void);
-extern uint32_t sllin_board_identifier(void);
-extern void sllin_board_init_begin(void);
-extern void sllin_board_init_end(void);
-extern void sllin_board_led_set(uint8_t index, bool on);
-extern void sllin_board_leds_on_unsafe(void);
+#define SLLIN_BOARD_USB_BCD_DEVICE (1 << 8)
+#define SLLIN_BOARD_USB_MANUFACTURER_STRING "Microchip"
+#define SLLIN_BOARD_LIN_COUNT 2
+#define SLLIN_BOARD_NAME BOARD_NAME
+
+enum {
+	SLLIN_BOARD_DEBUG_DEFAULT,
+	SLLIN_BOARD_LED_COUNT
+};
 
 
-#if defined(SAME54XPLAINEDPRO)
-#	include "sllin_same54_xplained_pro.h"
-#elif defined __SAMD__
-#	include "sllin_samd.h"
-#else
-#	error "Unknown board"
-#endif
+
+// #define sl_board_led_usb_burst() led_burst(LED_DEBUG_3, SLLIN_LED_BURST_DURATION_MS)
+// #define sl_board_led_lin_traffic_burst(index) \
+// 	do { \
+// 		switch (index) { \
+// 		case 0: led_burst(LED_DEBUG_0, SLLIN_LED_BURST_DURATION_MS); break; \
+// 		default: break; \
+// 		} \
+// 	} while (0)
+
+
+// SLLIN_RAMFUNC extern void sl_board_led_lin_status_set(uint8_t index, int status);
+
+
+

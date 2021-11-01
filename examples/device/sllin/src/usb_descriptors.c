@@ -126,7 +126,7 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 static char const* string_desc_arr [] =
 {
 	(const char[]) { 0x09, 0x04 },                          // 0: is supported language is English (0x0409)
-	"2guys",                                                // 1: Manufacturer
+	SLLIN_BOARD_USB_MANUFACTURER_STRING,                    // 1: Manufacturer
 	SLLIN_BOARD_NAME " " SLLIN_NAME " (%s)",                // 2: Product
 	"%s",                                                   // 3: Serial
 	SLLIN_BOARD_NAME " " SLLIN_NAME " (%s) LIN ch0",

@@ -23,7 +23,7 @@
  *
  */
 
-
+#ifdef __SAMD__
 
 #include <FreeRTOS.h>
 
@@ -234,3 +234,4 @@ extern void sllin_board_init_end(void)
 	SysTick_Config(SystemCoreClock / configTICK_RATE_HZ);
 }
 
+#endif // defined(__SAMD__)

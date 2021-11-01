@@ -31,13 +31,31 @@ CRC32_FUNC int crc32f(uint32_t addr, uint32_t bytes, uint32_t flags, uint32_t *r
 
 	if (flags & CRC32E_FLAG_UNLOCK) {
 		// disable DSU protection
+#if defined(__SAME51J18A__) || defined(__SAME51J19A__) || defined(__SAME51J20A__) || \
+	defined(__SAME54P20A__)
+		// // p. 112 of 60001507E.pdf
+		// disable DSU protection
+		PAC->WRCTRL.reg = PAC_WRCTRL_KEY_CLR | PAC_WRCTRL_PERID(33);
+		// LOG("PAC->STATUSB.reg %#08lx\n", PAC->STATUSB.reg);
+
+		if (PAC->STATUSB.bit.DSU_) {
+			return CRC32E_ACCESS;
+		}
+#else
 		PAC1->WPCLR.reg = 0x2;
+#endif
 	}
 
 	error = crc32(addr, bytes, result);
 
 	if (flags & CRC32E_FLAG_UNLOCK) {
+		// enable DSU protection
+#if defined(__SAME51J18A__) || defined(__SAME51J19A__) || defined(__SAME51J20A__) || \
+	defined(__SAME54P20A__)
+		PAC->WRCTRL.reg = PAC_WRCTRL_KEY_SET | PAC_WRCTRL_PERID(33);
+#else
 		PAC1->WPSET.reg = 0x2;
+#endif
 	}
 
 	return error;

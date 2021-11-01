@@ -84,10 +84,3 @@
 } // extern "C" {
 #endif
 
-#if 1 != CFG_TUD_CDC
-#error borken
-#endif
-
-#if 0 != CFG_TUD_DFU_RUNTIME
-#error borken
-#endif

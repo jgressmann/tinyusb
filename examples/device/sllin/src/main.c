@@ -104,6 +104,7 @@ int main(void)
 
 
 	sllin_board_init_end();
+	LOG("sllin_board_init_end\n");
 
 	for (unsigned i = 0; i < SLLIN_BOARD_LIN_COUNT; ++i) {
 		struct lin *lin = &lins[i];
