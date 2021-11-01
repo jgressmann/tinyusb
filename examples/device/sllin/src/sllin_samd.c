@@ -81,7 +81,7 @@ extern void sllin_board_led_set(uint8_t index, bool on)
 {
 	SLLIN_DEBUG_ASSERT(index < ARRAY_SIZE(leds));
 
-	// gpio_set_pin_level(leds[index].pin, on);
+	gpio_set_pin_level(leds[index].pin, on);
 }
 
 extern void sllin_board_leds_on_unsafe(void)

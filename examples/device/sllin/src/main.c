@@ -49,20 +49,7 @@ enum {
 SLLIN_RAMFUNC static void tusb_device_task(void* param);
 SLLIN_RAMFUNC static void lin_usb_task(void *param);
 
-// struct usb_lin {
-// 	CFG_TUSB_MEM_ALIGN uint8_t tx_buffers[2][MSG_BUFFER_SIZE];
-// 	CFG_TUSB_MEM_ALIGN uint8_t rx_buffers[2][MSG_BUFFER_SIZE];
-// 	StaticSemaphore_t mutex_mem;
-// 	SemaphoreHandle_t mutex_handle;
-// 	uint16_t tx_offsets[2];
-// 	uint8_t tx_bank;
-// 	uint8_t rx_bank;
-// 	uint8_t pipe;
-// };
-
 static struct usb {
-	// struct usb_cmd cmd[SLLIN_BOARD_CAN_COUNT];
-	// struct usb_lin lin[SLLIN_BOARD_LIN_COUNT];
 	StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_device_stack_mem;
 	uint8_t port;
@@ -82,12 +69,8 @@ static struct lin {
 	bool tx_full;
 	bool setup;
 	bool enabled;
+	bool readonly;
 } lins[SLLIN_BOARD_LIN_COUNT];
-
-
-#if SLLIN_BOARD_LIN_COUNT != 1
-#error broken
-#endif
 
 int main(void)
 {
@@ -129,7 +112,7 @@ int main(void)
 	// 	usb_lin->mutex_handle = xSemaphoreCreateMutexStatic(&usb_lin->mutex_mem);
 		lin->usb_task_handle = xTaskCreateStatic(
 								&lin_usb_task,
-								"lin",
+								NULL,
 								TU_ARRAY_SIZE(lin->usb_task_stack),
 								(void*)(uintptr_t)i,
 								configMAX_PRIORITIES-1,
@@ -223,6 +206,9 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 	lin->tx_offset = 1;
 
 	switch (lin->rx_buffer[0]) {
+	case '\n':
+		lin->tx_offset = 0;
+		break;
 	case 'S': // CAN bitrate, values 0-8
 		if (lin->enabled) {
 			LOG("ch%u refusing to configure LIN when open\n", index);
@@ -239,18 +225,34 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 				lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
 			} else {
 				lin->master = '0' == lin->rx_buffer[2];
+				if (lin->master) {
+					LOG("ch%u master mode configured\n", index);
+				} else {
+					LOG("ch%u slave mode configured\n", index);
+				}
 			}
+		}
+		break;
+	case 'L': // listen only
+		if (lin->enabled) {
+			LOG("ch%u refusing to configure LIN when open\n", index);
+			lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
+		} else {
+			lin->readonly = true;
 		}
 		break;
 	case 'O':
 		// TODO setup device
+		LOG("ch%u open\n", index);
 		lin->enabled = true;
 		break;
 	case 'C':
+		LOG("ch%u close\n", index);
 		lin->enabled = false;
+		lin->readonly = false;
 		break;
-	case 't': // transmit 11 bit CAN frame
-	case 'T': // transmit 29 bit CAN frame
+	case 't': // transmit 11 bit CAN frame -> master tx
+	case 'T': // transmit 29 bit CAN frame -> slave tx reponse
 		if (likely(lin->enabled)) {
 			if (unlikely(lin->rx_offset < 5)) {
 				LOG("ch%u malformed command '%s'\n", index, lin->rx_buffer);
@@ -267,9 +269,12 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 					lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
 				} else {
 					// tx / store response
+
 					lin->tx_buffer[0] = lin->rx_buffer[0] == 'T' ? 'Z' : 'z';
 					lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
 					lin->tx_offset = 2;
+
+					LOG("%s\n", lin->rx_buffer);
 				}
 			}
 		} else {
@@ -292,6 +297,8 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 				lin->tx_buffer[0] = 'z';
 				lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
 				lin->tx_offset = 2;
+
+				LOG("%s\n", lin->rx_buffer);
 			}
 		} else {
 			LOG("ch%u refusing to transmit / store reponses when closed\n", index);
@@ -316,14 +323,16 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		lin->tx_buffer[0] = 'V';
 		lin->tx_buffer[1] = '0';
 		lin->tx_buffer[2] = '1';
-		lin->tx_buffer[3] = '0' + SLLIN_VERSION_MAJOR;
-		lin->tx_buffer[4] = '0' + SLLIN_VERSION_MINOR;
+		lin->tx_buffer[3] = nibble_to_char(SLLIN_VERSION_MAJOR);
+		lin->tx_buffer[4] = nibble_to_char(SLLIN_VERSION_MINOR);
 		lin->tx_buffer[5] = SLLIN_OK_TERMINATOR;
 		lin->tx_offset = 6;
 	} break;
-	case 'N':
-		lin->tx_offset = usnprintf((char *)lin->tx_buffer, sizeof(lin->tx_buffer), "N%x%c", sllin_board_identifier() & 0xffff, SLLIN_OK_TERMINATOR);
-		break;
+	case 'N': {
+		uint32_t id = sllin_board_identifier();
+		id = ((id >> 16) & 0xffff) ^ (id & 0xffff);
+		lin->tx_offset = usnprintf((char *)lin->tx_buffer, sizeof(lin->tx_buffer), "N%x%c", id, SLLIN_OK_TERMINATOR);
+	} break;
 	default:
 		LOG("ch%u unhandled command '%s'\n", index, lin->rx_buffer);
 		lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;

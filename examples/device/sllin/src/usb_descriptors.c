@@ -59,9 +59,7 @@ static const tusb_desc_device_t device = {
 
 	.idVendor           = 0x1d50,
 	.idProduct          = 0xdead,
-	//.bcdDevice          = (HWREV << 12) | (SLLIN_VERSION_MAJOR << 8) | (SLLIN_VERSION_MINOR << 4) | (SLLIN_VERSION_PATCH),
 	.bcdDevice          = (SLLIN_VERSION_MAJOR << 12) | (SLLIN_VERSION_MINOR << 8) | ((SLLIN_VERSION_PATCH / 10) << 4) | (SLLIN_VERSION_PATCH % 10),
-	//.bcdDevice          = HWREV << 8,
 
 	.iManufacturer      = 0x01,
 	.iProduct           = 0x02,
@@ -113,33 +111,6 @@ static uint8_t const desc_configuration[] =
 
 
 TU_VERIFY_STATIC(sizeof(desc_configuration) == CONFIG_TOTAL_LEN, "descriptor size mismatch");
-
-// enum
-// {
-//   ITF_NUM_CDC_0 = 0,
-//   ITF_NUM_CDC_0_DATA,
-//   ITF_NUM_TOTAL
-// };
-
-// #undef CONFIG_TOTAL_LEN
-// #define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
-//   #define EPNUM_CDC_0_NOTIF   0x81
-//   #define EPNUM_CDC_0_OUT     0x02
-//   #define EPNUM_CDC_0_IN      0x82
-
-
-
-// uint8_t const desc_configuration[] =
-// {
-//   // Config number, interface count, string index, total length, attribute, power in mA
-//   TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0x00, 100),
-
-//   // 1st CDC: Interface number, string index, EP notification address and size, EP data address (out, in) and size.
-//   TUD_CDC_DESCRIPTOR(ITF_NUM_CDC_0, 4, EPNUM_CDC_0_NOTIF, 8, EPNUM_CDC_0_OUT, EPNUM_CDC_0_IN, 64),
-
-// };
-
-// TU_VERIFY_STATIC(sizeof(desc_configuration) == CONFIG_TOTAL_LEN, "descriptor size mismatch");
 
 uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 {
