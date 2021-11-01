@@ -29,23 +29,16 @@ CRC32_FUNC int crc32f(uint32_t addr, uint32_t bytes, uint32_t flags, uint32_t *r
 {
 	int error = CRC32E_NONE;
 
-	// if (flags & CRC32E_FLAG_UNLOCK) {
-	// 	// // p. 112 of 60001507E.pdf
-	// 	// disable DSU protection
-	// 	PAC->WRCTRL.reg = PAC_WRCTRL_KEY_CLR | PAC_WRCTRL_PERID(33);
-	// 	// LOG("PAC->STATUSB.reg %#08lx\n", PAC->STATUSB.reg);
-
-	// 	if (PAC->STATUSB.bit.DSU_) {
-	// 		return CRC32E_ACCESS;
-	// 	}
-	// }
+	if (flags & CRC32E_FLAG_UNLOCK) {
+		// disable DSU protection
+		PAC1->WPCLR.reg = 0x2;
+	}
 
 	error = crc32(addr, bytes, result);
 
-	// if (flags & CRC32E_FLAG_UNLOCK) {
-	// 	PAC->WRCTRL.reg = PAC_WRCTRL_KEY_SET | PAC_WRCTRL_PERID(33);
-	// 	// LOG("PAC->STATUSB.reg %#08lx\n", PAC->STATUSB.reg);
-	// }
+	if (flags & CRC32E_FLAG_UNLOCK) {
+		PAC1->WPSET.reg = 0x2;
+	}
 
 	return error;
 }

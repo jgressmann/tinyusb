@@ -142,11 +142,11 @@ void init_device_identifier(void)
 #endif
 
 
-	// error = crc32f((uint32_t)serial_number, 16, CRC32E_FLAG_UNLOCK, &device_identifier);
-	// if (unlikely(error)) {
-	// 	device_identifier = serial_number[0];
-	// 	LOG("ERROR: failed to compute CRC32: %d. Using fallback device identifier\n", error);
-	// }
+	error = crc32f((uint32_t)serial_number, 16, CRC32E_FLAG_UNLOCK, &device_identifier);
+	if (unlikely(error)) {
+		device_identifier = serial_number[0];
+		LOG("ERROR: failed to compute CRC32: %d. Using fallback device identifier\n", error);
+	}
 
 
 #if SLLIN_DEBUG
