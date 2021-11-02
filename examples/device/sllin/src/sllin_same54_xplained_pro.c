@@ -34,6 +34,26 @@
 #include <mcu.h>
 #include <bsp/board.h>
 
+enum {
+	CMD_NONE,
+	CMD_MASTER_TX_HEADER,
+	CMD_MASTER_TX_DATA,
+};
+
+static struct lin {
+	Sercom* const sercom;
+	volatile uint8_t cmd;
+	// volatile uint8_t pid;
+	volatile uint8_t offset;
+	volatile uint8_t length;
+	volatile uint8_t data[8];
+} lins[SLLIN_BOARD_LIN_COUNT] = {
+	{
+		.sercom = SERCOM6,
+		.cmd = CMD_NONE,
+	},
+};
+
 static inline void same5x_enable_cache(void)
 {
 	// DS60001507E-page 83
@@ -229,14 +249,22 @@ static inline void lin_init_once(void)
 	NVIC_SetPriority(SERCOM6_1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 	NVIC_SetPriority(SERCOM6_2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 	NVIC_SetPriority(SERCOM6_3_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+
+	NVIC_EnableIRQ(SERCOM6_0_IRQn);
+	NVIC_EnableIRQ(SERCOM6_1_IRQn);
+	NVIC_EnableIRQ(SERCOM6_2_IRQn);
+	NVIC_EnableIRQ(SERCOM6_3_IRQn);
 }
 
-static inline void lin_init(uint16_t bitrate, bool master)
+static inline void lin_init(uint8_t index, uint16_t bitrate, bool master)
 {
-	SERCOM6->USART.CTRLA.bit.SWRST = 1; /* reset and disable SERCOM -> enable configuration */
-	while (SERCOM6->USART.SYNCBUSY.bit.SWRST);
+	struct lin *lin = &lins[index];
+	Sercom *sercom = lin->sercom;
 
-	SERCOM6->USART.CTRLA.reg  =
+	sercom->USART.CTRLA.bit.SWRST = 1; /* reset and disable SERCOM -> enable configuration */
+	while (lin->sercom->USART.SYNCBUSY.bit.SWRST);
+
+	sercom->USART.CTRLA.reg  =
 		SERCOM_USART_CTRLA_SAMPR(1) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
 		SERCOM_USART_CTRLA_SAMPA(1) | /* 16x over sampling */
 		SERCOM_USART_CTRLA_FORM(master ? 0x2 : 0x4) | /* 0x3 LIN master, 0x4 LIN slave, ... */
@@ -245,17 +273,20 @@ static inline void lin_init(uint16_t bitrate, bool master)
 		SERCOM_USART_CTRLA_RXPO(1) | /* SERCOM PAD[1] is used for data reception */
 		SERCOM_USART_CTRLA_TXPO(0); /* SERCOM PAD[0] is used for data transmission */
 
-	SERCOM6->USART.CTRLB.reg = /* RXEM = 0 -> receiver disabled, LINCMD = 0 -> normal USART transmission, SFDE = 0 -> start-of-frame detection disabled, SBMODE = 0 -> one stop bit, CHSIZE = 0 -> 8 bits */
+	sercom->USART.CTRLB.reg = /* RXEM = 0 -> receiver disabled, LINCMD = 0 -> normal USART transmission, SFDE = 0 -> start-of-frame detection disabled, SBMODE = 0 -> one stop bit, CHSIZE = 0 -> 8 bits */
 		SERCOM_USART_CTRLB_TXEN | /* transmitter enabled */
 		SERCOM_USART_CTRLB_RXEN; /* receiver enabled */
 
 	uint16_t baud = 48000000 / (16 * bitrate);
 	uint16_t frac = 48000000 / (2 * bitrate) - 8 * baud;
-	SERCOM6->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
+	sercom->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
 	// SERCOM6->USART.BAUD.reg = SERCOM_USART_BAUD_BAUD(63019); /* 65536*(1−16*115200/48000000) */
 
-	SERCOM6->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
-	while (SERCOM6->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
+	sercom->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
+	while (sercom->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
+
+	sercom->USART.INTENCLR.reg = ~0;
+	sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
 }
 
 
@@ -310,6 +341,13 @@ extern void sllin_board_init_begin(void)
 	same5x_enable_cache();
 
 	same5x_init_device_identifier();
+
+	// PC07 is hooked up to relay
+	// configure as out and set to low
+	PORT->Group[2].DIRSET.reg |= 1ul << 7;
+	PORT->Group[2].OUTCLR.reg |= 1ul << 7;
+
+	//PORT->Group[2].DIRSET.reg |= 1ul << 7;
 }
 
 extern void sllin_board_init_end(void)
@@ -321,6 +359,119 @@ __attribute__((noreturn)) extern void sllin_board_reset(void)
 {
 	NVIC_SystemReset();
 	__unreachable();
+}
+
+extern void sllin_board_lin_init(uint8_t index, uint16_t bitrate, bool master)
+{
+	lin_init(index, bitrate, master);
+}
+
+SLLIN_RAMFUNC extern void sllin_board_lin_master_tx(uint8_t index, uint8_t pid, uint8_t len, uint8_t const *data)
+{
+	struct lin *lin = &lins[index];
+	Sercom *s = NULL;
+
+	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(lins));
+	SLLIN_DEBUG_ASSERT(len <= 8);
+
+	lin->offset = 0;
+	lin->length = len;
+	s = lin->sercom;
+
+	if (len) {
+		for (unsigned i = 0; i < len; ++i) {
+			lin->data[i] = data[i];
+		}
+
+		__atomic_thread_fence(__ATOMIC_RELAXED);
+
+		s->USART.INTENSET.reg = SERCOM_USART_INTENSET_TXC | SERCOM_USART_INTENSET_DRE;
+		// s->USART.INTENSET.reg = SERCOM_USART_INTENSET_TXC;
+
+	} else {
+		s->USART.INTENCLR.reg = SERCOM_USART_INTENSET_TXC | SERCOM_USART_INTENSET_DRE;
+		// s->USART.INTENCLR.reg = SERCOM_USART_INTENSET_TXC;
+	}
+
+	s->USART.CTRLB.bit.LINCMD = 0x2;
+	s->USART.DATA.reg = pid;
+}
+
+SLLIN_RAMFUNC static void lin_int(uint8_t index)
+{
+	struct lin *lin = &lins[index];
+	Sercom *s = lin->sercom;
+
+	uint32_t intflag = s->USART.INTFLAG.reg;
+	uint32_t status = s->USART.STATUS.reg;
+
+	LOG("ch%u INTFLAG=%x\n", index, intflag);
+	LOG("ch%u STATUS=%x\n", index, status);
+	s->USART.INTFLAG.reg = ~0;
+	s->USART.STATUS.reg = ~0;
+
+	if (intflag & SERCOM_USART_INTFLAG_RXC) {
+		uint8_t byte = s->USART.DATA.reg;
+		LOG("ch%u RX=%x\n", index, byte);
+	}
+
+	// if (intflag & SERCOM_USART_INTFLAG_TXC) {
+	// 	// if (intflag & SERCOM_USART_INTFLAG_DRE) {
+	// 	// 	if (likely(lin->offset < lin->length)) {
+	// 	// 		uint8_t byte = lin->data[lin->offset++];
+
+	// 	// 		s->USART.CTRLB.bit.LINCMD = 0x0;
+	// 	// 		s->USART.DATA.reg = byte;
+	// 	// 		LOG("ch%u TX=%x\n", index, byte);
+	// 	// 	} else {
+	// 	// 		s->USART.INTENCLR.reg = SERCOM_USART_INTENSET_DRE;
+	// 	// 	}
+	// 	// }
+
+	// 	if (likely(lin->offset < lin->length)) {
+	// 		uint8_t byte = lin->data[lin->offset++];
+
+	// 		s->USART.CTRLB.bit.LINCMD = 0x0;
+	// 		s->USART.DATA.reg = byte;
+	// 		LOG("ch%u TX=%x\n", index, byte);
+	// 	}
+	// }
+
+	// if (lin->offset >= lin->length) {
+	// 	s->USART.INTENCLR.reg = SERCOM_USART_INTENSET_DRE;
+	// }
+
+	if (intflag & SERCOM_USART_INTFLAG_DRE) {
+		if (likely(lin->offset < lin->length)) {
+			uint8_t byte = lin->data[lin->offset++];
+
+			s->USART.CTRLB.bit.LINCMD = 0x0;
+			s->USART.DATA.reg = byte;
+			LOG("ch%u TX=%x\n", index, byte);
+		} else {
+			s->USART.INTENCLR.reg = SERCOM_USART_INTENSET_DRE;
+		}
+	}
+}
+
+void SERCOM6_0_Handler(void)
+{
+	lin_int(0);
+}
+
+void SERCOM6_1_Handler(void)
+{
+	lin_int(0);
+}
+
+void SERCOM6_2_Handler(void)
+{
+	lin_int(0);
+}
+
+void SERCOM6_3_Handler(void)
+{
+	lin_int(0);
 }
 
 #endif // #ifdef SAME54XPLAINEDPRO

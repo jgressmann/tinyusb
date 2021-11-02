@@ -53,6 +53,8 @@ extern void sllin_board_init_begin(void);
 extern void sllin_board_init_end(void);
 extern void sllin_board_led_set(uint8_t index, bool on);
 extern void sllin_board_leds_on_unsafe(void);
+extern void sllin_board_lin_init(uint8_t index, uint16_t bitrate, bool master);
+SLLIN_RAMFUNC extern void sllin_board_lin_master_tx(uint8_t index, uint8_t pid, uint8_t len, uint8_t const *data);
 
 
 #if defined(SAME54XPLAINEDPRO)

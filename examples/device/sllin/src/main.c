@@ -69,7 +69,7 @@ static struct lin {
 	bool tx_full;
 	bool setup;
 	bool enabled;
-	bool readonly;
+	// bool readonly;
 } lins[SLLIN_BOARD_LIN_COUNT];
 
 int main(void)
@@ -144,6 +144,9 @@ void tud_mount_cb(void)
 	LOG("mounted\n");
 	led_blink(0, 250);
 	usb.mounted = true;
+
+
+	PORT->Group[2].OUTSET.reg |= 1ul << 7;
 }
 
 // Invoked when device is unmounted
@@ -154,6 +157,7 @@ void tud_umount_cb(void)
 	usb.mounted = false;
 
 	// can_usb_disconnect();
+	PORT->Group[2].OUTCLR.reg |= 1ul << 7;
 }
 
 // Invoked when usb bus is suspended
@@ -166,6 +170,9 @@ void tud_suspend_cb(bool remote_wakeup_en)
 	usb.mounted = false;
 	led_blink(0, 500);
 
+
+	PORT->Group[2].OUTCLR.reg |= 1ul << 7;
+
 	// can_usb_disconnect();
 }
 
@@ -175,6 +182,8 @@ void tud_resume_cb(void)
 	LOG("resume\n");
 	usb.mounted = true;
 	led_blink(0, 250);
+
+	PORT->Group[2].OUTCLR.reg |= 1ul << 7;
 }
 
 static inline uint8_t char_to_nibble(char c)
@@ -184,16 +193,88 @@ static inline uint8_t char_to_nibble(char c)
 	}
 
 	if (c >= 'a' && c <= 'f') {
-		return c - 'a';
+		return (c - 'a') + 0xa;
 	}
 
-	return (c - 'A') & 0xf;
+	return ((c - 'A') & 0xf) + 0xA;
 
 }
 
 static inline char nibble_to_char(uint8_t nibble)
 {
 	return "0123456789abcdef"[nibble & 0xf];
+}
+
+static inline uint8_t id_to_pid(uint8_t id)
+{
+	static const uint8_t map[] = {
+		0x80,
+		0xC1,
+		0x42,
+		0x03,
+		0xC4,
+		0x85,
+		0x06,
+		0x47,
+		0x08,
+		0x49,
+		0xCA,
+		0x8B, // <-
+		0x4C,
+		0x0D,
+		0x8E,
+		0xCF,
+		0x50,
+		0x11,
+		0x92,
+		0xD3,
+		0x14,
+		0x55,
+		0xD6,
+		0x97,
+		0xD8,
+		0x99,
+		0x1A,
+		0x5B,
+		0x9C,
+		0xDD,
+		0x5E,
+		0x1F,
+		0x20,
+		0x61,
+		0xE2,
+		0xA3,
+		0x64,
+		0x25,
+		0xA6,
+		0xE7,
+		0xA8,
+		0xE9,
+		0x6A,
+		0x2B,
+		0xEC,
+		0xAD,
+		0x2E,
+		0x6F,
+		0xF0,
+		0xB1,
+		0x32,
+		0x73,
+		0xB4,
+		0xF5,
+		0x76,
+		0x37,
+		0x78,
+		0x39,
+		0xBA,
+		0xFB,
+		0x3C,
+		0x7D,
+		0xFE,
+		0xBF,
+	};
+
+	return map[id & 0x3f];
 }
 
 SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
@@ -234,23 +315,24 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 			}
 		}
 		break;
-	case 'L': // listen only
-		if (lin->enabled) {
-			LOG("ch%u refusing to configure LIN when open\n", index);
-			lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
-		} else {
-			lin->readonly = true;
-		}
-		break;
+	// case 'L': // listen only
+	// 	if (lin->enabled) {
+	// 		LOG("ch%u refusing to configure LIN when open\n", index);
+	// 		lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
+	// 	} else {
+	// 		lin->readonly = true;
+	// 	}
+	// 	break;
 	case 'O':
 		// TODO setup device
 		LOG("ch%u open\n", index);
 		lin->enabled = true;
+		sllin_board_lin_init(index, 19200, true);
 		break;
 	case 'C':
 		LOG("ch%u close\n", index);
 		lin->enabled = false;
-		lin->readonly = false;
+		// lin->readonly = false;
 		break;
 	case 't': // transmit 11 bit CAN frame -> master tx
 	case 'T': // transmit 29 bit CAN frame -> slave tx reponse
@@ -262,20 +344,31 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 				LOG("ch%u refusing to transmit / store frame, wrong mode\n", index);
 				lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
 			} else {
-				uint8_t pid = (char_to_nibble(lin->rx_buffer[2]) << 4) | char_to_nibble(lin->rx_buffer[3]);
+				uint8_t id = ((char_to_nibble(lin->rx_buffer[2]) << 4) | char_to_nibble(lin->rx_buffer[3])) & 0x3f;
+				uint8_t pid = id_to_pid(id);
 				uint8_t frame_len = char_to_nibble(lin->rx_buffer[4]);
 
 				if (unlikely(frame_len * 2 + 5 > lin->rx_offset)) {
 					LOG("ch%u malformed command '%s'\n", index, lin->rx_buffer);
 					lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
 				} else {
-					// tx / store response
+					uint8_t data[8];
 
 					lin->tx_buffer[0] = lin->rx_buffer[0] == 'T' ? 'Z' : 'z';
 					lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
 					lin->tx_offset = 2;
 
-					LOG("%s\n", lin->rx_buffer);
+					LOG("ch%u %s -> id=%x pid=%x len=%u\n", index, lin->rx_buffer, id, pid, frame_len);
+
+					for (unsigned i = 0, j = 5; i < frame_len; ++i, j += 2) {
+						data[i] = (char_to_nibble(lin->rx_buffer[j]) << 4) | char_to_nibble(lin->rx_buffer[j+1]);
+					}
+
+					if (lin->rx_buffer[0] == 'T') {
+
+					} else {
+						sllin_board_lin_master_tx(index, pid, frame_len, data);
+					}
 				}
 			}
 		} else {
@@ -292,14 +385,17 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 				LOG("ch%u refusing to transmit in slave mode\n", index);
 				lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
 			} else {
-				uint8_t pid = (char_to_nibble(lin->rx_buffer[2]) << 4) | char_to_nibble(lin->rx_buffer[3]);
+				uint8_t id = ((char_to_nibble(lin->rx_buffer[2]) << 4) | char_to_nibble(lin->rx_buffer[3])) & 0x3f;
+				uint8_t pid = id_to_pid(id);
 
 				// tx / store response
 				lin->tx_buffer[0] = 'z';
 				lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
 				lin->tx_offset = 2;
 
-				LOG("%s\n", lin->rx_buffer);
+				LOG("ch%u %s -> id=%x pid=%x\n", index, lin->rx_buffer, id, pid);
+
+				sllin_board_lin_master_tx(index, pid, 0, NULL);
 			}
 		} else {
 			LOG("ch%u refusing to transmit / store reponses when closed\n", index);
@@ -321,6 +417,15 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		lin->tx_offset = 4;
 	} break;
 	case 'V': {
+		lin->tx_buffer[0] = 'V';
+		lin->tx_buffer[1] = '0';
+		lin->tx_buffer[2] = '1';
+		lin->tx_buffer[3] = '0';
+		lin->tx_buffer[4] = '0';
+		lin->tx_buffer[5] = SLLIN_OK_TERMINATOR;
+		lin->tx_offset = 6;
+	} break;
+	case 'v': {
 		lin->tx_buffer[0] = 'V';
 		lin->tx_buffer[1] = '0';
 		lin->tx_buffer[2] = '1';
