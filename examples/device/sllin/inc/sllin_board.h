@@ -46,6 +46,22 @@
 #define MSG_BUFFER_SIZE 512
 
 
+enum {
+	SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME,
+};
+
+typedef struct _sllin_queue_element {
+	uint8_t type;
+	union {
+		struct {
+			uint8_t pid;
+			uint8_t crc;
+			uint8_t reserved0;
+			uint8_t reserved1;
+			uint8_t data[8];
+		} lin_frame;
+	};
+} sllin_queue_element;
 
 __attribute__((noreturn)) extern void sllin_board_reset(void);
 extern uint32_t sllin_board_identifier(void);
@@ -54,7 +70,10 @@ extern void sllin_board_init_end(void);
 extern void sllin_board_led_set(uint8_t index, bool on);
 extern void sllin_board_leds_on_unsafe(void);
 extern void sllin_board_lin_init(uint8_t index, uint16_t bitrate, bool master);
-SLLIN_RAMFUNC extern void sllin_board_lin_master_tx(uint8_t index, uint8_t pid, uint8_t len, uint8_t const *data);
+SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(uint8_t index, uint8_t pid, uint8_t len, uint8_t const *data);
+SLLIN_RAMFUNC extern void sllin_lin_task_notify_def(uint8_t index, uint32_t count);
+SLLIN_RAMFUNC extern void sllin_lin_task_notify_isr(uint8_t index, uint32_t count);
+SLLIN_RAMFUNC extern void sllin_lin_task_queue(uint8_t index, sllin_queue_element const *element);
 
 
 #if defined(SAME54XPLAINEDPRO)

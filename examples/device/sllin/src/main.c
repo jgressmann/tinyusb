@@ -49,6 +49,8 @@ enum {
 SLLIN_RAMFUNC static void tusb_device_task(void* param);
 SLLIN_RAMFUNC static void lin_usb_task(void *param);
 
+
+
 static struct usb {
 	StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_device_stack_mem;
@@ -60,13 +62,18 @@ static struct lin {
 	StackType_t usb_task_stack[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_task_mem;
 	TaskHandle_t usb_task_handle;
+	sllin_queue_element rx_fifo[8];
 	uint8_t rx_buffer[33];
 	uint8_t tx_buffer[33];
 	uint8_t rx_offset;
 	uint8_t tx_offset;
 
+	uint8_t rx_fifo_gi; // not an index, uses full range of type
+	uint8_t rx_fifo_pi; // not an index, uses full range of type
+
 	bool master;
 	bool tx_full;
+	uint8_t rx_full;
 	bool setup;
 	bool enabled;
 	// bool readonly;
@@ -205,6 +212,16 @@ static inline char nibble_to_char(uint8_t nibble)
 	return "0123456789abcdef"[nibble & 0xf];
 }
 
+// def pid(id: int) -> int:
+// 		# P0 = ID0 ^ ID1 ^ ID2 ^ ID4
+// 		p0 = int((id & 1) == 1) ^ int((id & 2) == 2) ^ int((id & 4) == 4) ^ int((id & 16) == 16)
+// 		# P1 = ~(ID1 ^ ID3 ^ ID4 ^ ID5)
+// 		p1 = 1 ^ int((id & 2) == 2) ^ int((id & 8) == 8) ^ int((id & 16) == 16) ^ int((id & 32) == 32)
+
+// 		pid = (p1 << 7) | (p0 << 6) | (id & 63)
+
+// 		return pid
+
 static inline uint8_t id_to_pid(uint8_t id)
 {
 	static const uint8_t map[] = {
@@ -277,6 +294,11 @@ static inline uint8_t id_to_pid(uint8_t id)
 	return map[id & 0x3f];
 }
 
+static inline uint8_t pid_to_id(uint8_t pid)
+{
+	return pid & 0x3f;
+}
+
 SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 {
 	// http://www.can232.com/docs/canusb_manual.pdf
@@ -286,6 +308,8 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 
 	lin->tx_buffer[0] = SLLIN_OK_TERMINATOR;
 	lin->tx_offset = 1;
+
+	LOG("ch%u rx: %s\n", index, lin->rx_buffer);
 
 	switch (lin->rx_buffer[0]) {
 	case '\n':
@@ -327,6 +351,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		// TODO setup device
 		LOG("ch%u open\n", index);
 		lin->enabled = true;
+		lin->master = true;
 		sllin_board_lin_init(index, 19200, true);
 		break;
 	case 'C':
@@ -354,10 +379,6 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 				} else {
 					uint8_t data[8];
 
-					lin->tx_buffer[0] = lin->rx_buffer[0] == 'T' ? 'Z' : 'z';
-					lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
-					lin->tx_offset = 2;
-
 					LOG("ch%u %s -> id=%x pid=%x len=%u\n", index, lin->rx_buffer, id, pid, frame_len);
 
 					for (unsigned i = 0, j = 5; i < frame_len; ++i, j += 2) {
@@ -367,7 +388,13 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 					if (lin->rx_buffer[0] == 'T') {
 
 					} else {
-						sllin_board_lin_master_tx(index, pid, frame_len, data);
+						if (likely(sllin_board_lin_master_tx(index, pid, frame_len, data))) {
+							lin->tx_buffer[0] = lin->rx_buffer[0] == 'T' ? 'Z' : 'z';
+							lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
+							lin->tx_offset = 2;
+						} else {
+							lin->tx_full = true;
+						}
 					}
 				}
 			}
@@ -395,7 +422,13 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 
 				LOG("ch%u %s -> id=%x pid=%x\n", index, lin->rx_buffer, id, pid);
 
-				sllin_board_lin_master_tx(index, pid, 0, NULL);
+				if (likely(sllin_board_lin_master_tx(index, pid, 0, NULL))) {
+					lin->tx_buffer[0] = 'z';
+					lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
+					lin->tx_offset = 2;
+				} else {
+					lin->tx_full = true;
+				}
 			}
 		} else {
 			LOG("ch%u refusing to transmit / store reponses when closed\n", index);
@@ -404,6 +437,10 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		break;
 	case 'F': {
 		uint8_t flags = 0;
+
+		if (__atomic_fetch_and(&lin->rx_full, 0, __ATOMIC_ACQ_REL)) {
+			flags |= 0x1;
+		}
 
 		if (lin->tx_full) {
 			lin->tx_full = false;
@@ -466,47 +503,118 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 
 	struct lin *lin = &lins[index];
 	// struct usb_lin *usb_lin = &usb.lin[index];
+	bool written = false;
 
 	while (42) {
 		bool yield = false;
 
-		if (tud_cdc_n_connected(index)) {
-			int c = tud_cdc_n_read_char(index);
+		(void)ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
 
-			if (-1 == c) {
-				yield = true;
-			} else {
-				if (SLLIN_OK_TERMINATOR == c && lin->rx_offset) {
-					lin->rx_buffer[lin->rx_offset] = 0;
-					sllin_process_command(index);
-					lin->rx_offset = 0;
+		for (bool done = false; !done; ) {
+			done = true;
 
-					if (lin->tx_offset) {
-						uint32_t w = tud_cdc_n_write(index, lin->tx_buffer, lin->tx_offset);
+			if (tud_cdc_n_connected(index)) {
+				int c = tud_cdc_n_read_char(index);
+				uint8_t gi = lin->rx_fifo_gi;
+				uint8_t pi = __atomic_load_n(&lin->rx_fifo_pi, __ATOMIC_ACQUIRE);
+
+				if (-1 == c) {
+					yield = true;
+				} else {
+					done = false;
+
+					if (SLLIN_OK_TERMINATOR == c && lin->rx_offset) {
+						lin->rx_buffer[lin->rx_offset] = 0;
+						sllin_process_command(index);
+						lin->rx_offset = 0;
+
+						if (lin->tx_offset) {
+							uint32_t w = tud_cdc_n_write(index, lin->tx_buffer, lin->tx_offset);
+
+							if (unlikely(w != lin->tx_offset)) {
+								lin->tx_full = true;
+							}
+
+							lin->tx_offset = 0;
+
+							if (!written) {
+								xTaskNotifyGive(lin->usb_task_handle);
+								written = true;
+							}
+						}
+					} else {
+						lin->rx_buffer[lin->rx_offset] = c;
+						lin->rx_offset = (lin->rx_offset + 1) % (TU_ARRAY_SIZE(lin->rx_buffer) - 1);
+					}
+				}
+
+				if (pi != gi) {
+					uint8_t fifo_index = gi % TU_ARRAY_SIZE(lin->rx_fifo);
+					sllin_queue_element *e = &lin->rx_fifo[fifo_index];
+
+					switch (e->type) {
+					case SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME: {
+						uint8_t id = pid_to_id(e->lin_frame.pid);
+						uint32_t w = 0;
+
+						// LOG("ch%u rx frame\n", index);
+
+						lin->tx_buffer[lin->tx_offset++] = 't';
+						lin->tx_buffer[lin->tx_offset++] = '0';
+						lin->tx_buffer[lin->tx_offset++] = nibble_to_char(id >> 4);
+						lin->tx_buffer[lin->tx_offset++] = nibble_to_char(id & 0xf);
+						lin->tx_buffer[lin->tx_offset++] = '8';
+						for (unsigned i = 0; i < 8; ++i) {
+							lin->tx_buffer[lin->tx_offset++] = nibble_to_char(e->lin_frame.data[i] >> 4);
+							lin->tx_buffer[lin->tx_offset++] = nibble_to_char(e->lin_frame.data[i] & 0xf);
+						}
+						lin->tx_buffer[lin->tx_offset++] = '\r';
+
+						w = tud_cdc_n_write(index, lin->tx_buffer, lin->tx_offset);
 
 						if (unlikely(w != lin->tx_offset)) {
 							lin->tx_full = true;
 						}
 
-						tud_cdc_n_write_flush(index);
 						lin->tx_offset = 0;
+
+						if (!written) {
+							xTaskNotifyGive(lin->usb_task_handle);
+							written = true;
+						}
+
+					} break;
+					default:
+						SLLIN_ASSERT(false && "unhandled queue element type");
+						break;
 					}
-				} else {
-					lin->rx_buffer[lin->rx_offset] = c;
-					lin->rx_offset = (lin->rx_offset + 1) % (TU_ARRAY_SIZE(lin->rx_buffer) - 1);
+
+					__atomic_store_n(&lin->rx_fifo_gi, gi + 1, __ATOMIC_RELEASE);
+
+					done = false;
 				}
+
+				if (yield && written) {
+					written = false;
+					tud_cdc_n_write_flush(index);
+					// LOG("flush\n");
+				}
+			} else {
+				// LOG("T");
+
+				lin->rx_offset = 0;
+				lin->tx_offset = 0;
+				lin->enabled = false;
+				lin->setup = false;
+				lin->tx_full = false;
+				lin->master = true;
+				__atomic_store_n(&lin->rx_fifo_gi, 0, __ATOMIC_RELEASE);
+				__atomic_store_n(&lin->rx_fifo_pi, 0, __ATOMIC_RELEASE);
+
+				// tud_cdc_n_read_flush(index);
+
+				yield = true;
 			}
-		} else {
-			lin->rx_offset = 0;
-			lin->tx_offset = 0;
-			lin->enabled = false;
-			lin->setup = false;
-			lin->tx_full = false;
-			lin->master = true;
-
-			// tud_cdc_n_read_flush(index);
-
-			yield = true;
 		}
 
 		if (yield) {
@@ -515,33 +623,75 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 			yield = false;
 			// taskYIELD();
 			vTaskDelay(pdMS_TO_TICKS(1)); // 1ms for USB FS
-			// LOG(".");
+			LOG(".");
 		}
 	}
 }
 
-// void tud_cdc_rx_cb(uint8_t itf)
-// {
-// 	(void)itf;
-// }
+void tud_cdc_rx_cb(uint8_t index)
+{
+	struct lin *lin = &lins[index];
+
+	LOG("ch%u tud_cdc_rx_cb\n", index);
+
+	xTaskNotifyGive(lin->usb_task_handle);
+}
 
 
-// void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
-// {
-//   (void) itf;
-//   (void) rts;
+void tud_cdc_line_state_cb(uint8_t index, bool dtr, bool rts)
+{
+	struct lin *lin = &lins[index];
 
-//   // TODO set some indicator
-//   if ( dtr )
-//   {
-//     // Terminal connected
-//   }
-//   else
-//   {
-//     // Terminal disconnected
-//   }
-// }
+	(void) dtr;
+	(void) rts;
+
+	LOG("ch%u tud_cdc_line_state_cb\n", index);
+
+	xTaskNotifyGive(lin->usb_task_handle);
+}
+
+SLLIN_RAMFUNC extern void sllin_lin_task_queue(uint8_t index, sllin_queue_element const *element)
+{
+	struct lin *lin = &lins[index];
+	uint8_t pi = lin->rx_fifo_pi;
+	uint8_t gi = __atomic_load_n(&lin->rx_fifo_pi, __ATOMIC_ACQUIRE);
+	uint8_t used = pi - gi;
+
+	if (likely(used < TU_ARRAY_SIZE(lin->rx_fifo))) {
+		uint8_t fifo_index = pi % TU_ARRAY_SIZE(lin->rx_fifo);
+
+		lin->rx_fifo[fifo_index] = *element;
+
+		// __atomic_store_n(&lin->rx_fifo_pi, pi + 1, __ATOMIC_RELEASE);
+		++lin->rx_fifo_pi;
+		__atomic_thread_fence(__ATOMIC_RELEASE);
+	} else {
+		__atomic_store_n(&lin->rx_full, 1, __ATOMIC_RELEASE);
+	}
+}
 
 
+SLLIN_RAMFUNC extern void sllin_lin_task_notify_def(uint8_t index, uint32_t count)
+{
+	struct lin *lin = &lins[index];
 
+	for (uint32_t i = 0; i < count; ++i) {
+		xTaskNotifyGive(lin->usb_task_handle);
+	}
+}
 
+SLLIN_RAMFUNC extern void sllin_lin_task_notify_isr(uint8_t index, uint32_t count)
+{
+	struct lin *lin = &lins[index];
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+	if (likely(count)) {
+		for (uint32_t i = 0; i < count - 1; ++i) {
+			vTaskNotifyGiveFromISR(lin->usb_task_handle, NULL);
+		}
+
+		// LOG("ch%u notify\n", index);
+		vTaskNotifyGiveFromISR(lin->usb_task_handle, &xHigherPriorityTaskWoken);
+		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+	}
+}

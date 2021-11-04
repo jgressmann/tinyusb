@@ -34,23 +34,31 @@
 #include <mcu.h>
 #include <bsp/board.h>
 
-enum {
-	CMD_NONE,
-	CMD_MASTER_TX_HEADER,
-	CMD_MASTER_TX_DATA,
+
+// enum {
+// 	RX_EXP_BREAK,
+// 	RX_EXP_PID,
+// 	RX_EXP_DATA,
+// };
+
+struct lin {
+	Sercom* const sercom;
+	sllin_queue_element rx_frame;
+	uint8_t tx_data[8];
+	uint8_t rx_data[8];
+	uint8_t tx_busy;
+	// uint8_t rx_full;
+	uint8_t tx_gi; // not an index, uses full range of type
+	uint8_t tx_pi; // not an index, uses full range of type
+	// uint8_t rx_gi; // not an index, uses full range of type
+	uint8_t rx_pi; // not an index, uses full range of type
+	// uint8_t rx_state;
+
 };
 
-static struct lin {
-	Sercom* const sercom;
-	volatile uint8_t cmd;
-	// volatile uint8_t pid;
-	volatile uint8_t offset;
-	volatile uint8_t length;
-	volatile uint8_t data[8];
-} lins[SLLIN_BOARD_LIN_COUNT] = {
+static struct lin lins[SLLIN_BOARD_LIN_COUNT] = {
 	{
 		.sercom = SERCOM6,
-		.cmd = CMD_NONE,
 	},
 };
 
@@ -366,24 +374,34 @@ extern void sllin_board_lin_init(uint8_t index, uint16_t bitrate, bool master)
 	lin_init(index, bitrate, master);
 }
 
-SLLIN_RAMFUNC extern void sllin_board_lin_master_tx(uint8_t index, uint8_t pid, uint8_t len, uint8_t const *data)
+SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(uint8_t index, uint8_t pid, uint8_t len, uint8_t const *data)
 {
 	struct lin *lin = &lins[index];
 	Sercom *s = NULL;
+	bool busy = false;
 
 	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(lins));
 	SLLIN_DEBUG_ASSERT(len <= 8);
 
-	lin->offset = 0;
-	lin->length = len;
+	// uint8_t pi = lin->tx_pi;
+	// uint8_t gi = __atomic_load_n(&lin->tx_gi, __ATOMIC_ACQUIRE);
+
+	// if (unlikely(pi != gi)) {
+	// 	return false;
+	// }
+	if (unlikely(__atomic_load_n(&lin->tx_busy, __ATOMIC_ACQUIRE))) {
+		return false;
+	}
+
 	s = lin->sercom;
 
 	if (len) {
 		for (unsigned i = 0; i < len; ++i) {
-			lin->data[i] = data[i];
+			// __atomic_store_n(&lin->tx_data[i], data[i], __ATOMIC_RELAXED);
+			lin->tx_data[i] = data[i];
 		}
 
-		__atomic_thread_fence(__ATOMIC_RELAXED);
+		// __atomic_thread_fence(__ATOMIC_RELAXED);
 
 		s->USART.INTENSET.reg = SERCOM_USART_INTENSET_TXC | SERCOM_USART_INTENSET_DRE;
 		// s->USART.INTENSET.reg = SERCOM_USART_INTENSET_TXC;
@@ -392,6 +410,22 @@ SLLIN_RAMFUNC extern void sllin_board_lin_master_tx(uint8_t index, uint8_t pid, 
 		s->USART.INTENCLR.reg = SERCOM_USART_INTENSET_TXC | SERCOM_USART_INTENSET_DRE;
 		// s->USART.INTENCLR.reg = SERCOM_USART_INTENSET_TXC;
 	}
+
+	// __atomic_store_n(&lin->tx_gi, 0, __ATOMIC_RELAXED);
+	// __atomic_store_n(&lin->tx_pi, 0, __ATOMIC_RELAXED);
+	// __atomic_store_n(&lin->rx_pi, 0, __ATOMIC_RELAXED);
+	// __atomic_store_n(&lin->rx_frame.type, SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME, __ATOMIC_RELEASE);
+	// __atomic_store_n(&lin->rx_state, RX_EXP_BREAK, __ATOMIC_RELEASE);
+	lin->tx_gi = 0;
+	lin->tx_pi = len;
+	lin->rx_pi = 0;
+	lin->rx_frame.type = SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME;
+	lin->rx_frame.lin_frame.pid = pid;
+	// lin->rx_state =  RX_EXP_BREAK;
+
+	__atomic_thread_fence(__ATOMIC_RELEASE);
+
+	// __atomic_store_n(&lin->tx_pi, len, __ATOMIC_RELEASE);
 
 	s->USART.CTRLB.bit.LINCMD = 0x2;
 	s->USART.DATA.reg = pid;
@@ -405,51 +439,46 @@ SLLIN_RAMFUNC static void lin_int(uint8_t index)
 	uint32_t intflag = s->USART.INTFLAG.reg;
 	uint32_t status = s->USART.STATUS.reg;
 
-	LOG("ch%u INTFLAG=%x\n", index, intflag);
-	LOG("ch%u STATUS=%x\n", index, status);
+	// LOG("ch%u INTFLAG=%x\n", index, intflag);
+	// LOG("ch%u STATUS=%x\n", index, status);
 	s->USART.INTFLAG.reg = ~0;
 	s->USART.STATUS.reg = ~0;
 
+	__atomic_thread_fence(__ATOMIC_ACQUIRE);
+
 	if (intflag & SERCOM_USART_INTFLAG_RXC) {
 		uint8_t byte = s->USART.DATA.reg;
-		LOG("ch%u RX=%x\n", index, byte);
+		// uint8_t rx_state = __atomic_load_n(&lin->rx_state, __ATOMIC_ACQUIRE);
+		if (8 == lin->rx_pi) {
+			lin->rx_pi = 0;
+			lin->rx_frame.lin_frame.crc = byte;
+			sllin_lin_task_queue(index, &lin->rx_frame);
+			sllin_lin_task_notify_isr(index, 1);
+		} else {
+			lin->rx_frame.lin_frame.data[lin->rx_pi++] = byte;
+		}
+
+		// LOG("ch%u RX=%x\n", index, byte);
 	}
 
-	// if (intflag & SERCOM_USART_INTFLAG_TXC) {
-	// 	// if (intflag & SERCOM_USART_INTFLAG_DRE) {
-	// 	// 	if (likely(lin->offset < lin->length)) {
-	// 	// 		uint8_t byte = lin->data[lin->offset++];
-
-	// 	// 		s->USART.CTRLB.bit.LINCMD = 0x0;
-	// 	// 		s->USART.DATA.reg = byte;
-	// 	// 		LOG("ch%u TX=%x\n", index, byte);
-	// 	// 	} else {
-	// 	// 		s->USART.INTENCLR.reg = SERCOM_USART_INTENSET_DRE;
-	// 	// 	}
-	// 	// }
-
-	// 	if (likely(lin->offset < lin->length)) {
-	// 		uint8_t byte = lin->data[lin->offset++];
-
-	// 		s->USART.CTRLB.bit.LINCMD = 0x0;
-	// 		s->USART.DATA.reg = byte;
-	// 		LOG("ch%u TX=%x\n", index, byte);
-	// 	}
-	// }
-
-	// if (lin->offset >= lin->length) {
-	// 	s->USART.INTENCLR.reg = SERCOM_USART_INTENSET_DRE;
-	// }
-
 	if (intflag & SERCOM_USART_INTFLAG_DRE) {
-		if (likely(lin->offset < lin->length)) {
-			uint8_t byte = lin->data[lin->offset++];
+		// uint8_t tx_gi = __atomic_load_n(&lin->tx_gi, __ATOMIC_RELAXED);
+		// uint8_t tx_pi = __atomic_load_n(&lin->tx_pi, __ATOMIC_RELAXED);
+		uint8_t tx_gi = lin->tx_gi;
+		uint8_t tx_pi = lin->tx_pi;
+
+		if (tx_pi != tx_gi) {
+			uint8_t tx_index = tx_gi % sizeof(lin->tx_data);
+			uint8_t byte = lin->tx_data[tx_index];
+
+			++lin->tx_gi;
 
 			s->USART.CTRLB.bit.LINCMD = 0x0;
 			s->USART.DATA.reg = byte;
-			LOG("ch%u TX=%x\n", index, byte);
+			// LOG("ch%u TX=%x\n", index, byte);
 		} else {
 			s->USART.INTENCLR.reg = SERCOM_USART_INTENSET_DRE;
+			__atomic_clear(&lin->tx_busy, __ATOMIC_RELEASE);
 		}
 	}
 }
