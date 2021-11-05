@@ -309,7 +309,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 	lin->tx_buffer[0] = SLLIN_OK_TERMINATOR;
 	lin->tx_offset = 1;
 
-	LOG("ch%u rx: %s\n", index, lin->rx_buffer);
+	// LOG("ch%u rx: %s\n", index, lin->rx_buffer);
 
 	switch (lin->rx_buffer[0]) {
 	case '\n':

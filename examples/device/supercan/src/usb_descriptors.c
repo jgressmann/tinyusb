@@ -235,8 +235,8 @@ uint8_t const * tud_descriptor_bos_cb(void)
 static char const* string_desc_arr [] =
 {
 	(const char[]) { 0x09, 0x04 },                          // 0: is supported language is English (0x0409)
-	"2guys",                                                // 1: Manufacturer
-	SC_BOARD_NAME " " SC_NAME " (%s)",                         // 2: Product
+	SC_BOARD_USB_MANUFACTURER_STRING,                       // 1: Manufacturer
+	SC_BOARD_NAME " " SC_NAME " (%s)",                      // 2: Product
 	"%s",                                                   // 3: Serial
 	SC_BOARD_NAME " " SC_NAME " (%s) CAN ch0",
 #if SC_BOARD_CAN_COUNT > 1
