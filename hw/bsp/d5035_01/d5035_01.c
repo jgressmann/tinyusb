@@ -92,7 +92,7 @@ static inline void init_clock(void)
 		GCLK_GENCTRL_RUNSTDBY |
 		GCLK_GENCTRL_GENEN |
 		GCLK_GENCTRL_SRC_DFLL |
-		GCLK_GENCTRL_IDC ;
+		GCLK_GENCTRL_IDC;
 	while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
 
 	// Here we are running of the FLL and can safely modify the PLLs.
@@ -108,7 +108,7 @@ static inline void init_clock(void)
 		OSCCTRL_XOSCCTRL_ENABLE;
 	while(0 == OSCCTRL->STATUS.bit.XOSCRDY0);
 
-	/* pre-scaler = 8, input = XOSC0, ouput 2 MHz, ouput = 160 MHz (>= 96 MHz DS60001507E, page 763) */
+	/* pre-scaler = 8, input = XOSC0, output 2 MHz, output = 160 MHz (>= 96 MHz DS60001507E, page 763) */
 	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC0_Val);
 	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(79);
 	OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
