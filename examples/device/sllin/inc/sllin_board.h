@@ -54,7 +54,7 @@ typedef struct _sllin_queue_element {
 	uint8_t type;
 	union {
 		struct {
-			uint8_t pid;
+			uint8_t id;
 			uint8_t crc;
 			uint8_t reserved0;
 			uint8_t reserved1;
@@ -63,6 +63,84 @@ typedef struct _sllin_queue_element {
 	};
 } sllin_queue_element;
 
+
+static inline uint8_t sllin_id_to_pid(uint8_t id)
+{
+	static const uint8_t map[] = {
+		0x80,
+		0xC1,
+		0x42,
+		0x03,
+		0xC4,
+		0x85,
+		0x06,
+		0x47,
+		0x08,
+		0x49,
+		0xCA,
+		0x8B, // <-
+		0x4C,
+		0x0D,
+		0x8E,
+		0xCF,
+		0x50,
+		0x11,
+		0x92,
+		0xD3,
+		0x14,
+		0x55,
+		0xD6,
+		0x97,
+		0xD8,
+		0x99,
+		0x1A,
+		0x5B,
+		0x9C,
+		0xDD,
+		0x5E,
+		0x1F,
+		0x20,
+		0x61,
+		0xE2,
+		0xA3,
+		0x64,
+		0x25,
+		0xA6,
+		0xE7,
+		0xA8,
+		0xE9,
+		0x6A,
+		0x2B,
+		0xEC,
+		0xAD,
+		0x2E,
+		0x6F,
+		0xF0,
+		0xB1,
+		0x32,
+		0x73,
+		0xB4,
+		0xF5,
+		0x76,
+		0x37,
+		0x78,
+		0x39,
+		0xBA,
+		0xFB,
+		0x3C,
+		0x7D,
+		0xFE,
+		0xBF,
+	};
+
+	return map[id & 0x3f];
+}
+
+static inline uint8_t sllin_pid_to_id(uint8_t pid)
+{
+	return pid & 0x3f;
+}
+
 __attribute__((noreturn)) extern void sllin_board_reset(void);
 extern uint32_t sllin_board_identifier(void);
 extern void sllin_board_init_begin(void);
@@ -70,7 +148,8 @@ extern void sllin_board_init_end(void);
 extern void sllin_board_led_set(uint8_t index, bool on);
 extern void sllin_board_leds_on_unsafe(void);
 extern void sllin_board_lin_init(uint8_t index, uint16_t bitrate, bool master);
-SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(uint8_t index, uint8_t pid, uint8_t len, uint8_t const *data);
+SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(uint8_t index, uint8_t pi, uint8_t len, uint8_t const *data);
+SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(uint8_t index, uint8_t id, uint8_t len, uint8_t const *data);
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_def(uint8_t index, uint32_t count);
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_isr(uint8_t index, uint32_t count);
 SLLIN_RAMFUNC extern void sllin_lin_task_queue(uint8_t index, sllin_queue_element const *element);

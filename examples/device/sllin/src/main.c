@@ -339,39 +339,32 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 			}
 		}
 		break;
-	// case 'L': // listen only
-	// 	if (lin->enabled) {
-	// 		LOG("ch%u refusing to configure LIN when open\n", index);
-	// 		lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
-	// 	} else {
-	// 		lin->readonly = true;
-	// 	}
-	// 	break;
+	case 'L':
 	case 'O':
-		// TODO setup device
-		LOG("ch%u open\n", index);
 		lin->enabled = true;
-		lin->master = true;
-		sllin_board_lin_init(index, 19200, true);
+		lin->master = lin->rx_buffer[0] == 'O';
+		sllin_board_lin_init(index, 19200, lin->master);
+		LOG("ch%u open %s\n", index, lin->master ? "master" : "slave");
 		break;
 	case 'C':
 		LOG("ch%u close\n", index);
 		lin->enabled = false;
 		// lin->readonly = false;
 		break;
-	case 't': // transmit 11 bit CAN frame -> master tx
-	case 'T': // transmit 29 bit CAN frame -> slave tx reponse
+	case 't': //
+	// case 'T': // transmit 29 bit CAN frame -> slave tx reponse
 		if (likely(lin->enabled)) {
 			if (unlikely(lin->rx_offset < 5)) {
 				LOG("ch%u malformed command '%s'\n", index, lin->rx_buffer);
 				lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
-			} else if (unlikely((lin->master && lin->rx_buffer[0] == 'T') || (!lin->master && lin->rx_buffer[0] == 't'))) {
-				LOG("ch%u refusing to transmit / store frame, wrong mode\n", index);
-				lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
+			// } else if (unlikely((lin->master && lin->rx_buffer[0] == 'T') || (!lin->master && lin->rx_buffer[0] == 't'))) {
+			// 	LOG("ch%u refusing to transmit / store frame, wrong mode\n", index);
+			// 	lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
 			} else {
 				uint8_t id = ((char_to_nibble(lin->rx_buffer[2]) << 4) | char_to_nibble(lin->rx_buffer[3])) & 0x3f;
-				uint8_t pid = id_to_pid(id);
 				uint8_t frame_len = char_to_nibble(lin->rx_buffer[4]);
+
+				SLLIN_ASSERT(frame_len <= 8);
 
 				if (unlikely(frame_len * 2 + 5 > lin->rx_offset)) {
 					LOG("ch%u malformed command '%s'\n", index, lin->rx_buffer);
@@ -379,22 +372,26 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 				} else {
 					uint8_t data[8];
 
-					LOG("ch%u %s -> id=%x pid=%x len=%u\n", index, lin->rx_buffer, id, pid, frame_len);
+					LOG("ch%u %s -> id=%x len=%u\n", index, lin->rx_buffer, id, frame_len);
 
 					for (unsigned i = 0, j = 5; i < frame_len; ++i, j += 2) {
 						data[i] = (char_to_nibble(lin->rx_buffer[j]) << 4) | char_to_nibble(lin->rx_buffer[j+1]);
 					}
 
-					if (lin->rx_buffer[0] == 'T') {
-
-					} else {
-						if (likely(sllin_board_lin_master_tx(index, pid, frame_len, data))) {
-							lin->tx_buffer[0] = lin->rx_buffer[0] == 'T' ? 'Z' : 'z';
+					if (lin->master) {
+						if (likely(sllin_board_lin_master_tx(index, id, frame_len, data))) {
+							//lin->tx_buffer[0] = lin->rx_buffer[0] == 'T' ? 'Z' : 'z';
+							lin->tx_buffer[0] = 'z';
 							lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
 							lin->tx_offset = 2;
 						} else {
 							lin->tx_full = true;
 						}
+					} else {
+						sllin_board_lin_slave_tx(index, id, frame_len, data);
+						lin->tx_buffer[0] = 'z';
+						lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
+						lin->tx_offset = 2;
 					}
 				}
 			}
@@ -413,16 +410,15 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 				lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
 			} else {
 				uint8_t id = ((char_to_nibble(lin->rx_buffer[2]) << 4) | char_to_nibble(lin->rx_buffer[3])) & 0x3f;
-				uint8_t pid = id_to_pid(id);
 
 				// tx / store response
 				lin->tx_buffer[0] = 'z';
 				lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
 				lin->tx_offset = 2;
 
-				LOG("ch%u %s -> id=%x pid=%x\n", index, lin->rx_buffer, id, pid);
+				LOG("ch%u %s -> id=%x\n", index, lin->rx_buffer, id);
 
-				if (likely(sllin_board_lin_master_tx(index, pid, 0, NULL))) {
+				if (likely(sllin_board_lin_master_tx(index, id, 0, NULL))) {
 					lin->tx_buffer[0] = 'z';
 					lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
 					lin->tx_offset = 2;
@@ -554,7 +550,7 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 
 					switch (e->type) {
 					case SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME: {
-						uint8_t id = pid_to_id(e->lin_frame.pid);
+						uint8_t id = e->lin_frame.id;
 						uint32_t w = 0;
 
 						// LOG("ch%u rx frame\n", index);
