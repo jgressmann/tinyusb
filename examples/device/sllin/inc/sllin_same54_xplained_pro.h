@@ -40,19 +40,3 @@ enum {
 	SLLIN_BOARD_LED_COUNT
 };
 
-
-
-// #define sl_board_led_usb_burst() led_burst(LED_DEBUG_3, SLLIN_LED_BURST_DURATION_MS)
-// #define sl_board_led_lin_traffic_burst(index) \
-// 	do { \
-// 		switch (index) { \
-// 		case 0: led_burst(LED_DEBUG_0, SLLIN_LED_BURST_DURATION_MS); break; \
-// 		default: break; \
-// 		} \
-// 	} while (0)
-
-
-// SLLIN_RAMFUNC extern void sl_board_led_lin_status_set(uint8_t index, int status);
-
-
-

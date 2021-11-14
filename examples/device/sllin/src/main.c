@@ -63,20 +63,19 @@ static struct lin {
 	StaticTask_t usb_task_mem;
 	TaskHandle_t usb_task_handle;
 	sllin_queue_element rx_fifo[8];
-	uint8_t rx_buffer[33];
-	uint8_t tx_buffer[33];
-	uint8_t rx_offset;
-	uint8_t tx_offset;
+	uint8_t rx_sl_buffer[33];
+	uint8_t tx_sl_buffer[33];
 
+	uint16_t baudrate;
+	uint8_t rx_sl_offset;
+	uint8_t tx_sl_offset;
 	uint8_t rx_fifo_gi; // not an index, uses full range of type
 	uint8_t rx_fifo_pi; // not an index, uses full range of type
 
 	bool master;
 	bool tx_full;
 	uint8_t rx_full;
-	bool setup;
 	bool enabled;
-	// bool readonly;
 } lins[SLLIN_BOARD_LIN_COUNT];
 
 int main(void)
@@ -126,6 +125,8 @@ int main(void)
 								configMAX_PRIORITIES-1,
 								lin->usb_task_stack,
 								&lin->usb_task_mem);
+
+		lin->baudrate = 19200;
 	}
 
 
@@ -203,7 +204,7 @@ static inline uint8_t char_to_nibble(char c)
 		return (c - 'a') + 0xa;
 	}
 
-	return ((c - 'A') & 0xf) + 0xA;
+	return ((c - 'A') & 0xf) + 0xa;
 
 }
 
@@ -306,44 +307,43 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 
 	lin = &lins[index];
 
-	lin->tx_buffer[0] = SLLIN_OK_TERMINATOR;
-	lin->tx_offset = 1;
+	lin->tx_sl_buffer[0] = SLLIN_OK_TERMINATOR;
+	lin->tx_sl_offset = 1;
 
-	// LOG("ch%u rx: %s\n", index, lin->rx_buffer);
+	// LOG("ch%u rx: %s\n", index, lin->rx_sl_buffer);
 
-	switch (lin->rx_buffer[0]) {
+	switch (lin->rx_sl_buffer[0]) {
 	case '\n':
-		lin->tx_offset = 0;
+		lin->tx_sl_offset = 0;
 		break;
-	case 'S': // CAN bitrate, values 0-8
-		if (lin->enabled) {
-			LOG("ch%u refusing to configure LIN when open\n", index);
-			lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
-		}
-		break;
+	// case 'S': // CAN bitrate, values 0-8
+	// 	if (lin->enabled) {
+	// 		LOG("ch%u refusing to configure LIN when open\n", index);
+	// 		lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
+	// 	}
+	// 	break;
 	case 's': // BTR0/BTR1
-		if (unlikely(lin->rx_offset < 4)) {
-			LOG("ch%u malformed command '%s'\n", index, lin->rx_buffer);
-			lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
+		if (unlikely(lin->rx_sl_offset < 4)) {
+			LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
+			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 		} else {
 			if (lin->enabled) {
 				LOG("ch%u refusing to configure LIN when open\n", index);
-				lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
+				lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 			} else {
-				lin->master = '0' == lin->rx_buffer[2];
-				if (lin->master) {
-					LOG("ch%u master mode configured\n", index);
-				} else {
-					LOG("ch%u slave mode configured\n", index);
-				}
+				lin->baudrate = (char_to_nibble(lin->rx_sl_buffer[1]) << 12)
+								| (char_to_nibble(lin->rx_sl_buffer[2]) << 8)
+								| (char_to_nibble(lin->rx_sl_buffer[3]) << 4)
+								| (char_to_nibble(lin->rx_sl_buffer[4]) << 0);
+				LOG("ch%u baudrate=%u\n", index, lin->baudrate);
 			}
 		}
 		break;
 	case 'L':
 	case 'O':
 		lin->enabled = true;
-		lin->master = lin->rx_buffer[0] == 'O';
-		sllin_board_lin_init(index, 19200, lin->master);
+		lin->master = lin->rx_sl_buffer[0] == 'O';
+		sllin_board_lin_init(index, lin->baudrate, lin->master);
 		LOG("ch%u open %s\n", index, lin->master ? "master" : "slave");
 		break;
 	case 'C':
@@ -352,83 +352,98 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		// lin->readonly = false;
 		break;
 	case 't': //
-	// case 'T': // transmit 29 bit CAN frame -> slave tx reponse
 		if (likely(lin->enabled)) {
-			if (unlikely(lin->rx_offset < 5)) {
-				LOG("ch%u malformed command '%s'\n", index, lin->rx_buffer);
-				lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
-			// } else if (unlikely((lin->master && lin->rx_buffer[0] == 'T') || (!lin->master && lin->rx_buffer[0] == 't'))) {
-			// 	LOG("ch%u refusing to transmit / store frame, wrong mode\n", index);
-			// 	lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
+			if (unlikely(lin->rx_sl_offset < 5)) {
+				LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
+				lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 			} else {
-				uint8_t id = ((char_to_nibble(lin->rx_buffer[2]) << 4) | char_to_nibble(lin->rx_buffer[3])) & 0x3f;
-				uint8_t frame_len = char_to_nibble(lin->rx_buffer[4]);
+				uint8_t can_id_nibble1 = char_to_nibble(lin->rx_sl_buffer[2]);
+				uint8_t can_id_nibble2 = char_to_nibble(lin->rx_sl_buffer[3]);
+				uint8_t frame_len = char_to_nibble(lin->rx_sl_buffer[4]);
 
 				SLLIN_ASSERT(frame_len <= 8);
 
-				if (unlikely(frame_len * 2 + 5 > lin->rx_offset)) {
-					LOG("ch%u malformed command '%s'\n", index, lin->rx_buffer);
-					lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
+				if (unlikely(frame_len * 2 + 5 > lin->rx_sl_offset)) {
+					LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
+					lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 				} else {
+					uint8_t id = ((can_id_nibble1 << 4) | can_id_nibble2) & 0x3f;
+					uint8_t pid = sllin_id_to_pid(id);
+					bool enhanced_crc = (can_id_nibble1 & 0x4) == 0x4;
 					uint8_t data[8];
-
-					LOG("ch%u %s -> id=%x len=%u\n", index, lin->rx_buffer, id, frame_len);
+					unsigned crc = sllin_crc_start();
+					uint8_t flags = 0;
 
 					for (unsigned i = 0, j = 5; i < frame_len; ++i, j += 2) {
-						data[i] = (char_to_nibble(lin->rx_buffer[j]) << 4) | char_to_nibble(lin->rx_buffer[j+1]);
+						data[i] = (char_to_nibble(lin->rx_sl_buffer[j]) << 4) | char_to_nibble(lin->rx_sl_buffer[j+1]);
 					}
 
+					if (enhanced_crc) {
+						crc = sllin_crc_update(crc, &pid, 1);
+						flags |= SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM;
+					}
+
+					crc = sllin_crc_update(crc, data, frame_len);
+					crc = sllin_crc_finalize(crc);
+
+					LOG("ch%u %s -> id=%x len=%u crc=%x flags=%x\n", index, lin->rx_sl_buffer, id, frame_len, crc, flags);
+
 					if (lin->master) {
-						if (likely(sllin_board_lin_master_tx(index, id, frame_len, data))) {
-							//lin->tx_buffer[0] = lin->rx_buffer[0] == 'T' ? 'Z' : 'z';
-							lin->tx_buffer[0] = 'z';
-							lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
-							lin->tx_offset = 2;
+						if (likely(sllin_board_lin_master_tx(index, id, frame_len, data, crc, flags))) {
+							lin->tx_sl_buffer[0] = 'z';
+							lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
+							lin->tx_sl_offset = 2;
 						} else {
 							lin->tx_full = true;
 						}
 					} else {
-						sllin_board_lin_slave_tx(index, id, frame_len, data);
-						lin->tx_buffer[0] = 'z';
-						lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
-						lin->tx_offset = 2;
+						sllin_board_lin_slave_tx(index, id, frame_len, data, crc);
+						lin->tx_sl_buffer[0] = 'z';
+						lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
+						lin->tx_sl_offset = 2;
 					}
 				}
 			}
 		} else {
 			LOG("ch%u refusing to transmit / store reponses when closed\n", index);
-			lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
+			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 		}
 		break;
 	case 'r': // transmit RTR frame, master only, transmit header
 		if (likely(lin->enabled)) {
-			if (unlikely(lin->rx_offset < 5)) {
-				LOG("ch%u malformed command '%s'\n", index, lin->rx_buffer);
-				lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
+			if (unlikely(lin->rx_sl_offset < 5)) {
+				LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
+				lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 			} else if (unlikely(!lin->master)) {
 				LOG("ch%u refusing to transmit in slave mode\n", index);
-				lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
+				lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 			} else {
-				uint8_t id = ((char_to_nibble(lin->rx_buffer[2]) << 4) | char_to_nibble(lin->rx_buffer[3])) & 0x3f;
+				uint8_t can_id_nibble1 = char_to_nibble(lin->rx_sl_buffer[2]);
+				uint8_t can_id_nibble2 = char_to_nibble(lin->rx_sl_buffer[3]);
+				uint8_t id = ((can_id_nibble1 << 4) | can_id_nibble2) & 0x3f;
+				bool enhanced_crc = (can_id_nibble1 & 0x4) == 0x4;
+				uint8_t frame_len = char_to_nibble(lin->rx_sl_buffer[4]);
+				uint8_t flags = 0;
 
-				// tx / store response
-				lin->tx_buffer[0] = 'z';
-				lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
-				lin->tx_offset = 2;
+				SLLIN_ASSERT(frame_len <= 8);
 
-				LOG("ch%u %s -> id=%x\n", index, lin->rx_buffer, id);
+				if (enhanced_crc) {
+					flags |= SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM;
+				}
 
-				if (likely(sllin_board_lin_master_tx(index, id, 0, NULL))) {
-					lin->tx_buffer[0] = 'z';
-					lin->tx_buffer[1] = SLLIN_OK_TERMINATOR;
-					lin->tx_offset = 2;
+				// LOG("ch%u %s -> id=%x len=%u flags=%x\n", index, lin->rx_sl_buffer, id, frame_len, flags);
+
+				if (likely(sllin_board_lin_master_tx(index, id, frame_len, NULL, 0, flags))) {
+					lin->tx_sl_buffer[0] = 'z';
+					lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
+					lin->tx_sl_offset = 2;
 				} else {
 					lin->tx_full = true;
 				}
 			}
 		} else {
 			LOG("ch%u refusing to transmit / store reponses when closed\n", index);
-			lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
+			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 		}
 		break;
 	case 'F': {
@@ -443,38 +458,38 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 			flags |= 0x2;
 		}
 
-		lin->tx_buffer[0] = 'F';
-		lin->tx_buffer[1] = nibble_to_char(flags >> 4);
-		lin->tx_buffer[2] = nibble_to_char(flags);
-		lin->tx_buffer[3] = SLLIN_OK_TERMINATOR;
-		lin->tx_offset = 4;
+		lin->tx_sl_buffer[0] = 'F';
+		lin->tx_sl_buffer[1] = nibble_to_char(flags >> 4);
+		lin->tx_sl_buffer[2] = nibble_to_char(flags);
+		lin->tx_sl_buffer[3] = SLLIN_OK_TERMINATOR;
+		lin->tx_sl_offset = 4;
 	} break;
 	case 'V': {
-		lin->tx_buffer[0] = 'V';
-		lin->tx_buffer[1] = '0';
-		lin->tx_buffer[2] = '1';
-		lin->tx_buffer[3] = '0';
-		lin->tx_buffer[4] = '0';
-		lin->tx_buffer[5] = SLLIN_OK_TERMINATOR;
-		lin->tx_offset = 6;
+		lin->tx_sl_buffer[0] = 'V';
+		lin->tx_sl_buffer[1] = '0';
+		lin->tx_sl_buffer[2] = '1';
+		lin->tx_sl_buffer[3] = '0';
+		lin->tx_sl_buffer[4] = '0';
+		lin->tx_sl_buffer[5] = SLLIN_OK_TERMINATOR;
+		lin->tx_sl_offset = 6;
 	} break;
 	case 'v': {
-		lin->tx_buffer[0] = 'V';
-		lin->tx_buffer[1] = '0';
-		lin->tx_buffer[2] = '1';
-		lin->tx_buffer[3] = nibble_to_char(SLLIN_VERSION_MAJOR);
-		lin->tx_buffer[4] = nibble_to_char(SLLIN_VERSION_MINOR);
-		lin->tx_buffer[5] = SLLIN_OK_TERMINATOR;
-		lin->tx_offset = 6;
+		lin->tx_sl_buffer[0] = 'V';
+		lin->tx_sl_buffer[1] = '0';
+		lin->tx_sl_buffer[2] = '1';
+		lin->tx_sl_buffer[3] = nibble_to_char(SLLIN_VERSION_MAJOR);
+		lin->tx_sl_buffer[4] = nibble_to_char(SLLIN_VERSION_MINOR);
+		lin->tx_sl_buffer[5] = SLLIN_OK_TERMINATOR;
+		lin->tx_sl_offset = 6;
 	} break;
 	case 'N': {
 		uint32_t id = sllin_board_identifier();
 		id = ((id >> 16) & 0xffff) ^ (id & 0xffff);
-		lin->tx_offset = usnprintf((char *)lin->tx_buffer, sizeof(lin->tx_buffer), "N%x%c", id, SLLIN_OK_TERMINATOR);
+		lin->tx_sl_offset = usnprintf((char *)lin->tx_sl_buffer, sizeof(lin->tx_sl_buffer), "N%x%c", id, SLLIN_OK_TERMINATOR);
 	} break;
 	default:
-		LOG("ch%u unhandled command '%s'\n", index, lin->rx_buffer);
-		lin->tx_buffer[0] = SLLIN_ERROR_TERMINATOR;
+		LOG("ch%u unhandled command '%s'\n", index, lin->rx_sl_buffer);
+		lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 		break;
 	}
 }
@@ -510,6 +525,8 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 			done = true;
 
 			if (tud_cdc_n_connected(index)) {
+				// int count = tud_cdc_n_available(index);
+				// LOG("ch%u count=%d\n", index, count);
 				int c = tud_cdc_n_read_char(index);
 				uint8_t gi = lin->rx_fifo_gi;
 				uint8_t pi = __atomic_load_n(&lin->rx_fifo_pi, __ATOMIC_ACQUIRE);
@@ -519,19 +536,20 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 				} else {
 					done = false;
 
-					if (SLLIN_OK_TERMINATOR == c && lin->rx_offset) {
-						lin->rx_buffer[lin->rx_offset] = 0;
+					if (SLLIN_OK_TERMINATOR == c && lin->rx_sl_offset) {
+						lin->rx_sl_buffer[lin->rx_sl_offset] = 0;
 						sllin_process_command(index);
-						lin->rx_offset = 0;
+						lin->rx_sl_offset = 0;
 
-						if (lin->tx_offset) {
-							uint32_t w = tud_cdc_n_write(index, lin->tx_buffer, lin->tx_offset);
+						if (lin->tx_sl_offset) {
+							uint32_t w = tud_cdc_n_write(index, lin->tx_sl_buffer, lin->tx_sl_offset);
 
-							if (unlikely(w != lin->tx_offset)) {
+							if (unlikely(w != lin->tx_sl_offset)) {
 								lin->tx_full = true;
+								LOG("ch%u TXF\n", index);
 							}
 
-							lin->tx_offset = 0;
+							lin->tx_sl_offset = 0;
 
 							if (!written) {
 								xTaskNotifyGive(lin->usb_task_handle);
@@ -539,8 +557,8 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 							}
 						}
 					} else {
-						lin->rx_buffer[lin->rx_offset] = c;
-						lin->rx_offset = (lin->rx_offset + 1) % (TU_ARRAY_SIZE(lin->rx_buffer) - 1);
+						lin->rx_sl_buffer[lin->rx_sl_offset] = c;
+						lin->rx_sl_offset = (lin->rx_sl_offset + 1) % (TU_ARRAY_SIZE(lin->rx_sl_buffer) - 1);
 					}
 				}
 
@@ -555,24 +573,25 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 
 						// LOG("ch%u rx frame\n", index);
 
-						lin->tx_buffer[lin->tx_offset++] = 't';
-						lin->tx_buffer[lin->tx_offset++] = '0';
-						lin->tx_buffer[lin->tx_offset++] = nibble_to_char(id >> 4);
-						lin->tx_buffer[lin->tx_offset++] = nibble_to_char(id & 0xf);
-						lin->tx_buffer[lin->tx_offset++] = '8';
+						lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
+						lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
+						lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
+						lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id & 0xf);
+						lin->tx_sl_buffer[lin->tx_sl_offset++] = '8';
 						for (unsigned i = 0; i < 8; ++i) {
-							lin->tx_buffer[lin->tx_offset++] = nibble_to_char(e->lin_frame.data[i] >> 4);
-							lin->tx_buffer[lin->tx_offset++] = nibble_to_char(e->lin_frame.data[i] & 0xf);
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] >> 4);
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] & 0xf);
 						}
-						lin->tx_buffer[lin->tx_offset++] = '\r';
+						lin->tx_sl_buffer[lin->tx_sl_offset++] = '\r';
 
-						w = tud_cdc_n_write(index, lin->tx_buffer, lin->tx_offset);
+						w = tud_cdc_n_write(index, lin->tx_sl_buffer, lin->tx_sl_offset);
 
-						if (unlikely(w != lin->tx_offset)) {
+						if (unlikely(w != lin->tx_sl_offset)) {
 							lin->tx_full = true;
+							LOG("ch%u TXF\n", index);
 						}
 
-						lin->tx_offset = 0;
+						lin->tx_sl_offset = 0;
 
 						if (!written) {
 							xTaskNotifyGive(lin->usb_task_handle);
@@ -596,16 +615,17 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 					// LOG("flush\n");
 				}
 			} else {
-				// LOG("T");
+				LOG("T");
 
-				lin->rx_offset = 0;
-				lin->tx_offset = 0;
+				lin->rx_sl_offset = 0;
+				lin->tx_sl_offset = 0;
 				lin->enabled = false;
-				lin->setup = false;
 				lin->tx_full = false;
+				lin->rx_full = false;
 				lin->master = true;
 				__atomic_store_n(&lin->rx_fifo_gi, 0, __ATOMIC_RELEASE);
 				__atomic_store_n(&lin->rx_fifo_pi, 0, __ATOMIC_RELEASE);
+
 
 				// tud_cdc_n_read_flush(index);
 
@@ -619,7 +639,7 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 			yield = false;
 			// taskYIELD();
 			vTaskDelay(pdMS_TO_TICKS(1)); // 1ms for USB FS
-			LOG(".");
+			LOG("+");
 		}
 	}
 }
@@ -628,7 +648,7 @@ void tud_cdc_rx_cb(uint8_t index)
 {
 	struct lin *lin = &lins[index];
 
-	LOG("ch%u tud_cdc_rx_cb\n", index);
+	// LOG("ch%u tud_cdc_rx_cb\n", index);
 
 	xTaskNotifyGive(lin->usb_task_handle);
 }
@@ -641,7 +661,7 @@ void tud_cdc_line_state_cb(uint8_t index, bool dtr, bool rts)
 	(void) dtr;
 	(void) rts;
 
-	LOG("ch%u tud_cdc_line_state_cb\n", index);
+	// LOG("ch%u tud_cdc_line_state_cb\n", index);
 
 	xTaskNotifyGive(lin->usb_task_handle);
 }

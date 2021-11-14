@@ -56,12 +56,16 @@ typedef struct _sllin_queue_element {
 		struct {
 			uint8_t id;
 			uint8_t crc;
-			uint8_t reserved0;
-			uint8_t reserved1;
+			uint8_t flags;
+			uint8_t len;
 			uint8_t data[8];
 		} lin_frame;
 	};
 } sllin_queue_element;
+
+enum {
+	SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM = 0x1,
+};
 
 
 static inline uint8_t sllin_id_to_pid(uint8_t id)
@@ -78,7 +82,7 @@ static inline uint8_t sllin_id_to_pid(uint8_t id)
 		0x08,
 		0x49,
 		0xCA,
-		0x8B, // <-
+		0x8B,
 		0x4C,
 		0x0D,
 		0x8E,
@@ -141,6 +145,29 @@ static inline uint8_t sllin_pid_to_id(uint8_t pid)
 	return pid & 0x3f;
 }
 
+#define sllin_crc_start() 0
+#define sllin_crc_update1(crc, byte) (crc + byte)
+
+
+static inline unsigned sllin_crc_update(unsigned crc, uint8_t const * data, uint8_t bytes)
+{
+	for (unsigned i = 0; i < bytes; ++i) {
+		crc += data[i];
+	}
+
+	return crc;
+}
+
+static inline uint8_t sllin_crc_finalize(unsigned crc)
+{
+	unsigned factor = crc / 256;
+	crc -= factor * 255;
+
+	return (~crc) & 0xff;
+}
+
+
+
 __attribute__((noreturn)) extern void sllin_board_reset(void);
 extern uint32_t sllin_board_identifier(void);
 extern void sllin_board_init_begin(void);
@@ -148,8 +175,14 @@ extern void sllin_board_init_end(void);
 extern void sllin_board_led_set(uint8_t index, bool on);
 extern void sllin_board_leds_on_unsafe(void);
 extern void sllin_board_lin_init(uint8_t index, uint16_t bitrate, bool master);
-SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(uint8_t index, uint8_t pi, uint8_t len, uint8_t const *data);
-SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(uint8_t index, uint8_t id, uint8_t len, uint8_t const *data);
+SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
+	uint8_t index,
+	uint8_t pi,
+	uint8_t len,
+	uint8_t const *data,
+	uint8_t crc,
+	uint8_t flags);
+SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(uint8_t index, uint8_t id, uint8_t len, uint8_t const *data, uint8_t crc);
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_def(uint8_t index, uint32_t count);
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_isr(uint8_t index, uint32_t count);
 SLLIN_RAMFUNC extern void sllin_lin_task_queue(uint8_t index, sllin_queue_element const *element);
