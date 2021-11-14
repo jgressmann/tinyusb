@@ -41,10 +41,11 @@ extern char sllin_log_buffer[SLLIN_DEBUG_LOG_BUFFER_SIZE];
 	} while (0)
 
 #	define SLLIN_DEBUG_ASSERT SLLIN_ASSERT
-
+#	define SLLIN_DEBUG_ISR_ASSERT SLLIN_ISR_ASSERT
 #else
 #	define LOG(...)
 #	define SLLIN_DEBUG_ASSERT(...)
+#	define SLLIN_DEBUG_ISR_ASSERT(...)
 #endif
 
 #define SLLIN_DEBUG_JOIN2(x, y) x##y
@@ -53,23 +54,20 @@ extern char sllin_log_buffer[SLLIN_DEBUG_LOG_BUFFER_SIZE];
 #define SLLIN_DEBUG_STR2(x) #x
 #define SLLIN_DEBUG_STR(x) SLLIN_DEBUG_STR2(x)
 
-
-#define SLLIN_ASSERT_FAILED(...) sllin_assert_failed(__VA_ARGS__, sizeof(__VA_ARGS__) - 1)
-
 #define SLLIN_ASSERT(x) \
 	do { \
 		if (__builtin_expect(!(x), 0)) { \
-			SLLIN_ASSERT_FAILED("ASSERT FAILED: " #x " " __FILE__ ":" SLLIN_DEBUG_STR(__LINE__) "\n"); \
+			sllin_assert_failed("ASSERT FAILED: " #x " " __FILE__ ":" SLLIN_DEBUG_STR(__LINE__) "\n"); \
 		} \
 	} while (0)
 
 #define SLLIN_ISR_ASSERT(x) \
 	do { \
 		if (__builtin_expect(!(x), 0)) { \
-			SLLIN_ASSERT_FAILED("ISR ASSERT FAILED: " #x " " __FILE__ ":" SLLIN_DEBUG_STR(__LINE__) "\n"); \
+			sllin_assert_failed("ISR ASSERT FAILED: " #x " " __FILE__ ":" SLLIN_DEBUG_STR(__LINE__) "\n"); \
 		} \
 	} while (0)
 
 
-__attribute__((noreturn)) extern void sllin_assert_failed(char const * const msg, size_t len);
+__attribute__((noreturn)) extern void sllin_assert_failed(char const *msg);
 extern void sllin_dump_mem(void const * _ptr, size_t count);

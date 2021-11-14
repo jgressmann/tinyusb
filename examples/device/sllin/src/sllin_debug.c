@@ -37,11 +37,13 @@
 char sllin_log_buffer[SLLIN_DEBUG_LOG_BUFFER_SIZE];
 #endif
 
-__attribute__((noreturn)) extern void sllin_assert_failed(char const * const msg, size_t len)
+__attribute__((noreturn)) extern void sllin_assert_failed(char const * msg)
 {
 	taskDISABLE_INTERRUPTS();
-	board_uart_write(msg, len);
 	sllin_board_leds_on_unsafe();
+	while (*msg) {
+		board_uart_write(msg++, 1);
+	}
 	while (1);
 }
 
