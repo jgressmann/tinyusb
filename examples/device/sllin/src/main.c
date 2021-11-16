@@ -585,7 +585,6 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 				lin->enabled = false;
 				lin->tx_full = false;
 				lin->rx_full = false;
-				lin->master = true;
 				__atomic_store_n(&lin->rx_fifo_gi, 0, __ATOMIC_RELEASE);
 				__atomic_store_n(&lin->rx_fifo_pi, 0, __ATOMIC_RELEASE);
 
