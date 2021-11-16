@@ -71,7 +71,7 @@ struct lin {
 	uint8_t slave_frame_crc[64];
 	uint8_t slave_proto_step;
 	uint8_t slave_frame_offset;
-	uint8_t slave_tx_value;
+	//uint8_t slave_tx_value;
 };
 
 static struct lin lins[SLLIN_BOARD_LIN_COUNT] = {
@@ -323,7 +323,7 @@ static inline void lin_slave_cleanup(struct lin *lin)
 {
 	lin->slave_proto_step = SLAVE_PROTO_STEP_RX_BREAK;
 	lin->slave_frame_offset = 0;
-	lin->rx_pi = 0;
+	// lin->rx_pi = 0;
 	lin->sercom->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 	// | SERCOM_USART_INTENCLR_DRE;
 }
@@ -668,44 +668,43 @@ SLLIN_RAMFUNC static void lin_int_slave(uint8_t index)
 			if (len) {
 				lin->rx_frame.lin_frame.id = id;
 				lin->rx_frame.lin_frame.len = len;
-				// lin->rx_frame.lin_frame.crc = lin->slave_frame_data[id][len];
+				// lin->rx_frame.lin_frame.flags = lin->slave_frame_flags[id];
 				s->USART.INTENSET.reg = SERCOM_USART_INTENSET_DRE;
 				// | SERCOM_USART_INTENSET_DRE;
 				lin->slave_proto_step = SLAVE_PROTO_STEP_TX_DATA;
 				intflag |= SERCOM_USART_INTFLAG_DRE;
 
 				// lin->crc = sllin_crc_start();
-
 				// if (lin->slave_frame_flags[id] & SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM) {
 				// 	lin->crc = sllin_crc_update1(lin->crc, pid);
 				// }
 			} else {
-				// lin->slave_proto_step = SLAVE_PROTO_STEP_RX_BREAK;
 				LOG("ch%u no data for id=%x\n", index, id);
 				goto cleanup;
 			}
 		} else if (lin->slave_proto_step == SLAVE_PROTO_STEP_TX_DATA) {
-			if (likely(byte == lin->slave_tx_value)) {
-				SLLIN_DEBUG_ISR_ASSERT(lin->rx_pi < sizeof(lin->rx_frame.lin_frame.data));
-				lin->rx_frame.lin_frame.data[lin->rx_pi++] = byte;
-			} else {
-				LOG("ch%u tx/rx data mismatch want=%x have=%x\n", index, lin->slave_tx_value, byte);
-				// TODO send error frame
-				goto cleanup;
-			}
+			// if (likely(byte == lin->slave_tx_value)) {
+			// 	SLLIN_DEBUG_ISR_ASSERT(lin->rx_pi < sizeof(lin->rx_frame.lin_frame.data));
+			// 	lin->rx_frame.lin_frame.data[lin->rx_pi++] = byte;
+			// } else {
+			// 	LOG("ch%u tx/rx data mismatch want=%x have=%x\n", index, lin->slave_tx_value, byte);
+			// 	// TODO send error frame
+			// 	goto cleanup;
+			// }
 		} else if (lin->slave_proto_step == SLAVE_PROTO_STEP_TX_CRC) {
-			if (likely(byte == lin->slave_tx_value)) {
-				lin->rx_frame.lin_frame.crc = byte;
-				sllin_lin_task_queue(index, &lin->rx_frame);
-				sllin_lin_task_notify_isr(index, 1);
-				// LOG("ch%u frame\n", index);
+			goto cleanup;
+			// if (likely(byte == lin->slave_tx_value)) {
+			// 	lin->rx_frame.lin_frame.crc = byte;
+			// 	sllin_lin_task_queue(index, &lin->rx_frame);
+			// 	sllin_lin_task_notify_isr(index, 1);
+			// 	// LOG("ch%u frame\n", index);
 
-				goto cleanup;
-			} else {
-				LOG("ch%u tx/rx crc mismatch want=%x have=%x\n", index, lin->slave_tx_value, byte);
-				// TODO send error frame
-				goto cleanup;
-			}
+			// 	goto cleanup;
+			// } else {
+			// 	LOG("ch%u tx/rx crc mismatch want=%x have=%x\n", index, lin->slave_tx_value, byte);
+			// 	// TODO send error frame
+			// 	goto cleanup;
+			// }
 		} else {
 			LOG("ch%u step=%u\n", index, lin->slave_proto_step);
 			goto cleanup;
@@ -714,24 +713,24 @@ SLLIN_RAMFUNC static void lin_int_slave(uint8_t index)
 
 	if (intflag & SERCOM_USART_INTFLAG_DRE) {
 		if (lin->slave_proto_step == SLAVE_PROTO_STEP_TX_DATA) {
+			uint8_t byte = 0;
 			uint8_t len = lin->slave_frame_len[lin->rx_frame.lin_frame.id];
 
 			if (likely(lin->slave_frame_offset < len)) {
-				uint8_t byte = lin->slave_frame_data[lin->rx_frame.lin_frame.id][lin->slave_frame_offset++];
-
-				lin->slave_tx_value = byte;
-				s->USART.DATA.reg = byte;
+				byte = lin->slave_frame_data[lin->rx_frame.lin_frame.id][lin->slave_frame_offset++];
 			} else {
 				lin->slave_proto_step = SLAVE_PROTO_STEP_TX_CRC;
-				uint8_t byte = lin->slave_frame_crc[lin->rx_frame.lin_frame.id];
-
-				lin->slave_tx_value = byte;
-				s->USART.DATA.reg = byte;
-
+				 byte = lin->slave_frame_crc[lin->rx_frame.lin_frame.id];
 			}
+
+			// lin->slave_tx_value = byte;
+			s->USART.DATA.reg = byte;
+
+			LOG("ch%u TX=%x\n", index, byte);
 		} else if (lin->slave_proto_step == SLAVE_PROTO_STEP_TX_CRC) {
 			lin->sercom->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 		} else {
+			LOG("ch%u step=%u\n", index, lin->slave_proto_step);
 			goto cleanup;
 		}
 	}

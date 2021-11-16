@@ -571,17 +571,18 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 						uint32_t w = 0;
 
 						// LOG("ch%u rx frame\n", index);
+						SLLIN_DEBUG_ASSERT(e->lin_frame.len <= 8);
 
 						lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
 						lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
 						lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
 						lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id & 0xf);
-						lin->tx_sl_buffer[lin->tx_sl_offset++] = '8';
+						lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
 						for (unsigned i = 0; i < 8; ++i) {
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] >> 4);
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] & 0xf);
 						}
-						lin->tx_sl_buffer[lin->tx_sl_offset++] = '\r';
+						lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 
 						w = tud_cdc_n_write(index, lin->tx_sl_buffer, lin->tx_sl_offset);
 
