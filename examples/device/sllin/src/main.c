@@ -23,18 +23,11 @@
  *
  */
 
-#include <stdlib.h>
-#include <string.h>
-#include <inttypes.h>
-
 #include <FreeRTOS.h>
 #include <task.h>
-#include <semphr.h>
 
 
-#include <bsp/board.h>
 #include <tusb.h>
-
 #include <sllin_board.h>
 #include <usb_descriptors.h>
 #include <leds.h>
@@ -114,9 +107,7 @@ int main(void)
 
 	for (unsigned i = 0; i < SLLIN_BOARD_LIN_COUNT; ++i) {
 		struct lin *lin = &lins[i];
-	// 	struct usb_lin *usb_lin = &usb.lin[i];
 
-	// 	usb_lin->mutex_handle = xSemaphoreCreateMutexStatic(&usb_lin->mutex_mem);
 		lin->usb_task_handle = xTaskCreateStatic(
 								&lin_usb_task,
 								NULL,
@@ -139,13 +130,6 @@ int main(void)
 	return 0;
 }
 
-
-
-//--------------------------------------------------------------------+
-// Device callbacks
-//--------------------------------------------------------------------+
-
-// Invoked when device is mounted
 void tud_mount_cb(void)
 {
 	LOG("mounted\n");
@@ -156,20 +140,15 @@ void tud_mount_cb(void)
 	PORT->Group[2].OUTSET.reg |= 1ul << 7;
 }
 
-// Invoked when device is unmounted
 void tud_umount_cb(void)
 {
 	LOG("unmounted\n");
 	led_blink(0, 1000);
 	usb.mounted = false;
 
-	// can_usb_disconnect();
 	PORT->Group[2].OUTCLR.reg |= 1ul << 7;
 }
 
-// Invoked when usb bus is suspended
-// remote_wakeup_en : if host allow us to perform remote wakeup
-// Within 7ms, device must draw an average of current less than 2.5 mA from bus
 void tud_suspend_cb(bool remote_wakeup_en)
 {
 	(void) remote_wakeup_en;
@@ -179,11 +158,8 @@ void tud_suspend_cb(bool remote_wakeup_en)
 
 
 	PORT->Group[2].OUTCLR.reg |= 1ul << 7;
-
-	// can_usb_disconnect();
 }
 
-// Invoked when usb bus is resumed
 void tud_resume_cb(void)
 {
 	LOG("resume\n");
@@ -212,16 +188,6 @@ static inline char nibble_to_char(uint8_t nibble)
 	return "0123456789abcdef"[nibble & 0xf];
 }
 
-// def pid(id: int) -> int:
-// 		# P0 = ID0 ^ ID1 ^ ID2 ^ ID4
-// 		p0 = int((id & 1) == 1) ^ int((id & 2) == 2) ^ int((id & 4) == 4) ^ int((id & 16) == 16)
-// 		# P1 = ~(ID1 ^ ID3 ^ ID4 ^ ID5)
-// 		p1 = 1 ^ int((id & 2) == 2) ^ int((id & 8) == 8) ^ int((id & 16) == 16) ^ int((id & 32) == 32)
-
-// 		pid = (p1 << 7) | (p0 << 6) | (id & 63)
-
-// 		return pid
-
 static inline uint8_t id_to_pid(uint8_t id)
 {
 	static const uint8_t map[] = {
@@ -236,7 +202,7 @@ static inline uint8_t id_to_pid(uint8_t id)
 		0x08,
 		0x49,
 		0xCA,
-		0x8B, // <-
+		0x8B,
 		0x4C,
 		0x0D,
 		0x8E,
@@ -321,7 +287,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 	// 		lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 	// 	}
 	// 	break;
-	case 's': // BTR0/BTR1
+	case 's': // BTR0/BTR1 used to set bitrate
 		if (unlikely(lin->rx_sl_offset < 4)) {
 			LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
 			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
@@ -338,8 +304,8 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 			}
 		}
 		break;
-	case 'L':
-	case 'O':
+	case 'L': // slave
+	case 'O': // master
 		lin->enabled = true;
 		lin->master = lin->rx_sl_buffer[0] == 'O';
 		sllin_board_lin_init(index, lin->baudrate, lin->master);
@@ -348,9 +314,8 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 	case 'C':
 		LOG("ch%u close\n", index);
 		lin->enabled = false;
-		// lin->readonly = false;
 		break;
-	case 't': //
+	case 't': // master: tx, slave: store response
 		if (likely(lin->enabled)) {
 			if (unlikely(lin->rx_sl_offset < 5)) {
 				LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
@@ -408,7 +373,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 		}
 		break;
-	case 'r': // transmit RTR frame, master only, transmit header
+	case 'r': // master: tx header
 		if (likely(lin->enabled)) {
 			if (unlikely(lin->rx_sl_offset < 5)) {
 				LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
@@ -507,12 +472,10 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 {
 	const uint8_t index = (uint8_t)(uintptr_t)param;
 	SLLIN_ASSERT(index < TU_ARRAY_SIZE(lins));
-	// SLLIN_ASSERT(index < TU_ARRAY_SIZE(usb.lin));
 
 	LOG("ch%u task start\n", index);
 
 	struct lin *lin = &lins[index];
-	// struct usb_lin *usb_lin = &usb.lin[index];
 	bool written = false;
 
 	while (42) {
@@ -678,7 +641,6 @@ SLLIN_RAMFUNC extern void sllin_lin_task_queue(uint8_t index, sllin_queue_elemen
 
 		lin->rx_fifo[fifo_index] = *element;
 
-		// __atomic_store_n(&lin->rx_fifo_pi, pi + 1, __ATOMIC_RELEASE);
 		++lin->rx_fifo_pi;
 		__atomic_thread_fence(__ATOMIC_RELEASE);
 	} else {
