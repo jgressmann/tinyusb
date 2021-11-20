@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,10 +27,4 @@
 
 #include <stdint.h>
 
-#define VENDOR_REQUEST_MICROSOFT    0x01
-
-extern uint8_t const desc_ms_os_20[];
-
-enum {
-	DFU_USB_RESET_TIMEOUT_MS = 1000u
-};
+void usb_get_desc_string(uint8_t index, char *ptr, size_t* in_out_capa_len);

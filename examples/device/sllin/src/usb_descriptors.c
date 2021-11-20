@@ -138,6 +138,24 @@ static char const* string_desc_arr [] =
 #endif
 };
 
+void usb_get_desc_string(uint8_t index, char *ptr, size_t* in_out_capa_len)
+{
+	char zero_padded[32]; // 0-pad serial in case it has leading zeros
+	int serial_chars = 0;
+	size_t capacity;
+
+	SLLIN_DEBUG_ASSERT(ptr);
+	SLLIN_DEBUG_ASSERT(in_out_capa_len);
+
+	capacity = *in_out_capa_len;
+
+	memset(zero_padded, '0', 8);
+	serial_chars = usnprintf(&zero_padded[8], 24, "%x", sllin_board_identifier());
+	SLLIN_DEBUG_ASSERT(serial_chars >= 0 && serial_chars <= 8);
+
+	*in_out_capa_len = usnprintf(ptr, capacity, string_desc_arr[index], &zero_padded[serial_chars]);
+}
+
 uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 {
 	static uint16_t wstring_buffer[64];
@@ -156,23 +174,17 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 		chr_count = 1;
 		break;
 	default: {
-		char string_buffer[TU_ARRAY_SIZE(wstring_buffer)-1];
-		char zero_padded[32]; // 0-pad serial in case it has leading zeros
-		int serial_chars = 0;
-		int chars = 0;
+		size_t capa_len = TU_ARRAY_SIZE(wstring_buffer) / 2;
+		char *string_buffer = (char *)&wstring_buffer[TU_ARRAY_SIZE(wstring_buffer) - capa_len];
 
-		memset(zero_padded, '0', 8);
-		serial_chars = usnprintf(&zero_padded[8], 24, "%x", sllin_board_identifier());
-		SLLIN_DEBUG_ASSERT(serial_chars >= 0 && serial_chars <= 8);
-
-		chars = usnprintf(string_buffer, sizeof(string_buffer), string_desc_arr[index], &zero_padded[serial_chars]);
+		usb_get_desc_string(index, string_buffer, &capa_len);
 
 		// convert to UTF-16
-		for (int i = 0; i < chars; ++i) {
+		for (int i = 0; i < capa_len; ++i) {
 			wstring_buffer[i+1] = string_buffer[i];
 		}
 
-		chr_count = (uint8_t)chars;
+		chr_count = (uint8_t)capa_len;
 	} break;
 	}
 
