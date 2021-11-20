@@ -250,7 +250,7 @@ static void move_vector_table_to_ram(void)
 #pragma GCC diagnostic pop
 }
 
-/** Initializes the clocks from the external 16 MHz crystal
+/** Initializes the clocks from the external 16 MHz crystal / oscillator
  *
  * The goal of this setup is to preserve the second PLL
  * for the application code while still having a reasonable
@@ -277,7 +277,9 @@ static inline void init_clock(void)
 		OSCCTRL_XOSCCTRL_ENALC |
 		OSCCTRL_XOSCCTRL_IMULT(4) |
 		OSCCTRL_XOSCCTRL_IPTAT(3) |
+#if HWREV < 5
 		OSCCTRL_XOSCCTRL_XTALEN |
+#endif
 		OSCCTRL_XOSCCTRL_ENABLE;
 	while(0 == OSCCTRL->STATUS.bit.XOSCRDY0);
 
@@ -302,7 +304,7 @@ static inline void init_clock(void)
 		GCLK_GENCTRL_RUNSTDBY |
 		GCLK_GENCTRL_GENEN |
 		GCLK_GENCTRL_SRC_DPLL0 |  /* DPLL0 */
-		GCLK_GENCTRL_IDC ;
+		GCLK_GENCTRL_IDC;
 	while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
 
 	/* Here we are running from the 80 MHz oscillator clock */
