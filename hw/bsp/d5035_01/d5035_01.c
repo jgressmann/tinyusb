@@ -28,14 +28,6 @@
 
 #include <hal/include/hal_gpio.h>
 
-#if CONF_CPU_FREQUENCY != 80000000
-# error "CONF_CPU_FREQUENCY" must 80000000
-#endif
-
-#if CONF_GCLK_USB_FREQUENCY != 48000000
-# error "CONF_GCLK_USB_FREQUENCY" must 48000000
-#endif
-
 #if !defined(HWREV)
 # error Define "HWREV"
 #endif
@@ -66,96 +58,16 @@ void USB_3_Handler (void)
 //--------------------------------------------------------------------+
 // MACRO TYPEDEF CONSTANT ENUM DECLARATION
 //--------------------------------------------------------------------+
-#define LED_PIN      PIN_PA02
-#define BOARD_SERCOM SERCOM0
-
+#define LED_PIN            PIN_PA02
+#define BOARD_SERCOM       SERCOM0
+#define CONF_CPU_FREQUENCY 48000000L
+#define USART_BAURATE      115200L
 
 static inline void init_clock(void)
 {
-	/* AUTOWS is enabled by default in REG_NVMCTRL_CTRLA - no need to change the number of wait states when changing the core clock */
-
-	// We may be starting from an older bootloader that
-	// configured the clocks differently than what we want them.
-	//
-	// Before we can start changing the PLLs, we need to ensure
-	// we are running off the 48 MHz FLL. The FLL might be off,
-	// so we first need to turn it on.
-	OSCCTRL->DFLLCTRLA.reg =
-		OSCCTRL_DFLLCTRLA_ENABLE |
-		OSCCTRL_DFLLCTRLA_RUNSTDBY;
-	while(1 == OSCCTRL->DFLLSYNC.bit.ENABLE);
-
-	// Now that the FLL is running, we can change the
-	// the main clock. This ensures we continue to run.
-	GCLK->GENCTRL[0].reg =
-		GCLK_GENCTRL_DIV(0) |
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DFLL |
-		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
-
-	// Here we are running of the FLL and can safely modify the PLLs.
-
-	/* configure XOSC0 for a 16MHz crystal connected to XIN0/XOUT0 */
-	OSCCTRL->XOSCCTRL[0].reg =
-		OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
-		OSCCTRL_XOSCCTRL_RUNSTDBY |
-		OSCCTRL_XOSCCTRL_ENALC |
-		OSCCTRL_XOSCCTRL_IMULT(4) |
-		OSCCTRL_XOSCCTRL_IPTAT(3) |
-		OSCCTRL_XOSCCTRL_XTALEN |
-		OSCCTRL_XOSCCTRL_ENABLE;
-	while(0 == OSCCTRL->STATUS.bit.XOSCRDY0);
-
-	/* pre-scaler = 8, input = XOSC0, output 2 MHz, output = 160 MHz (>= 96 MHz DS60001507E, page 763) */
-	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC0_Val);
-	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(79);
-	OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
-	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
-
-	// configure GCLK2 for 16MHz from XOSC0
-	GCLK->GENCTRL[2].reg =
-		GCLK_GENCTRL_DIV(0) |
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_XOSC0 |
-		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
-
-	/* 80 MHz core clock */
-	GCLK->GENCTRL[0].reg =
-		GCLK_GENCTRL_DIV(2) |
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DPLL0 |  /* DPLL0 */
-		GCLK_GENCTRL_IDC ;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
-
-
-	/* USB 48 MHz clock */
-	/* setup DFLL48M to use GLCK2 (16 MHz) */
-	GCLK->PCHCTRL[OSCCTRL_GCLK_ID_DFLL48].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN;
-
-	OSCCTRL->DFLLCTRLA.reg = 0;
-	while(1 == OSCCTRL->DFLLSYNC.bit.ENABLE);
-
-	OSCCTRL->DFLLCTRLB.reg = OSCCTRL_DFLLCTRLB_MODE | OSCCTRL_DFLLCTRLB_WAITLOCK;
-	OSCCTRL->DFLLMUL.bit.MUL = 3; // 3 * 16 MHz -> 48 MHz
-
-	OSCCTRL->DFLLCTRLA.reg =
-		OSCCTRL_DFLLCTRLA_ENABLE |
-		OSCCTRL_DFLLCTRLA_RUNSTDBY;
-	while(1 == OSCCTRL->DFLLSYNC.bit.ENABLE);
-
-	// setup 48 MHz GCLK3 from DFLL48M
-	GCLK->GENCTRL[3].reg =
-		GCLK_GENCTRL_DIV(0) |
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DFLL |
-		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL3);
+	/* The chip boots up with 48 MHz clock from DFLL48M in open loop mode.
+	 * We don't need more for UART, USB
+	 */
 }
 
 static inline void uart_init(void)
@@ -170,24 +82,22 @@ static inline void uart_init(void)
 		PORT_WRCONFIG_PMUXEN;
 
 	MCLK->APBAMASK.bit.SERCOM0_ = 1;
-	GCLK->PCHCTRL[SERCOM0_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN; /* setup SERCOM to use GLCK2 -> 80MHz */
+	GCLK->PCHCTRL[SERCOM0_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
 
 	SERCOM0->USART.CTRLA.reg = 0x00; /* disable SERCOM -> enable config */
 	while(SERCOM0->USART.SYNCBUSY.bit.ENABLE);
 
-	SERCOM0->USART.CTRLA.reg  =  /* CMODE = 0 -> async, SAMPA = 0, FORM = 0 -> USART frame, SMPR = 0 -> arithmetic baud rate */
+	SERCOM0->USART.CTRLA.reg  =
 		SERCOM_USART_CTRLA_SAMPR(1) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
-//    SERCOM_USART_CTRLA_FORM(0) | /* 0 = USART Frame, 2 = LIN Master */
-		SERCOM_USART_CTRLA_DORD | /* LSB first */
-		SERCOM_USART_CTRLA_MODE(1) | /* 0 = Asynchronous, 1 = USART with internal clock */
-		SERCOM_USART_CTRLA_RXPO(1) | /* SERCOM PAD[1] is used for data reception */
-		SERCOM_USART_CTRLA_TXPO(0); /* SERCOM PAD[0] is used for data transmission */
+		SERCOM_USART_CTRLA_DORD |     /* LSB first */
+		SERCOM_USART_CTRLA_MODE(1) |  /* 0x0 USART with external clock, 0x1 USART with internal clock */
+		SERCOM_USART_CTRLA_RXPO(1) |  /* SERCOM PAD[1] is used for data reception */
+		SERCOM_USART_CTRLA_TXPO(0);   /* SERCOM PAD[0] is used for data transmission */
 
-	SERCOM0->USART.CTRLB.reg = /* RXEM = 0 -> receiver disabled, LINCMD = 0 -> normal USART transmission, SFDE = 0 -> start-of-frame detection disabled, SBMODE = 0 -> one stop bit, CHSIZE = 0 -> 8 bits */
-		SERCOM_USART_CTRLB_TXEN; /* transmitter enabled */
-	SERCOM0->USART.CTRLC.reg = 0x00;
-	// 21.701388889 @ baud rate of 230400 bit/s, table 33-2, p 918 of DS60001507E
-	SERCOM0->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(7) | SERCOM_USART_BAUD_FRAC_BAUD(21);
+	SERCOM0->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN; /* transmitter enabled */
+	uint16_t baud = CONF_CPU_FREQUENCY / (16 * USART_BAURATE);
+	uint16_t frac = CONF_CPU_FREQUENCY / (2 * USART_BAURATE) - 8 * baud;
+	SERCOM0->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
 
 	SERCOM0->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
 	while(SERCOM0->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
@@ -251,7 +161,7 @@ void board_init(void)
 	/* USB clock init
 	 * The USB module requires a GCLK_USB of 48 MHz ~ 0.25% clock
 	 * for low speed and full speed operation. */
-	hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK3_Val | GCLK_PCHCTRL_CHEN);
+	hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK0_Val | GCLK_PCHCTRL_CHEN);
 	hri_mclk_set_AHBMASK_USB_bit(MCLK);
 	hri_mclk_set_APBBMASK_USB_bit(MCLK);
 

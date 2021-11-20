@@ -42,8 +42,6 @@ CFLAGS += \
   -mfloat-abi=hard \
   -mfpu=fpv4-sp-d16 \
   -nostdlib -nostartfiles \
-  -DCONF_CPU_FREQUENCY=80000000 \
-  -DCONF_GCLK_USB_FREQUENCY=48000000 \
   -DCFG_TUSB_MCU=OPT_MCU_SAME5X \
   -DD5035_01=1 \
   -DBOARD_NAME="\"D5035-01\"" \

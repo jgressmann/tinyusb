@@ -47,7 +47,9 @@
 #	define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
 #endif
 
-
+#define CONF_CPU_FREQUENCY 80000000L
+#define CONF_USB_FREQUENCY 48000000L
+#define USART_BAUDRATE     115200L
 
 
 #if SUPERDFU_APP
@@ -211,7 +213,7 @@ static const struct led leds[] = {
 
 static inline void leds_init(void)
 {
-	PORT->Group[0].DIRSET.reg = PORT_PA18 | PORT_PA19;
+	PORT->Group[0].DIRSET.reg = PORT_PA02 | PORT_PA18 | PORT_PA19;
 	PORT->Group[1].DIRSET.reg = PORT_PB16 | PORT_PB17 | PORT_PB00 | PORT_PB01 | PORT_PB02 | PORT_PB03;
 }
 
@@ -248,9 +250,159 @@ static void move_vector_table_to_ram(void)
 #pragma GCC diagnostic pop
 }
 
+/** Initializes the clocks from the external 16 MHz crystal
+ *
+ * The goal of this setup is to preserve the second PLL
+ * for the application code while still having a reasonable
+ * 48 MHz clock for USB / UART.
+ *
+ * GCLK0:   CONF_CPU_FREQUENCY from PLL0
+ * GCLK1:   unused
+ * GCLK2:   16 MHz from XOSC1
+ * DFLL48M: closed loop from GLCK2
+ * GCLK3:   48 MHz
+ */
+static inline void init_clock(void)
+{
+	/* AUTOWS is enabled by default in REG_NVMCTRL_CTRLA - no need to change the number of wait states when changing the core clock */
+
+	/* We assume we are running the chip in default settings.
+	 * This means we are running off of the 48 MHz FLL.
+	 */
+
+	/* configure XOSC0 for a 16MHz crystal connected to XIN0/XOUT0 */
+	OSCCTRL->XOSCCTRL[0].reg =
+		OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
+		OSCCTRL_XOSCCTRL_RUNSTDBY |
+		OSCCTRL_XOSCCTRL_ENALC |
+		OSCCTRL_XOSCCTRL_IMULT(4) |
+		OSCCTRL_XOSCCTRL_IPTAT(3) |
+		OSCCTRL_XOSCCTRL_XTALEN |
+		OSCCTRL_XOSCCTRL_ENABLE;
+	while(0 == OSCCTRL->STATUS.bit.XOSCRDY0);
+
+	/* pre-scaler = 8, input = XOSC0, output 2 MHz, output = 160 MHz (>= 96 MHz DS60001507E, page 763) */
+	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC0_Val);
+	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(79);
+	OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
+	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
+
+	// configure GCLK2 for 16MHz from XOSC0
+	GCLK->GENCTRL[2].reg =
+		GCLK_GENCTRL_DIV(0) |
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_XOSC0 |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
+
+	/* 80 MHz core clock */
+	GCLK->GENCTRL[0].reg =
+		GCLK_GENCTRL_DIV(2) |
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_DPLL0 |  /* DPLL0 */
+		GCLK_GENCTRL_IDC ;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
+
+	/* Here we are running from the 80 MHz oscillator clock */
+
+
+	/* USB 48 MHz clock */
+	/* setup DFLL48M to use GLCK2 (16 MHz) */
+	GCLK->PCHCTRL[OSCCTRL_GCLK_ID_DFLL48].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN;
+
+	OSCCTRL->DFLLCTRLA.reg = 0;
+	while(1 == OSCCTRL->DFLLSYNC.bit.ENABLE);
+
+	OSCCTRL->DFLLCTRLB.reg = OSCCTRL_DFLLCTRLB_MODE | OSCCTRL_DFLLCTRLB_WAITLOCK;
+	OSCCTRL->DFLLMUL.bit.MUL = 3; // 3 * 16 MHz -> 48 MHz
+
+	OSCCTRL->DFLLCTRLA.reg =
+		OSCCTRL_DFLLCTRLA_ENABLE |
+		OSCCTRL_DFLLCTRLA_RUNSTDBY;
+	while(1 == OSCCTRL->DFLLSYNC.bit.ENABLE);
+
+	// setup 48 MHz GCLK3 from DFLL48M
+	GCLK->GENCTRL[3].reg =
+		GCLK_GENCTRL_DIV(0) |
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_DFLL |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL3);
+
+	SystemCoreClock = CONF_CPU_FREQUENCY;
+}
+
+
+static inline void uart_init(void)
+{
+	/* Depending on whether we are running as app or standandlone,
+	 * the USART may not be initialized.
+	 */
+
+	/* configure SERCOM0 on PA08 */
+	PORT->Group[0].WRCONFIG.reg =
+		PORT_WRCONFIG_WRPINCFG |
+		PORT_WRCONFIG_WRPMUX |
+		PORT_WRCONFIG_PMUX(2) |    /* function C */
+		PORT_WRCONFIG_DRVSTR |
+		PORT_WRCONFIG_PINMASK(0x0100) | /* PA08 */
+		PORT_WRCONFIG_PMUXEN;
+
+	MCLK->APBAMASK.bit.SERCOM0_ = 1;
+	GCLK->PCHCTRL[SERCOM0_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN;
+
+	SERCOM0->USART.CTRLA.reg = 0x00; /* disable SERCOM -> enable config */
+	while(SERCOM0->USART.SYNCBUSY.bit.ENABLE);
+
+	SERCOM0->USART.CTRLA.reg  =
+		SERCOM_USART_CTRLA_SAMPR(1) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
+		SERCOM_USART_CTRLA_DORD |     /* LSB first */
+		SERCOM_USART_CTRLA_MODE(1) |  /* 0x0 USART with external clock, 0x1 USART with internal clock */
+		SERCOM_USART_CTRLA_RXPO(1) |  /* SERCOM PAD[1] is used for data reception */
+		SERCOM_USART_CTRLA_TXPO(0);   /* SERCOM PAD[0] is used for data transmission */
+
+	SERCOM0->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN; /* transmitter enabled */
+	uint16_t baud = CONF_USB_FREQUENCY / (16 * USART_BAUDRATE);
+	uint16_t frac = CONF_USB_FREQUENCY / (2 * USART_BAUDRATE) - 8 * baud;
+	SERCOM0->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
+
+	SERCOM0->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
+	while(SERCOM0->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
+}
+
+static inline void init_usb(void)
+{
+	NVIC_SetPriority(USB_0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(USB_1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(USB_2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(USB_3_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+
+	/* USB clock init
+	 * The USB module requires a GCLK_USB of 48 MHz ~ 0.25% clock
+	 * for low speed and full speed operation. */
+	hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK3_Val | GCLK_PCHCTRL_CHEN);
+	hri_mclk_set_AHBMASK_USB_bit(MCLK);
+	hri_mclk_set_APBBMASK_USB_bit(MCLK);
+
+	// USB pin init
+	gpio_set_pin_direction(PIN_PA24, GPIO_DIRECTION_OUT);
+	gpio_set_pin_level(PIN_PA24, false);
+	gpio_set_pin_pull_mode(PIN_PA24, GPIO_PULL_OFF);
+	gpio_set_pin_direction(PIN_PA25, GPIO_DIRECTION_OUT);
+	gpio_set_pin_level(PIN_PA25, false);
+	gpio_set_pin_pull_mode(PIN_PA25, GPIO_PULL_OFF);
+
+	gpio_set_pin_function(PIN_PA24, PINMUX_PA24H_USB_DM);
+	gpio_set_pin_function(PIN_PA25, PINMUX_PA25H_USB_DP);
+}
+
 extern void sc_board_init_begin(void)
 {
-	board_init();
+	init_clock();
+	uart_init();
 
 	LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
 	move_vector_table_to_ram();
@@ -281,6 +433,7 @@ extern void sc_board_init_begin(void)
 	can_init_module();
 
 	counter_1MHz_init();
+	init_usb();
 
 	// while (1) {
 	// 	uint32_t c = counter_1MHz_read_sync();
