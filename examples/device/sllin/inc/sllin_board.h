@@ -62,6 +62,8 @@ typedef struct _sllin_queue_element {
 
 enum {
 	SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM = 0x1,
+	SLLIN_FRAME_FLAG_CRC_ERROR = 0x2,
+	SLLIN_FRAME_FLAG_NO_RESPONSE = 0x4,
 };
 
 

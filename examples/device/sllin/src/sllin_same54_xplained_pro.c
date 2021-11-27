@@ -558,13 +558,13 @@ SLLIN_RAMFUNC static void lin_int_master(uint8_t index)
 	Sercom *s = lin->sercom;
 
 	uint32_t intflag = s->USART.INTFLAG.reg;
-	uint32_t status = s->USART.STATUS.reg;
+	// uint32_t status = s->USART.STATUS.reg;
 
 	// LOG("ch%u INTFLAG=%x\n", index, intflag);
 	// LOG("ch%u STATUS=%x\n", index, status);
 	// LOG(".");
 	s->USART.INTFLAG.reg = ~0;
-	s->USART.STATUS.reg = ~0;
+	// s->USART.STATUS.reg = ~0;
 
 	__atomic_thread_fence(__ATOMIC_ACQUIRE);
 
@@ -580,11 +580,7 @@ SLLIN_RAMFUNC static void lin_int_master(uint8_t index)
 			if (lin->rx_frame.lin_frame.len == lin->rx_pi) {
 				lin->rx_frame.lin_frame.crc = sllin_crc_finalize(lin->crc);
 				if (likely(lin->rx_frame.lin_frame.crc == byte)) {
-					lin->master_proto_step = MASTER_PROTO_STEP_RX_PID;
 					LOG("ch%u LIN\n", index);
-					sllin_lin_task_queue(index, &lin->rx_frame);
-					sllin_lin_task_notify_isr(index, 1);
-					// __atomic_clear(&lin->master_tx_busy, __ATOMIC_RELEASE);
 				} else {
 					LOG("ch%u crc mismatch want=%x have=%x data=%x %x %x %x %x %x %x %x\n",
 						index, lin->rx_frame.lin_frame.crc, byte,
@@ -592,7 +588,14 @@ SLLIN_RAMFUNC static void lin_int_master(uint8_t index)
 						lin->rx_frame.lin_frame.data[2], lin->rx_frame.lin_frame.data[3],
 						lin->rx_frame.lin_frame.data[4], lin->rx_frame.lin_frame.data[5],
 						lin->rx_frame.lin_frame.data[6], lin->rx_frame.lin_frame.data[7]);
+
+					lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
 				}
+
+				sllin_lin_task_queue(index, &lin->rx_frame);
+				sllin_lin_task_notify_isr(index, 1);
+
+				lin->master_proto_step = MASTER_PROTO_STEP_RX_PID;
 			} else {
 				lin->rx_frame.lin_frame.data[lin->rx_pi++] = byte;
 				lin->crc = sllin_crc_update1(lin->crc, byte);
@@ -624,7 +627,7 @@ SLLIN_RAMFUNC static void lin_int_master(uint8_t index)
 	}
 
 	if (unlikely(intflag & SERCOM_USART_INTFLAG_ERROR)) {
-		LOG("ch%u status=%x\n", index, status);
+		LOG("ch%u status=%x\n", index, s->USART.STATUS.reg);
 		s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 	}
 
@@ -656,7 +659,7 @@ SLLIN_RAMFUNC static void lin_int_slave(uint8_t index)
 	} else if (intflag & SERCOM_USART_INTFLAG_RXC) {
 		uint8_t byte = s->USART.DATA.reg;
 
-		LOG("ch%u RX %x\n", index, byte);
+		LOG("ch%u RX=%x\n", index, byte);
 
 
 		if (lin->slave_proto_step == SLAVE_PROTO_STEP_RX_PID) {

@@ -209,6 +209,17 @@ static inline uint8_t pid_to_id(uint8_t pid)
 	return pid & 0x3f;
 }
 
+SLLIN_RAMFUNC static inline void sllin_store_tx_queue_full_error_response(uint8_t index)
+{
+	struct lin *lin = NULL;
+
+	lin = &lins[index];
+
+	static const char can_crc_error_frame[] = "\x07T2000000480002000000000000\r"; // CAN_ERR_CRTL_TX_OVERFLOW
+	lin->tx_sl_offset = sizeof(can_crc_error_frame) - 1;
+	memcpy(lin->tx_sl_buffer, can_crc_error_frame, lin->tx_sl_offset);
+}
+
 SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 {
 	// http://www.can232.com/docs/canusb_manual.pdf
@@ -302,7 +313,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 							lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
 							lin->tx_sl_offset = 2;
 						} else {
-							lin->tx_full = true;
+							sllin_store_tx_queue_full_error_response(index);
 						}
 					} else {
 						sllin_board_lin_slave_tx(index, id, frame_len, data, crc);
@@ -346,7 +357,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 					lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
 					lin->tx_sl_offset = 2;
 				} else {
-					lin->tx_full = true;
+					sllin_store_tx_queue_full_error_response(index);
 				}
 			}
 		} else {
@@ -391,9 +402,9 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		lin->tx_sl_offset = 6;
 	} break;
 	case 'n': {
-		size_t capa_len = sizeof(tx_sl_buffer) - 2;
+		size_t capa_len = sizeof(lin->tx_sl_buffer) - 2;
 
-		usb_get_desc_string(4 + index, &lin->tx_sl_buffer[1], &capa_len);
+		usb_get_desc_string(4 + index, (char*)&lin->tx_sl_buffer[1], &capa_len);
 
 		LOG("ch%u name: %s\n", index, &lin->tx_sl_buffer[1]);
 
@@ -485,22 +496,39 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 
 					switch (e->type) {
 					case SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME: {
-						uint8_t id = e->lin_frame.id;
+						uint16_t id = e->lin_frame.id;
 						uint32_t w = 0;
+						bool no_response = (e->lin_frame.flags & SLLIN_FRAME_FLAG_NO_RESPONSE) != 0;
+						bool crc_error = (e->lin_frame.flags & SLLIN_FRAME_FLAG_CRC_ERROR) != 0;
 
-						// LOG("ch%u rx frame\n", index);
+						LOG("ch%u LIN frame\n", index);
 						SLLIN_DEBUG_ASSERT(e->lin_frame.len <= 8);
 
-						lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
-						lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
-						lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
-						lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id & 0xf);
-						lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
-						for (unsigned i = 0; i < 8; ++i) {
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] >> 4);
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] & 0xf);
+						if (no_response) {
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = 'r';
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 4) & 0xf);
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 0) & 0xf);
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
+						} else if (crc_error) {
+							static const char can_crc_error_frame[] = "T2000000880000000800000000\r"; // CAN_ERR_PROT_LOC_CRC_SEQ
+							lin->tx_sl_offset = sizeof(can_crc_error_frame) - 1;
+							memcpy(lin->tx_sl_buffer, can_crc_error_frame, lin->tx_sl_offset);
+						} else {
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
+								lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 4) & 0xf);
+								lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 0) & 0xf);
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
+							for (unsigned i = 0; i < 8; ++i) {
+								lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] >> 4);
+								lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] & 0xf);
+							}
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 						}
-						lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
+
+
 
 						w = tud_cdc_n_write(index, lin->tx_sl_buffer, lin->tx_sl_offset);
 
@@ -527,10 +555,13 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 					done = false;
 				}
 
+				// char x = '\r';
+				// tud_cdc_n_write(index, &x, 1);
+
 				if (yield && written) {
 					written = false;
 					tud_cdc_n_write_flush(index);
-					// LOG("flush\n");
+					LOG("ch%u tx flush\n", index);
 				}
 			} else {
 				LOG("T");
