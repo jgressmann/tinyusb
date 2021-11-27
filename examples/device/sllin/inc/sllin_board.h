@@ -189,8 +189,6 @@ SLLIN_RAMFUNC extern void sllin_lin_task_queue(uint8_t index, sllin_queue_elemen
 
 #if defined(SAME54XPLAINEDPRO)
 #	include "sllin_same54_xplained_pro.h"
-#elif defined(__SAMD21E18A__)
-#	include "sllin_samd.h"
 #else
 #	error "Unknown board"
 #endif
