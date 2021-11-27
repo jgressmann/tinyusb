@@ -42,8 +42,11 @@ enum {
 	SLAVE_PROTO_STEP_TX_DATA,
 	SLAVE_PROTO_STEP_TX_CRC,
 	// SLAVE_PROTO_STEP_TX_FIN,
+
 	MASTER_PROTO_STEP_RX_PID = 0,
 	MASTER_PROTO_STEP_RX_DATA,
+	MASTER_PROTO_STEP_TX_DATA,
+	MASTER_PROTO_STEP_FINISHED,
 };
 
 typedef void (*sllin_lin_int_callback)(uint8_t index);
@@ -52,12 +55,13 @@ SLLIN_RAMFUNC static void lin_int_slave(uint8_t index);
 
 struct lin {
 	Sercom* const sercom;
+	Tc* const tc;
 	sllin_lin_int_callback irq_handler;
 	sllin_queue_element rx_frame;
 	unsigned crc;
 	uint8_t master_tx_data[9];
 	uint8_t master_proto_step;
-	// uint8_t master_tx_busy;
+	// uint8_t master_busy;
 	// uint8_t rx_full;
 	uint8_t tx_gi; // not an index, uses full range of type
 	uint8_t tx_pi; // not an index, uses full range of type
@@ -71,15 +75,17 @@ struct lin {
 	uint8_t slave_frame_crc[64];
 	uint8_t slave_proto_step;
 	uint8_t slave_frame_offset;
-	//uint8_t slave_tx_value;
+	uint8_t master_busy;
 };
 
 static struct lin lins[SLLIN_BOARD_LIN_COUNT] = {
 	{
 		.sercom = SERCOM6,
+		.tc = TC0,
 	},
 	{
 		.sercom = SERCOM7,
+		.tc = TC1,
 	},
 };
 
@@ -274,10 +280,10 @@ static inline void lin_init_once(void)
 	MCLK->APBDMASK.bit.SERCOM6_ = 1;
 	GCLK->PCHCTRL[SERCOM6_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN;
 
-	NVIC_SetPriority(SERCOM6_0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(SERCOM6_1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(SERCOM6_2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(SERCOM6_3_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(SERCOM6_0_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(SERCOM6_1_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(SERCOM6_2_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(SERCOM6_3_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
 
 	NVIC_EnableIRQ(SERCOM6_0_IRQn);
 	NVIC_EnableIRQ(SERCOM6_1_IRQn);
@@ -291,10 +297,10 @@ static inline void lin_init_once(void)
 	// MCLK->APBAMASK.bit.SERCOM0_ = 1;
 	// GCLK->PCHCTRL[SERCOM0_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN;
 
-	// NVIC_SetPriority(SERCOM0_0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	// NVIC_SetPriority(SERCOM0_1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	// NVIC_SetPriority(SERCOM0_2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	// NVIC_SetPriority(SERCOM0_3_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	// NVIC_SetPriority(SERCOM0_0_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	// NVIC_SetPriority(SERCOM0_1_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	// NVIC_SetPriority(SERCOM0_2_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	// NVIC_SetPriority(SERCOM0_3_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
 
 	// NVIC_EnableIRQ(SERCOM0_0_IRQn);
 	// NVIC_EnableIRQ(SERCOM0_1_IRQn);
@@ -307,16 +313,60 @@ static inline void lin_init_once(void)
 	MCLK->APBDMASK.bit.SERCOM7_ = 1;
 	GCLK->PCHCTRL[SERCOM7_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN;
 
-	NVIC_SetPriority(SERCOM7_0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(SERCOM7_1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(SERCOM7_2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(SERCOM7_3_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(SERCOM7_0_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(SERCOM7_1_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(SERCOM7_2_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(SERCOM7_3_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
 
 	NVIC_EnableIRQ(SERCOM7_0_IRQn);
 	NVIC_EnableIRQ(SERCOM7_1_IRQn);
 	NVIC_EnableIRQ(SERCOM7_2_IRQn);
 	NVIC_EnableIRQ(SERCOM7_3_IRQn);
 
+}
+
+static void timer_init(void)
+{
+	GCLK->GENCTRL[4].reg =
+		GCLK_GENCTRL_DIV(3) |	/* 48Mhz -> 16MHz */
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_DFLL |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL4); /* wait for the synchronization between clock domains to be complete */
+
+	MCLK->APBAMASK.bit.TC0_ = 1;
+	MCLK->APBAMASK.bit.TC1_ = 1;
+	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
+	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
+
+	NVIC_SetPriority(TC0_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(TC1_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	NVIC_EnableIRQ(TC0_IRQn);
+	NVIC_EnableIRQ(TC1_IRQn);
+
+	for (size_t i = 0; i < TU_ARRAY_SIZE(lins); ++i) {
+		struct lin *lin = &lins[i];
+		Tc* tc = lin->tc;
+
+		tc->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
+		while (tc->COUNT16.SYNCBUSY.bit.SWRST);
+
+		tc->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
+
+		// generate overflow interrupt
+		tc->COUNT16.INTENSET.reg = TC_INTENSET_OVF;
+
+		// enable
+		tc->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER_DIV16;
+
+		// stop & oneshot
+		tc->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_CMD_STOP;
+		while (tc->COUNT16.SYNCBUSY.bit.CTRLB);
+
+		// reset to zero
+		tc->COUNT16.COUNT.reg = 0;
+	}
 }
 
 static inline void lin_slave_cleanup(struct lin *lin)
@@ -363,7 +413,7 @@ static inline void lin_init(uint8_t index, uint16_t bitrate, bool master)
 	sercom->USART.INTENCLR.reg = ~0;
 
 	if (master) {
-		sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
+		sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_ERROR;
 	} else {
 		//sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
 		sercom->USART.INTENSET.reg =
@@ -375,14 +425,27 @@ static inline void lin_init(uint8_t index, uint16_t bitrate, bool master)
 
 		lin_slave_cleanup(lin);
 	}
+
+	//lin->tc->COUNT16.CC[0].reg = 80000000ul / bitrate; // generate 'no response' after 8 bytes time
+	// setup no response timeout
+#if SLLIN_DEBUG
+	lin->tc->COUNT16.CC[0].reg = 0xffff;
+#else
+	uint32_t T_Header_Nominal = (34 * 1000000) / bitrate;
+	uint32_t T_Response_Nominal = (10 * (8 + 1) * 1000000) / bitrate;
+	uint32_t T_Header_Maximum = (14 * T_Header_Nominal) / 10;
+	uint32_t T_Response_Maximum = (14 * T_Response_Nominal) / 10;
+	SLLIN_DEBUG_ASSERT(T_Header_Maximum + T_Response_Maximum <= 0xffff);
+	lin->tc->COUNT16.CC[0].reg = T_Header_Maximum + T_Response_Maximum;
+#endif
 }
 
 static inline void usb_init(void)
 {
-	NVIC_SetPriority(USB_0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(USB_1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(USB_2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(USB_3_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(USB_0_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(USB_1_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(USB_2_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(USB_3_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
 
 
 	/* USB clock init
@@ -421,6 +484,7 @@ extern void sllin_board_init_begin(void)
 
 	usb_init();
 
+	timer_init();
 	lin_init_once();
 
 	LOG("Enabling cache\n");
@@ -468,9 +532,9 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(lins));
 	SLLIN_DEBUG_ASSERT(len <= 8);
 
-	// if (unlikely(__atomic_load_n(&lin->master_tx_busy, __ATOMIC_ACQUIRE))) {
-	// 	return false;
-	// }
+	if (unlikely(__atomic_load_n(&lin->master_busy, __ATOMIC_RELAXED))) {
+		return false;
+	}
 
 	s = lin->sercom;
 
@@ -483,6 +547,8 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	lin->tx_gi = 0;
 	lin->crc = sllin_crc_start();
 
+	s->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXC;
+
 
 	if (data) { // frame
 		for (unsigned i = 0; i < len; ++i) {
@@ -492,7 +558,7 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 		lin->master_tx_data[len] = crc;
 
 
-		s->USART.INTENSET.reg = SERCOM_USART_INTENSET_TXC | SERCOM_USART_INTENSET_DRE;
+		// s->USART.INTENSET.reg = SERCOM_USART_INTENSET_DRE;
 		// s->USART.INTENSET.reg = SERCOM_USART_INTENSET_TXC;
 
 		lin->tx_pi = len + 1;
@@ -502,11 +568,15 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 			lin->crc = sllin_crc_update1(lin->crc, pid);
 		}
 
-		s->USART.INTENCLR.reg = SERCOM_USART_INTENSET_TXC | SERCOM_USART_INTENSET_DRE;
+
+		// s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 		// s->USART.INTENCLR.reg = SERCOM_USART_INTENSET_TXC;
 
 
 		lin->tx_pi = 0;
+
+		// start rx timeout timer
+		lin->tc->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 	}
 
 	lin->rx_frame.type = SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME;
@@ -516,7 +586,7 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	lin->master_proto_step = MASTER_PROTO_STEP_RX_PID;
 
 	__atomic_thread_fence(__ATOMIC_RELEASE);
-	// __atomic_test_and_set(&lin->master_tx_busy, __ATOMIC_RELAXED);
+	__atomic_test_and_set(&lin->master_busy, __ATOMIC_RELAXED);
 	// while (s->USART.SYNCBUSY.bit.ENABLE);
 
 	s->USART.CTRLB.bit.LINCMD = 0x2;
@@ -551,6 +621,49 @@ SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(
 	__atomic_thread_fence(__ATOMIC_RELEASE);
 }
 
+SLLIN_RAMFUNC static inline void lin_int_master_response_timeout(uint8_t index)
+{
+	struct lin *lin = &lins[index];
+
+	lin->tc->COUNT16.INTFLAG.reg = ~0;
+	lin->sercom->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_RXC | SERCOM_USART_INTENCLR_DRE;
+
+	SLLIN_ISR_ASSERT(0 == lin->tc->COUNT16.COUNT.reg);
+
+	LOG("ch%u no response\n", index);
+
+	__atomic_thread_fence(__ATOMIC_ACQUIRE);
+
+	lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_NO_RESPONSE;
+
+	sllin_lin_task_queue(index, &lin->rx_frame);
+	sllin_lin_task_notify_isr(index, 1);
+
+	__atomic_clear(&lin->master_busy, __ATOMIC_RELEASE);
+}
+
+
+SLLIN_RAMFUNC static inline void lin_int_master_cleanup(uint8_t index)
+{
+	struct lin *lin = &lins[index];
+
+	// stop timer
+	lin->tc->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
+
+	lin->master_proto_step = MASTER_PROTO_STEP_FINISHED;
+
+	// no more interrupts
+	lin->sercom->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_RXC | SERCOM_USART_INTENCLR_DRE;
+
+
+	// wait for sync
+	while (lin->tc->COUNT16.SYNCBUSY.bit.CTRLB);
+	// reset value
+	lin->tc->COUNT16.COUNT.reg = 0;
+
+
+	__atomic_clear(&lin->master_busy, __ATOMIC_RELAXED);
+}
 
 SLLIN_RAMFUNC static void lin_int_master(uint8_t index)
 {
@@ -565,19 +678,66 @@ SLLIN_RAMFUNC static void lin_int_master(uint8_t index)
 	// LOG(".");
 	s->USART.INTFLAG.reg = ~0;
 	// s->USART.STATUS.reg = ~0;
+	switch (lin->master_proto_step) {
+	case MASTER_PROTO_STEP_RX_PID: {
+		if (intflag & SERCOM_USART_INTFLAG_RXC) {
+			uint8_t byte = s->USART.DATA.reg;
 
-	__atomic_thread_fence(__ATOMIC_ACQUIRE);
+			LOG("ch%u RX PID\n", index);
+			// s->USART.CTRLB.bit.LINCMD = 0x0;
 
-	if (intflag & SERCOM_USART_INTFLAG_RXC) {
-		uint8_t byte = s->USART.DATA.reg;
+			if (likely(byte == sllin_id_to_pid(lin->rx_frame.lin_frame.id))) {
+				if (lin->tx_pi) {
+					s->USART.INTENSET.reg = SERCOM_USART_INTENSET_DRE;
+					s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_RXC;
+					lin->master_proto_step = MASTER_PROTO_STEP_TX_DATA;
+					goto tx;
+				} else {
+					lin->master_proto_step = MASTER_PROTO_STEP_RX_DATA;
+				}
+			} else {
+				lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
+				sllin_lin_task_queue(index, &lin->rx_frame);
+				sllin_lin_task_notify_isr(index, 1);
 
-		if (lin->master_proto_step == MASTER_PROTO_STEP_RX_PID) {
-			lin->master_proto_step = MASTER_PROTO_STEP_RX_DATA;
-		} else {
+				lin_int_master_cleanup(index);
+			}
+		}
+	} break;
 
-			LOG("ch%u RX=%x step=%d pi=%u len=%u\n", index, byte, lin->master_proto_step, lin->rx_pi, lin->rx_frame.lin_frame.len);
+	case MASTER_PROTO_STEP_TX_DATA: {
+tx:
+		if (intflag & SERCOM_USART_INTFLAG_DRE) {
+			uint8_t tx_gi = lin->tx_gi;
+			uint8_t tx_pi = lin->tx_pi;
+
+			if (tx_pi != tx_gi) {
+				uint8_t tx_index = tx_gi;
+				uint8_t byte = lin->master_tx_data[tx_index];
+
+				SLLIN_DEBUG_ISR_ASSERT(tx_gi < sizeof(lin->master_tx_data));
+				SLLIN_DEBUG_ISR_ASSERT(tx_pi < sizeof(lin->master_tx_data));
+				SLLIN_DEBUG_ISR_ASSERT(tx_gi < tx_pi);
+
+				++lin->tx_gi;
+				s->USART.DATA.reg = byte;
+				LOG("ch%u TX=%x\n", index, byte);
+			} else {
+				// done
+				sllin_lin_task_queue(index, &lin->rx_frame);
+				sllin_lin_task_notify_isr(index, 1);
+				lin_int_master_cleanup(index);
+			}
+		}
+	} break;
+	case MASTER_PROTO_STEP_RX_DATA: {
+		if (intflag & SERCOM_USART_INTFLAG_RXC) {
+			uint8_t byte = s->USART.DATA.reg;
 
 			if (lin->rx_frame.lin_frame.len == lin->rx_pi) {
+				// stop rx
+				s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_RXC;
+
 				lin->rx_frame.lin_frame.crc = sllin_crc_finalize(lin->crc);
 				if (likely(lin->rx_frame.lin_frame.crc == byte)) {
 					LOG("ch%u LIN\n", index);
@@ -594,44 +754,116 @@ SLLIN_RAMFUNC static void lin_int_master(uint8_t index)
 
 				sllin_lin_task_queue(index, &lin->rx_frame);
 				sllin_lin_task_notify_isr(index, 1);
-
-				lin->master_proto_step = MASTER_PROTO_STEP_RX_PID;
+				lin_int_master_cleanup(index);
 			} else {
+				lin->tc->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 				lin->rx_frame.lin_frame.data[lin->rx_pi++] = byte;
 				lin->crc = sllin_crc_update1(lin->crc, byte);
 			}
 		}
+	} break;
 	}
 
-	if (intflag & SERCOM_USART_INTFLAG_DRE) {
-		uint8_t tx_gi = lin->tx_gi;
-		uint8_t tx_pi = lin->tx_pi;
 
-		s->USART.CTRLB.bit.LINCMD = 0x0;
+	// if (__atomic_load_n(&lin->master_busy, __ATOMIC_ACQUIRE)) {
+	// 	__atomic_thread_fence(__ATOMIC_ACQUIRE);
 
-		if (tx_pi != tx_gi) {
-			uint8_t tx_index = tx_gi;
-			uint8_t byte = lin->master_tx_data[tx_index];
+	// 	if (intflag & SERCOM_USART_INTFLAG_RXC) {
+	// 		uint8_t byte = s->USART.DATA.reg;
 
-			SLLIN_DEBUG_ISR_ASSERT(tx_gi < sizeof(lin->master_tx_data));
-			SLLIN_DEBUG_ISR_ASSERT(tx_pi < sizeof(lin->master_tx_data));
-			SLLIN_DEBUG_ISR_ASSERT(tx_gi < tx_pi);
+	// 		if (lin->master_proto_step == MASTER_PROTO_STEP_RX_PID) {
+	// 			lin->master_proto_step = MASTER_PROTO_STEP_RX_DATA;
+	// 			LOG("ch%u RX PID\n", index);
+	// 		} else {
 
-			++lin->tx_gi;
-			s->USART.DATA.reg = byte;
-			// LOG("ch%u TX=%x\n", index, byte);
-		} else {
-			s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
-			// LOG("ch%u HDR sent\n", index);
-		}
-	}
+	// 			LOG("ch%u RX=%x step=%d pi=%u len=%u\n", index, byte, lin->master_proto_step, lin->rx_pi, lin->rx_frame.lin_frame.len);
+
+	// 			if (lin->rx_frame.lin_frame.len == lin->rx_pi) {
+	// 				// stop rx
+	// 				s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_RXC;
+	// 				// stop timer
+	// 				lin->tc->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
+
+	// 				lin->rx_frame.lin_frame.crc = sllin_crc_finalize(lin->crc);
+	// 				if (likely(lin->rx_frame.lin_frame.crc == byte)) {
+	// 					LOG("ch%u LIN\n", index);
+	// 				} else {
+	// 					LOG("ch%u crc mismatch want=%x have=%x data=%x %x %x %x %x %x %x %x\n",
+	// 						index, lin->rx_frame.lin_frame.crc, byte,
+	// 						lin->rx_frame.lin_frame.data[0], lin->rx_frame.lin_frame.data[1],
+	// 						lin->rx_frame.lin_frame.data[2], lin->rx_frame.lin_frame.data[3],
+	// 						lin->rx_frame.lin_frame.data[4], lin->rx_frame.lin_frame.data[5],
+	// 						lin->rx_frame.lin_frame.data[6], lin->rx_frame.lin_frame.data[7]);
+
+	// 					lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
+	// 				}
+
+	// 				sllin_lin_task_queue(index, &lin->rx_frame);
+	// 				sllin_lin_task_notify_isr(index, 1);
+
+	// 				__atomic_clear(&lin->master_busy, __ATOMIC_RELAXED);
+
+	// 				// wait for sync
+	// 				while (lin->tc->COUNT16.SYNCBUSY.bit.CTRLB);
+	// 				// reset value
+	// 				lin->tc->COUNT16.COUNT.reg = 0;
+
+
+	// 			} else {
+	// 				lin->tc->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+	// 				lin->rx_frame.lin_frame.data[lin->rx_pi++] = byte;
+	// 				lin->crc = sllin_crc_update1(lin->crc, byte);
+	// 			}
+	// 		}
+	// 	}
+
+	// 	if (intflag & SERCOM_USART_INTFLAG_DRE) {
+	// 		uint8_t tx_gi = lin->tx_gi;
+	// 		uint8_t tx_pi = lin->tx_pi;
+
+	// 		s->USART.CTRLB.bit.LINCMD = 0x0;
+
+	// 		if (tx_pi != tx_gi) {
+	// 			uint8_t tx_index = tx_gi;
+	// 			uint8_t byte = lin->master_tx_data[tx_index];
+
+	// 			SLLIN_DEBUG_ISR_ASSERT(tx_gi < sizeof(lin->master_tx_data));
+	// 			SLLIN_DEBUG_ISR_ASSERT(tx_pi < sizeof(lin->master_tx_data));
+	// 			SLLIN_DEBUG_ISR_ASSERT(tx_gi < tx_pi);
+
+	// 			++lin->tx_gi;
+	// 			s->USART.DATA.reg = byte;
+	// 			// LOG("ch%u TX=%x\n", index, byte);
+	// 		} else {
+	// 			s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
+
+	// 			if (!tx_pi) { // wait for data
+	// 				s->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXC;
+
+	// 				SLLIN_ISR_ASSERT(0 == lin->tc->COUNT16.COUNT.reg);
+	// 				lin->tc->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+	// 				LOG("ch%u HDR sent\n", index);
+	// 			}
+	// 		}
+	// 	}
+	// } else {
+	// 	// spurrious interrupt?
+	// }
+
+
 
 	if (unlikely(intflag & SERCOM_USART_INTFLAG_ERROR)) {
-		LOG("ch%u status=%x\n", index, s->USART.STATUS.reg);
-		s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
-	}
+		// stop timer
+		lin->tc->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
 
-	// __atomic_thread_fence(__ATOMIC_RELEASE);
+		LOG("ch%u status=%x\n", index, s->USART.STATUS.reg);
+		s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_RXC | SERCOM_USART_INTENCLR_DRE;
+
+		// wait for sync
+		while (lin->tc->COUNT16.SYNCBUSY.bit.CTRLB);
+		// reset value
+		lin->tc->COUNT16.COUNT.reg = 0;
+	}
 }
 
 SLLIN_RAMFUNC static void lin_int_slave(uint8_t index)
@@ -640,14 +872,14 @@ SLLIN_RAMFUNC static void lin_int_slave(uint8_t index)
 	Sercom *s = lin->sercom;
 
 	uint32_t intflag = s->USART.INTFLAG.reg;
-	uint32_t status = s->USART.STATUS.reg;
+	// uint32_t status = s->USART.STATUS.reg;
 
 	// LOG("ch%u INTFLAG=%x\n", index, intflag);
 	// LOG("ch%u STATUS=%x\n", index, status);
 	s->USART.INTFLAG.reg = ~0;
-	s->USART.STATUS.reg = ~0;
+	// s->USART.STATUS.reg = ~0;
 
-	LOG("/");
+	// LOG("/");
 	// LOG("ch%u step=%u\n", index, lin->slave_proto_step);
 
 	__atomic_thread_fence(__ATOMIC_ACQUIRE);
@@ -659,7 +891,7 @@ SLLIN_RAMFUNC static void lin_int_slave(uint8_t index)
 	} else if (intflag & SERCOM_USART_INTFLAG_RXC) {
 		uint8_t byte = s->USART.DATA.reg;
 
-		LOG("ch%u RX=%x\n", index, byte);
+		// LOG("ch%u RX=%x\n", index, byte);
 
 
 		if (lin->slave_proto_step == SLAVE_PROTO_STEP_RX_PID) {
@@ -709,7 +941,7 @@ SLLIN_RAMFUNC static void lin_int_slave(uint8_t index)
 			// 	goto cleanup;
 			// }
 		} else {
-			LOG("ch%u step=%u\n", index, lin->slave_proto_step);
+			// LOG("ch%u step=%u\n", index, lin->slave_proto_step);
 			goto cleanup;
 		}
 	}
@@ -729,7 +961,7 @@ SLLIN_RAMFUNC static void lin_int_slave(uint8_t index)
 			// lin->slave_tx_value = byte;
 			s->USART.DATA.reg = byte;
 
-			LOG("ch%u TX=%x\n", index, byte);
+			// LOG("ch%u TX=%x\n", index, byte);
 		} else if (lin->slave_proto_step == SLAVE_PROTO_STEP_TX_CRC) {
 			lin->sercom->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 		} else {
@@ -739,7 +971,7 @@ SLLIN_RAMFUNC static void lin_int_slave(uint8_t index)
 	}
 
 	if (intflag & SERCOM_USART_INTFLAG_ERROR) {
-		LOG("ch%u error=%x\n", index, status);
+		LOG("ch%u status=%x\n", index, s->USART.STATUS.reg);
 cleanup:
 		LOG("ch%u cleanup\n", index);
 		lin_slave_cleanup(lin);
@@ -808,6 +1040,18 @@ SLLIN_RAMFUNC void SERCOM7_3_Handler(void)
 {
 	lins[1].irq_handler(1);
 }
+
+SLLIN_RAMFUNC void TC0_Handler(void)
+{
+	lin_int_master_response_timeout(0);
+}
+
+SLLIN_RAMFUNC void TC1_Handler(void)
+{
+	lin_int_master_response_timeout(1);
+}
+
+
 
 
 #endif // #ifdef SAME54XPLAINEDPRO
