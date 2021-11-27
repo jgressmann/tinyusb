@@ -42,9 +42,6 @@
 
 
 #define SLLIN_NAME "slLIN"
-#define CMD_BUFFER_SIZE 64
-#define MSG_BUFFER_SIZE 512
-
 
 enum {
 	SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME,
