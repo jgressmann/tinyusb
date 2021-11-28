@@ -431,9 +431,9 @@ static inline void lin_init(uint8_t index, uint16_t bitrate, bool master)
 	uint32_t T_Response_Maximum = (14 * T_Response_Nominal) / 10;
 	SLLIN_DEBUG_ASSERT(T_Header_Maximum + T_Response_Maximum <= 0xffff);
 #if SLLIN_DEBUG
-	lin->tc->COUNT16.CC[0].reg = T_Response_Maximum;
+	lin->tc->COUNT16.CC[0].reg = T_Response_Nominal;
 #else
-	lin->tc->COUNT16.CC[0].reg = T_Response_Maximum / 2;
+	lin->tc->COUNT16.CC[0].reg = T_Response_Nominal / 2;
 #endif
 }
 
@@ -849,6 +849,8 @@ tx:
 					// LOG("ch%u crc TX!=RX %x %x\n", index, lin->slave_frame_crc[lin->rx_frame.lin_frame.id], rx_byte);
 					lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
 				}
+
+				lin->rx_frame.lin_frame.crc = rx_byte;
 
 				sllin_lin_task_queue(index, &lin->rx_frame);
 				sllin_lin_task_notify_isr(index, 1);
