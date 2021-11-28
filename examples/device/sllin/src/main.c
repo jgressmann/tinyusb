@@ -230,7 +230,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 	lin->tx_sl_buffer[0] = SLLIN_OK_TERMINATOR;
 	lin->tx_sl_offset = 1;
 
-	LOG("ch%u rx: %s\n", index, lin->rx_sl_buffer);
+	// LOG("ch%u rx: %s\n", index, lin->rx_sl_buffer);
 
 	switch (lin->rx_sl_buffer[0]) {
 	case '\n':
@@ -316,7 +316,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 							sllin_store_tx_queue_full_error_response(index);
 						}
 					} else {
-						sllin_board_lin_slave_tx(index, id, frame_len, data, crc);
+						sllin_board_lin_slave_tx(index, id, frame_len, data, crc, flags);
 						lin->tx_sl_buffer[0] = 'z';
 						lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
 						lin->tx_sl_offset = 2;
@@ -501,7 +501,7 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 						bool no_response = (e->lin_frame.flags & SLLIN_FRAME_FLAG_NO_RESPONSE) != 0;
 						bool crc_error = (e->lin_frame.flags & SLLIN_FRAME_FLAG_CRC_ERROR) != 0;
 
-						LOG("ch%u LIN frame\n", index);
+						// LOG("ch%u LIN frame\n", index);
 						SLLIN_DEBUG_ASSERT(e->lin_frame.len <= 8);
 
 						if (no_response) {
@@ -555,16 +555,13 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 					done = false;
 				}
 
-				// char x = '\r';
-				// tud_cdc_n_write(index, &x, 1);
-
 				if (yield && written) {
 					written = false;
 					tud_cdc_n_write_flush(index);
-					LOG("ch%u tx flush\n", index);
+					// LOG("ch%u tx flush\n", index);
 				}
 			} else {
-				LOG("T");
+				LOG("ch%u TT\n", index);
 
 				lin->rx_sl_offset = 0;
 				lin->tx_sl_offset = 0;
@@ -574,7 +571,7 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 				__atomic_store_n(&lin->rx_fifo_gi, 0, __ATOMIC_RELEASE);
 				__atomic_store_n(&lin->rx_fifo_pi, 0, __ATOMIC_RELEASE);
 
-
+				// can't call this if disconnected
 				// tud_cdc_n_read_flush(index);
 
 				yield = true;
@@ -587,7 +584,7 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 			yield = false;
 			// taskYIELD();
 			vTaskDelay(pdMS_TO_TICKS(1)); // 1ms for USB FS
-			LOG("+");
+			// LOG("+");
 		}
 	}
 }

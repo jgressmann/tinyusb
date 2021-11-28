@@ -181,7 +181,13 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	uint8_t const *data,
 	uint8_t crc,
 	uint8_t flags);
-SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(uint8_t index, uint8_t id, uint8_t len, uint8_t const *data, uint8_t crc);
+SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(
+	uint8_t index,
+	uint8_t id,
+	uint8_t len,
+	uint8_t const *data,
+	uint8_t crc,
+	uint8_t flags);
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_def(uint8_t index, uint32_t count);
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_isr(uint8_t index, uint32_t count);
 SLLIN_RAMFUNC extern void sllin_lin_task_queue(uint8_t index, sllin_queue_element const *element);

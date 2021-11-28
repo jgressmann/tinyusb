@@ -73,8 +73,10 @@ struct lin {
 	// uint8_t slave_frame_flags[64];
 	uint8_t slave_frame_data[64][8];
 	uint8_t slave_frame_crc[64];
+	uint8_t slave_frame_flags[64];
 	uint8_t slave_proto_step;
-	uint8_t slave_frame_offset;
+	uint8_t slave_tx_offset;
+	uint8_t slave_rx_offset;
 	uint8_t master_busy;
 };
 
@@ -372,7 +374,8 @@ static void timer_init(void)
 static inline void lin_slave_cleanup(struct lin *lin)
 {
 	lin->slave_proto_step = SLAVE_PROTO_STEP_RX_BREAK;
-	lin->slave_frame_offset = 0;
+	lin->slave_tx_offset = 0;
+	lin->slave_rx_offset = 0;
 	//lin->sercom->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE | SERCOM_USART_INTENCLR_RXC;
 	lin->sercom->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 }
@@ -421,17 +424,16 @@ static inline void lin_init(uint8_t index, uint16_t bitrate, bool master)
 		lin_slave_cleanup(lin);
 	}
 
-	//lin->tc->COUNT16.CC[0].reg = 80000000ul / bitrate; // generate 'no response' after 8 bytes time
 	// setup no response timeout
-#if SLLIN_DEBUG
-	lin->tc->COUNT16.CC[0].reg = 0xffff;
-#else
 	uint32_t T_Header_Nominal = (34 * 1000000) / bitrate;
 	uint32_t T_Response_Nominal = (10 * (8 + 1) * 1000000) / bitrate;
 	uint32_t T_Header_Maximum = (14 * T_Header_Nominal) / 10;
 	uint32_t T_Response_Maximum = (14 * T_Response_Nominal) / 10;
 	SLLIN_DEBUG_ASSERT(T_Header_Maximum + T_Response_Maximum <= 0xffff);
-	lin->tc->COUNT16.CC[0].reg = T_Header_Maximum + T_Response_Maximum;
+#if SLLIN_DEBUG
+	lin->tc->COUNT16.CC[0].reg = T_Response_Maximum;
+#else
+	lin->tc->COUNT16.CC[0].reg = T_Response_Maximum / 2;
 #endif
 }
 
@@ -527,16 +529,11 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(lins));
 	SLLIN_DEBUG_ASSERT(len <= 8);
 
-	if (unlikely(__atomic_load_n(&lin->master_busy, __ATOMIC_RELAXED))) {
+	if (unlikely(__atomic_load_n(&lin->master_busy, __ATOMIC_ACQUIRE))) {
 		return false;
 	}
 
 	s = lin->sercom;
-
-	// reboot
-	// s->USART.CTRLA.bit.ENABLE = 0;
-	// while (s->USART.SYNCBUSY.bit.ENABLE);
-	// s->USART.CTRLA.bit.ENABLE = 1;
 
 	lin->rx_pi = 0;
 	lin->tx_gi = 0;
@@ -583,7 +580,8 @@ SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(
 	uint8_t id,
 	uint8_t len,
 	uint8_t const *data,
-	uint8_t crc)
+	uint8_t crc,
+	uint8_t flags)
 {
 	struct lin *lin = &lins[index];
 
@@ -594,7 +592,7 @@ SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(
 		lin->slave_frame_len[id] = len;
 		memcpy(lin->slave_frame_data[id], data, len);
 		lin->slave_frame_crc[id] = crc;
-		// lin->slave_frame_flags[id] = flags;
+		lin->slave_frame_flags[id] = flags;
 	} else {
 		// clear tx frame
 		lin->slave_frame_len[id] = 0;
@@ -718,14 +716,14 @@ tx:
 				lin->rx_frame.lin_frame.crc = sllin_crc_finalize(lin->crc);
 
 				if (likely(lin->rx_frame.lin_frame.crc == byte)) {
-					LOG("ch%u LIN\n", index);
+					// LOG("ch%u LIN\n", index);
 				} else {
-					LOG("ch%u crc mismatch want=%x have=%x data=%x %x %x %x %x %x %x %x\n",
-						index, lin->rx_frame.lin_frame.crc, byte,
-						lin->rx_frame.lin_frame.data[0], lin->rx_frame.lin_frame.data[1],
-						lin->rx_frame.lin_frame.data[2], lin->rx_frame.lin_frame.data[3],
-						lin->rx_frame.lin_frame.data[4], lin->rx_frame.lin_frame.data[5],
-						lin->rx_frame.lin_frame.data[6], lin->rx_frame.lin_frame.data[7]);
+					// LOG("ch%u crc mismatch want=%x have=%x data=%x %x %x %x %x %x %x %x\n",
+					// 	index, lin->rx_frame.lin_frame.crc, byte,
+					// 	lin->rx_frame.lin_frame.data[0], lin->rx_frame.lin_frame.data[1],
+					// 	lin->rx_frame.lin_frame.data[2], lin->rx_frame.lin_frame.data[3],
+					// 	lin->rx_frame.lin_frame.data[4], lin->rx_frame.lin_frame.data[5],
+					// 	lin->rx_frame.lin_frame.data[6], lin->rx_frame.lin_frame.data[7]);
 
 					lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
 				}
@@ -770,37 +768,38 @@ SLLIN_RAMFUNC static void lin_int_slave(uint8_t index)
 	if (intflag & SERCOM_USART_INTFLAG_RXBRK) {
 		lin_slave_cleanup(lin);
 		lin->slave_proto_step = SLAVE_PROTO_STEP_RX_PID;
-		LOG("ch%u BREAK\n", index);
+		// LOG("ch%u BREAK\n", index);
 	}
 
-	uint8_t byte = s->USART.DATA.reg;
+	const uint8_t rx_byte = s->USART.DATA.reg;
 
 	switch (lin->slave_proto_step) {
 	case SLAVE_PROTO_STEP_RX_PID:
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
-			LOG("ch%u PID=%x\n", index, byte);
+			// LOG("ch%u PID=%x\n", index, byte);
 
-			uint8_t id = sllin_pid_to_id(byte);
-			uint8_t len = lin->slave_frame_len[id];
+			uint8_t id = sllin_pid_to_id(rx_byte);
 
-			SLLIN_DEBUG_ISR_ASSERT(len <= 8);
+			if (likely(sllin_id_to_pid(id) == rx_byte)) {
+				uint8_t len = lin->slave_frame_len[id];
 
-			if (len) {
-				lin->rx_frame.lin_frame.id = id;
-				lin->rx_frame.lin_frame.len = len;
-				// lin->rx_frame.lin_frame.flags = lin->slave_frame_flags[id];
-				s->USART.INTENSET.reg = SERCOM_USART_INTENSET_DRE;
-				lin->slave_proto_step = SLAVE_PROTO_STEP_TX_DATA;
+				SLLIN_DEBUG_ISR_ASSERT(len <= 8);
 
+				if (len) {
+					lin->rx_frame.lin_frame.id = id;
+					lin->rx_frame.lin_frame.len = len;
+					lin->rx_frame.lin_frame.flags = lin->slave_frame_flags[id];
+					s->USART.INTENSET.reg = SERCOM_USART_INTENSET_DRE;
+					lin->slave_proto_step = SLAVE_PROTO_STEP_TX_DATA;
+					intflag &= ~SERCOM_USART_INTFLAG_RXC;
 
-				goto tx;
-
-				// lin->crc = sllin_crc_start();
-				// if (lin->slave_frame_flags[id] & SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM) {
-				// 	lin->crc = sllin_crc_update1(lin->crc, pid);
-				// }
+					goto tx;
+				} else {
+					// LOG("ch%u no data for id=%x\n", index, id);
+					lin_slave_cleanup(lin);
+				}
 			} else {
-				LOG("ch%u no data for id=%x\n", index, id);
+				// bad pid
 				lin_slave_cleanup(lin);
 			}
 		}
@@ -808,25 +807,53 @@ SLLIN_RAMFUNC static void lin_int_slave(uint8_t index)
 	case SLAVE_PROTO_STEP_TX_DATA:
 		if (intflag & SERCOM_USART_INTFLAG_DRE) {
 			uint8_t len = 0;
+			uint8_t tx_byte = 0;
 tx:
 			len = lin->slave_frame_len[lin->rx_frame.lin_frame.id];
 
-			if (likely(lin->slave_frame_offset < len)) {
-				byte = lin->slave_frame_data[lin->rx_frame.lin_frame.id][lin->slave_frame_offset++];
+			if (likely(lin->slave_tx_offset < len)) {
+				tx_byte = lin->slave_frame_data[lin->rx_frame.lin_frame.id][lin->slave_tx_offset++];
 			} else {
 				lin->slave_proto_step = SLAVE_PROTO_STEP_TX_CRC;
-				 byte = lin->slave_frame_crc[lin->rx_frame.lin_frame.id];
+				tx_byte = lin->slave_frame_crc[lin->rx_frame.lin_frame.id];
+				s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 			}
 
-			// lin->slave_tx_value = byte;
-			s->USART.DATA.reg = byte;
+			s->USART.DATA.reg = tx_byte;
 
-			LOG("ch%u TX=%x\n", index, byte);
+			// LOG("ch%u TX=%x\n", index, tx_byte);
+		}
+
+		if (intflag & SERCOM_USART_INTFLAG_RXC) {
+			// LOG("ch%u RX=%x\n", index, rx_byte);
+			if (rx_byte != lin->slave_frame_data[lin->rx_frame.lin_frame.id][lin->slave_rx_offset]) {
+				// LOG("ch%u offset=%u TX!=RX %x %x\n", index, lin->slave_rx_offset, lin->slave_frame_data[lin->rx_frame.lin_frame.id][lin->slave_rx_offset], rx_byte);
+				lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
+			}
+
+			lin->rx_frame.lin_frame.data[lin->slave_rx_offset++] = rx_byte;
 		}
 		break;
 	case SLAVE_PROTO_STEP_TX_CRC:
-		if (intflag & SERCOM_USART_INTFLAG_DRE) {
-			lin_slave_cleanup(lin);
+		if (intflag & SERCOM_USART_INTFLAG_RXC) {
+			// LOG("ch%u RX=%x\n", index, rx_byte);
+			if (lin->slave_rx_offset < lin->rx_frame.lin_frame.len) {
+				if (rx_byte != lin->slave_frame_data[lin->rx_frame.lin_frame.id][lin->slave_rx_offset]) {
+					// LOG("ch%u offset=%u TX!=RX %x %x\n", index, lin->slave_rx_offset, lin->slave_frame_data[lin->rx_frame.lin_frame.id][lin->slave_rx_offset], rx_byte);
+					lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
+				}
+
+				lin->rx_frame.lin_frame.data[lin->slave_rx_offset++] = rx_byte;
+			} else {
+				if (rx_byte != lin->slave_frame_crc[lin->rx_frame.lin_frame.id]) {
+					// LOG("ch%u crc TX!=RX %x %x\n", index, lin->slave_frame_crc[lin->rx_frame.lin_frame.id], rx_byte);
+					lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
+				}
+
+				sllin_lin_task_queue(index, &lin->rx_frame);
+				sllin_lin_task_notify_isr(index, 1);
+				lin_slave_cleanup(lin);
+			}
 		}
 		break;
 	}
