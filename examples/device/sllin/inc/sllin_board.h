@@ -31,6 +31,7 @@
 #include <sections.h>
 #include <sllin_debug.h>
 #include <sllin_version.h>
+#include <sllin.h>
 
 #ifndef likely
 #define likely(x) __builtin_expect(!!(x),1)
@@ -65,106 +66,6 @@ enum {
 	SLLIN_FRAME_FLAG_CRC_ERROR = 0x2,
 	SLLIN_FRAME_FLAG_NO_RESPONSE = 0x4,
 };
-
-
-static inline uint8_t sllin_id_to_pid(uint8_t id)
-{
-	static const uint8_t map[] = {
-		0x80,
-		0xC1,
-		0x42,
-		0x03,
-		0xC4,
-		0x85,
-		0x06,
-		0x47,
-		0x08,
-		0x49,
-		0xCA,
-		0x8B,
-		0x4C,
-		0x0D,
-		0x8E,
-		0xCF,
-		0x50,
-		0x11,
-		0x92,
-		0xD3,
-		0x14,
-		0x55,
-		0xD6,
-		0x97,
-		0xD8,
-		0x99,
-		0x1A,
-		0x5B,
-		0x9C,
-		0xDD,
-		0x5E,
-		0x1F,
-		0x20,
-		0x61,
-		0xE2,
-		0xA3,
-		0x64,
-		0x25,
-		0xA6,
-		0xE7,
-		0xA8,
-		0xE9,
-		0x6A,
-		0x2B,
-		0xEC,
-		0xAD,
-		0x2E,
-		0x6F,
-		0xF0,
-		0xB1,
-		0x32,
-		0x73,
-		0xB4,
-		0xF5,
-		0x76,
-		0x37,
-		0x78,
-		0x39,
-		0xBA,
-		0xFB,
-		0x3C,
-		0x7D,
-		0xFE,
-		0xBF,
-	};
-
-	return map[id & 0x3f];
-}
-
-static inline uint8_t sllin_pid_to_id(uint8_t pid)
-{
-	return pid & 0x3f;
-}
-
-#define sllin_crc_start() 0
-#define sllin_crc_update1(crc, byte) (crc + byte)
-
-
-static inline unsigned sllin_crc_update(unsigned crc, uint8_t const * data, uint8_t bytes)
-{
-	for (unsigned i = 0; i < bytes; ++i) {
-		crc += data[i];
-	}
-
-	return crc;
-}
-
-static inline uint8_t sllin_crc_finalize(unsigned crc)
-{
-	unsigned factor = crc / 256;
-	crc -= factor * 255;
-
-	return (~crc) & 0xff;
-}
-
 
 
 __attribute__((noreturn)) extern void sllin_board_reset(void);
