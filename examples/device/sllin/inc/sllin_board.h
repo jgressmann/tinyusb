@@ -52,6 +52,7 @@ typedef struct _sllin_queue_element {
 	uint8_t type;
 	union {
 		struct {
+			uint32_t time_stamp_ms;
 			uint8_t id;
 			uint8_t crc;
 			uint8_t flags;

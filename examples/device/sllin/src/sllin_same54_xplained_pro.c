@@ -34,6 +34,7 @@
 #include <mcu.h>
 #include <bsp/board.h>
 
+#define lin_int_time_stamp_ms() ((xTaskGetTickCountFromISR() * (TickType_t)1000) / (TickType_t)configTICK_RATE_HZ)
 
 enum {
 	SLAVE_PROTO_STEP_RX_BREAK = 0,
@@ -675,6 +676,7 @@ SLLIN_RAMFUNC static void lin_int_master(uint8_t index)
 				}
 			} else {
 				lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
+				lin->rx_frame.lin_frame.time_stamp_ms = lin_int_time_stamp_ms();
 				sllin_lin_task_queue(index, &lin->rx_frame);
 				sllin_lin_task_notify_isr(index, 1);
 				lin_master_cleanup(lin);
@@ -702,6 +704,7 @@ tx:
 				LOG("ch%u TX=%x\n", index, byte);
 			} else {
 				// done
+				lin->rx_frame.lin_frame.time_stamp_ms = lin_int_time_stamp_ms();
 				sllin_lin_task_queue(index, &lin->rx_frame);
 				sllin_lin_task_notify_isr(index, 1);
 				lin_master_cleanup(lin);
@@ -727,6 +730,8 @@ tx:
 
 					lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
 				}
+
+				lin->rx_frame.lin_frame.time_stamp_ms = lin_int_time_stamp_ms();
 
 				sllin_lin_task_queue(index, &lin->rx_frame);
 				sllin_lin_task_notify_isr(index, 1);
@@ -827,7 +832,7 @@ tx:
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
 			// LOG("ch%u RX=%x\n", index, rx_byte);
 			if (rx_byte != lin->slave_frame_data[lin->rx_frame.lin_frame.id][lin->slave_rx_offset]) {
-				// LOG("ch%u offset=%u TX!=RX %x %x\n", index, lin->slave_rx_offset, lin->slave_frame_data[lin->rx_frame.lin_frame.id][lin->slave_rx_offset], rx_byte);
+				LOG("ch%u offset=%u TX!=RX %x %x\n", index, lin->slave_rx_offset, lin->slave_frame_data[lin->rx_frame.lin_frame.id][lin->slave_rx_offset], rx_byte);
 				lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
 			}
 
@@ -846,11 +851,12 @@ tx:
 				lin->rx_frame.lin_frame.data[lin->slave_rx_offset++] = rx_byte;
 			} else {
 				if (rx_byte != lin->slave_frame_crc[lin->rx_frame.lin_frame.id]) {
-					// LOG("ch%u crc TX!=RX %x %x\n", index, lin->slave_frame_crc[lin->rx_frame.lin_frame.id], rx_byte);
+					LOG("ch%u crc TX!=RX %x %x\n", index, lin->slave_frame_crc[lin->rx_frame.lin_frame.id], rx_byte);
 					lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
 				}
 
 				lin->rx_frame.lin_frame.crc = rx_byte;
+				lin->rx_frame.lin_frame.time_stamp_ms = lin_int_time_stamp_ms();
 
 				sllin_lin_task_queue(index, &lin->rx_frame);
 				sllin_lin_task_notify_isr(index, 1);

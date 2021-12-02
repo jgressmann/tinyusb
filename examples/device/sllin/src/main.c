@@ -69,6 +69,7 @@ static struct lin {
 	bool tx_full;
 	uint8_t rx_full;
 	bool enabled;
+	bool timestamps;
 } lins[SLLIN_BOARD_LIN_COUNT];
 
 int main(void)
@@ -417,6 +418,18 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		id = ((id >> 16) & 0xffff) ^ (id & 0xffff);
 		lin->tx_sl_offset = usnprintf((char *)lin->tx_sl_buffer, sizeof(lin->tx_sl_buffer), "N%x%c", id, SLLIN_OK_TERMINATOR);
 	} break;
+	case 'Z':
+		if (lin->enabled) {
+			LOG("ch%u refusing to change time stamp stetting when enabled\n", index);
+			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
+		} else if (lin->rx_sl_offset < 2) {
+			LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
+			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
+		} else {
+			lin->timestamps = !(lin->tx_sl_buffer[1] == '0');
+			LOG("ch%u time stamps %u\n", index, lin->timestamps);
+		}
+		break;
 	default:
 		LOG("ch%u unhandled command '%s'\n", index, lin->rx_sl_buffer);
 		lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
@@ -498,11 +511,25 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 					case SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME: {
 						uint16_t id = e->lin_frame.id;
 						uint32_t w = 0;
+						char time_stamp_str[8];
 						bool no_response = (e->lin_frame.flags & SLLIN_FRAME_FLAG_NO_RESPONSE) != 0;
 						bool crc_error = (e->lin_frame.flags & SLLIN_FRAME_FLAG_CRC_ERROR) != 0;
 
 						// LOG("ch%u LIN frame\n", index);
 						SLLIN_DEBUG_ASSERT(e->lin_frame.len <= 8);
+
+						if (lin->timestamps) {
+							int chars = usnprintf(time_stamp_str, sizeof(time_stamp_str), "%x", e->lin_frame.time_stamp_ms % 0xEA5F); // cf. http://www.can232.com/docs/canusb_manual.pdf, p. Zn cmd
+
+							SLLIN_DEBUG_ASSERT(chars > 0);
+
+							if (chars < 4) {
+								memmove(time_stamp_str + 4 - chars, time_stamp_str, chars);
+								for (int i = 0; i < chars; ++i) {
+									time_stamp_str[i] = '0';
+								}
+							}
+						}
 
 						if (no_response) {
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = 'r';
@@ -510,20 +537,34 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 4) & 0xf);
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 0) & 0xf);
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
+							if (lin->timestamps) {
+								memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
+								lin->tx_sl_offset += 4;
+							}
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 						} else if (crc_error) {
-							static const char can_crc_error_frame[] = "T2000000880000000800000000\r"; // CAN_ERR_PROT_LOC_CRC_SEQ
+							static const char can_crc_error_frame[] = "T2000000880000000800000000"; // CAN_ERR_PROT_LOC_CRC_SEQ
+
 							lin->tx_sl_offset = sizeof(can_crc_error_frame) - 1;
 							memcpy(lin->tx_sl_buffer, can_crc_error_frame, lin->tx_sl_offset);
+							if (lin->timestamps) {
+								memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
+								lin->tx_sl_offset += 4;
+							}
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 						} else {
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
-								lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 4) & 0xf);
-								lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 0) & 0xf);
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 4) & 0xf);
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 0) & 0xf);
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
 							for (unsigned i = 0; i < 8; ++i) {
 								lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] >> 4);
 								lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] & 0xf);
+							}
+							if (lin->timestamps) {
+								memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
+								lin->tx_sl_offset += 4;
 							}
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 						}
