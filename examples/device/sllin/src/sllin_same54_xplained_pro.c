@@ -747,7 +747,7 @@ tx:
 
 	if (unlikely(intflag & SERCOM_USART_INTFLAG_ERROR)) {
 		LOG("ch%u status=%x\n", index, s->USART.STATUS.reg);
-		s->USART.STATUS.reg = 0;
+		s->USART.STATUS.reg = ~0;
 		lin_master_cleanup(lin);
 	}
 }
@@ -869,7 +869,7 @@ tx:
 
 	if (intflag & SERCOM_USART_INTFLAG_ERROR) {
 		LOG("ch%u status=%x\n", index, s->USART.STATUS.reg);
-		s->USART.STATUS.reg = 0;
+		s->USART.STATUS.reg = ~0;
 		lin_slave_cleanup(lin);
 	}
 }
