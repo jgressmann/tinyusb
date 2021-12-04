@@ -46,19 +46,21 @@
 
 enum {
 	SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME,
+	SLLIN_QUEUE_ELEMENT_TYPE_COUNT,
 };
 
 typedef struct _sllin_queue_element {
 	uint8_t type;
 	union {
 		struct {
-			uint32_t time_stamp_ms;
+			uint16_t time_stamp_ms;
 			uint8_t id;
 			uint8_t crc;
 			uint8_t flags;
 			uint8_t len;
 			uint8_t data[8];
 		} lin_frame;
+		uint16_t time_stamp_ms;
 	};
 } sllin_queue_element;
 
@@ -93,6 +95,9 @@ SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_def(uint8_t index, uint32_t count);
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_isr(uint8_t index, uint32_t count);
 SLLIN_RAMFUNC extern void sllin_lin_task_queue(uint8_t index, sllin_queue_element const *element);
+
+extern uint16_t _sllin_time_stamp_ms;
+#define sllin_time_stamp_ms() __atomic_load_n(&_sllin_time_stamp_ms, __ATOMIC_ACQUIRE)
 
 
 #if defined(SAME54XPLAINEDPRO)

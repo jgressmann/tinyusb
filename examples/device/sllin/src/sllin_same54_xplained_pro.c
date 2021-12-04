@@ -34,8 +34,6 @@
 #include <mcu.h>
 #include <bsp/board.h>
 
-#define lin_int_time_stamp_ms() ((xTaskGetTickCountFromISR() * (TickType_t)1000) / (TickType_t)configTICK_RATE_HZ)
-
 enum {
 	SLAVE_PROTO_STEP_RX_BREAK = 0,
 	// SLAVE_PROTO_STEP_RX_SYNC,
@@ -378,52 +376,6 @@ static inline void lin_slave_cleanup(struct lin *lin)
 	lin->sercom->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 }
 
-static inline void lin_init(uint8_t index, uint16_t bitrate, bool master)
-{
-	struct lin *lin = &lins[index];
-	Sercom *sercom = lin->sercom;
-
-	lin->irq_handler = master ? &lin_int_master : &lin_int_slave;
-	lin->bitrate = bitrate;
-
-	sercom->USART.CTRLA.bit.SWRST = 1; /* reset and disable SERCOM -> enable configuration */
-	while (lin->sercom->USART.SYNCBUSY.bit.SWRST);
-
-	sercom->USART.CTRLA.reg  =
-		SERCOM_USART_CTRLA_SAMPR(1) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
-		SERCOM_USART_CTRLA_SAMPA(0) |
-		SERCOM_USART_CTRLA_FORM(master ? 0x2 : 0x4) | /* 0x3 LIN master, 0x4 LIN slave, ... */
-		SERCOM_USART_CTRLA_DORD | /* LSB first */
-		SERCOM_USART_CTRLA_MODE(1) | /* 0x0 USART with external clock, 0x1 USART with internal clock */
-		SERCOM_USART_CTRLA_RXPO(1) |
-		SERCOM_USART_CTRLA_TXPO(0);
-
-	sercom->USART.CTRLB.reg = /* RXEM = 0 -> receiver disabled, LINCMD = 0 -> normal USART transmission, SFDE = 0 -> start-of-frame detection disabled, SBMODE = 0 -> one stop bit, CHSIZE = 0 -> 8 bits */
-		SERCOM_USART_CTRLB_TXEN | /* transmitter enabled */
-		SERCOM_USART_CTRLB_RXEN | /* receiver enabled */
-		// SERCOM_USART_CTRLB_COLDEN; /* collision detection enabled */
-		0;
-
-	uint16_t baud = 48000000 / (16 * bitrate);
-	uint16_t frac = 48000000 / (2 * bitrate) - 8 * baud;
-	sercom->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
-
-	sercom->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
-	while (sercom->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
-
-	sercom->USART.INTENCLR.reg = ~0;
-
-	if (master) {
-		// RXC _must_ be enabled, else data get's stuck in register and we get errors
-		sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
-	} else {
-		// RXC _must_ be enabled, else data get's stuck in register and we get errors
-		sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
-
-		lin_slave_cleanup(lin);
-	}
-}
-
 static inline void usb_init(void)
 {
 	NVIC_SetPriority(USB_0_IRQn, configLIBRARY_LOWEST_INTERRUPT_PRIORITY);
@@ -497,9 +449,50 @@ __attribute__((noreturn)) extern void sllin_board_reset(void)
 
 extern void sllin_board_lin_init(uint8_t index, uint16_t bitrate, bool master)
 {
-	lin_init(index, bitrate, master);
-}
+	struct lin *lin = &lins[index];
+	Sercom *sercom = lin->sercom;
 
+	lin->irq_handler = master ? &lin_int_master : &lin_int_slave;
+	lin->bitrate = bitrate;
+	lin->master = master;
+
+	sercom->USART.CTRLA.bit.SWRST = 1; /* reset and disable SERCOM -> enable configuration */
+	while (lin->sercom->USART.SYNCBUSY.bit.SWRST);
+
+	sercom->USART.CTRLA.reg  =
+		SERCOM_USART_CTRLA_SAMPR(1) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
+		SERCOM_USART_CTRLA_SAMPA(0) |
+		SERCOM_USART_CTRLA_FORM(master ? 0x2 : 0x4) | /* 0x3 LIN master, 0x4 LIN slave, ... */
+		SERCOM_USART_CTRLA_DORD | /* LSB first */
+		SERCOM_USART_CTRLA_MODE(1) | /* 0x0 USART with external clock, 0x1 USART with internal clock */
+		SERCOM_USART_CTRLA_RXPO(1) |
+		SERCOM_USART_CTRLA_TXPO(0);
+
+	sercom->USART.CTRLB.reg = /* RXEM = 0 -> receiver disabled, LINCMD = 0 -> normal USART transmission, SFDE = 0 -> start-of-frame detection disabled, SBMODE = 0 -> one stop bit, CHSIZE = 0 -> 8 bits */
+		SERCOM_USART_CTRLB_TXEN | /* transmitter enabled */
+		SERCOM_USART_CTRLB_RXEN | /* receiver enabled */
+		// SERCOM_USART_CTRLB_COLDEN; /* collision detection enabled */
+		0;
+
+	uint16_t baud = 48000000 / (16 * bitrate);
+	uint16_t frac = 48000000 / (2 * bitrate) - 8 * baud;
+	sercom->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
+
+	sercom->USART.INTENCLR.reg = ~0;
+
+	if (master) {
+		// RXC _must_ be enabled, else data get's stuck in register and we get errors
+		sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
+	} else {
+		// RXC _must_ be enabled, else data get's stuck in register and we get errors
+		sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
+
+		lin_slave_cleanup(lin);
+	}
+
+	sercom->USART.CTRLA.bit.ENABLE = 1;
+	while (sercom->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
+}
 
 SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	uint8_t index,
@@ -638,6 +631,7 @@ SLLIN_RAMFUNC static inline void lin_int_master_response_timeout(uint8_t index)
 	__atomic_thread_fence(__ATOMIC_ACQUIRE);
 
 	lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_NO_RESPONSE;
+	lin->rx_frame.lin_frame.time_stamp_ms = sllin_time_stamp_ms();
 
 	sllin_lin_task_queue(index, &lin->rx_frame);
 	sllin_lin_task_notify_isr(index, 1);
@@ -676,7 +670,7 @@ SLLIN_RAMFUNC static void lin_int_master(uint8_t index)
 				}
 			} else {
 				lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
-				lin->rx_frame.lin_frame.time_stamp_ms = lin_int_time_stamp_ms();
+				lin->rx_frame.lin_frame.time_stamp_ms = sllin_time_stamp_ms();
 				sllin_lin_task_queue(index, &lin->rx_frame);
 				sllin_lin_task_notify_isr(index, 1);
 				lin_master_cleanup(lin);
@@ -704,7 +698,7 @@ tx:
 				LOG("ch%u TX=%x\n", index, byte);
 			} else {
 				// done
-				lin->rx_frame.lin_frame.time_stamp_ms = lin_int_time_stamp_ms();
+				lin->rx_frame.lin_frame.time_stamp_ms = sllin_time_stamp_ms();
 				sllin_lin_task_queue(index, &lin->rx_frame);
 				sllin_lin_task_notify_isr(index, 1);
 				lin_master_cleanup(lin);
@@ -731,7 +725,7 @@ tx:
 					lin->rx_frame.lin_frame.flags |= SLLIN_FRAME_FLAG_CRC_ERROR;
 				}
 
-				lin->rx_frame.lin_frame.time_stamp_ms = lin_int_time_stamp_ms();
+				lin->rx_frame.lin_frame.time_stamp_ms = sllin_time_stamp_ms();
 
 				sllin_lin_task_queue(index, &lin->rx_frame);
 				sllin_lin_task_notify_isr(index, 1);
@@ -856,7 +850,7 @@ tx:
 				}
 
 				lin->rx_frame.lin_frame.crc = rx_byte;
-				lin->rx_frame.lin_frame.time_stamp_ms = lin_int_time_stamp_ms();
+				lin->rx_frame.lin_frame.time_stamp_ms = sllin_time_stamp_ms();
 
 				sllin_lin_task_queue(index, &lin->rx_frame);
 				sllin_lin_task_notify_isr(index, 1);

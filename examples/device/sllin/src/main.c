@@ -36,6 +36,7 @@
 enum {
 	SLLIN_ERROR_TERMINATOR = 7,
 	SLLIN_OK_TERMINATOR = 13,
+	SLLIN_QUEUE_ELEMENT_TYPE_TIME_STAMP = SLLIN_QUEUE_ELEMENT_TYPE_COUNT,
 };
 
 
@@ -67,9 +68,12 @@ static struct lin {
 
 	bool master;
 	bool tx_full;
+
 	uint8_t rx_full;
 	bool enabled;
-	bool timestamps;
+	bool report_time_per_frame;
+	bool report_time_periodically;
+	int32_t last_ts;
 } lins[SLLIN_BOARD_LIN_COUNT];
 
 int main(void)
@@ -249,6 +253,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 	case 'C':
 		LOG("ch%u close\n", index);
 		lin->enabled = false;
+		tud_cdc_n_write_clear(index);
 		break;
 	case 't': // master: tx, slave: store response
 		if (likely(lin->enabled)) {
@@ -273,16 +278,18 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 					unsigned crc = sllin_crc_start();
 					uint8_t flags = 0;
 
-					for (unsigned i = 0, j = 5; i < frame_len; ++i, j += 2) {
-						data[i] = (char_to_nibble(lin->rx_sl_buffer[j]) << 4) | char_to_nibble(lin->rx_sl_buffer[j+1]);
-					}
-
 					if (enhanced_crc) {
-						crc = sllin_crc_update(crc, &pid, 1);
+						crc = sllin_crc_update1(crc, pid);
 						flags |= SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM;
 					}
 
-					crc = sllin_crc_update(crc, data, frame_len);
+					for (unsigned i = 0, j = 5; i < frame_len; ++i, j += 2) {
+						uint8_t byte = (char_to_nibble(lin->rx_sl_buffer[j]) << 4) | char_to_nibble(lin->rx_sl_buffer[j+1]);
+
+						data[i] = byte;
+						crc = sllin_crc_update1(crc, byte);
+					}
+
 					crc = sllin_crc_finalize(crc);
 
 					LOG("ch%u %s -> id=%x len=%u crc=%x flags=%x\n", index, lin->rx_sl_buffer, id, frame_len, crc, flags);
@@ -405,8 +412,17 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 			LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
 			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 		} else {
-			lin->timestamps = !(lin->tx_sl_buffer[1] == '0');
-			LOG("ch%u time stamps %u\n", index, lin->timestamps);
+			lin->report_time_per_frame = !(lin->rx_sl_buffer[1] == '0');
+			LOG("ch%u report time stamp per frame %u\n", index, lin->report_time_per_frame);
+		}
+		break;
+	case 'Y':
+		if (lin->rx_sl_offset < 2) {
+			LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
+			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
+		} else {
+			lin->report_time_periodically = !(lin->rx_sl_buffer[1] == '0');
+			LOG("ch%u report time stamp periodically %u\n", index, lin->report_time_periodically);
 		}
 		break;
 	default:
@@ -415,6 +431,39 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		break;
 	}
 }
+
+static inline void sllin_make_time_stamp_string(char *buffer, size_t size, uint16_t time_stamp_ms)
+{
+	int chars = usnprintf(buffer, size, "%x", time_stamp_ms);
+
+	SLLIN_DEBUG_ASSERT(chars > 0 && chars <= 4);
+
+	switch (chars) {
+	case 3:
+		buffer[4] = 0;
+		buffer[3] = buffer[2];
+		buffer[2] = buffer[1];
+		buffer[1] = buffer[0];
+		buffer[0] = '0';
+		break;
+	case 2:
+		buffer[4] = 0;
+		buffer[3] = buffer[1];
+		buffer[2] = buffer[0];
+		buffer[1] = '0';
+		buffer[0] = '0';
+		break;
+	case 1:
+		buffer[4] = 0;
+		buffer[3] = buffer[0];
+		buffer[2] = '0';
+		buffer[1] = '0';
+		buffer[0] = '0';
+		break;
+	}
+}
+
+
 
 SLLIN_RAMFUNC static void tusb_device_task(void* param)
 {
@@ -494,20 +543,25 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 						bool no_response = (e->lin_frame.flags & SLLIN_FRAME_FLAG_NO_RESPONSE) != 0;
 						bool crc_error = (e->lin_frame.flags & SLLIN_FRAME_FLAG_CRC_ERROR) != 0;
 
-						// LOG("ch%u LIN frame\n", index);
 						SLLIN_DEBUG_ASSERT(e->lin_frame.len <= 8);
 
-						if (lin->timestamps) {
-							int chars = usnprintf(time_stamp_str, sizeof(time_stamp_str), "%x", e->lin_frame.time_stamp_ms % 0xEA5F); // cf. http://www.can232.com/docs/canusb_manual.pdf, p. Zn cmd
+						if (lin->master) {
+							sllin_make_time_stamp_string(time_stamp_str, sizeof(time_stamp_str), e->lin_frame.time_stamp_ms);
+							LOG("ch%u ts=%s\n", index, time_stamp_str);
+						}
 
-							SLLIN_DEBUG_ASSERT(chars > 0);
+						if (-1 != lin->last_ts) {
+							uint16_t delta = e->lin_frame.time_stamp_ms - lin->last_ts;
 
-							if (chars < 4) {
-								memmove(time_stamp_str + 4 - chars, time_stamp_str, chars);
-								for (int i = 0; i < chars; ++i) {
-									time_stamp_str[i] = '0';
-								}
+							if (delta >= UINT16_MAX / 2) {
+								LOG("ch%u last=%x curr=%x\n", index, lin->last_ts, e->lin_frame.time_stamp_ms);
 							}
+						}
+
+						lin->last_ts = e->lin_frame.time_stamp_ms;
+
+						if (lin->report_time_per_frame) {
+							sllin_make_time_stamp_string(time_stamp_str, sizeof(time_stamp_str), e->lin_frame.time_stamp_ms);
 						}
 
 						if (no_response) {
@@ -516,7 +570,7 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 4) & 0xf);
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 0) & 0xf);
 							lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
-							if (lin->timestamps) {
+							if (lin->report_time_per_frame) {
 								memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
 								lin->tx_sl_offset += 4;
 							}
@@ -526,7 +580,7 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 
 							lin->tx_sl_offset = sizeof(can_crc_error_frame) - 1;
 							memcpy(lin->tx_sl_buffer, can_crc_error_frame, lin->tx_sl_offset);
-							if (lin->timestamps) {
+							if (lin->report_time_per_frame) {
 								memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
 								lin->tx_sl_offset += 4;
 							}
@@ -541,7 +595,7 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 								lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] >> 4);
 								lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] & 0xf);
 							}
-							if (lin->timestamps) {
+							if (lin->report_time_per_frame) {
 								memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
 								lin->tx_sl_offset += 4;
 							}
@@ -564,6 +618,31 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 							written = true;
 						}
 
+					} break;
+					case SLLIN_QUEUE_ELEMENT_TYPE_TIME_STAMP: {
+						if (lin->report_time_periodically) {
+							char time_stamp_str[8];
+							uint32_t w = 0;
+
+							sllin_make_time_stamp_string(time_stamp_str, sizeof(time_stamp_str), e->lin_frame.time_stamp_ms);
+
+							lin->tx_sl_offset = usnprintf((char*)lin->tx_sl_buffer, sizeof(lin->tx_sl_buffer), "Y%s\r", time_stamp_str);
+							lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
+
+							w = tud_cdc_n_write(index, lin->tx_sl_buffer, lin->tx_sl_offset);
+
+							if (unlikely(w != lin->tx_sl_offset)) {
+								lin->tx_full = true;
+								LOG("ch%u TXF\n", index);
+							}
+
+							lin->tx_sl_offset = 0;
+
+							if (!written) {
+								xTaskNotifyGive(lin->usb_task_handle);
+								written = true;
+							}
+						}
 					} break;
 					default:
 						SLLIN_ASSERT(false && "unhandled queue element type");
@@ -588,6 +667,10 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 				lin->enabled = false;
 				lin->tx_full = false;
 				lin->rx_full = false;
+				lin->report_time_per_frame = false;
+				lin->report_time_periodically = false;
+				lin->last_ts = -1;
+				// clear queue
 				__atomic_store_n(&lin->rx_fifo_gi, 0, __ATOMIC_RELEASE);
 				__atomic_store_n(&lin->rx_fifo_pi, 0, __ATOMIC_RELEASE);
 
@@ -673,5 +756,32 @@ SLLIN_RAMFUNC extern void sllin_lin_task_notify_isr(uint8_t index, uint32_t coun
 		// LOG("ch%u notify\n", index);
 		vTaskNotifyGiveFromISR(lin->usb_task_handle, &xHigherPriorityTaskWoken);
 		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+	}
+}
+
+uint16_t _sllin_time_stamp_ms;
+
+SLLIN_RAMFUNC extern void vApplicationTickHook(void)
+{
+	_Static_assert(1000 == configTICK_RATE_HZ, "fix this function");
+
+	uint16_t now = __atomic_load_n(&_sllin_time_stamp_ms, __ATOMIC_ACQUIRE);
+
+	if (unlikely((now % 1024) == 0)) {
+		sllin_queue_element e;
+		e.type = SLLIN_QUEUE_ELEMENT_TYPE_TIME_STAMP;
+		e.time_stamp_ms = now;
+
+		for (uint8_t i = 0; i < TU_ARRAY_SIZE(lins); ++i) {
+			sllin_lin_task_queue(i, &e);
+			sllin_lin_task_notify_isr(i, 1);
+		}
+	}
+
+	// update, wrap around at 1 [s] (60000 [ms])
+	if (unlikely(now == 0xEA5F)) {
+		__atomic_store_n(&_sllin_time_stamp_ms, 0, __ATOMIC_RELEASE);
+	} else {
+		__atomic_store_n(&_sllin_time_stamp_ms, now + 1, __ATOMIC_RELEASE);
 	}
 }

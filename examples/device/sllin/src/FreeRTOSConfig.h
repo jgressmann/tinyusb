@@ -65,7 +65,7 @@ __attribute__((noreturn)) extern void sllin_assert_failed(char const *msg);
 #    define configUSE_PORT_OPTIMISED_TASK_SELECTION 1
 #endif
 #define configCPU_CLOCK_HZ                      SystemCoreClock
-#define configTICK_RATE_HZ                      ( 1000 )
+#define configTICK_RATE_HZ                      ( 1000 )   // change here likely requires change in 1s timer code
 #define configMAX_PRIORITIES                    ( 5 )
 #define configMINIMAL_STACK_SIZE                ( 128 )
 #define configTOTAL_HEAP_SIZE                   ( 0*1024 ) // dynamic is not used
@@ -87,7 +87,7 @@ __attribute__((noreturn)) extern void sllin_assert_failed(char const *msg);
 
 /* Hook function related definitions. */
 #define configUSE_IDLE_HOOK                    0
-#define configUSE_TICK_HOOK                    0
+#define configUSE_TICK_HOOK                    1 // to generate 1s time stamp events
 #define configUSE_MALLOC_FAILED_HOOK           0 // cause nested extern warning
 #define configCHECK_FOR_STACK_OVERFLOW         2
 
