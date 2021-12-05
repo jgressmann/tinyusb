@@ -5,7 +5,7 @@
 
 ## What is this?
 
-This is project slLIN. A LIN protocol inspired by Linux' slcan.
+This is project slLIN. A LIN protocol inspired by Lawicel' serial line CAN protocol.
 
 ## How do I use it?
 
@@ -49,13 +49,13 @@ cangen -I b slcan0 -R  -L 4 -n 1 -x
 
 If a slave responds to the header, a CAN frame will be echoed. If the request times out the RTR frame will be echoed.
 
-## slcan Protocol
+## Serial Line CAN (slcan) Protocol
 
 The protocol for CAN is decribed [here](http://www.can232.com/docs/canusb_manual.pdf).
 
-## slLIN Protocol
+## Serial Line LIN (slLIN) Protocol
 
-slLIN uses slcan's protocol withe a few modifications for LIN:
+slLIN mostly follows Lawice's protocol with a few modifications for LIN:
 
 | Command&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;                                | Direction&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |  Description                                   |
 |----------------------------------------|----------------|------------------------------------------------|
@@ -69,7 +69,6 @@ slLIN uses slcan's protocol withe a few modifications for LIN:
 | `n\r`                                  | both           | Request device name                            |
 | `Yn\r`</br>(where n is 0 or 1)         | host to device | Enable / disable periodic time stamp transmission. If enabled, the device sends the current time stamp approx. once per second as `YTTTT\r`. The format of the time stamp follows the Lawicel format, c.f. documentation of `Zn\r` command. |
 | `shhhh\r`</br>(hex values)             | host to device | Set device baud rate, e.g  `4b00` sets 19200 Baud/s |
-| `L\r`                                  | host to device | Open device in slave mode |
 
 
 
