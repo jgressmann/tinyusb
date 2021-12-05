@@ -434,33 +434,16 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 
 static inline void sllin_make_time_stamp_string(char *buffer, size_t size, uint16_t time_stamp_ms)
 {
-	int chars = usnprintf(buffer, size, "%x", time_stamp_ms);
+	SLLIN_DEBUG_ASSERT(size >= 5);
 
-	SLLIN_DEBUG_ASSERT(chars > 0 && chars <= 4);
-
-	switch (chars) {
-	case 3:
-		buffer[4] = 0;
-		buffer[3] = buffer[2];
-		buffer[2] = buffer[1];
-		buffer[1] = buffer[0];
-		buffer[0] = '0';
-		break;
-	case 2:
-		buffer[4] = 0;
-		buffer[3] = buffer[1];
-		buffer[2] = buffer[0];
-		buffer[1] = '0';
-		buffer[0] = '0';
-		break;
-	case 1:
-		buffer[4] = 0;
-		buffer[3] = buffer[0];
-		buffer[2] = '0';
-		buffer[1] = '0';
-		buffer[0] = '0';
-		break;
-	}
+	buffer[4] = 0;
+	buffer[3] = nibble_to_char(time_stamp_ms);
+	time_stamp_ms >>= 4;
+	buffer[2] = nibble_to_char(time_stamp_ms);
+	time_stamp_ms >>= 4;
+	buffer[1] = nibble_to_char(time_stamp_ms);
+	time_stamp_ms >>= 4;
+	buffer[0] = nibble_to_char(time_stamp_ms);
 }
 
 
