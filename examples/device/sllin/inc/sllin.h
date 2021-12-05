@@ -27,6 +27,10 @@
 
 #include <stdint.h>
 
+enum {
+	SLLIN_ID_FLAG_ENHANCED_CHECKSUM = 0x40, // use CAN ID free bits to encode checksum type
+};
+
 static inline uint8_t sllin_id_to_pid(uint8_t id)
 {
 	static const uint8_t map[] = {
