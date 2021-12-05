@@ -454,7 +454,6 @@ extern void sllin_board_lin_init(uint8_t index, uint16_t bitrate, bool master)
 
 	lin->irq_handler = master ? &lin_int_master : &lin_int_slave;
 	lin->bitrate = bitrate;
-	lin->master = master;
 
 	sercom->USART.CTRLA.bit.SWRST = 1; /* reset and disable SERCOM -> enable configuration */
 	while (lin->sercom->USART.SYNCBUSY.bit.SWRST);
