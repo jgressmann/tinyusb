@@ -28,7 +28,9 @@
 #include <stdint.h>
 
 enum {
-	SLLIN_ID_FLAG_ENHANCED_CHECKSUM = 0x40, // use CAN ID free bits to encode checksum type
+	// use CAN ID free bits to encode information about the frame
+	SLLIN_ID_FLAG_ENHANCED_CHECKSUM = 0x40, // enhanced checksum
+	SLLIN_ID_FLAG_MASTER_TX =         0x80, // use CAN ID free bits to encode checksum type
 };
 
 static inline uint8_t sllin_id_to_pid(uint8_t id)

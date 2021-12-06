@@ -446,7 +446,100 @@ static inline void sllin_make_time_stamp_string(char *buffer, size_t size, uint1
 	buffer[0] = nibble_to_char(time_stamp_ms);
 }
 
+SLLIN_RAMFUNC static inline void process_queue(uint8_t index, sllin_queue_element *e)
+{
+	struct lin *lin = &lins[index];
 
+	switch (e->type) {
+	case SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME: {
+		uint16_t id = e->lin_frame.id;
+		uint8_t id1_nibble = 0;
+		char time_stamp_str[8];
+		const bool no_response = (e->lin_frame.flags & SLLIN_FRAME_FLAG_NO_RESPONSE) != 0;
+		const bool crc_error = (e->lin_frame.flags & SLLIN_FRAME_FLAG_CRC_ERROR) != 0;
+		const bool master_tx = (e->lin_frame.flags & SLLIN_FRAME_FLAG_MASTER_TX) != 0;
+		const bool enhanced_checkum = (e->lin_frame.flags & SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM) != 0;
+
+
+		id1_nibble |= (SLLIN_ID_FLAG_ENHANCED_CHECKSUM >> 4) * enhanced_checkum;
+		id1_nibble |= (SLLIN_ID_FLAG_MASTER_TX >> 4) * master_tx;
+
+		SLLIN_DEBUG_ASSERT(e->lin_frame.len <= 8);
+
+		if (lin->master) {
+			sllin_make_time_stamp_string(time_stamp_str, sizeof(time_stamp_str), e->lin_frame.time_stamp_ms);
+			LOG("ch%u ts=%s\n", index, time_stamp_str);
+		}
+
+		if (-1 != lin->last_ts) {
+			uint16_t delta = e->lin_frame.time_stamp_ms - lin->last_ts;
+
+			if (delta >= UINT16_MAX / 2) {
+				LOG("ch%u last=%x curr=%x\n", index, lin->last_ts, e->lin_frame.time_stamp_ms);
+			}
+		}
+
+		lin->last_ts = e->lin_frame.time_stamp_ms;
+
+		if (no_response) {
+			id1_nibble |= nibble_to_char(id >> 4);
+
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = 'r';
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = id1_nibble;
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
+
+			if (lin->report_time_per_frame) {
+				sllin_make_time_stamp_string((char*)&lin->tx_sl_buffer[lin->tx_sl_offset], sizeof(lin->tx_sl_buffer) - lin->tx_sl_offset, e->lin_frame.time_stamp_ms);
+				lin->tx_sl_offset += 4;
+			}
+
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
+		} else if (crc_error) {
+			static const char can_crc_error_frame[] = "T2000000880000000800000000"; // CAN_ERR_PROT_LOC_CRC_SEQ
+
+			lin->tx_sl_offset = sizeof(can_crc_error_frame) - 1;
+			memcpy(lin->tx_sl_buffer, can_crc_error_frame, lin->tx_sl_offset);
+			if (lin->report_time_per_frame) {
+				memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
+				lin->tx_sl_offset += 4;
+			}
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
+		} else {
+			id1_nibble |= nibble_to_char(id >> 4);
+
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = id1_nibble;
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
+
+			for (unsigned i = 0; i < e->lin_frame.len; ++i) {
+				lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] >> 4);
+				lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i]);
+			}
+
+			if (lin->report_time_per_frame) {
+				sllin_make_time_stamp_string((char*)&lin->tx_sl_buffer[lin->tx_sl_offset], sizeof(lin->tx_sl_buffer) - lin->tx_sl_offset, e->lin_frame.time_stamp_ms);
+				lin->tx_sl_offset += 4;
+			}
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
+		}
+	} break;
+	case SLLIN_QUEUE_ELEMENT_TYPE_TIME_STAMP: {
+		if (lin->report_time_periodically) {
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = 'Y';
+			sllin_make_time_stamp_string((char*)&lin->tx_sl_buffer[lin->tx_sl_offset], sizeof(lin->tx_sl_buffer) - lin->tx_sl_offset, e->lin_frame.time_stamp_ms);
+			lin->tx_sl_offset += 4;
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
+		}
+	} break;
+	default:
+		SLLIN_ASSERT(false && "unhandled queue element type");
+		break;
+	}
+}
 
 SLLIN_RAMFUNC static void tusb_device_task(void* param)
 {
@@ -518,76 +611,10 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 					uint8_t fifo_index = gi % TU_ARRAY_SIZE(lin->rx_fifo);
 					sllin_queue_element *e = &lin->rx_fifo[fifo_index];
 
-					switch (e->type) {
-					case SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME: {
-						uint16_t id = e->lin_frame.id;
-						uint32_t w = 0;
-						char time_stamp_str[8];
-						bool no_response = (e->lin_frame.flags & SLLIN_FRAME_FLAG_NO_RESPONSE) != 0;
-						bool crc_error = (e->lin_frame.flags & SLLIN_FRAME_FLAG_CRC_ERROR) != 0;
+					process_queue(index, e);
 
-						SLLIN_DEBUG_ASSERT(e->lin_frame.len <= 8);
-
-						if (lin->master) {
-							sllin_make_time_stamp_string(time_stamp_str, sizeof(time_stamp_str), e->lin_frame.time_stamp_ms);
-							LOG("ch%u ts=%s\n", index, time_stamp_str);
-						}
-
-						if (-1 != lin->last_ts) {
-							uint16_t delta = e->lin_frame.time_stamp_ms - lin->last_ts;
-
-							if (delta >= UINT16_MAX / 2) {
-								LOG("ch%u last=%x curr=%x\n", index, lin->last_ts, e->lin_frame.time_stamp_ms);
-							}
-						}
-
-						lin->last_ts = e->lin_frame.time_stamp_ms;
-
-						if (lin->report_time_per_frame) {
-							sllin_make_time_stamp_string(time_stamp_str, sizeof(time_stamp_str), e->lin_frame.time_stamp_ms);
-						}
-
-						if (no_response) {
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = 'r';
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 4) & 0xf);
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 0) & 0xf);
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
-							if (lin->report_time_per_frame) {
-								memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
-								lin->tx_sl_offset += 4;
-							}
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
-						} else if (crc_error) {
-							static const char can_crc_error_frame[] = "T2000000880000000800000000"; // CAN_ERR_PROT_LOC_CRC_SEQ
-
-							lin->tx_sl_offset = sizeof(can_crc_error_frame) - 1;
-							memcpy(lin->tx_sl_buffer, can_crc_error_frame, lin->tx_sl_offset);
-							if (lin->report_time_per_frame) {
-								memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
-								lin->tx_sl_offset += 4;
-							}
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
-						} else {
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 4) & 0xf);
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char((id >> 0) & 0xf);
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
-							for (unsigned i = 0; i < 8; ++i) {
-								lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] >> 4);
-								lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] & 0xf);
-							}
-							if (lin->report_time_per_frame) {
-								memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
-								lin->tx_sl_offset += 4;
-							}
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
-						}
-
-
-
-						w = tud_cdc_n_write(index, lin->tx_sl_buffer, lin->tx_sl_offset);
+					if (likely(lin->tx_sl_offset)) {
+						uint32_t w = tud_cdc_n_write(index, lin->tx_sl_buffer, lin->tx_sl_offset);
 
 						if (unlikely(w != lin->tx_sl_offset)) {
 							lin->tx_full = true;
@@ -600,36 +627,6 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 							xTaskNotifyGive(lin->usb_task_handle);
 							written = true;
 						}
-
-					} break;
-					case SLLIN_QUEUE_ELEMENT_TYPE_TIME_STAMP: {
-						if (lin->report_time_periodically) {
-							char time_stamp_str[8];
-							uint32_t w = 0;
-
-							sllin_make_time_stamp_string(time_stamp_str, sizeof(time_stamp_str), e->lin_frame.time_stamp_ms);
-
-							lin->tx_sl_offset = usnprintf((char*)lin->tx_sl_buffer, sizeof(lin->tx_sl_buffer), "Y%s\r", time_stamp_str);
-							lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
-
-							w = tud_cdc_n_write(index, lin->tx_sl_buffer, lin->tx_sl_offset);
-
-							if (unlikely(w != lin->tx_sl_offset)) {
-								lin->tx_full = true;
-								LOG("ch%u TXF\n", index);
-							}
-
-							lin->tx_sl_offset = 0;
-
-							if (!written) {
-								xTaskNotifyGive(lin->usb_task_handle);
-								written = true;
-							}
-						}
-					} break;
-					default:
-						SLLIN_ASSERT(false && "unhandled queue element type");
-						break;
 					}
 
 					__atomic_store_n(&lin->rx_fifo_gi, gi + 1, __ATOMIC_RELEASE);

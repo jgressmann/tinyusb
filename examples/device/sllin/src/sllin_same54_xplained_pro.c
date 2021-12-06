@@ -526,7 +526,7 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 		lin->master_tx_data[len] = crc;
 
 		lin->tx_pi = len + 1;
-
+		flags |= SLLIN_FRAME_FLAG_MASTER_TX;
 	} else { // header only
 		if (flags & SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM) {
 			lin->master_crc = sllin_crc_update1(lin->master_crc, pid);
