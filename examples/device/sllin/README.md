@@ -77,4 +77,5 @@ slLIN used the unused bits in the CAN ID to transmit information on the frame.
 | Bitmask | Description |
 |---------|-------
 | `0x40`  | Flag. Frame uses enhanced checksum |
+| `0x80`  | Flag. Data frame sent by master |
 
