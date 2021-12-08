@@ -234,16 +234,16 @@ uint8_t const * tud_descriptor_bos_cb(void)
 // array of pointer to string descriptors
 static char const* string_desc_arr [] =
 {
-	(const char[]) { 0x09, 0x04 },                          // 0: is supported language is English (0x0409)
-	SC_BOARD_USB_MANUFACTURER_STRING,                       // 1: Manufacturer
-	SC_BOARD_NAME " " SC_NAME " (%s)",                      // 2: Product
-	"%s",                                                   // 3: Serial
-	SC_BOARD_NAME " " SC_NAME " (%s) CAN ch0",
+	(const char[]) { 0x09, 0x04 },              // 0: is supported language is English (0x0409)
+	SC_BOARD_USB_MANUFACTURER_STRING,           // 1: Manufacturer
+	"%s " SC_NAME " (%s)",                      // 2: Product
+	"%s%s",                                     // 3: Serial
+	"%s " SC_NAME " (%s) CAN ch0",
 #if SC_BOARD_CAN_COUNT > 1
-	SC_BOARD_NAME " " SC_NAME " (%s) CAN ch1",
+	"%s " SC_NAME " (%s) CAN ch1",
 #endif
 #if CFG_TUD_DFU_RUNTIME
-	SC_BOARD_NAME " " SC_NAME " (%s) DFU",
+	"%s " SC_NAME " (%s) DFU",
 #endif
 };
 
@@ -269,12 +269,22 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 		char zero_padded[32]; // 0-pad serial in case it has leading zeros
 		int serial_chars = 0;
 		int chars = 0;
+		char const* board_name = "";
+
+		if (index != 3) {
+			board_name = sc_board_name();
+		}
 
 		memset(zero_padded, '0', 8);
 		serial_chars = usnprintf(&zero_padded[8], 24, "%x", sc_board_identifier());
 		SC_DEBUG_ASSERT(serial_chars >= 0 && serial_chars <= 8);
 
-		chars = usnprintf(string_buffer, sizeof(string_buffer), string_desc_arr[index], &zero_padded[serial_chars]);
+		chars = usnprintf(
+				string_buffer,
+				sizeof(string_buffer),
+				string_desc_arr[index],
+				board_name,
+				&zero_padded[serial_chars]);
 
 		// convert to UTF-16
 		for (int i = 0; i < chars; ++i) {

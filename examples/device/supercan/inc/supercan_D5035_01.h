@@ -40,7 +40,7 @@
 #define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
 #define SC_BOARD_USB_MANUFACTURER_STRING "2guys"
 #define SC_BOARD_CAN_COUNT 2
-#define SC_BOARD_NAME BOARD_NAME " R" SC_DEBUG_STR(HWREV)
+#define SC_BOARD_NAME BOARD_NAME
 
 enum {
 	SC_BOARD_DEBUG_DEFAULT,
@@ -71,6 +71,9 @@ enum {
 
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status);
+
+#undef sc_board_name
+extern char const* sc_board_name(void);
 
 #include <supercan_same5x.h>
 

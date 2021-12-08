@@ -243,6 +243,7 @@ static void move_vector_table_to_ram(void)
 {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wstringop-overflow"
+#pragma GCC diagnostic ignored "-Warray-bounds"
 	void* vectors_ram = (void*)(uint32_t)&_svectors;
 
 	memcpy(vectors_ram, (void*)SCB->VTOR, MCU_VECTOR_TABLE_ALIGNMENT);
@@ -270,16 +271,14 @@ static inline void init_clock(void)
 	 * This means we are running off of the 48 MHz FLL.
 	 */
 
-	/* configure XOSC0 for a 16MHz crystal connected to XIN0/XOUT0 */
+	/* configure XOSC0 for a 16MHz crystal  / oscillator connected to XIN0/XOUT0 */
 	OSCCTRL->XOSCCTRL[0].reg =
 		OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
 		OSCCTRL_XOSCCTRL_RUNSTDBY |
 		OSCCTRL_XOSCCTRL_ENALC |
 		OSCCTRL_XOSCCTRL_IMULT(4) |
 		OSCCTRL_XOSCCTRL_IPTAT(3) |
-#if HWREV < 5
 		OSCCTRL_XOSCCTRL_XTALEN |
-#endif
 		OSCCTRL_XOSCCTRL_ENABLE;
 	while(0 == OSCCTRL->STATUS.bit.XOSCRDY0);
 
@@ -401,10 +400,33 @@ static inline void init_usb(void)
 	gpio_set_pin_function(PIN_PA25, PINMUX_PA25H_USB_DP);
 }
 
+static uint8_t rev;
+
+static inline void rev_init(void)
+{
+	// PA07 is a configuration pin which get's pulled down for hw. rev. 5 or better
+	// configure for input
+	PORT->Group[0].DIRCLR.reg = 1u << 7;
+	PORT->Group[0].PINCFG[7].reg = PORT_PINCFG_PULLEN | PORT_PINCFG_INEN;
+	// set the pull up (line above only enables, c.f. DS60001507E-page 888f)
+	PORT->Group[0].OUTSET.reg = 1u << 7;
+
+	if (PORT->Group[0].IN.reg & (1u << 7)) {
+		// external crystal
+		rev = 3;
+		LOG("PA07=1\n");
+	} else {
+		// external oscillator
+		rev = 5;
+		LOG("PA07=0\n");
+	}
+}
+
 extern void sc_board_init_begin(void)
 {
 	init_clock();
 	uart_init();
+	rev_init();
 
 	LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
 	move_vector_table_to_ram();
@@ -457,6 +479,15 @@ extern void sc_board_init_end(void)
 #if SUPERDFU_APP
 	dfu_app_watchdog_disable();
 #endif
+}
+
+extern char const* sc_board_name(void)
+{
+	if (rev >= 5) {
+		return SC_BOARD_NAME " OSC";
+	}
+
+	return SC_BOARD_NAME " XTAL";
 }
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)

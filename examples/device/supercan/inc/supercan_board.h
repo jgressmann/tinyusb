@@ -111,6 +111,7 @@ typedef struct _sc_can_status {
 
 __attribute__((noreturn)) extern void sc_board_reset(void);
 extern uint32_t sc_board_identifier(void);
+#define sc_board_name() SC_BOARD_NAME
 extern void sc_board_init_begin(void);
 extern void sc_board_init_end(void);
 extern void sc_board_led_set(uint8_t index, bool on);
