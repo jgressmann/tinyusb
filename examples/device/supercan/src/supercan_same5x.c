@@ -50,7 +50,7 @@ void same5x_can_configure(struct same5x_can *c)
 	m_can_conf_begin(can);
 
 	can->CCCR.bit.EFBI = 1; // enable edge filtering
-	can->CCCR.bit.BRSE = 1; // enable CAN-FD bitrate switching (only effective on CAN-FD mode if configured)
+	can->CCCR.bit.BRSE = 1; // enable CAN-FD bitrate switching (only effective in CAN-FD mode if configured)
 
 	if (c->features & SC_FEATURE_FLAG_MON_MODE) {
 		can->CCCR.bit.MON = 1;
