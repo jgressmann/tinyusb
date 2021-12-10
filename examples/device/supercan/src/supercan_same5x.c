@@ -190,7 +190,6 @@ SC_RAMFUNC static bool can_poll(uint8_t index, uint32_t * const events, uint32_t
 
 SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const events, uint32_t tsc)
 {
-	// SC_ISR_ASSERT(index < TU_ARRAY_SIZE(same5x_cans));
 	SC_DEBUG_ASSERT(events);
 
 	struct same5x_can *can = &same5x_cans[index];
@@ -198,19 +197,42 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 	CAN_PSR_Type current_psr = can->m_can->PSR; // always read, sets NC
 	CAN_PSR_Type prev_psr = can->int_prev_psr_reg;
 	CAN_ECR_Type current_ecr = can->m_can->ECR; // always read, clears CEL
-	(void)current_ecr;
 	sc_can_status status;
+	uint8_t rec = current_ecr.bit.REC;
+	uint8_t tec = current_ecr.bit.TEC;
+
+	// M_CAN keeps REC and TEC over go off bus go on bus sequence
+	// This is fairly anoying the device can appear to be in error passive
+	// when in fact it is working just fine.
+	// The lines below attempt to work around this quirk.
+	if (unlikely(can->int_init_rx_errors || can->int_init_tx_errors)) {
+		if (rec > can->int_init_rx_errors || tec > can->int_init_tx_errors) {
+			// the situation is worsening, reset state holding
+			LOG("CAN%u rec/tec init=%u/%u now %u/%u\n", index, can->int_init_rx_errors, can->int_init_tx_errors, rec, tec);
+			can->int_init_tx_errors = 0;
+			can->int_init_rx_errors = 0;
+		} else if (rec < 96 && tec < 96) {
+			// we have reached faked error active state, reset state holding
+			can->int_init_tx_errors = 0;
+			can->int_init_rx_errors = 0;
+			LOG("CAN%u end error active fake\n", index);
+		} else {
+			// clear all errors except for bus off
+			current_psr.reg &= CAN_PSR_BO;
+		}
+	}
 
 
+	if (unlikely(tec != can->int_prev_tx_errors || rec != can->int_prev_rx_errors)) {
+		can->int_prev_tx_errors = tec;
+		can->int_prev_rx_errors = rec;
 
-	if (unlikely(current_ecr.bit.TEC != can->int_prev_tx_errors || current_ecr.bit.REC != can->int_prev_rx_errors)) {
-		can->int_prev_tx_errors = current_ecr.bit.TEC;
-		can->int_prev_rx_errors = current_ecr.bit.REC;
+		// LOG("CAN%u REC=%u TEC=%u\n", index, can->int_prev_rx_errors, can->int_prev_tx_errors);
 
 		status.type = SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS;
 		status.timestamp_us = tsc;
-		status.counts.rx = can->int_prev_rx_errors;
-		status.counts.tx = can->int_prev_tx_errors;
+		status.counts.rx = rec;
+		status.counts.tx = tec;
 
 		sc_can_status_queue(index, &status);
 		++*events;
@@ -229,24 +251,12 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 
 	if (current_psr.bit.BO) {
 		current_bus_state = SC_CAN_STATUS_BUS_OFF;
-		if (!prev_psr.bit.BO) {
-			LOG("CAN%u bus off\n", index);
-		}
 	} else if (current_psr.bit.EP) {
 		current_bus_state = SC_CAN_STATUS_ERROR_PASSIVE;
-		if (!prev_psr.bit.EP) {
-			LOG("CAN%u error passive\n", index);
-		}
 	} else if (current_psr.bit.EW) {
 		current_bus_state = SC_CAN_STATUS_ERROR_WARNING;
-		if (!prev_psr.bit.EW) {
-			LOG("CAN%u error warning\n", index);
-		}
 	} else {
 		current_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
-	 	if (can->int_prev_bus_state != SC_CAN_STATUS_ERROR_ACTIVE) {
-			LOG("CAN%u error active\n", index);
-		}
 	}
 
 	if (unlikely(can->int_prev_bus_state != current_bus_state)) {
@@ -258,6 +268,27 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 
 		sc_can_status_queue(index, &status);
 		++*events;
+
+
+		// LOG("ch%u PSR=%x ECR=%x\n", index, current_psr.reg, current_ecr.reg);
+
+		switch (current_bus_state) {
+		case SC_CAN_STATUS_BUS_OFF:
+			LOG("CAN%u bus off\n", index);
+			break;
+		case SC_CAN_STATUS_ERROR_PASSIVE:
+			LOG("CAN%u error passive\n", index);
+			break;
+		case SC_CAN_STATUS_ERROR_WARNING:
+			LOG("CAN%u error warning\n", index);
+			break;
+		case SC_CAN_STATUS_ERROR_ACTIVE:
+			LOG("CAN%u error active\n", index);
+			break;
+		default:
+			LOG("CAN%u unhandled bus state\n", index);
+			break;
+		}
 	}
 
 	bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
@@ -460,6 +491,8 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 	can->int_prev_psr_reg.reg = 0;
 	can->int_prev_rx_errors = 0;
 	can->int_prev_tx_errors = 0;
+	can->int_init_rx_errors = 0;
+	can->int_init_tx_errors = 0;
 
 	// call this here to timestamp / last rx/tx values
 	// since we won't get any further interrupts
@@ -468,7 +501,7 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 	can->tx_get_index = 0;
 	can->tx_put_index = 0;
 
-	__atomic_thread_fence(__ATOMIC_RELEASE); // rx_lost
+	__atomic_thread_fence(__ATOMIC_RELEASE); // rx_lost, int_*
 }
 
 static inline void can_off(uint8_t index)
@@ -480,23 +513,12 @@ static inline void can_off(uint8_t index)
 	// go bus off
 	can_set_state1(can->m_can, can->interrupt_id, false);
 
-	// // _With_ usb lock, since this isn't the interrupt handler
-	// // and neither a higher priority task.
-	// while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
-
-	// Call this with the lock held so the tasks
-	// don't read an inconsistent state
 	can_reset_task_state_unsafe(index);
 
 	// mark CAN as disabled
 	can->enabled = false;
 
 	sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_BUS_OFF);
-
-	// xSemaphoreGive(usb_can->mutex_handle);
-
-	// // notify task to make sure its knows
-	// xTaskNotifyGive(can->usb_task_handle);
 }
 
 
@@ -520,7 +542,15 @@ static inline void can_on(uint8_t index)
 
 	same5x_can_configure(can);
 
-	can_set_state1(can->m_can, can->interrupt_id, can->enabled);
+
+	CAN_ECR_Type current_ecr = can->m_can->ECR;
+	can->int_init_rx_errors = current_ecr.bit.REC;
+	can->int_init_tx_errors = current_ecr.bit.TEC;
+	// LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
+	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
+
+	can_set_state1(can->m_can, can->interrupt_id, true);
+
 
 	SC_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
 
@@ -687,7 +717,7 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 
 			uint8_t rx_count = rx_put_index - can->rx_get_index;
 			if (unlikely(rx_count > SC_BOARD_CAN_RX_FIFO_SIZE)) {
-				LOG("ch%u rx count %u\n", index, rx_count);
+				LOG("ch%u rx fifo count %u\n", index, rx_count);
 				SC_ASSERT(rx_put_index - can->rx_get_index <= SC_BOARD_CAN_RX_FIFO_SIZE);
 			}
 

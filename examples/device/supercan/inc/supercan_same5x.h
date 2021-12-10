@@ -108,6 +108,8 @@ struct same5x_can {
 	uint8_t int_prev_bus_state;
 	uint8_t int_prev_rx_errors;
 	uint8_t int_prev_tx_errors;
+	uint8_t int_init_rx_errors;
+	uint8_t int_init_tx_errors;
 	uint8_t led_status_green;
 	uint8_t led_status_red;
 	uint8_t led_traffic;
