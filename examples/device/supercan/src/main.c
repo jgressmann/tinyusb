@@ -159,7 +159,7 @@ static inline void can_state_initial(uint8_t index)
 
 	can_state_reset(index);
 	sc_board_can_reset(index);
-	sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_BUS_OFF);
+	sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_OFF_BUS);
 }
 
 static inline bool sc_cmd_bulk_in_ep_ready(uint8_t index)
@@ -598,11 +598,11 @@ send_can_info:
 					if (is_enabled) {
 						sc_board_can_feat_set(index, can->features);
 						sc_board_can_go_bus(index, is_enabled);
-						sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_BUS_ON_PASSIVE);
+						sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_ON_BUS_PASSIVE);
 					} else {
 						sc_board_can_go_bus(index, is_enabled);
 						can_state_reset(index);
-						sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_BUS_OFF);
+						sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_OFF_BUS);
 					}
 
 					can->enabled = is_enabled;
@@ -1301,15 +1301,14 @@ SC_RAMFUNC static void can_usb_task(void *param)
 // 	uint32_t rx_ts_last = 0;
 // 	uint32_t tx_ts_last = 0;
 // #endif
-	uint8_t previous_bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
 	uint8_t current_bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
+	uint8_t previous_led_state = SC_CAN_LED_STATUS_ENABLED_ON_BUS_PASSIVE;
+	uint8_t current_led_state = SC_CAN_LED_STATUS_ENABLED_ON_BUS_PASSIVE;
 	uint8_t tx_errors = 0;
 	uint8_t rx_errors = 0;
 	TickType_t bus_activity_ts = 0;
 	TickType_t error_ts = 0;
 	TickType_t status_ts = 0;
-	bool had_bus_activity = false;
-	bool had_bus_error = false;
 	bool send_can_status = 0;
 	bool yield = false;
 
@@ -1328,10 +1327,10 @@ SC_RAMFUNC static void can_usb_task(void *param)
 				current_bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
 				bus_activity_ts = no_error_ts;
 				error_ts = no_error_ts;
-				had_bus_activity = false;
-				had_bus_error = false;
 				tx_errors = 0;
 				rx_errors = 0;
+				previous_led_state = SC_CAN_LED_STATUS_ENABLED_ON_BUS_PASSIVE;
+				current_led_state = SC_CAN_LED_STATUS_ENABLED_ON_BUS_PASSIVE;
 	// #if SUPERCAN_DEBUG
 	// 			rx_ts_last = 0;
 	// 			tx_ts_last = 0;
@@ -1539,35 +1538,29 @@ SC_RAMFUNC static void can_usb_task(void *param)
 
 				const bool has_bus_activity = xTaskGetTickCount() - bus_activity_ts < pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
 				const bool has_bus_error = xTaskGetTickCount() - error_ts < pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
-				bool led_change =
-					has_bus_activity != had_bus_activity ||
-					has_bus_error != had_bus_error;
 
-				if (!led_change) {
-					if (previous_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE &&
-						current_bus_status < SC_CAN_STATUS_ERROR_PASSIVE) {
-						led_change = true;
-					} else if (previous_bus_status < SC_CAN_STATUS_ERROR_PASSIVE &&
-						current_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE) {
-						led_change = true;
-					}
-				}
-
-				if (led_change) {
-					if (has_bus_error || current_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE) {
-						sc_board_led_can_status_set(
-							index,
-							has_bus_activity ? SC_CAN_LED_STATUS_ERROR_ACTIVE : SC_CAN_LED_STATUS_ERROR_PASSIVE);
+				switch (current_bus_status) {
+				case SC_CAN_STATUS_BUS_OFF:
+					current_led_state = SC_CAN_LED_STATUS_ENABLED_ON_BUS_BUS_OFF;
+					break;
+				case SC_CAN_STATUS_ERROR_WARNING:
+				case SC_CAN_STATUS_ERROR_PASSIVE:
+					current_led_state = has_bus_activity ? SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_ACTIVE : SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_PASSIVE;
+					break;
+				case SC_CAN_STATUS_ERROR_ACTIVE:
+					if (has_bus_error) {
+						current_led_state = has_bus_activity ? SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_ACTIVE : SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_PASSIVE;
 					} else {
-						sc_board_led_can_status_set(
-							index,
-							has_bus_activity ? SC_CAN_LED_STATUS_ENABLED_BUS_ON_ACTIVE : SC_CAN_LED_STATUS_ENABLED_BUS_ON_PASSIVE);
+						current_led_state = has_bus_activity ? SC_CAN_LED_STATUS_ENABLED_ON_BUS_ACTIVE : SC_CAN_LED_STATUS_ENABLED_ON_BUS_PASSIVE;
 					}
+					break;
 				}
 
-				had_bus_activity = has_bus_activity;
-				had_bus_error = has_bus_error;
-				previous_bus_status = current_bus_status;
+				if (current_led_state != previous_led_state) {
+					sc_board_led_can_status_set(index, current_led_state);
+
+					previous_led_state = current_led_state;
+				}
 			}
 
 			xSemaphoreGive(usb_can->mutex_handle);

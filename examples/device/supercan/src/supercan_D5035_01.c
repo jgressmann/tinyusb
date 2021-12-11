@@ -499,25 +499,29 @@ SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
 		led_set(can->led_status_green, 0);
 		led_set(can->led_status_red, 0);
 		break;
-	case SC_CAN_LED_STATUS_ENABLED_BUS_OFF:
+	case SC_CAN_LED_STATUS_ENABLED_OFF_BUS:
 		led_set(can->led_status_green, 1);
 		led_set(can->led_status_red, 0);
 		break;
-	case SC_CAN_LED_STATUS_ENABLED_BUS_ON_PASSIVE:
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_PASSIVE:
 		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_PASSIVE_MS);
 		led_set(can->led_status_red, 0);
 		break;
-	case SC_CAN_LED_STATUS_ENABLED_BUS_ON_ACTIVE:
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ACTIVE:
 		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
 		led_set(can->led_status_red, 0);
 		break;
-	case SC_CAN_LED_STATUS_ERROR_ACTIVE:
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_PASSIVE:
+		led_set(can->led_status_green, 0);
+		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_PASSIVE_MS);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_ACTIVE:
 		led_set(can->led_status_green, 0);
 		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
 		break;
-	case SC_CAN_LED_STATUS_ERROR_PASSIVE:
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_BUS_OFF:
 		led_set(can->led_status_green, 0);
-		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
+		led_blink(can->led_status_red, 1);
 		break;
 	default:
 		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS / 2);
