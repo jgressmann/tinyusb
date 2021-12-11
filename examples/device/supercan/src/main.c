@@ -293,7 +293,7 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 	// and the transfer size is a multiple of the endpoint size, and the
 	// tranfer size is smaller than the buffer size, we can either send a zlp
 	// or increase the payload size.
-	if (MSG_BUFFER_SIZE > SC_M1_EP_SIZE) {
+	if (MSG_BUFFER_SIZE > SC_M1_EP_SIZE) { // FIX ME -> move to board file
 		uint16_t offset = can->tx_offsets[can->tx_bank];
 		bool need_to_send_zlp = offset < MSG_BUFFER_SIZE && 0 == (offset % SC_M1_EP_SIZE);
 		if (need_to_send_zlp) {
