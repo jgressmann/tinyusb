@@ -489,8 +489,6 @@ static inline void can_off(uint8_t index)
 
 	// mark CAN as disabled
 	can->enabled = false;
-
-	sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_BUS_OFF);
 }
 
 
@@ -518,14 +516,12 @@ static inline void can_on(uint8_t index)
 	CAN_ECR_Type current_ecr = can->m_can->ECR;
 	can->int_init_rx_errors = current_ecr.bit.REC;
 	can->int_init_tx_errors = current_ecr.bit.TEC;
-	// LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
+	LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
 	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
 
 	can_set_state1(can->m_can, can->interrupt_id, true);
 
 	SC_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
-
-	sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_BUS_ON_PASSIVE);
 }
 
 static inline void can_reset(uint8_t index)
@@ -600,7 +596,6 @@ extern void sc_board_can_reset(uint8_t index)
 {
 	// reset
 	can_reset(index);
-	sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_BUS_OFF);
 }
 
 __attribute__((noreturn)) extern void sc_board_reset(void)
