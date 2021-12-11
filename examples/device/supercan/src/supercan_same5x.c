@@ -153,21 +153,6 @@ void same5x_can_configure(struct same5x_can *c)
 	m_can_conf_end(can);
 }
 
-
-static inline char const *m_can_psr_act_str(uint8_t act)
-{
-	switch (act) {
-	case CAN_PSR_ACT_SYNC_Val:
-		return "sync";
-	case CAN_PSR_ACT_IDLE_Val:
-		return "idle";
-	case CAN_PSR_ACT_RX_Val:
-		return "rx";
-	default:
-		return "tx";
-	}
-}
-
 SC_RAMFUNC static inline uint8_t can_map_m_can_ec(uint8_t value)
 {
 	static const uint8_t can_map_m_can_ec_table[8] = {
@@ -363,22 +348,9 @@ SC_RAMFUNC void same5x_can_int(uint8_t index)
 {
 	same5x_counter_1MHz_request_current_value();
 
-	// SC_ISR_ASSERT(index < TU_ARRAY_SIZE(same5x_cans));
 	struct same5x_can *can = &same5x_cans[index];
 
 	uint32_t events = 0;
-
-
-
-	// if (can->m_can->CCCR.reg & CAN_CCCR_CCE) { // config mode sentinal
-	// 	LOG("CAN%u CCE\n", index);
-	// 	return;
-	// }
-
-	// if (can->m_can->CCCR.reg & CAN_CCCR_INIT) {
-	// 	LOG("CAN%u INIT\n", index);
-	// 	return;
-	// }
 
 	// LOG("IE=%08lx IR=%08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
 	// bool notify_usb = false;
@@ -551,15 +523,9 @@ static inline void can_on(uint8_t index)
 
 	can_set_state1(can->m_can, can->interrupt_id, true);
 
-
 	SC_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
 
 	sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_BUS_ON_PASSIVE);
-
-	// xSemaphoreGive(usb_can->mutex_handle);
-
-	// // notify task to make sure its knows
-	// xTaskNotifyGive(can->usb_task_handle);
 }
 
 static inline void can_reset(uint8_t index)
