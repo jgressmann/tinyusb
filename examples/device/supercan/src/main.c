@@ -770,7 +770,9 @@ static void sc_cmd_bulk_in(uint8_t index)
 SC_RAMFUNC static void sc_can_bulk_in(uint8_t index)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans));
 
+	struct can *can = &cans[index];
 	struct usb_can *usb_can = &usb.can[index];
 
 	while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
@@ -780,6 +782,8 @@ SC_RAMFUNC static void sc_can_bulk_in(uint8_t index)
 	if (usb_can->tx_offsets[usb_can->tx_bank]) {
 		sc_can_bulk_in_submit(index, __func__);
 	}
+
+	xTaskNotifyGive(can->usb_task_handle);
 
 	xSemaphoreGive(usb_can->mutex_handle);
 }
@@ -1303,6 +1307,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 	uint8_t rx_errors = 0;
 	TickType_t bus_activity_ts = 0;
 	TickType_t error_ts = 0;
+	TickType_t status_ts = 0;
 	bool had_bus_activity = false;
 	bool had_bus_error = false;
 	bool send_can_status = 0;
@@ -1311,245 +1316,264 @@ SC_RAMFUNC static void can_usb_task(void *param)
 
 	while (42) {
 		// LOG("CAN%u task wait\n", index);
-		(void)ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
+		const uint32_t pre = ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
 
-		// LOG("CAN%u task loop\n", index);
-		if (unlikely(!usb.mounted)) {
-			continue;
-		}
+		if (likely(pre > 0)) {
 
-		if (unlikely(!can->enabled)) {
-			const TickType_t no_error_ts = xTaskGetTickCount() - pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
-			current_bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
-			bus_activity_ts = no_error_ts;
-			error_ts = no_error_ts;
-			had_bus_activity = false;
-			had_bus_error = false;
-			tx_errors = 0;
-			rx_errors = 0;
-// #if SUPERCAN_DEBUG
-// 			rx_ts_last = 0;
-// 			tx_ts_last = 0;
-// #endif
-			LOG("ch%u usb state reset\n", index);
-			continue;
-		}
+			// LOG("CAN%u task loop\n", index);
+			while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
 
-		sc_board_led_can_traffic_burst(index);
-		send_can_status = 1;
+			if (unlikely(!usb.mounted || !can->enabled)) {
+				const TickType_t no_error_ts = xTaskGetTickCount() - pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
+				current_bus_status = SC_CAN_STATUS_ERROR_ACTIVE;
+				bus_activity_ts = no_error_ts;
+				error_ts = no_error_ts;
+				had_bus_activity = false;
+				had_bus_error = false;
+				tx_errors = 0;
+				rx_errors = 0;
+	// #if SUPERCAN_DEBUG
+	// 			rx_ts_last = 0;
+	// 			tx_ts_last = 0;
+	// #endif
 
-		while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
+				// clear out notifications
+				ulTaskNotifyTake(pdTRUE, 0);
 
-		for (bool done = false; !done; ) {
-			done = true;
+				// ensure we don't spin b/c e.g. a CAN interrupt handler generates events
+				yield = true;
 
-			const TickType_t now = xTaskGetTickCount();
+				LOG("ch%u usb state reset\n", index);
+			} else {
 
-// #if SUPERCAN_DEBUG
-// 			// loop
-// 			{
-// 				uint32_t ts = counter_1MHz_read_sync(index);
-// 				if (ts - rx_ts_last >= 0x20000000) {
-// 					rx_ts_last = ts - 0x20000000;
-// 				}
+				for (bool done = false; !done; ) {
+					done = true;
 
-// 				if (ts - tx_ts_last >= 0x20000000) {
-// 					tx_ts_last = ts - 0x20000000;
-// 				}
-// 			}
-// #endif
-			uint8_t * const tx_beg = usb_can->tx_buffers[usb_can->tx_bank];
-			uint8_t * const tx_end = tx_beg + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
-			uint8_t *tx_ptr = tx_beg + usb_can->tx_offsets[usb_can->tx_bank];
-			int consumed = 0;
+					const TickType_t now = xTaskGetTickCount();
+					send_can_status = send_can_status || now - status_ts >= pdMS_TO_TICKS(128);
 
-			if (send_can_status) {
-				struct sc_msg_can_status *msg = NULL;
+		// #if SUPERCAN_DEBUG
+		// 			// loop
+		// 			{
+		// 				uint32_t ts = counter_1MHz_read_sync(index);
+		// 				if (ts - rx_ts_last >= 0x20000000) {
+		// 					rx_ts_last = ts - 0x20000000;
+		// 				}
 
-				if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
-					done = false;
-					send_can_status = 0;
-					sc_board_can_ts_request(index);
+		// 				if (ts - tx_ts_last >= 0x20000000) {
+		// 					tx_ts_last = ts - 0x20000000;
+		// 				}
+		// 			}
+		// #endif
+					uint8_t * const tx_beg = usb_can->tx_buffers[usb_can->tx_bank];
+					uint8_t * const tx_end = tx_beg + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
+					uint8_t *tx_ptr = tx_beg + usb_can->tx_offsets[usb_can->tx_bank];
+					int consumed = 0;
 
-					msg = (struct sc_msg_can_status *)tx_ptr;
-					usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
-					tx_ptr += sizeof(*msg);
+					if (send_can_status) {
+						struct sc_msg_can_status *msg = NULL;
 
-					// sc_board_can_status_fill(index, msg);
+						if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
+							done = false;
+							send_can_status = 0;
+							status_ts = now;
+							sc_board_can_ts_request(index);
 
-					uint16_t tx_dropped = can->tx_dropped;
-					can->tx_dropped = 0;
-					uint16_t rx_lost = can->rx_lost;
-					can->rx_lost = 0;
+							msg = (struct sc_msg_can_status *)tx_ptr;
+							usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
+							tx_ptr += sizeof(*msg);
 
-					msg->id = SC_MSG_CAN_STATUS;
-					msg->len = sizeof(*msg);
-					msg->bus_status = current_bus_status;
-					msg->tx_dropped = tx_dropped;
-					msg->rx_lost = rx_lost;
-					msg->tx_fifo_size = 0;
-					msg->rx_fifo_size = 0;
-					msg->tx_errors = tx_errors;
-					msg->rx_errors = rx_errors;
-					msg->flags = __sync_fetch_and_and(&can->int_comm_flags, 0);
+							// sc_board_can_status_fill(index, msg);
 
-					if (can->desync) {
-						msg->flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;
+							uint16_t tx_dropped = can->tx_dropped;
+							can->tx_dropped = 0;
+							uint16_t rx_lost = can->rx_lost;
+							can->rx_lost = 0;
+
+							msg->id = SC_MSG_CAN_STATUS;
+							msg->len = sizeof(*msg);
+							msg->bus_status = current_bus_status;
+							msg->tx_dropped = tx_dropped;
+							msg->rx_lost = rx_lost;
+							msg->tx_fifo_size = 0;
+							msg->rx_fifo_size = 0;
+							msg->tx_errors = tx_errors;
+							msg->rx_errors = rx_errors;
+							msg->flags = __sync_fetch_and_and(&can->int_comm_flags, 0);
+
+							if (can->desync) {
+								msg->flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;
+							}
+
+							msg->timestamp_us = sc_board_can_ts_wait(index);
+
+
+							// LOG("status store %u bytes\n", (unsigned)sizeof(*msg));
+							// sc_dump_mem(msg, sizeof(*msg));
+						} else {
+							if (sc_can_bulk_in_ep_ready(index)) {
+								done = false;
+								sc_can_bulk_in_submit(index, __func__);
+								continue;
+							} else {
+								yield = true;
+							}
+						}
 					}
 
-					msg->timestamp_us = sc_board_can_ts_wait(index);
+					uint16_t status_put_index = __atomic_load_n(&can->status_put_index, __ATOMIC_ACQUIRE);
+					if (can->status_get_index != status_put_index) {
+						uint16_t fifo_index = can->status_get_index % TU_ARRAY_SIZE(can->status_fifo);
+						sc_can_status *s = &can->status_fifo[fifo_index];
+
+						sc_board_led_can_traffic_burst(index);
+
+						switch (s->type) {
+						case SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS: {
+							bus_activity_ts = now;
+							current_bus_status = s->bus_state;
+							LOG("ch%u bus status %#x\n", index, current_bus_status);
+							send_can_status = 1;
+							done = false;
+						} break;
+						case SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR: {
+							struct sc_msg_can_error *msg = NULL;
+
+							bus_activity_ts = now;
+
+							if (likely(s->bus_error.code)) {
+								error_ts = now;
+							}
+
+							if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
+								msg = (struct sc_msg_can_error *)tx_ptr;
+								usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
+								tx_ptr += sizeof(*msg);
 
 
-					// LOG("status store %u bytes\n", (unsigned)sizeof(*msg));
-					// sc_dump_mem(msg, sizeof(*msg));
-				} else {
-					if (sc_can_bulk_in_ep_ready(index)) {
+								msg->id = SC_MSG_CAN_ERROR;
+								msg->len = sizeof(*msg);
+								msg->error = s->bus_error.code;
+								msg->timestamp_us = s->timestamp_us;
+								msg->flags = 0;
+								if (s->bus_error.tx) {
+									msg->flags |= SC_CAN_ERROR_FLAG_RXTX_TX;
+								}
+								if (s->bus_error.data_part) {
+									msg->flags |= SC_CAN_ERROR_FLAG_NMDT_DT;
+								}
+
+								done = false;
+							} else {
+								if (sc_can_bulk_in_ep_ready(index)) {
+									done = false;
+									sc_can_bulk_in_submit(index, __func__);
+									continue;
+								} else {
+									// LOG("ch%u dropped CAN bus error msg\n", index);
+									yield = true;
+								}
+							}
+						} break;
+						case SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS: {
+							rx_errors = s->counts.rx;
+							tx_errors = s->counts.tx;
+							send_can_status = 1;
+							done = false;
+						} break;
+						case SC_CAN_STATUS_FIFO_TYPE_TXR_DESYNC:
+							bus_activity_ts = now;
+							error_ts = now;
+							can->desync = true;
+							send_can_status = 1;
+							done = false;
+							break;
+						case SC_CAN_STATUS_FIFO_TYPE_RX_LOST:
+							can->rx_lost += s->rx_lost;
+							send_can_status = 1;
+							done = false;
+							break;
+						default:
+							LOG("ch%u unhandled CAN status message type %#02x\n", index, s->type);
+							break;
+						}
+
+						__atomic_store_n(&can->status_get_index, can->status_get_index+1, __ATOMIC_RELEASE);
+					}
+
+					consumed = sc_board_can_place_msgs(index, tx_ptr, tx_end);
+					// LOG("c=%d\n", consumed);
+
+					switch (consumed) {
+					case -1:
+						break;
+					case 0:
+						sc_board_led_can_traffic_burst(index);
+
+						if (sc_can_bulk_in_ep_ready(index)) {
+							done = false;
+							sc_can_bulk_in_submit(index, __func__);
+						} else {
+							yield = true;
+						}
+						break;
+					default:
+						sc_board_led_can_traffic_burst(index);
+
 						done = false;
-						sc_can_bulk_in_submit(index, __func__);
-						continue;
-					} else {
-						xTaskNotifyGive(can->usb_task_handle);
-						yield = true;
+						SC_DEBUG_ASSERT(consumed > 0);
+						SC_DEBUG_ASSERT((size_t)consumed + usb_can->tx_offsets[usb_can->tx_bank] <= TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]));
+						usb_can->tx_offsets[usb_can->tx_bank] += consumed;
+						tx_ptr += consumed;
+						bus_activity_ts = now;
 						break;
 					}
 				}
-			}
-
-			uint16_t status_put_index = __atomic_load_n(&can->status_put_index, __ATOMIC_ACQUIRE);
-			if (can->status_get_index != status_put_index) {
-				uint16_t fifo_index = can->status_get_index % TU_ARRAY_SIZE(can->status_fifo);
-				sc_can_status *s = &can->status_fifo[fifo_index];
-
-				done = false;
-
-				switch (s->type) {
-				case SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS: {
-					bus_activity_ts = now;
-					current_bus_status = s->bus_state;
-					LOG("ch%u bus status %#x\n", index, current_bus_status);
-					send_can_status = 1;
-				} break;
-				case SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR: {
-					struct sc_msg_can_error *msg = NULL;
-
-					bus_activity_ts = now;
-					if (likely(s->bus_error.code)) {
-						error_ts = now;
-					}
-
-					if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
-						msg = (struct sc_msg_can_error *)tx_ptr;
-						usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
-						tx_ptr += sizeof(*msg);
 
 
-						msg->id = SC_MSG_CAN_ERROR;
-						msg->len = sizeof(*msg);
-						msg->error = s->bus_error.code;
-						msg->timestamp_us = s->timestamp_us;
-						msg->flags = 0;
-						if (s->bus_error.tx) {
-							msg->flags |= SC_CAN_ERROR_FLAG_RXTX_TX;
-						}
-						if (s->bus_error.data_part) {
-							msg->flags |= SC_CAN_ERROR_FLAG_NMDT_DT;
-						}
-					} else {
-						if (sc_can_bulk_in_ep_ready(index)) {
-							sc_can_bulk_in_submit(index, __func__);
-							continue;
-						} else {
-							// LOG("ch%u dropped CAN bus error msg\n", index);
-							// break;
-							xTaskNotifyGive(can->usb_task_handle);
-							yield = true;
-						}
-					}
-				} break;
-				case SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS: {
-					rx_errors = s->counts.rx;
-					tx_errors = s->counts.tx;
-					send_can_status = 1;
-				} break;
-				case SC_CAN_STATUS_FIFO_TYPE_TXR_DESYNC:
-					bus_activity_ts = now;
-					error_ts = now;
-					can->desync = true;
-					break;
-				case SC_CAN_STATUS_FIFO_TYPE_RX_LOST:
-					can->rx_lost += s->rx_lost;
-					break;
-				default:
-					LOG("ch%u unhandled CAN status message type %#02x\n", index, s->type);
-					break;
-				}
-
-				__atomic_store_n(&can->status_get_index, can->status_get_index+1, __ATOMIC_RELEASE);
-			}
-
-			consumed = sc_board_can_place_msgs(index, tx_ptr, tx_end);
-			// LOG("c=%d\n", consumed);
-
-			switch (consumed) {
-			case -1:
-				break;
-			case 0:
-				if (sc_can_bulk_in_ep_ready(index)) {
+				if (sc_can_bulk_in_ep_ready(index) && usb_can->tx_offsets[usb_can->tx_bank]) {
 					sc_can_bulk_in_submit(index, __func__);
-				} else {
-					xTaskNotifyGive(can->usb_task_handle);
-					yield = true;
 				}
-				break;
-			default:
-				SC_DEBUG_ASSERT(consumed > 0);
-				SC_DEBUG_ASSERT((size_t)consumed + usb_can->tx_offsets[usb_can->tx_bank] <= TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]));
-				usb_can->tx_offsets[usb_can->tx_bank] += consumed;
-				tx_ptr += consumed;
-				bus_activity_ts = now;
-				break;
+
+
+
+				const bool has_bus_activity = xTaskGetTickCount() - bus_activity_ts < pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
+				const bool has_bus_error = xTaskGetTickCount() - error_ts < pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
+				bool led_change =
+					has_bus_activity != had_bus_activity ||
+					has_bus_error != had_bus_error;
+
+				if (!led_change) {
+					if (previous_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE &&
+						current_bus_status < SC_CAN_STATUS_ERROR_PASSIVE) {
+						led_change = true;
+					} else if (previous_bus_status < SC_CAN_STATUS_ERROR_PASSIVE &&
+						current_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE) {
+						led_change = true;
+					}
+				}
+
+				if (led_change) {
+					if (has_bus_error || current_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE) {
+						sc_board_led_can_status_set(
+							index,
+							has_bus_activity ? SC_CAN_LED_STATUS_ERROR_ACTIVE : SC_CAN_LED_STATUS_ERROR_PASSIVE);
+					} else {
+						sc_board_led_can_status_set(
+							index,
+							has_bus_activity ? SC_CAN_LED_STATUS_ENABLED_BUS_ON_ACTIVE : SC_CAN_LED_STATUS_ENABLED_BUS_ON_PASSIVE);
+					}
+				}
+
+				had_bus_activity = has_bus_activity;
+				had_bus_error = has_bus_error;
+				previous_bus_status = current_bus_status;
 			}
+
+			xSemaphoreGive(usb_can->mutex_handle);
+		} else {
+			yield = true;
 		}
-
-		if (sc_can_bulk_in_ep_ready(index) && usb_can->tx_offsets[usb_can->tx_bank]) {
-			sc_can_bulk_in_submit(index, __func__);
-		}
-
-
-
-		const bool has_bus_activity = xTaskGetTickCount() - bus_activity_ts < pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
-		const bool has_bus_error = xTaskGetTickCount() - error_ts < pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);
-		bool led_change =
-			has_bus_activity != had_bus_activity ||
-			has_bus_error != had_bus_error;
-
-		if (!led_change) {
-			if (previous_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE &&
-				current_bus_status < SC_CAN_STATUS_ERROR_PASSIVE) {
-				led_change = true;
-			} else if (previous_bus_status < SC_CAN_STATUS_ERROR_PASSIVE &&
-				current_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE) {
-				led_change = true;
-			}
-		}
-
-		if (led_change) {
-			if (has_bus_error || current_bus_status >= SC_CAN_STATUS_ERROR_PASSIVE) {
-				sc_board_led_can_status_set(
-					index,
-					has_bus_activity ? SC_CAN_LED_STATUS_ERROR_ACTIVE : SC_CAN_LED_STATUS_ERROR_PASSIVE);
-			} else {
-				sc_board_led_can_status_set(
-					index,
-					has_bus_activity ? SC_CAN_LED_STATUS_ENABLED_BUS_ON_ACTIVE : SC_CAN_LED_STATUS_ENABLED_BUS_ON_PASSIVE);
-			}
-		}
-
-		had_bus_activity = has_bus_activity;
-		had_bus_error = has_bus_error;
-		previous_bus_status = current_bus_status;
-
-		xSemaphoreGive(usb_can->mutex_handle);
 
 		// LOG("|");
 
