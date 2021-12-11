@@ -609,7 +609,7 @@ send_can_info:
 
 					xSemaphoreGive(usb_can->mutex_handle);
 
-					// notify task to make sure its knows
+					// notify task to make sure it knows
 					xTaskNotifyGive(can->usb_task_handle);
 				}
 			}
