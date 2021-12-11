@@ -750,9 +750,6 @@ SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 	}
 
 	xSemaphoreGive(usb_can->mutex_handle);
-
-	// // notify CAN task on bus-off we don't get bittime ticks
-	// vTaskNotifyGiveFromISR(can->task_handle, NULL);
 }
 
 static void sc_cmd_bulk_in(uint8_t index)
