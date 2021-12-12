@@ -486,9 +486,6 @@ static inline void can_off(uint8_t index)
 	can_set_state1(can->m_can, can->interrupt_id, false);
 
 	can_reset_task_state_unsafe(index);
-
-	// mark CAN as disabled
-	can->enabled = false;
 }
 
 
@@ -506,9 +503,6 @@ static inline void can_on(uint8_t index)
 	can->nm_us_per_bit = UINT32_C(1000000) / (SC_BOARD_CAN_CLK_HZ / ((uint32_t)can->nm.brp * (1 + can->nm.tseg1 + can->nm.tseg2)));
 	uint32_t dtbr = SC_BOARD_CAN_CLK_HZ / ((uint32_t)can->dt.brp * (1 + can->dt.tseg1 + can->dt.tseg2));
 	can->dt_us_per_bit_factor_shift8 = (UINT32_C(1000000) << 8) / dtbr;
-
-	// mark CAN as enabled
-	can->enabled = true;
 
 	same5x_can_configure(can);
 

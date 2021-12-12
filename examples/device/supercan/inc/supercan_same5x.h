@@ -118,8 +118,6 @@ struct same5x_can {
 	uint8_t rx_put_index; // NOT an index, uses full range of type
 	uint8_t tx_get_index; // NOT an index, uses full range of type
 	uint8_t tx_put_index; // NOT an index, uses full range of type
-
-	bool enabled;
 };
 
 extern struct same5x_can same5x_cans[SC_BOARD_CAN_COUNT];
