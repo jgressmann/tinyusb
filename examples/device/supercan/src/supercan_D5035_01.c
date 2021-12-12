@@ -410,7 +410,10 @@ static inline void rev_init(void)
 	PORT->Group[0].PINCFG[7].reg = PORT_PINCFG_PULLEN | PORT_PINCFG_INEN;
 	// set the pull up (line above only enables, c.f. DS60001507E-page 888f)
 	PORT->Group[0].OUTSET.reg = 1u << 7;
+}
 
+static inline void rev_read(void)
+{
 	if (PORT->Group[0].IN.reg & (1u << 7)) {
 		// external crystal
 		rev = 3;
@@ -458,6 +461,7 @@ extern void sc_board_init_begin(void)
 
 	counter_1MHz_init();
 	init_usb();
+	rev_read();
 
 	// while (1) {
 	// 	uint32_t c = counter_1MHz_read_sync();
