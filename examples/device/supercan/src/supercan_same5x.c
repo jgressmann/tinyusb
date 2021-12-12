@@ -187,10 +187,10 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 	uint8_t tec = current_ecr.bit.TEC;
 
 	// M_CAN keeps REC and TEC over go off bus go on bus sequence
-	// This is fairly anoying the device can appear to be in error passive
+	// This is fairly anoying as the device can appear to be in error passive
 	// when in fact it is working just fine.
 	// The lines below attempt to work around this quirk.
-	if (unlikely(can->int_init_rx_errors || can->int_init_tx_errors)) {
+	if (unlikely(can->int_init_rx_errors | can->int_init_tx_errors)) {
 		if (rec > can->int_init_rx_errors || tec > can->int_init_tx_errors) {
 			// the situation is worsening, reset state holding
 			LOG("CAN%u rec/tec init=%u/%u now %u/%u\n", index, can->int_init_rx_errors, can->int_init_tx_errors, rec, tec);
