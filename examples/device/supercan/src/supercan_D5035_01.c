@@ -169,6 +169,9 @@ static void can_init_module(void)
 	m_can_init_begin(CAN0);
 	m_can_init_begin(CAN1);
 
+	CAN0->MRCFG.reg = CAN_MRCFG_QOS_HIGH;
+	CAN1->MRCFG.reg = CAN_MRCFG_QOS_HIGH;
+
 	NVIC_SetPriority(CAN0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 	NVIC_SetPriority(CAN1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 }

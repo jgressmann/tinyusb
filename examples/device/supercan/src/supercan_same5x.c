@@ -186,26 +186,26 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 	uint8_t rec = current_ecr.bit.REC;
 	uint8_t tec = current_ecr.bit.TEC;
 
-	// M_CAN keeps REC and TEC over go off bus go on bus sequence
-	// This is fairly anoying as the device can appear to be in error passive
-	// when in fact it is working just fine.
-	// The lines below attempt to work around this quirk.
-	if (unlikely(can->int_init_rx_errors | can->int_init_tx_errors)) {
-		if (rec > can->int_init_rx_errors || tec > can->int_init_tx_errors) {
-			// the situation is worsening, reset state holding
-			LOG("CAN%u rec/tec init=%u/%u now %u/%u\n", index, can->int_init_rx_errors, can->int_init_tx_errors, rec, tec);
-			can->int_init_tx_errors = 0;
-			can->int_init_rx_errors = 0;
-		} else if (rec < 96 && tec < 96) {
-			// we have reached faked error active state, reset state holding
-			can->int_init_tx_errors = 0;
-			can->int_init_rx_errors = 0;
-			LOG("CAN%u end error active fake\n", index);
-		} else {
-			// clear all errors except for bus off
-			current_psr.reg &= CAN_PSR_BO;
-		}
-	}
+	// // M_CAN keeps REC and TEC over go off bus go on bus sequence
+	// // This is fairly anoying as the device can appear to be in error passive
+	// // when in fact it is working just fine.
+	// // The lines below attempt to work around this quirk.
+	// if (unlikely(can->int_init_rx_errors | can->int_init_tx_errors)) {
+	// 	if (rec > can->int_init_rx_errors || tec > can->int_init_tx_errors) {
+	// 		// the situation is worsening, reset state holding
+	// 		LOG("CAN%u rec/tec init=%u/%u now %u/%u\n", index, can->int_init_rx_errors, can->int_init_tx_errors, rec, tec);
+	// 		can->int_init_tx_errors = 0;
+	// 		can->int_init_rx_errors = 0;
+	// 	} else if (rec < 96 && tec < 96) {
+	// 		// we have reached faked error active state, reset state holding
+	// 		can->int_init_tx_errors = 0;
+	// 		can->int_init_rx_errors = 0;
+	// 		LOG("CAN%u end error active fake\n", index);
+	// 	} else {
+	// 		// clear all errors except for bus off
+	// 		current_psr.reg &= CAN_PSR_BO;
+	// 	}
+	// }
 
 
 	if (unlikely(tec != can->int_prev_tx_errors || rec != can->int_prev_rx_errors)) {
@@ -508,14 +508,65 @@ static inline void can_on(uint8_t index)
 
 
 	CAN_ECR_Type current_ecr = can->m_can->ECR;
-	can->int_init_rx_errors = current_ecr.bit.REC;
-	can->int_init_tx_errors = current_ecr.bit.TEC;
-	LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
-	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
+	// can->int_init_rx_errors = current_ecr.bit.REC;
+	// can->int_init_tx_errors = current_ecr.bit.TEC;
+	// LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
+	// __atomic_thread_fence(__ATOMIC_RELEASE); // int_*
+
+	if (current_ecr.bit.REC | current_ecr.bit.TEC) {
+		CAN_ECR_Type previous_ecr;
+
+		m_can_conf_begin(can->m_can);
+
+		can->m_can->CCCR.bit.MON = 1;
+		can->m_can->CCCR.bit.TEST = 1;
+		can->m_can->CCCR.bit.ASM = 0;
+		can->m_can->TEST.bit.LBCK = 1; // needs test set
+
+		m_can_conf_end(can->m_can);
+
+		LOG("ch%u TEST=%x CCCR=%x\n", index, can->m_can->TEST.reg, can->m_can->CCCR.reg);
+
+		m_can_init_end(can->m_can);
+
+		SC_DEBUG_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
+		SC_DEBUG_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
+
+
+		// place message
+		can->tx_fifo[0].T0.reg = UINT32_C(1) << 18; // CAN-ID 1
+		can->tx_fifo[0].T1.reg = 0;
+
+		do {
+			previous_ecr = current_ecr;
+
+			can->m_can->TXBAR.reg = UINT32_C(1);
+
+			// wait for rx
+			while (!(can->m_can->IR.reg & CAN_IR_RF0N));
+
+			// clear interrupts
+			can->m_can->IR.reg = ~0;
+
+			// throw away rx msg, tx event
+			can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(can->m_can->RXF0S.bit.F0PI);
+			can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(can->m_can->TXEFS.bit.EFPI);
+
+			current_ecr = can->m_can->ECR;
+
+			LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
+		} while (current_ecr.reg != previous_ecr.reg);
+
+		m_can_init_begin(can->m_can);
+
+		same5x_can_configure(can);
+	}
 
 	can_set_state1(can->m_can, can->interrupt_id, true);
 
-	SC_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
+	SC_DEBUG_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
+
+	LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
 }
 
 static inline void can_reset(uint8_t index)
