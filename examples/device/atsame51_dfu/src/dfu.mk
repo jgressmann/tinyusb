@@ -42,7 +42,7 @@ dfu: $(BUILD)/$(DFU_FILE) $(BUILD)/$(DFUED_HEX_FILE)
 
 dfu-upload: $(BUILD)/$(DFU_FILE)
 	#sudo dfu-tool write $(DFU_FILE)
-	sudo dfu-util -d $(VID):$(PID) -R -D $(DFU_FILE)
+	sudo dfu-util -d $(VID):$(PID) -R -D $^
 
 # flash using edbg from https://github.com/ataradov/edbg
 edbg-dfu: $(BUILD)/$(DFUED_BIN_FILE)
