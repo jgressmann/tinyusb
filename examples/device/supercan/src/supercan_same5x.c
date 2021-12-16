@@ -186,29 +186,29 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 	uint8_t rec = current_ecr.bit.REC;
 	uint8_t tec = current_ecr.bit.TEC;
 
-	// // M_CAN keeps REC and TEC over go off bus go on bus sequence
-	// // This is fairly anoying as the device can appear to be in error passive
-	// // when in fact it is working just fine.
-	// // The lines below attempt to work around this quirk.
-	// if (unlikely(can->int_init_rx_errors | can->int_init_tx_errors)) {
-	// 	if (rec > can->int_init_rx_errors || tec > can->int_init_tx_errors) {
-	// 		// the situation is worsening, reset state holding
-	// 		LOG("CAN%u rec/tec init=%u/%u now %u/%u\n", index, can->int_init_rx_errors, can->int_init_tx_errors, rec, tec);
-	// 		can->int_init_tx_errors = 0;
-	// 		can->int_init_rx_errors = 0;
-	// 	} else if (rec < 96 && tec < 96) {
-	// 		// we have reached faked error active state, reset state holding
-	// 		can->int_init_tx_errors = 0;
-	// 		can->int_init_rx_errors = 0;
-	// 		LOG("CAN%u end error active fake\n", index);
-	// 	} else {
-	// 		// clear all errors except for bus off
-	// 		current_psr.reg &= CAN_PSR_BO;
-	// 	}
-	// }
+	// M_CAN keeps REC and TEC over go off bus go on bus sequence
+	// This is fairly anoying as the device can appear to be in error passive
+	// when in fact it is working just fine.
+	// The lines below attempt to work around this quirk.
+	if (unlikely((can->int_init_rx_errors | can->int_init_tx_errors) != 0)) {
+		if ((rec > can->int_init_rx_errors) | (tec > can->int_init_tx_errors)) {
+			// the situation is becoming worse, stop the sharade
+			LOG("CAN%u rec/tec init=%u/%u now %u/%u\n", index, can->int_init_rx_errors, can->int_init_tx_errors, rec, tec);
+			can->int_init_tx_errors = 0;
+			can->int_init_rx_errors = 0;
+		} else if ((rec < 96) & (tec < 96)) {
+			// we have reached faked error active state, stop the sharade
+			can->int_init_tx_errors = 0;
+			can->int_init_rx_errors = 0;
+			LOG("CAN%u end error active fake\n", index);
+		} else {
+			// clear all errors except for bus off
+			current_psr.reg &= CAN_PSR_BO;
+		}
+	}
 
 
-	if (unlikely(tec != can->int_prev_tx_errors || rec != can->int_prev_rx_errors)) {
+	if (unlikely((tec != can->int_prev_tx_errors) | (rec != can->int_prev_rx_errors))) {
 		can->int_prev_tx_errors = tec;
 		can->int_prev_rx_errors = rec;
 
@@ -230,9 +230,6 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 	if (CAN_PSR_DLEC_NC_Val == current_psr.bit.DLEC) {
 		current_psr.bit.DLEC = prev_psr.bit.DLEC;
 	}
-
-	// store updated psr reg
-	can->int_prev_psr_reg = current_psr;
 
 	if (current_psr.bit.BO) {
 		current_bus_state = SC_CAN_STATUS_BUS_OFF;
@@ -276,7 +273,9 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 		}
 	}
 
-	bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
+	const bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
+	const uint8_t lec = current_psr.bit.LEC;
+	const uint8_t dlec = current_psr.bit.DLEC;
 	// bool is_rx_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_RX_Val || is_tx_error;
 	// bool had_nm_error = prev_psr.bit.LEC != CAN_PSR_LEC_NONE_Val && prev_psr.bit.LEC != CAN_PSR_LEC_NC_Val;
 
@@ -285,13 +284,15 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 	// 	current_psr.bit.LEC != CAN_PSR_LEC_NONE_Val &&
 	// 	current_psr.bit.LEC != CAN_PSR_LEC_NC_Val &&
 	// 	/* is_rx_tx_error */ true) {
-	if (current_psr.bit.LEC != CAN_PSR_LEC_NONE_Val && current_psr.bit.LEC != CAN_PSR_LEC_NC_Val) {
+	if ((lec != CAN_PSR_LEC_NONE_Val) &&
+		(lec != CAN_PSR_LEC_NC_Val) &&
+		(lec != prev_psr.bit.LEC)) {
 		// LOG("CAN%u lec %x\n", index, current_psr.bit.LEC);
 
 		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
 		status.timestamp_us = tsc;
 		status.bus_error.tx = is_tx_error;
-		status.bus_error.code = can_map_m_can_ec(current_psr.bit.LEC),
+		status.bus_error.code = can_map_m_can_ec(lec),
 		status.bus_error.data_part = 0;
 
 		sc_can_status_queue(index, &status);
@@ -303,45 +304,23 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 	// 	current_psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val &&
 	// 	current_psr.bit.DLEC != CAN_PSR_DLEC_NC_Val &&
 	// 	/*is_rx_tx_error*/ true) {
-	if (current_psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val && current_psr.bit.DLEC != CAN_PSR_DLEC_NC_Val) {
+	if ((dlec != CAN_PSR_DLEC_NONE_Val) &&
+		(dlec != CAN_PSR_DLEC_NC_Val) &&
+		(dlec != prev_psr.bit.DLEC)) {
 		// LOG("CAN%u dlec %x\n", index, current_psr.bit.DLEC);
 
 		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
 		status.timestamp_us = tsc;
 		status.bus_error.tx = is_tx_error;
-		status.bus_error.code = can_map_m_can_ec(current_psr.bit.DLEC),
+		status.bus_error.code = can_map_m_can_ec(dlec),
 		status.bus_error.data_part = 1;
 
 		sc_can_status_queue(index, &status);
 		++*events;
 	}
 
-	// if ((had_nm_error || had_dt_error) &&
-	// 	(current_psr.bit.LEC == CAN_PSR_LEC_NONE_Val && current_psr.bit.DLEC == CAN_PSR_DLEC_NONE_Val)) {
-
-	// 	uint16_t pi = can->status_put_index;
-	// 	uint16_t gi = __atomic_load_n(&can->status_get_index, __ATOMIC_ACQUIRE);
-	// 	uint16_t used = pi - gi;
-
-	// 	LOG("CAN%u no error\n", index);
-
-	// 	if (likely(used < TU_ARRAY_SIZE(can->status_fifo))) {
-	// 		uint16_t fifo_index = pi & (CAN_STATUS_FIFO_SIZE-1);
-	// 		struct can_status *s = &can->status_fifo[fifo_index];
-
-	// 		s->type = CAN_STATUS_FIFO_TYPE_BUS_ERROR;
-	// 		s->tx = 0;
-	// 		s->data_part = 0;
-	// 		s->payload = SC_CAN_ERROR_NONE,
-	// 		s->ts = counter_1MHz_wait_for_current_value();
-
-	// 		__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
-	// 	} else {
-	// 		__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
-	// 	}
-	//
-	//  ++*events;
-	// }
+	// store updated psr reg
+	can->int_prev_psr_reg = current_psr;
 }
 
 SC_RAMFUNC void same5x_can_int(uint8_t index)
@@ -383,10 +362,6 @@ SC_RAMFUNC void same5x_can_int(uint8_t index)
 	if (unlikely(ir.bit.BEC)) {
 		LOG("CAN%u BEC\n", index);
 	}
-
-
-
-
 
 	// Do this late to increase likelyhood that the counter
 	// is ready right away.
@@ -489,16 +464,12 @@ static inline void can_off(uint8_t index)
 }
 
 
-static inline void can_on(uint8_t index)
+static void can_on(uint8_t index)
 {
-	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(same5x_cans));
-
-
 	struct same5x_can *can = &same5x_cans[index];
+	CAN_ECR_Type current_ecr;
 
-	// // _With_ usb lock, since this isn't the interrupt handler
-	// // and neither a higher priority task.
-	// while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(same5x_cans));
 
 	can->nm_us_per_bit = UINT32_C(1000000) / (SC_BOARD_CAN_CLK_HZ / ((uint32_t)can->nm.brp * (1 + can->nm.tseg1 + can->nm.tseg2)));
 	uint32_t dtbr = SC_BOARD_CAN_CLK_HZ / ((uint32_t)can->dt.brp * (1 + can->dt.tseg1 + can->dt.tseg2));
@@ -506,15 +477,13 @@ static inline void can_on(uint8_t index)
 
 	same5x_can_configure(can);
 
-
-	CAN_ECR_Type current_ecr = can->m_can->ECR;
-	// can->int_init_rx_errors = current_ecr.bit.REC;
-	// can->int_init_tx_errors = current_ecr.bit.TEC;
-	// LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
-	// __atomic_thread_fence(__ATOMIC_RELEASE); // int_*
+	current_ecr = can->m_can->ECR;
 
 	if (current_ecr.bit.REC | current_ecr.bit.TEC) {
 		CAN_ECR_Type previous_ecr;
+
+		LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
+		LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
 
 		m_can_conf_begin(can->m_can);
 
@@ -530,43 +499,58 @@ static inline void can_on(uint8_t index)
 		m_can_init_end(can->m_can);
 
 		SC_DEBUG_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
-		SC_DEBUG_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
 
-
-		// place message
-		can->tx_fifo[0].T0.reg = UINT32_C(1) << 18; // CAN-ID 1
-		can->tx_fifo[0].T1.reg = 0;
 
 		do {
 			previous_ecr = current_ecr;
 
-			can->m_can->TXBAR.reg = UINT32_C(1);
+			uint8_t put_index = can->m_can->TXFQS.bit.TFQPI;
 
-			// wait for rx
-			while (!(can->m_can->IR.reg & CAN_IR_RF0N));
+			can->tx_fifo[put_index].T0.reg = UINT32_C(1) << 18; // CAN-ID 1
+			can->tx_fifo[put_index].T1.reg = 0;
+
+			can->m_can->TXBAR.reg = UINT32_C(1) << put_index;
+
+			// Aparently when in this this mode TEFN interrupt isn't raised
+			// I couldn't find anything in the silicon errata (DS80000748J) about
+			// this so I guess it's a feature?
+			// There also no elements in the tx event fifo so at least the behavior
+			// is consistent.
+			while ((can->m_can->IR.reg & (CAN_IR_RF0N)) != (CAN_IR_RF0N));
 
 			// clear interrupts
 			can->m_can->IR.reg = ~0;
 
+			LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
+
 			// throw away rx msg, tx event
-			can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(can->m_can->RXF0S.bit.F0PI);
-			can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(can->m_can->TXEFS.bit.EFPI);
+			can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(can->m_can->RXF0S.bit.F0GI);
+			// see comment above
+			// can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(can->m_can->TXEFS.bit.EFGI);
 
 			current_ecr = can->m_can->ECR;
 
 			LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
+			LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
 		} while (current_ecr.reg != previous_ecr.reg);
+
+
 
 		m_can_init_begin(can->m_can);
 
 		same5x_can_configure(can);
 	}
 
+	can->int_init_rx_errors = current_ecr.bit.REC;
+	can->int_init_tx_errors = current_ecr.bit.TEC;
+	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
+
 	can_set_state1(can->m_can, can->interrupt_id, true);
 
 	SC_DEBUG_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
 
 	LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
+	LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
 }
 
 static inline void can_reset(uint8_t index)
