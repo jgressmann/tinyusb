@@ -433,7 +433,6 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 	// memset(can->status_fifo, 0, sizeof(can->status_fifo));
 #endif
 
-	can->tx_available = SC_BOARD_CAN_TX_FIFO_SIZE;
 	can->int_prev_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
 	can->int_prev_psr_reg.reg = 0;
 	can->int_prev_rx_errors = 0;
@@ -648,11 +647,9 @@ extern uint16_t sc_board_can_feat_conf(uint8_t index)
 SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
 {
 	struct same5x_can *can = &same5x_cans[index];
-	bool queued = false;
+	bool available = can->m_can->TXFQS.bit.TFQPI - can->m_can->TXFQS.bit.TFGI < 32;
 
-	if (can->tx_available) {
-		--can->tx_available;
-
+	if (available) {
 		uint32_t id = msg->can_id;
 		uint8_t put_index = can->m_can->TXFQS.bit.TFQPI;
 
@@ -683,11 +680,9 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 		}
 
 		can->m_can->TXBAR.reg = UINT32_C(1) << put_index;
-
-		queued = true;
 	}
 
-	return queued;
+	return available;
 }
 
 SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
@@ -872,8 +867,6 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 				// LOG("2\n");
 
 				__atomic_store_n(&can->tx_get_index, can->tx_get_index+1, __ATOMIC_RELEASE);
-				SC_ASSERT(can->tx_available < SC_BOARD_CAN_TX_FIFO_SIZE);
-				++can->tx_available;
 				// LOG("3\n");
 			}
 		}

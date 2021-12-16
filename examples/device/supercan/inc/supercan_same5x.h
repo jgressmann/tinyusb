@@ -113,7 +113,6 @@ struct same5x_can {
 	uint8_t led_status_green;
 	uint8_t led_status_red;
 	uint8_t led_traffic;
-	uint8_t tx_available;
 	uint8_t rx_get_index; // NOT an index, uses full range of type
 	uint8_t rx_put_index; // NOT an index, uses full range of type
 	uint8_t tx_get_index; // NOT an index, uses full range of type
