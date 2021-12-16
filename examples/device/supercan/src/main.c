@@ -1482,7 +1482,6 @@ SC_RAMFUNC static void can_usb_task(void *param)
 						} break;
 						case SC_CAN_STATUS_FIFO_TYPE_TXR_DESYNC:
 							bus_activity_ts = now;
-							error_ts = now;
 							can->desync = true;
 							send_can_status = 1;
 							done = false;
