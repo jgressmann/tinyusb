@@ -486,8 +486,8 @@ static inline void can_init_once(void)
 	for (size_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
 		struct can *can = &cans[i];
 
-		NVIC_SetPriority(can->flex_can_irq, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-		NVIC_SetPriority(can->tx_queue_irq, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+		NVIC_SetPriority(can->flex_can_irq, SC_ISR_PRIORITY);
+		NVIC_SetPriority(can->tx_queue_irq, SC_ISR_PRIORITY);
 		// should be no need to disable this one
 		NVIC_EnableIRQ(can->tx_queue_irq);
 

@@ -172,8 +172,8 @@ static void can_init_module(void)
 	CAN0->MRCFG.reg = CAN_MRCFG_QOS_HIGH;
 	CAN1->MRCFG.reg = CAN_MRCFG_QOS_HIGH;
 
-	NVIC_SetPriority(CAN0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(CAN1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(CAN0_IRQn, SC_ISR_PRIORITY);
+	NVIC_SetPriority(CAN1_IRQn, SC_ISR_PRIORITY);
 }
 
 static inline void counter_1MHz_init(void)
@@ -379,10 +379,10 @@ static inline void uart_init(void)
 
 static inline void init_usb(void)
 {
-	NVIC_SetPriority(USB_0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(USB_1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(USB_2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(USB_3_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(USB_0_IRQn, SC_ISR_PRIORITY);
+	NVIC_SetPriority(USB_1_IRQn, SC_ISR_PRIORITY);
+	NVIC_SetPriority(USB_2_IRQn, SC_ISR_PRIORITY);
+	NVIC_SetPriority(USB_3_IRQn, SC_ISR_PRIORITY);
 
 	/* USB clock init
 	 * The USB module requires a GCLK_USB of 48 MHz ~ 0.25% clock

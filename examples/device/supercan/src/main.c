@@ -838,8 +838,8 @@ int main(void)
 	tusb_init();
 
 
-	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_stack_mem);
-	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
+	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, SC_TASK_PRIORITY, usb_device_stack, &usb_device_stack_mem);
+	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, SC_TASK_PRIORITY, led_task_stack, &led_task_mem);
 
 
 	sc_board_init_end();
@@ -849,7 +849,7 @@ int main(void)
 		struct usb_can *usb_can = &usb.can[i];
 
 		usb_can->mutex_handle = xSemaphoreCreateMutexStatic(&usb_can->mutex_mem);
-		can->usb_task_handle = xTaskCreateStatic(&can_usb_task, NULL, TU_ARRAY_SIZE(can->usb_task_stack_mem), (void*)(uintptr_t)i, configMAX_PRIORITIES-1, can->usb_task_stack_mem, &can->usb_task_mem);
+		can->usb_task_handle = xTaskCreateStatic(&can_usb_task, NULL, TU_ARRAY_SIZE(can->usb_task_stack_mem), (void*)(uintptr_t)i, SC_TASK_PRIORITY, can->usb_task_stack_mem, &can->usb_task_mem);
 	}
 
 	can_usb_disconnect();

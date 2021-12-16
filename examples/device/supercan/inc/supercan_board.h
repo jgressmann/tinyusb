@@ -35,6 +35,12 @@
 #include <supercan.h>
 
 #include <supercan_version.h>
+#include <supercan_version.h>
+
+#include <FreeRTOSConfig.h>
+
+#define SC_TASK_PRIORITY (configLIBRARY_LOWEST_INTERRUPT_PRIORITY-1)
+#define SC_ISR_PRIORITY (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY+1)
 
 #ifndef likely
 #define likely(x) __builtin_expect(!!(x),1)

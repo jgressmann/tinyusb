@@ -89,7 +89,7 @@ static void can_init_module(void)
 
 	CAN1->MRCFG.reg = CAN_MRCFG_QOS_HIGH;
 
-	NVIC_SetPriority(CAN1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(CAN1_IRQn, SC_ISR_PRIORITY);
 }
 
 
@@ -233,10 +233,10 @@ static inline void uart_init(void)
 
 static inline void usb_init(void)
 {
-	NVIC_SetPriority(USB_0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(USB_1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(USB_2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-	NVIC_SetPriority(USB_3_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(USB_0_IRQn, SC_ISR_PRIORITY);
+	NVIC_SetPriority(USB_1_IRQn, SC_ISR_PRIORITY);
+	NVIC_SetPriority(USB_2_IRQn, SC_ISR_PRIORITY);
+	NVIC_SetPriority(USB_3_IRQn, SC_ISR_PRIORITY);
 
 
 	/* USB clock init
