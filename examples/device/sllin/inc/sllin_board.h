@@ -44,8 +44,16 @@
 
 #define SLLIN_NAME "slLIN"
 
+typedef struct sllin_conf {
+	uint16_t bitrate;
+	uint16_t sleep_timeout_ms;
+	bool master;
+} sllin_conf;
+
 enum {
 	SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME,
+	SLLIN_QUEUE_ELEMENT_TYPE_SLEEP,
+	SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP,
 	SLLIN_QUEUE_ELEMENT_TYPE_COUNT,
 };
 
@@ -78,7 +86,8 @@ extern void sllin_board_init_begin(void);
 extern void sllin_board_init_end(void);
 extern void sllin_board_led_set(uint8_t index, bool on);
 extern void sllin_board_leds_on_unsafe(void);
-extern void sllin_board_lin_init(uint8_t index, uint16_t bitrate, bool master);
+extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf);
+extern void sllin_board_lin_sleep_timeout(uint8_t index, uint16_t timeout_ms);
 SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	uint8_t index,
 	uint8_t pi,

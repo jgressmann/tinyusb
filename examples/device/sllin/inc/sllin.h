@@ -29,8 +29,10 @@
 
 enum {
 	// use CAN ID free bits to encode information about the frame
-	SLLIN_ID_FLAG_ENHANCED_CHECKSUM = 0x40, // enhanced checksum
-	SLLIN_ID_FLAG_MASTER_TX =         0x80, // use CAN ID free bits to encode checksum type
+	SLLIN_ID_FLAG_ENHANCED_CHECKSUM = 0x040, // enhanced checksum
+	SLLIN_ID_FLAG_MASTER_TX =         0x080, // use CAN ID free bits to encode checksum type
+	SLLIN_ID_FLAG_BUS_SLEEP =         0x100, // use CAN ID free bits to encode bus sleep
+	SLLIN_ID_FLAG_BUS_WAKE_UP =       0x200, // use CAN ID free bits to encode bus wake up
 };
 
 static inline uint8_t sllin_id_to_pid(uint8_t id)
