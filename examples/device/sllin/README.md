@@ -47,7 +47,7 @@ Send header for ID 'b'. Again, the `-x` suppresses the local echo of the RTR fra
 cangen -I b slcan0 -R  -L 4 -n 1 -x
 ```
 
-If a slave responds to the header, a CAN frame will be echoed. If the request times out the RTR frame will be echoed.
+If a slave responds to the header, a CAN frame will be echoed. If the request times out a RTR frame will be echoed.
 
 ## Serial Line CAN (slcan) Protocol
 
@@ -63,12 +63,13 @@ slLIN mostly follows Lawice's protocol with a few modifications for LIN:
 | `O\r`                                  | host to device | Open device in master mode |
 | `C\r`                                  | host to device | Close device |
 | `tIIILDD...\r`                         | host to device | 1. If the device operates in master mode, this sends a master data frame. </br>2. If the device operatates in slave mode and and length is non-zero, this stores a data reponse.</br>3.  If the device operatates in slave mode and and length is zero, this clears a data reponse. |
-| `tIIILDD...\r`                         | device to host | 1. If the device operates in master mode, a header was sent and a slave responded.</br>2.  If the device operatates in slave mode, a header was received and answered by the device. |
+| `tIIILDD...\r`                         | device to host | A complete LIN frame (header + data). |
 | `rIIIL\r`                              | host to device | Only valid in master mode. Send LIN header.    |
-| `rIIIL\r`                              | device to host | Only valid in master mode. Header sent but no slave response. |
+| `rIIIL\r`                              | device to host | Header on bus but no slave responded. |
 | `n\r`                                  | both           | Request device name                            |
-| `Yn\r`</br>(where n is 0 or 1)         | host to device | Enable / disable periodic time stamp transmission. If enabled, the device sends the current time stamp approx. once per second as `YTTTT\r`. The format of the time stamp follows the Lawicel format, c.f. documentation of `Zn\r` command. |
+| `Yn\r`</br>(where n is 0 or 1)         | host to device | Enable / disable periodic time stamp transmission.</br>If enabled, the device sends the current time stamp approx. once per second as `YTTTT\r`.</br>The format of the time stamp follows the Lawicel format, c.f. documentation of `Zn\r` command. |
 | `shhhh\r`</br>(hex values)             | host to device | Set device baud rate, e.g  `4b00` sets 19200 Baud/s |
+| `Sn\r`                                 | host to device | Set sleep timeout in seconds, i.e. `S0` sets 4 seconds, `S1` 5 seconds... |
 
 
 
@@ -76,6 +77,9 @@ slLIN used the unused bits in the CAN ID to transmit information on the frame.
 
 | Bitmask | Description |
 |---------|-------
-| `0x40`  | Flag. Frame uses enhanced checksum |
-| `0x80`  | Flag. Data frame sent by master |
+| `0x040`  | Flag. Frame uses enhanced checksum |
+| `0x080`  | Flag. Foreign frame, length & checksum are unverified |
+| `0x100`  | Flag. Bus sleep |
+| `0x200`  | Flag. Bus wake up |
+| `0x400`  | Flag. Master data frame |
 
