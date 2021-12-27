@@ -73,7 +73,9 @@ static struct lin {
 	bool enabled;
 	bool report_time_per_frame;
 	bool report_time_periodically;
+#if SLLIN_DEBUG
 	int32_t last_ts;
+#endif
 } lins[SLLIN_BOARD_LIN_COUNT];
 
 int main(void)
@@ -470,19 +472,25 @@ SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_ele
 {
 	struct lin *lin = &lins[index];
 	uint16_t id = e->lin_frame.id;
-	uint8_t id1_nibble = 0;
 	char time_stamp_str[8];
-	const bool no_response = (e->lin_frame.flags & SLLIN_FRAME_FLAG_NO_RESPONSE) != 0;
-	const bool crc_error = (e->lin_frame.flags & SLLIN_FRAME_FLAG_CRC_ERROR) != 0;
-	const bool master_tx = (e->lin_frame.flags & SLLIN_FRAME_FLAG_MASTER_TX) != 0;
-	const bool enhanced_checkum = (e->lin_frame.flags & SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM) != 0;
 
 
-	id1_nibble |= (SLLIN_ID_FLAG_ENHANCED_CHECKSUM >> 4) * enhanced_checkum;
-	id1_nibble |= (SLLIN_ID_FLAG_MASTER_TX >> 4) * master_tx;
+	if (e->lin_frame.flags & SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM) {
+		id |= SLLIN_ID_FLAG_ENHANCED_CHECKSUM;
+	}
+
+	if (e->lin_frame.flags & SLLIN_FRAME_FLAG_FOREIGN) {
+		id |= SLLIN_ID_FLAG_FOREIGN;
+	}
+
+	if (e->lin_frame.flags & SLLIN_FRAME_FLAG_MASTER_TX) {
+		id |= SLLIN_ID_FLAG_MASTER_TX;
+	}
+
 
 	SLLIN_DEBUG_ASSERT(e->lin_frame.len <= 8);
 
+#if SLLIN_DEBUG
 	if (lin->conf.master) {
 		sllin_make_time_stamp_string(time_stamp_str, sizeof(time_stamp_str), e->lin_frame.time_stamp_ms);
 		LOG("ch%u ts=%s\n", index, time_stamp_str);
@@ -496,14 +504,14 @@ SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_ele
 		}
 	}
 
+
 	lin->last_ts = e->lin_frame.time_stamp_ms;
+#endif
 
-	if (no_response) {
-		id1_nibble |= nibble_to_char(id >> 4);
-
+	if (e->lin_frame.flags & SLLIN_FRAME_FLAG_NO_RESPONSE) {
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = 'r';
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = id1_nibble;
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
 
@@ -513,22 +521,34 @@ SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_ele
 		}
 
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
-	} else if (crc_error) {
+	} else if (e->lin_frame.flags & SLLIN_FRAME_FLAG_CRC_ERROR) {
 		static const char can_crc_error_frame[] = "T2000000880000000800000000"; // CAN_ERR_PROT_LOC_CRC_SEQ
 
 		lin->tx_sl_offset = sizeof(can_crc_error_frame) - 1;
 		memcpy(lin->tx_sl_buffer, can_crc_error_frame, lin->tx_sl_offset);
+
 		if (lin->report_time_per_frame) {
 			memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
 			lin->tx_sl_offset += 4;
 		}
+
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
+	} else if (e->lin_frame.flags & SLLIN_FRAME_FLAG_PID_ERROR) {
+		static const char can_pid_error_frame[] = "T2000000880000000F00000000"; // CAN_ERR_PROT_LOC_ID12_05
+
+		lin->tx_sl_offset = sizeof(can_pid_error_frame) - 1;
+		memcpy(lin->tx_sl_buffer, can_pid_error_frame, lin->tx_sl_offset);
+
+		if (lin->report_time_per_frame) {
+			memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
+			lin->tx_sl_offset += 4;
+		}
+
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 	} else {
-		id1_nibble |= nibble_to_char(id >> 4);
-
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = id1_nibble;
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
 
@@ -563,10 +583,11 @@ SLLIN_RAMFUNC static inline void process_queue(uint8_t index, sllin_queue_elemen
 	} break;
 	case SLLIN_QUEUE_ELEMENT_TYPE_SLEEP:
 	case SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP: {
+		uint16_t id = e->type == SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP ? SLLIN_ID_FLAG_BUS_WAKE_UP : SLLIN_ID_FLAG_BUS_SLEEP;
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = (e->type == SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP) + '1';
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0';
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0'; // len
 
 		if (lin->report_time_per_frame) {
@@ -689,7 +710,9 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 				lin->rx_full = false;
 				lin->report_time_per_frame = false;
 				lin->report_time_periodically = false;
+#if SLLIN_DEBUG
 				lin->last_ts = -1;
+#endif
 				// clear queue
 				__atomic_store_n(&lin->rx_fifo_gi, 0, __ATOMIC_RELEASE);
 				__atomic_store_n(&lin->rx_fifo_pi, 0, __ATOMIC_RELEASE);

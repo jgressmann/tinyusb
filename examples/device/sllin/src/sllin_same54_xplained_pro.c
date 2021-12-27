@@ -38,11 +38,10 @@
 
 enum {
 	SLAVE_PROTO_STEP_RX_BREAK = 0,
-	// SLAVE_PROTO_STEP_RX_SYNC,
 	SLAVE_PROTO_STEP_RX_PID,
 	SLAVE_PROTO_STEP_TX_DATA,
 	SLAVE_PROTO_STEP_TX_CRC,
-	// SLAVE_PROTO_STEP_TX_FIN,
+	SLAVE_PROTO_STEP_RX_FOREIGN,
 
 	MASTER_PROTO_STEP_RX_PID = 0,
 	MASTER_PROTO_STEP_RX_DATA,
@@ -51,14 +50,17 @@ enum {
 };
 
 typedef void (*sllin_lin_int_callback)(uint8_t index);
-SLLIN_RAMFUNC static void lin_int_master(uint8_t index);
-SLLIN_RAMFUNC static void lin_int_slave(uint8_t index);
+SLLIN_RAMFUNC static void lin_usart_int_master(uint8_t index);
+SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index);
+SLLIN_RAMFUNC static void lin_node_timer_int_master(uint8_t index);
+SLLIN_RAMFUNC static void lin_node_timer_int_slave(uint8_t index);
 
 struct lin {
 	Sercom* const sercom;
-	Tc* const response_timer;
+	Tc* const node_timer;
 	Tc* const sleep_timer;
-	sllin_lin_int_callback irq_handler;
+	sllin_lin_int_callback usart_irq_handler;
+	sllin_lin_int_callback node_timer_irq_handler;
 	sllin_queue_element elem;
 	uint16_t bitrate;
 	uint16_t master_crc;
@@ -83,12 +85,12 @@ struct lin {
 static struct lin lins[SLLIN_BOARD_LIN_COUNT] = {
 	{
 		.sercom = SERCOM6,
-		.response_timer = TC0, // NOTE: TC0/TC1 don't seem to support different clock speeds, setting one will affect the other.
+		.node_timer = TC0, // NOTE: TC0/TC1 don't seem to support different clock speeds, setting one will affect the other.
 		.sleep_timer = TC2,
 	},
 	{
 		.sercom = SERCOM7,
-		.response_timer = TC1,
+		.node_timer = TC1,
 		.sleep_timer = TC3,
 	},
 };
@@ -374,7 +376,7 @@ static void timer_init(void)
 
 	for (size_t i = 0; i < TU_ARRAY_SIZE(lins); ++i) {
 		struct lin *lin = &lins[i];
-		Tc* rtc = lin->response_timer;
+		Tc* rtc = lin->node_timer;
 		Tc* stc = lin->sleep_timer;
 
 		// reponse timeout
@@ -428,7 +430,7 @@ static void timer_init(void)
 SLLIN_RAMFUNC static inline void lin_master_cleanup(struct lin *lin)
 {
 	// stop timer
-	lin->response_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
+	lin->node_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
 
 	lin->master_proto_step = MASTER_PROTO_STEP_FINISHED;
 
@@ -437,11 +439,11 @@ SLLIN_RAMFUNC static inline void lin_master_cleanup(struct lin *lin)
 
 
 	// wait for sync
-	while (lin->response_timer->COUNT16.SYNCBUSY.bit.CTRLB);
+	while (lin->node_timer->COUNT16.SYNCBUSY.bit.CTRLB);
 	// reset value
-	lin->response_timer->COUNT16.COUNT.reg = 0;
+	lin->node_timer->COUNT16.COUNT.reg = 0;
 	// clear interrupt flags
-	lin->response_timer->COUNT16.INTFLAG.reg = ~0;
+	lin->node_timer->COUNT16.INTFLAG.reg = ~0;
 
 
 	__atomic_clear(&lin->master_busy, __ATOMIC_RELEASE);
@@ -449,11 +451,21 @@ SLLIN_RAMFUNC static inline void lin_master_cleanup(struct lin *lin)
 
 SLLIN_RAMFUNC static inline void lin_slave_cleanup(struct lin *lin)
 {
+	// stop timer
+	lin->node_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
+
 	lin->slave_proto_step = SLAVE_PROTO_STEP_RX_BREAK;
 	lin->slave_tx_offset = 0;
 	lin->slave_rx_offset = 0;
 	//lin->sercom->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE | SERCOM_USART_INTENCLR_RXC;
 	lin->sercom->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
+
+	// wait for sync
+	while (lin->node_timer->COUNT16.SYNCBUSY.bit.CTRLB);
+	// reset value
+	lin->node_timer->COUNT16.COUNT.reg = 0;
+	// clear interrupt flags
+	lin->node_timer->COUNT16.INTFLAG.reg = ~0;
 }
 
 static inline void usb_init(void)
@@ -537,13 +549,14 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	Sercom *sercom = lin->sercom;
 
 	// disable timers
-	lin->response_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
+	lin->node_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
 	lin->sleep_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
 
 	// disable SERCOM
 	sercom->USART.CTRLA.bit.SWRST = 1; /* reset and disable SERCOM -> enable configuration */
 
-	lin->irq_handler = conf->master ? &lin_int_master : &lin_int_slave;
+	lin->usart_irq_handler = conf->master ? &lin_usart_int_master : &lin_usart_int_slave;
+	lin->node_timer_irq_handler = conf->master ? &lin_node_timer_int_master : &lin_node_timer_int_slave;
 	lin->bitrate = conf->bitrate;
 
 
@@ -581,6 +594,9 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 		sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
 
 		lin_slave_cleanup(lin);
+
+		lin->node_timer->COUNT16.CC[0].reg =  (14 * UINT32_C(1000000)) / lin->bitrate;
+		LOG("ch%u data byte timeout CC=%x [us]\n", index, lin->node_timer->COUNT16.CC[0].reg);
 	}
 
 	sercom->USART.CTRLA.bit.ENABLE = 1;
@@ -617,7 +633,7 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	Sercom *s = NULL;
 	uint8_t pid = sllin_id_to_pid(id);
 	bool start_rx_timeout_timer = false;
-	// uint8_t sleep_expected = 1;
+
 
 	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(lins));
 	SLLIN_DEBUG_ASSERT(len <= 8);
@@ -655,22 +671,12 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 		uint32_t T_Response_Maximum = (14 * T_Response_Nominal) / 10;
 		SLLIN_DEBUG_ASSERT(T_Header_Maximum + T_Response_Maximum <= 0xffff);
 
-		lin->response_timer->COUNT16.CC[0].reg = T_Header_Maximum + T_Response_Maximum;
-		// LOG("ch%u frame timeout CC=%x COUNT=%x\n", index, lin->response_timer->COUNT16.CC[0].reg, lin->response_timer->COUNT16.COUNT.reg);
+		lin->node_timer->COUNT16.CC[0].reg = T_Header_Maximum + T_Response_Maximum;
+		// LOG("ch%u frame timeout CC=%x COUNT=%x\n", index, lin->node_timer->COUNT16.CC[0].reg, lin->node_timer->COUNT16.COUNT.reg);
 
 		// start rx timeout timer
 		start_rx_timeout_timer = true;
 	}
-
-	// if (__atomic_compare_exchange_n(&lin->sleep, &sleep_expected, 0, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
-	// 	LOG("ch%u wake up\n", index);
-
-	// 	lin->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP;
-	// 	lin->elem.time_stamp_ms = sllin_time_stamp_ms();
-
-	// 	sllin_lin_task_queue(index, &lin->elem);
-	// 	sllin_lin_task_notify_def(index, 1);
-	// }
 
 
 	lin->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME;
@@ -684,7 +690,7 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	__atomic_thread_fence(__ATOMIC_RELEASE);
 
 	if (start_rx_timeout_timer) {
-		lin->response_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+		lin->node_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 	}
 
 	// lin->sleep_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
@@ -726,9 +732,6 @@ SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(
 }
 
 
-
-
-
 SLLIN_RAMFUNC static inline void lin_int_bus_sleep(uint8_t index)
 {
 	struct lin *lin = &lins[index];
@@ -751,26 +754,6 @@ SLLIN_RAMFUNC static inline void lin_int_bus_sleep(uint8_t index)
 	}
 }
 
-SLLIN_RAMFUNC static inline void lin_int_master_response_timeout(uint8_t index)
-{
-	struct lin *lin = &lins[index];
-
-	lin->response_timer->COUNT16.INTFLAG.reg = ~0;
-
-	SLLIN_ISR_ASSERT(0 == lin->response_timer->COUNT16.COUNT.reg);
-
-	// LOG("ch%u no response\n", index);
-
-	__atomic_thread_fence(__ATOMIC_ACQUIRE);
-
-	lin->elem.lin_frame.flags |= SLLIN_FRAME_FLAG_NO_RESPONSE;
-	lin->elem.lin_frame.time_stamp_ms = sllin_time_stamp_ms();
-
-	sllin_lin_task_queue(index, &lin->elem);
-	sllin_lin_task_notify_isr(index, 1);
-
-	lin_master_cleanup(lin);
-}
 
 SLLIN_RAMFUNC static inline void lin_int_wake_up(uint8_t index)
 {
@@ -785,14 +768,69 @@ SLLIN_RAMFUNC static inline void lin_int_wake_up(uint8_t index)
 
 		sllin_lin_task_queue(index, &lin->elem);
 		sllin_lin_task_notify_isr(index, 1);
-
-		// re-start timer
-		lin->sleep_timer->COUNT16.COUNT.reg = 0;
 	}
+
+	// re-start timer
+	lin->sleep_timer->COUNT16.COUNT.reg = 0;
+}
+
+SLLIN_RAMFUNC static void lin_node_timer_int_master(uint8_t index)
+{
+	// response timeout
+
+	struct lin *lin = &lins[index];
+
+	lin->node_timer->COUNT16.INTFLAG.reg = ~0;
+
+	SLLIN_ISR_ASSERT(0 == lin->node_timer->COUNT16.COUNT.reg);
+
+	// LOG("ch%u no response\n", index);
+
+	__atomic_thread_fence(__ATOMIC_ACQUIRE);
+
+	lin->elem.lin_frame.flags |= SLLIN_FRAME_FLAG_NO_RESPONSE;
+	lin->elem.lin_frame.time_stamp_ms = sllin_time_stamp_ms();
+
+	sllin_lin_task_queue(index, &lin->elem);
+	sllin_lin_task_notify_isr(index, 1);
+
+	lin_master_cleanup(lin);
+}
+
+SLLIN_RAMFUNC static void lin_node_timer_int_slave(uint8_t index)
+{
+	// frame byte timeout
+
+	struct lin *lin = &lins[index];
+
+	lin->node_timer->COUNT16.INTFLAG.reg = ~0;
+
+	SLLIN_ISR_ASSERT(0 == lin->node_timer->COUNT16.COUNT.reg);
+
+	// LOG("ch%u frame data timeout\n", index);
+
+	__atomic_thread_fence(__ATOMIC_ACQUIRE);
+
+	SLLIN_ISR_ASSERT(lin->elem.lin_frame.flags & SLLIN_FRAME_FLAG_FOREIGN);
+
+	if (lin->elem.lin_frame.len) {
+		if (lin->elem.lin_frame.len < 8) {
+			lin->elem.lin_frame.crc = lin->elem.lin_frame.data[--lin->elem.lin_frame.len];
+		}
+	} else {
+		lin->elem.lin_frame.flags |= SLLIN_FRAME_FLAG_NO_RESPONSE;
+	}
+
+	lin->elem.lin_frame.time_stamp_ms = sllin_time_stamp_ms();
+
+	sllin_lin_task_queue(index, &lin->elem);
+	sllin_lin_task_notify_isr(index, 1);
+
+	lin_slave_cleanup(lin);
 }
 
 
-SLLIN_RAMFUNC static void lin_int_master(uint8_t index)
+SLLIN_RAMFUNC static void lin_usart_int_master(uint8_t index)
 {
 	struct lin *lin = &lins[index];
 	Sercom *s = lin->sercom;
@@ -902,7 +940,7 @@ tx:
 	}
 }
 
-SLLIN_RAMFUNC static void lin_int_slave(uint8_t index)
+SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index)
 {
 	struct lin *lin = &lins[index];
 	Sercom *s = lin->sercom;
@@ -954,11 +992,26 @@ SLLIN_RAMFUNC static void lin_int_slave(uint8_t index)
 
 					goto tx;
 				} else {
-					// LOG("ch%u no data for id=%x\n", index, id);
-					lin_slave_cleanup(lin);
+					lin->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME;
+					lin->elem.lin_frame.id = id;
+					lin->elem.lin_frame.len = 0;
+					lin->elem.lin_frame.flags = SLLIN_FRAME_FLAG_FOREIGN;
+					lin->slave_proto_step = SLAVE_PROTO_STEP_RX_FOREIGN;
+					intflag &= ~SERCOM_USART_INTFLAG_RXC;
+
+					// start frame data timer
+					lin->node_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 				}
 			} else {
-				// bad pid
+				// bad PID
+				lin->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME;
+				lin->elem.lin_frame.id = id;
+				lin->elem.lin_frame.flags = SLLIN_FRAME_FLAG_PID_ERROR;
+				lin->elem.lin_frame.time_stamp_ms = sllin_time_stamp_ms();
+
+				sllin_lin_task_queue(index, &lin->elem);
+				sllin_lin_task_notify_isr(index, 1);
+
 				lin_slave_cleanup(lin);
 			}
 		}
@@ -1018,6 +1071,25 @@ tx:
 			}
 		}
 		break;
+	case SLAVE_PROTO_STEP_RX_FOREIGN:
+		if (intflag & SERCOM_USART_INTFLAG_RXC) {
+			// reset data timer
+			lin->node_timer->COUNT16.COUNT.reg = 0;
+
+
+			// LOG("ch%u RX=%x\n", index, rx_byte);
+			if (lin->elem.lin_frame.len < 8) {
+				lin->elem.lin_frame.data[lin->elem.lin_frame.len++] = rx_byte;
+			} else {
+				lin->elem.lin_frame.crc = rx_byte;
+				// lin->elem.lin_frame.time_stamp_ms = sllin_time_stamp_ms();
+
+				// sllin_lin_task_queue(index, &lin->elem);
+				// sllin_lin_task_notify_isr(index, 1);
+				// lin_slave_cleanup(lin);
+			}
+		}
+		break;
 	}
 
 
@@ -1031,72 +1103,52 @@ tx:
 
 SLLIN_RAMFUNC void SERCOM6_0_Handler(void)
 {
-	lins[0].irq_handler(0);
+	lins[0].usart_irq_handler(0);
 }
 
 SLLIN_RAMFUNC void SERCOM6_1_Handler(void)
 {
-	lins[0].irq_handler(0);
+	lins[0].usart_irq_handler(0);
 }
 
 SLLIN_RAMFUNC void SERCOM6_2_Handler(void)
 {
-	lins[0].irq_handler(0);
+	lins[0].usart_irq_handler(0);
 }
 
 SLLIN_RAMFUNC void SERCOM6_3_Handler(void)
 {
-	lins[0].irq_handler(0);
+	lins[0].usart_irq_handler(0);
 }
-
-// SLLIN_RAMFUNC void SERCOM0_0_Handler(void)
-// {
-// 	lins[1].irq_handler(1);
-// }
-
-// SLLIN_RAMFUNC void SERCOM0_1_Handler(void)
-// {
-// 	lins[1].irq_handler(1);
-// }
-
-// SLLIN_RAMFUNC void SERCOM0_2_Handler(void)
-// {
-// 	lins[1].irq_handler(1);
-// }
-
-// SLLIN_RAMFUNC void SERCOM0_3_Handler(void)
-// {
-// 	lins[1].irq_handler(1);
-// }
 
 SLLIN_RAMFUNC void SERCOM7_0_Handler(void)
 {
-	lins[1].irq_handler(1);
+	lins[1].usart_irq_handler(1);
 }
 
 SLLIN_RAMFUNC void SERCOM7_1_Handler(void)
 {
-	lins[1].irq_handler(1);
+	lins[1].usart_irq_handler(1);
 }
 
 SLLIN_RAMFUNC void SERCOM7_2_Handler(void)
 {
-	lins[1].irq_handler(1);
+	lins[1].usart_irq_handler(1);
 }
 
 SLLIN_RAMFUNC void SERCOM7_3_Handler(void)
 {
-	lins[1].irq_handler(1);
+	lins[1].usart_irq_handler(1);
 }
 
 SLLIN_RAMFUNC void TC0_Handler(void)
 {
-	lin_int_master_response_timeout(0);
+	lins[0].node_timer_irq_handler(0);
 }
 
 SLLIN_RAMFUNC void TC1_Handler(void)
 {
-	lin_int_master_response_timeout(1);
+	lins[1].node_timer_irq_handler(1);
 }
 
 SLLIN_RAMFUNC void TC2_Handler(void)
