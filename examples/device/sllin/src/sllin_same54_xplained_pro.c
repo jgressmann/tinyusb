@@ -595,6 +595,8 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 
 		lin_slave_cleanup(lin);
 
+		memset(lin->slave_frame_len, 0, sizeof(lin->slave_frame_len));
+
 		lin->node_timer->COUNT16.CC[0].reg =  (14 * UINT32_C(1000000)) / lin->bitrate;
 		LOG("ch%u data byte timeout CC=%x [us]\n", index, lin->node_timer->COUNT16.CC[0].reg);
 	}
