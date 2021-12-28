@@ -707,7 +707,7 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 				lin->tx_sl_offset = 0;
 				lin->enabled = false;
 				lin->tx_full = false;
-				lin->rx_full = false;
+				lin->rx_full = 0;
 				lin->report_time_per_frame = false;
 				lin->report_time_periodically = false;
 #if SLLIN_DEBUG
