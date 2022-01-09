@@ -689,8 +689,10 @@ send_txr:
 SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(cans));
 
 	struct usb_can *usb_can = &usb.can[index];
+	struct can *can = &cans[index];
 	const uint8_t rx_bank = usb_can->rx_bank;
 	(void)rx_bank;
 	uint8_t *in_beg = usb_can->rx_buffers[usb_can->rx_bank];
@@ -714,39 +716,42 @@ SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 	// LOG("ch%u %s: chunk %u\n", index, func, i);
 	// sc_dump_mem(data_ptr, data_size);
 
-	// process messages
-	while (in_ptr + SC_MSG_HEADER_LEN <= in_end) {
-		struct sc_msg_header const *msg = (struct sc_msg_header const *)in_ptr;
+	// guard against CAN frames when disabled
+	if (likely(can->enabled)) {
+		// process messages
+		while (in_ptr + SC_MSG_HEADER_LEN <= in_end) {
+			struct sc_msg_header const *msg = (struct sc_msg_header const *)in_ptr;
 
-		if (in_ptr + msg->len > in_end) {
-			LOG("ch%u offset=%u len=%u exceeds buffer size=%u\n", index, (unsigned)(in_ptr - in_beg), msg->len, (unsigned)xferred_bytes);
-			break;
+			if (in_ptr + msg->len > in_end) {
+				LOG("ch%u offset=%u len=%u exceeds buffer size=%u\n", index, (unsigned)(in_ptr - in_beg), msg->len, (unsigned)xferred_bytes);
+				break;
+			}
+
+			if (!msg->id || !msg->len) {
+				// Allow empty message to work around having to zend ZLP
+				// LOG("ch%u offset=%u unexpected zero id/len msg\n", index, (unsigned)(in_ptr - in_beg));
+				in_ptr = in_end;
+				break;
+			}
+
+			in_ptr += msg->len;
+
+			switch (msg->id) {
+			case SC_MSG_CAN_TX:
+				sc_process_msg_can_tx(index, msg);
+				break;
+
+			default:
+	#if SUPERCAN_DEBUG
+				sc_dump_mem(msg, msg->len);
+	#endif
+				break;
+			}
 		}
 
-		if (!msg->id || !msg->len) {
-			// Allow empty message to work around having to zend ZLP
-			// LOG("ch%u offset=%u unexpected zero id/len msg\n", index, (unsigned)(in_ptr - in_beg));
-			in_ptr = in_end;
-			break;
+		if (sc_can_bulk_in_ep_ready(index) && usb_can->tx_offsets[usb_can->tx_bank]) {
+			sc_can_bulk_in_submit(index, __func__);
 		}
-
-		in_ptr += msg->len;
-
-		switch (msg->id) {
-		case SC_MSG_CAN_TX:
-			sc_process_msg_can_tx(index, msg);
-			break;
-
-		default:
-#if SUPERCAN_DEBUG
-			sc_dump_mem(msg, msg->len);
-#endif
-			break;
-		}
-	}
-
-	if (sc_can_bulk_in_ep_ready(index) && usb_can->tx_offsets[usb_can->tx_bank]) {
-		sc_can_bulk_in_submit(index, __func__);
 	}
 
 	xSemaphoreGive(usb_can->mutex_handle);

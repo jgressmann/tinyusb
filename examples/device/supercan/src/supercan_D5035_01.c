@@ -160,8 +160,6 @@ static void can_init_module(void)
 		}
 
 		for (size_t i = 0; i < TU_ARRAY_SIZE(same5x_cans[0].tx_fifo); ++i) {
-			can->tx_fifo[i].T1.bit.EFC = 1; // store tx events
-
 			SC_DEBUG_ASSERT(can->tx_frames[i].ts == 0);
 		}
 	}

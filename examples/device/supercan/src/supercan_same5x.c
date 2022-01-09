@@ -447,6 +447,10 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 	can->tx_get_index = 0;
 	can->tx_put_index = 0;
 
+#if SUPERCAN_DEBUG
+	can->txr = 0;
+#endif
+
 	__atomic_thread_fence(__ATOMIC_RELEASE); // rx_lost, int_*
 }
 
@@ -505,35 +509,28 @@ static void can_on(uint8_t index)
 
 			uint8_t put_index = can->m_can->TXFQS.bit.TFQPI;
 
-			can->tx_fifo[put_index].T0.reg = UINT32_C(1) << 18; // CAN-ID 1
-			can->tx_fifo[put_index].T1.reg = 0;
+			can->tx_fifo[put_index].T0.reg = UINT32_C(1) << 18; // CAN-ID 1, ESI=0, XTD=0, RTR=0
+			can->tx_fifo[put_index].T1.reg = 0; // DLC=0, MM=0, no FDF, no BSR, no TXEF event, see EFC field, DS60001507E-page 1305
 
 			can->m_can->TXBAR.reg = UINT32_C(1) << put_index;
 
-			// Aparently when in this this mode TEFN interrupt isn't raised
-			// I couldn't find anything in the silicon errata (DS80000748J) about
-			// this so I guess it's a feature?
-			// There also no elements in the tx event fifo so at least the behavior
-			// is consistent.
 			while ((can->m_can->IR.reg & (CAN_IR_RF0N)) != (CAN_IR_RF0N));
 
 			// clear interrupts
 			can->m_can->IR.reg = ~0;
 
-			LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
+			// LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
 
 			// throw away rx msg, tx event
 			can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(can->m_can->RXF0S.bit.F0GI);
-			// see comment above
-			// can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(can->m_can->TXEFS.bit.EFGI);
 
 			current_ecr = can->m_can->ECR;
 
-			LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
-			LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
+			// LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
+			// LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
 		} while (current_ecr.reg != previous_ecr.reg);
 
-
+		LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
 
 		m_can_init_begin(can->m_can);
 
@@ -647,13 +644,14 @@ extern uint16_t sc_board_can_feat_conf(uint8_t index)
 SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
 {
 	struct same5x_can *can = &same5x_cans[index];
-	bool available = can->m_can->TXFQS.bit.TFQPI - can->m_can->TXFQS.bit.TFGI < 32;
+	bool available = can->m_can->TXFQS.bit.TFQPI - can->m_can->TXFQS.bit.TFGI < SC_BOARD_CAN_TX_FIFO_SIZE;
 
 	if (available) {
 		uint32_t id = msg->can_id;
 		uint8_t put_index = can->m_can->TXFQS.bit.TFQPI;
-
 		CAN_TXBE_0_Type t0;
+		CAN_TXBE_1_Type t1;
+
 		t0.reg = (((msg->flags & SC_CAN_FRAME_FLAG_ESI) == SC_CAN_FRAME_FLAG_ESI) << CAN_TXBE_0_ESI_Pos)
 			| (((msg->flags & SC_CAN_FRAME_FLAG_RTR) == SC_CAN_FRAME_FLAG_RTR) << CAN_TXBE_0_RTR_Pos)
 			| (((msg->flags & SC_CAN_FRAME_FLAG_EXT) == SC_CAN_FRAME_FLAG_EXT) << CAN_TXBE_0_XTD_Pos)
@@ -665,11 +663,16 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 			t0.reg |= CAN_TXBE_0_ID(id << 18);
 		}
 
+		t1.reg = CAN_TXBE_1_EFC
+			| CAN_TXBE_1_DLC(msg->dlc)
+			| CAN_TXBE_1_MM(msg->track_id)
+			| (((msg->flags & SC_CAN_FRAME_FLAG_FDF) == SC_CAN_FRAME_FLAG_FDF) << CAN_TXBE_1_FDF_Pos)
+			| (((msg->flags & SC_CAN_FRAME_FLAG_BRS) == SC_CAN_FRAME_FLAG_BRS) << CAN_TXBE_1_BRS_Pos)
+			;
+
+
 		can->tx_fifo[put_index].T0 = t0;
-		can->tx_fifo[put_index].T1.bit.DLC = msg->dlc;
-		can->tx_fifo[put_index].T1.bit.FDF = (msg->flags & SC_CAN_FRAME_FLAG_FDF) == SC_CAN_FRAME_FLAG_FDF;
-		can->tx_fifo[put_index].T1.bit.BRS = (msg->flags & SC_CAN_FRAME_FLAG_BRS) == SC_CAN_FRAME_FLAG_BRS;
-		can->tx_fifo[put_index].T1.bit.MM = msg->track_id;
+		can->tx_fifo[put_index].T1 = t1;
 
 		if (likely(!(msg->flags & SC_CAN_FRAME_FLAG_RTR))) {
 			const unsigned can_frame_len = dlc_to_len(msg->dlc);
@@ -680,6 +683,11 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 		}
 
 		can->m_can->TXBAR.reg = UINT32_C(1) << put_index;
+#if SUPERCAN_DEBUG
+		SC_DEBUG_ASSERT(!(can->txr & (UINT32_C(1) << msg->track_id)));
+
+		can->txr |= UINT32_C(1) << msg->track_id;
+#endif
 	}
 
 	return available;
@@ -820,7 +828,11 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 				msg->id = SC_MSG_CAN_TXR;
 				msg->len = sizeof(*msg);
 				msg->track_id = t1.bit.MM;
+#if SUPERCAN_DEBUG
+				SC_DEBUG_ASSERT(can->txr & (UINT32_C(1) << msg->track_id));
 
+				can->txr &= ~(UINT32_C(1) << msg->track_id);
+#endif
 				uint32_t ts = can->tx_frames[get_index].ts;
 	// #if SUPERCAN_DEBUG
 	// 					// bool tx_ts_ok = ts >= tx_ts_last || (TS_HI(tx_ts_last) == 0xffff && TS_HI(ts) == 0);
