@@ -482,11 +482,17 @@ static void can_on(uint8_t index)
 
 	current_ecr = can->m_can->ECR;
 
+	/*
+	 * If we have errors from prior use, try to get rid of them.
+	 *
+	 * Unfortunately M_CAN can't be reset on its own wich means
+	 * we need to tx/rx messages for the error counters to go down.
+	 */
 	if (current_ecr.bit.REC | current_ecr.bit.TEC) {
 		CAN_ECR_Type previous_ecr;
 
 		LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
-		LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
+		// LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
 
 		m_can_conf_begin(can->m_can);
 
@@ -546,7 +552,7 @@ static void can_on(uint8_t index)
 	SC_DEBUG_ASSERT(!m_can_tx_event_fifo_avail(can->m_can));
 
 	LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
-	LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
+	// LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
 }
 
 static inline void can_reset(uint8_t index)
