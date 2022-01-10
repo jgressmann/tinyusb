@@ -29,6 +29,7 @@
 #include <supercan_m1.h>
 #include <supercan_board.h>
 #include <usb_descriptors.h>
+#include <dfu_usb_descriptors.h>
 #include <usnprintf.h>
 
 #ifndef SC_BOARD_CAN_COUNT
@@ -138,7 +139,7 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 #define MS_OS_20_FEATURE_MODEL_ID_DESC_LEN 0x14
 
 #if CFG_TUD_DFU_RUNTIME
-#	define DFU_MS_OS_20_DESC_LEN (0x08+MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN)
+#	define DFU_MS_OS_20_DESC_LEN (DFU_MS_OS_20_SUBSET_HEADER_FUNCTION_LEN+DFU_MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN+DFU_MS_OS_20_FEATURE_REG_PROPERTY_DEVICE_GUIDS_DESC_LEN)
 #else
 #	define DFU_MS_OS_20_DESC_LEN 0
 #endif
@@ -198,12 +199,9 @@ uint8_t const desc_ms_os_20[] =
 #endif
 
 #if CFG_TUD_DFU_RUNTIME
-	// Function Subset header: length, type, first interface, reserved, subset length
-	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), DFU_INTERFACE_INDEX, 0, U16_TO_U8S_LE(0x08 + MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN),
-
-	// MS OS 2.0 Compatible ID descriptor: length, type, compatible ID, sub compatible ID
-	U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN), U16_TO_U8S_LE(MS_OS_20_FEATURE_COMPATBLE_ID), 'W', 'I', 'N', 'U', 'S', 'B', 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
+	DFU_MS_OS_20_SUBSET_HEADER_FUNCTION_DATA(DFU_INTERFACE_INDEX, DFU_MS_OS_20_DESC_LEN),
+	DFU_MS_OS_20_FEATURE_COMPATBLE_ID_DESC_DATA,
+	DFU_MS_OS_20_FEATURE_REG_PROPERTY_DEVICE_GUIDS_DESC_DATA,
 #endif
 };
 
