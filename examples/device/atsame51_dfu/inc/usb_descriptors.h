@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2022 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,8 +27,10 @@
 
 #include <stdint.h>
 
+#include <dfu_usb_descriptors.h>
+
 enum {
 	DFU_USB_TIMEOUT_MS = 1000u,
-	DFU_WILL_DETACH = 0,
-	DFU_MANIFESTATION_TOLERANT = 0,
 };
+
+extern uint8_t const desc_ms_os_20[];

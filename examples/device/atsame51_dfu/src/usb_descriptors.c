@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2022 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -47,7 +47,7 @@
 static const tusb_desc_device_t device = {
 	.bLength            = sizeof(tusb_desc_device_t),
 	.bDescriptorType    = TUSB_DESC_DEVICE,
-	.bcdUSB             = 0x0100,
+	.bcdUSB             = 0x0210,
 
 	.bDeviceClass       = TUSB_CLASS_UNSPECIFIED,
 	.bDeviceSubClass    = 0x00,
@@ -117,7 +117,7 @@ Bit 0: download capable
 		U16_TO_U8S_LE(0x0101)/*bcdVersion*/
 #endif
 	// Interface number, Alternate count, starting string index, attributes, detach timeout, transfer size
-	TUD_DFU_DESCRIPTOR(0, ALT_COUNT, 4, (DFU_ATTR_CAN_DOWNLOAD | DFU_ATTR_MANIFESTATION_TOLERANT), 1000, CFG_TUD_DFU_XFER_BUFSIZE),
+	TUD_DFU_DESCRIPTOR(0, ALT_COUNT, 4, (DFU_ATTR_CAN_DOWNLOAD | DFU_ATTR_MANIFESTATION_TOLERANT), DFU_USB_TIMEOUT_MS, CFG_TUD_DFU_XFER_BUFSIZE),
 };
 
 
@@ -125,6 +125,41 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 {
 	(void) index; // for multiple configurations
 	return desc_configuration;
+}
+
+#define DFU_MS_OS_20_DESC_LEN (DFU_MS_OS_20_SUBSET_HEADER_FUNCTION_LEN + DFU_MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN + DFU_MS_OS_20_FEATURE_REG_PROPERTY_DEVICE_GUIDS_DESC_LEN)
+#define MS_OS_20_DESC_LEN (0x0A + 0x08 + 4 + DFU_MS_OS_20_DESC_LEN)
+
+uint8_t const desc_ms_os_20[] = {
+	// Set header: length, type, windows version, total length
+	U16_TO_U8S_LE(0x000A), U16_TO_U8S_LE(MS_OS_20_SET_HEADER_DESCRIPTOR), U32_TO_U8S_LE(0x06030000), U16_TO_U8S_LE(MS_OS_20_DESC_LEN),
+	// treat as composite
+	U16_TO_U8S_LE(0x0004), U16_TO_U8S_LE(MS_OS_20_FEATURE_CCGP_DEVICE),
+	// Configuration subset header: length, type, configuration index, reserved, configuration total length
+	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_CONFIGURATION), 0, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0E),
+	// DFU
+	DFU_MS_OS_20_SUBSET_HEADER_FUNCTION_DATA(0, DFU_MS_OS_20_DESC_LEN),
+	DFU_MS_OS_20_FEATURE_COMPATBLE_ID_DESC_DATA,
+	DFU_MS_OS_20_FEATURE_REG_PROPERTY_DEVICE_GUIDS_DESC_DATA,
+
+
+};
+
+TU_VERIFY_STATIC(sizeof(desc_ms_os_20) == MS_OS_20_DESC_LEN, "descriptor size mismatch");
+
+#define BOS_TOTAL_LEN      (TUD_BOS_DESC_LEN + TUD_BOS_MICROSOFT_OS_DESC_LEN)
+static uint8_t const bos_desc[] =
+{
+	// total length, number of device caps
+	TUD_BOS_DESCRIPTOR(BOS_TOTAL_LEN, 1),
+
+	// Microsoft OS 2.0 descriptor
+	TUD_BOS_MS_OS_20_DESCRIPTOR(MS_OS_20_DESC_LEN, DFU_VENDOR_REQUEST_MICROSOFT)
+};
+
+uint8_t const * tud_descriptor_bos_cb(void)
+{
+	return bos_desc;
 }
 
 
