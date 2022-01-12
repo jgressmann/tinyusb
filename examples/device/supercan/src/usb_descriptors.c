@@ -29,8 +29,12 @@
 #include <supercan_m1.h>
 #include <supercan_board.h>
 #include <usb_descriptors.h>
-#include <dfu_usb_descriptors.h>
+
 #include <usnprintf.h>
+
+#if CFG_TUD_DFU_RUNTIME
+	#include <dfu_usb_descriptors.h>
+#endif
 
 #ifndef SC_BOARD_CAN_COUNT
 #	error "Define SC_BOARD_CAN_COUNT!"
