@@ -103,7 +103,7 @@ struct same5x_can {
 	IRQn_Type interrupt_id;
 	uint32_t nm_us_per_bit;
 	uint32_t dt_us_per_bit_factor_shift8;
-	CAN_PSR_Type int_prev_psr_reg;
+	uint32_t int_prev_error_ts;
 	uint16_t features;
 	uint8_t int_prev_bus_state;
 	uint8_t int_prev_rx_errors;
@@ -117,6 +117,8 @@ struct same5x_can {
 	uint8_t rx_put_index; // NOT an index, uses full range of type
 	uint8_t tx_get_index; // NOT an index, uses full range of type
 	uint8_t tx_put_index; // NOT an index, uses full range of type
+	uint8_t int_prev_lec_no_nc;
+	uint8_t int_prev_dlec_no_nc;
 #if SUPERCAN_DEBUG
 	uint32_t txr;
 #endif

@@ -180,7 +180,6 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 	struct same5x_can *can = &same5x_cans[index];
 	uint8_t current_bus_state = 0;
 	CAN_PSR_Type current_psr = can->m_can->PSR; // always read, sets NC
-	CAN_PSR_Type prev_psr = can->int_prev_psr_reg;
 	CAN_ECR_Type current_ecr = can->m_can->ECR; // always read, clears CEL
 	sc_can_status status;
 	uint8_t rec = current_ecr.bit.REC;
@@ -221,14 +220,6 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 
 		sc_can_status_queue(index, &status);
 		++*events;
-	}
-
-	// update NC (no change) from last value (which might also be NC)
-	if (CAN_PSR_LEC_NC_Val == current_psr.bit.LEC) {
-		current_psr.bit.LEC = prev_psr.bit.LEC;
-	}
-	if (CAN_PSR_DLEC_NC_Val == current_psr.bit.DLEC) {
-		current_psr.bit.DLEC = prev_psr.bit.DLEC;
 	}
 
 	if (current_psr.bit.BO) {
@@ -273,21 +264,29 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 		}
 	}
 
+	uint8_t lec = current_psr.bit.LEC;
+	uint8_t dlec = current_psr.bit.DLEC;
+
+	if (likely(CAN_PSR_LEC_NC_Val == lec)) {
+		lec = can->int_prev_lec_no_nc;
+	}
+
+	if (likely(CAN_PSR_DLEC_NC_Val == dlec)) {
+		dlec = can->int_prev_dlec_no_nc;
+	}
+
+
+
 	const bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
-	const uint8_t lec = current_psr.bit.LEC;
-	const uint8_t dlec = current_psr.bit.DLEC;
+	const bool report_error = (tsc - can->int_prev_error_ts) >= 1000; // once per millisecond, USB poll interval
 	// bool is_rx_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_RX_Val || is_tx_error;
-	// bool had_nm_error = prev_psr.bit.LEC != CAN_PSR_LEC_NONE_Val && prev_psr.bit.LEC != CAN_PSR_LEC_NC_Val;
 
 
-	// if (current_psr.bit.LEC != prev_psr.bit.LEC &&
-	// 	current_psr.bit.LEC != CAN_PSR_LEC_NONE_Val &&
-	// 	current_psr.bit.LEC != CAN_PSR_LEC_NC_Val &&
-	// 	/* is_rx_tx_error */ true) {
 	if ((lec != CAN_PSR_LEC_NONE_Val) &&
-		(lec != CAN_PSR_LEC_NC_Val) &&
-		(lec != prev_psr.bit.LEC)) {
+		((lec != can->int_prev_lec_no_nc) || report_error)) {
 		// LOG("CAN%u lec %x\n", index, current_psr.bit.LEC);
+
+		can->int_prev_error_ts = tsc;
 
 		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
 		status.timestamp_us = tsc;
@@ -299,15 +298,11 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 		++*events;
 	}
 
-	// bool had_dt_error = prev_psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val && prev_psr.bit.DLEC != CAN_PSR_DLEC_NC_Val;
-	// if (current_psr.bit.DLEC != prev_psr.bit.DLEC &&
-	// 	current_psr.bit.DLEC != CAN_PSR_DLEC_NONE_Val &&
-	// 	current_psr.bit.DLEC != CAN_PSR_DLEC_NC_Val &&
-	// 	/*is_rx_tx_error*/ true) {
 	if ((dlec != CAN_PSR_DLEC_NONE_Val) &&
-		(dlec != CAN_PSR_DLEC_NC_Val) &&
-		(dlec != prev_psr.bit.DLEC)) {
+		((dlec != can->int_prev_dlec_no_nc) || report_error)) {
 		// LOG("CAN%u dlec %x\n", index, current_psr.bit.DLEC);
+
+		can->int_prev_error_ts = tsc;
 
 		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
 		status.timestamp_us = tsc;
@@ -319,8 +314,9 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 		++*events;
 	}
 
-	// store updated psr reg
-	can->int_prev_psr_reg = current_psr;
+	// store updated lec, dlec
+	can->int_prev_lec_no_nc = lec;
+	can->int_prev_dlec_no_nc = dlec;
 }
 
 SC_RAMFUNC void same5x_can_int(uint8_t index)
@@ -430,15 +426,16 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 #if SUPERCAN_DEBUG
 	memset(can->rx_frames, 0, sizeof(can->rx_frames));
 	memset(can->tx_frames, 0, sizeof(can->tx_frames));
-	// memset(can->status_fifo, 0, sizeof(can->status_fifo));
 #endif
 
 	can->int_prev_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
-	can->int_prev_psr_reg.reg = 0;
 	can->int_prev_rx_errors = 0;
 	can->int_prev_tx_errors = 0;
 	can->int_init_rx_errors = 0;
 	can->int_init_tx_errors = 0;
+	can->int_prev_error_ts = 0;
+	can->int_prev_lec_no_nc = CAN_PSR_LEC_NONE_Val;
+	can->int_prev_dlec_no_nc = CAN_PSR_DLEC_NONE_Val;
 
 	// call this here to timestamp / last rx/tx values
 	// since we won't get any further interrupts
@@ -451,7 +448,7 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 	can->txr = 0;
 #endif
 
-	__atomic_thread_fence(__ATOMIC_RELEASE); // rx_lost, int_*
+	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
 }
 
 static inline void can_off(uint8_t index)
