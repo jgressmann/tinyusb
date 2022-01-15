@@ -646,15 +646,15 @@ SC_RAMFUNC static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header
 
 	const uint8_t can_frame_len = dlc_to_len(tmsg->dlc);
 	if (!(tmsg->flags & SC_CAN_FRAME_FLAG_RTR)) {
-		if (msg->len < sizeof(*tmsg) + can_frame_len) {
+		if (unlikely(msg->len < sizeof(*tmsg) + can_frame_len)) {
 			LOG("ch%u ERROR: SC_MSG_CAN_TX msg too short\n", index);
 			return;
 		}
 	}
 
 	if (unlikely(!sc_board_can_tx_queue(index, tmsg))) {
-		uint8_t * const tx_beg = NULL;
-		uint8_t * const tx_end = NULL;
+		uint8_t *tx_beg = NULL;
+		uint8_t *tx_end = NULL;
 		uint8_t *tx_ptr = NULL;
 		struct sc_msg_can_txr* rep = NULL;
 
