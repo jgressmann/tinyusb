@@ -653,17 +653,19 @@ SC_RAMFUNC static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header
 	}
 
 	if (unlikely(!sc_board_can_tx_queue(index, tmsg))) {
-		uint8_t * const tx_beg = usb_can->tx_buffers[usb_can->tx_bank];
-		uint8_t * const tx_end = tx_beg + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
+		uint8_t * const tx_beg = NULL;
+		uint8_t * const tx_end = NULL;
 		uint8_t *tx_ptr = NULL;
 		struct sc_msg_can_txr* rep = NULL;
 
 		sc_board_can_ts_request(index);
 		++can->tx_dropped;
 
-
 send_txr:
+		tx_beg = usb_can->tx_buffers[usb_can->tx_bank];
+		tx_end = tx_beg + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
 		tx_ptr = tx_beg + usb_can->tx_offsets[usb_can->tx_bank];
+
 		if ((size_t)(tx_end - tx_ptr) >= sizeof(*rep)) {
 			usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*rep);
 
