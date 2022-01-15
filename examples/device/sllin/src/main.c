@@ -283,6 +283,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 				LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
 				lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 			} else {
+				// fix me -> cleanup
 				uint8_t can_id_nibble1 = char_to_nibble(lin->rx_sl_buffer[2]);
 				uint8_t can_id_nibble2 = char_to_nibble(lin->rx_sl_buffer[3]);
 				uint8_t frame_len = char_to_nibble(lin->rx_sl_buffer[4]);
@@ -346,6 +347,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 				LOG("ch%u refusing to transmit in slave mode\n", index);
 				lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 			} else {
+				// fix me -> cleanup
 				uint8_t can_id_nibble1 = char_to_nibble(lin->rx_sl_buffer[2]);
 				uint8_t can_id_nibble2 = char_to_nibble(lin->rx_sl_buffer[3]);
 				uint8_t id = ((can_id_nibble1 << 4) | can_id_nibble2) & 0x3f;
