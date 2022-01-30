@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2022 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -138,21 +138,25 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 static inline void can_state_reset(uint8_t index)
 {
 	struct can *can = &cans[index];
+	struct usb_can *usb_can = &usb.can[index];
 
 	can->desync = false;
 	can->tx_dropped = 0;
 	can->rx_lost = 0;
-	can->status_put_index = 0;
-	can->status_get_index = 0;
-	can->int_comm_flags = 0;
-#if SUPERCAN_DEBUG
-	memset(can->status_fifo, 0, sizeof(can->status_fifo));
-#endif
+	__atomic_store_n(&can->status_get_index, __atomic_load_n(&can->status_put_index, __ATOMIC_ACQUIRE), __ATOMIC_RELAXED);
+	__atomic_store_n(&can->int_comm_flags, 0, __ATOMIC_RELAXED);
+
+	usb_can->tx_offsets[0] = 0;
+	usb_can->tx_offsets[1] = 0;
 }
 
 static inline void can_state_initial(uint8_t index)
 {
 	struct can *can = &cans[index];
+	struct usb_cmd *cmd = &usb.cmd[index];
+
+	cmd->tx_offsets[0] = 0;
+	cmd->tx_offsets[1] = 0;
 
 	can->enabled = false;
 	can->features = sc_board_can_feat_perm(index);
@@ -596,6 +600,7 @@ send_can_info:
 					while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
 
 					if (is_enabled) {
+						can_state_reset(index);
 						sc_board_can_feat_set(index, can->features);
 						sc_board_can_go_bus(index, is_enabled);
 						sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_ON_BUS_PASSIVE);
@@ -848,8 +853,13 @@ int main(void)
 	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, SC_TASK_PRIORITY, usb_device_stack, &usb_device_stack_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, SC_TASK_PRIORITY, led_task_stack, &led_task_mem);
 
+	usb.cmd[0].pipe = SC_M1_EP_CMD0_BULK_OUT;
+	usb.can[0].pipe = SC_M1_EP_MSG0_BULK_OUT;
 
-	sc_board_init_end();
+#if SC_BOARD_CAN_COUNT > 1
+	usb.cmd[1].pipe = SC_M1_EP_CMD1_BULK_OUT;
+	usb.can[1].pipe = SC_M1_EP_MSG1_BULK_OUT;
+#endif
 
 	for (unsigned i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
 		struct can *can = &cans[i];
@@ -860,6 +870,8 @@ int main(void)
 	}
 
 	can_usb_disconnect();
+
+	sc_board_init_end();
 
 	LOG("vTaskStartScheduler\n");
 	vTaskStartScheduler();
@@ -893,18 +905,44 @@ SC_RAMFUNC static void tusb_device_task(void* param)
 void tud_mount_cb(void)
 {
 	LOG("mounted\n");
+
+	for (uint8_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
+		struct usb_can *usb_can = &usb.can[i];
+
+		while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
+	}
+
 	led_blink(0, 250);
 	usb.mounted = true;
+
+	for (uint8_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
+		struct usb_can *usb_can = &usb.can[i];
+
+		xSemaphoreGive(usb_can->mutex_handle);
+	}
 }
 
 // Invoked when device is unmounted
 void tud_umount_cb(void)
 {
 	LOG("unmounted\n");
+
+	for (uint8_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
+		struct usb_can *usb_can = &usb.can[i];
+
+		while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
+	}
+
 	led_blink(0, 1000);
 	usb.mounted = false;
 
 	can_usb_disconnect();
+
+	for (uint8_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
+		struct usb_can *usb_can = &usb.can[i];
+
+		xSemaphoreGive(usb_can->mutex_handle);
+	}
 }
 
 // Invoked when usb bus is suspended
@@ -914,18 +952,45 @@ void tud_suspend_cb(bool remote_wakeup_en)
 {
 	(void) remote_wakeup_en;
 	LOG("suspend\n");
+
+	for (uint8_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
+		struct usb_can *usb_can = &usb.can[i];
+
+		while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
+	}
+
 	usb.mounted = false;
 	led_blink(0, 500);
 
 	can_usb_disconnect();
+
+	for (uint8_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
+		struct usb_can *usb_can = &usb.can[i];
+
+		xSemaphoreGive(usb_can->mutex_handle);
+	}
 }
 
 // Invoked when usb bus is resumed
 void tud_resume_cb(void)
 {
 	LOG("resume\n");
+
+	for (uint8_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
+		struct usb_can *usb_can = &usb.can[i];
+
+		while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
+	}
+
+
 	usb.mounted = true;
 	led_blink(0, 250);
+
+	for (uint8_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
+		struct usb_can *usb_can = &usb.can[i];
+
+		xSemaphoreGive(usb_can->mutex_handle);
+	}
 }
 
 
@@ -985,22 +1050,24 @@ static void sc_usb_init(void)
 static void sc_usb_reset(uint8_t rhport)
 {
 	LOG("SC port %u reset\n", rhport);
-	usb.mounted = false;
+
+	for (uint8_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
+		struct usb_can *usb_can = &usb.can[i];
+
+		while (pdTRUE != xSemaphoreTake(usb_can->mutex_handle, portMAX_DELAY));
+	}
+
 	usb.port = rhport;
-	usb.cmd[0].pipe = SC_M1_EP_CMD0_BULK_OUT;
-	usb.cmd[0].tx_offsets[0] = 0;
-	usb.cmd[0].tx_offsets[1] = 0;
-	usb.can[0].pipe = SC_M1_EP_MSG0_BULK_OUT;
-	usb.can[0].tx_offsets[0] = 0;
-	usb.can[0].tx_offsets[1] = 0;
-#if SC_BOARD_CAN_COUNT > 1
-	usb.cmd[1].pipe = SC_M1_EP_CMD1_BULK_OUT;
-	usb.cmd[1].tx_offsets[0] = 0;
-	usb.cmd[1].tx_offsets[1] = 0;
-	usb.can[1].pipe = SC_M1_EP_MSG1_BULK_OUT;
-	usb.can[1].tx_offsets[0] = 0;
-	usb.can[1].tx_offsets[1] = 0;
-#endif
+	led_blink(0, 1000);
+	usb.mounted = false;
+
+	can_usb_disconnect();
+
+	for (uint8_t i = 0; i < SC_BOARD_CAN_COUNT; ++i) {
+		struct usb_can *usb_can = &usb.can[i];
+
+		xSemaphoreGive(usb_can->mutex_handle);
+	}
 }
 
 static uint16_t sc_usb_open(uint8_t rhport, tusb_desc_interface_t const * desc_intf, uint16_t max_len)
