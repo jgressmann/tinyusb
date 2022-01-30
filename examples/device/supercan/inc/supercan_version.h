@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021-2022 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -30,6 +30,6 @@
 
 #define SUPERCAN_VERSION_MAJOR 0
 #define SUPERCAN_VERSION_MINOR 5
-#define SUPERCAN_VERSION_PATCH 4
+#define SUPERCAN_VERSION_PATCH 5
 
 #define SUPERCAN_VERSION_STR SUPERCAN_STR(SUPERCAN_VERSION_MAJOR) "." SUPERCAN_STR(SUPERCAN_VERSION_MINOR) "." SUPERCAN_STR(SUPERCAN_VERSION_PATCH)
