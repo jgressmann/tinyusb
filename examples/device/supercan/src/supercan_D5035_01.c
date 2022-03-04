@@ -172,6 +172,8 @@ static void can_init_module(void)
 
 	NVIC_SetPriority(CAN0_IRQn, SC_ISR_PRIORITY);
 	NVIC_SetPriority(CAN1_IRQn, SC_ISR_PRIORITY);
+
+	LOG("M_CAN release %u.%u.%u (%lx)\n", CAN0->CREL.bit.REL, CAN0->CREL.bit.STEP, CAN0->CREL.bit.SUBSTEP, CAN0->CREL.reg);
 }
 
 static inline void counter_1MHz_init(void)
