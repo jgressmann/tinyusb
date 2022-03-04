@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021-2022 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -444,7 +444,7 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 	can->tx_get_index = 0;
 	can->tx_put_index = 0;
 
-#if SUPERCAN_DEBUG
+#if SUPERCAN_DEBUG && SAME5X_DEBUG_TXR
 	can->txr = 0;
 #endif
 
@@ -686,7 +686,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 		}
 
 		can->m_can->TXBAR.reg = UINT32_C(1) << put_index;
-#if SUPERCAN_DEBUG
+#if SUPERCAN_DEBUG && SAME5X_DEBUG_TXR
 		SC_DEBUG_ASSERT(!(can->txr & (UINT32_C(1) << msg->track_id)));
 
 		can->txr |= UINT32_C(1) << msg->track_id;
@@ -831,7 +831,7 @@ SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, ui
 				msg->id = SC_MSG_CAN_TXR;
 				msg->len = sizeof(*msg);
 				msg->track_id = t1.bit.MM;
-#if SUPERCAN_DEBUG
+#if SUPERCAN_DEBUG && SAME5X_DEBUG_TXR
 				SC_DEBUG_ASSERT(can->txr & (UINT32_C(1) << msg->track_id));
 
 				can->txr &= ~(UINT32_C(1) << msg->track_id);

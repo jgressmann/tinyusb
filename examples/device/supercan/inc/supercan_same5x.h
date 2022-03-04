@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021-2022 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,7 @@
 #include <m_can.h>
 
 
+#define SAME5X_DEBUG_TXR 0
 #define SC_BOARD_CAN_CLK_HZ 80000000
 
 enum {
@@ -119,7 +120,7 @@ struct same5x_can {
 	uint8_t tx_put_index; // NOT an index, uses full range of type
 	uint8_t int_prev_lec_no_nc;
 	uint8_t int_prev_dlec_no_nc;
-#if SUPERCAN_DEBUG
+#if SUPERCAN_DEBUG && SAME5X_DEBUG_TXR
 	uint32_t txr;
 #endif
 };
