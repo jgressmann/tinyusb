@@ -197,15 +197,58 @@ static inline char nibble_to_char(uint8_t nibble)
 	return "0123456789abcdef"[nibble & 0xf];
 }
 
-SLLIN_RAMFUNC static inline void sllin_store_tx_queue_full_error_response(uint8_t index)
+static void reset_channel_state(uint8_t index)
 {
 	struct lin *lin = NULL;
 
 	lin = &lins[index];
 
-	static const char can_crc_error_frame[] = "\x07T2000000480002000000000000\r"; // CAN_ERR_CRTL_TX_OVERFLOW
+	lin->rx_sl_offset = 0;
+	lin->tx_sl_offset = 0;
+	lin->enabled = false;
+	lin->tx_full = false;
+	lin->rx_full = 0;
+	lin->report_time_per_frame = false;
+	lin->report_time_periodically = false;
+#if SLLIN_DEBUG
+	lin->last_ts = -1;
+#endif
+	// clear queue
+	uint8_t pi = __atomic_load_n(&lin->rx_fifo_pi, __ATOMIC_ACQUIRE);
+	__atomic_store_n(&lin->rx_fifo_gi, pi, __ATOMIC_RELAXED);
+}
+
+SLLIN_RAMFUNC static inline void sllin_make_time_stamp_string(char *buffer, size_t size, uint16_t time_stamp_ms)
+{
+	SLLIN_DEBUG_ASSERT(size >= 5);
+
+	buffer[4] = 0;
+	buffer[3] = nibble_to_char(time_stamp_ms);
+	time_stamp_ms >>= 4;
+	buffer[2] = nibble_to_char(time_stamp_ms);
+	time_stamp_ms >>= 4;
+	buffer[1] = nibble_to_char(time_stamp_ms);
+	time_stamp_ms >>= 4;
+	buffer[0] = nibble_to_char(time_stamp_ms);
+}
+
+SLLIN_RAMFUNC static inline void sllin_store_tx_queue_full_error_response(uint8_t index)
+{
+	static const char can_crc_error_frame[] = "\x07T2000000480002000000000000"; // CAN_ERR_CRTL_TX_OVERFLOW
+	struct lin *lin = NULL;
+
+	lin = &lins[index];
 	lin->tx_sl_offset = sizeof(can_crc_error_frame) - 1;
 	memcpy(lin->tx_sl_buffer, can_crc_error_frame, lin->tx_sl_offset);
+
+	if (lin->report_time_per_frame) {
+		uint16_t ts = sllin_time_stamp_ms();
+
+		sllin_make_time_stamp_string((char*)&lin->tx_sl_buffer[lin->tx_sl_offset], sizeof(lin->tx_sl_buffer) - lin->tx_sl_offset, ts);
+		lin->tx_sl_offset += 4;
+	}
+
+	lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 }
 
 SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
@@ -267,6 +310,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		break;
 	case 'L': // slave
 	case 'O': // master
+		reset_channel_state(index);
 		lin->enabled = true;
 		lin->conf.master = lin->rx_sl_buffer[0] == 'O';
 		sllin_board_lin_init(index, &lin->conf);
@@ -394,7 +438,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		lin->tx_sl_buffer[3] = SLLIN_OK_TERMINATOR;
 		lin->tx_sl_offset = 4;
 	} break;
-	case 'V': {
+	case 'V': { // HW version?
 		lin->tx_sl_buffer[0] = 'V';
 		lin->tx_sl_buffer[1] = '0';
 		lin->tx_sl_buffer[2] = '1';
@@ -430,7 +474,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 	} break;
 	case 'Z':
 		if (lin->enabled) {
-			LOG("ch%u refusing to change time stamp stetting when enabled\n", index);
+			LOG("ch%u refusing to change time stamp setting when enabled\n", index);
 			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 		} else if (lin->rx_sl_offset < 2) {
 			LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
@@ -456,25 +500,10 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 	}
 }
 
-SLLIN_RAMFUNC static inline void sllin_make_time_stamp_string(char *buffer, size_t size, uint16_t time_stamp_ms)
-{
-	SLLIN_DEBUG_ASSERT(size >= 5);
-
-	buffer[4] = 0;
-	buffer[3] = nibble_to_char(time_stamp_ms);
-	time_stamp_ms >>= 4;
-	buffer[2] = nibble_to_char(time_stamp_ms);
-	time_stamp_ms >>= 4;
-	buffer[1] = nibble_to_char(time_stamp_ms);
-	time_stamp_ms >>= 4;
-	buffer[0] = nibble_to_char(time_stamp_ms);
-}
-
 SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_element *e)
 {
 	struct lin *lin = &lins[index];
 	uint16_t id = e->lin_frame.id;
-	char time_stamp_str[8];
 
 
 	if (e->lin_frame.flags & SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM) {
@@ -494,6 +523,8 @@ SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_ele
 
 #if SLLIN_DEBUG
 	if (lin->conf.master) {
+		char time_stamp_str[8];
+
 		sllin_make_time_stamp_string(time_stamp_str, sizeof(time_stamp_str), e->lin_frame.time_stamp_ms);
 		LOG("ch%u ts=%s\n", index, time_stamp_str);
 	}
@@ -516,37 +547,16 @@ SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_ele
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
-
-		if (lin->report_time_per_frame) {
-			sllin_make_time_stamp_string((char*)&lin->tx_sl_buffer[lin->tx_sl_offset], sizeof(lin->tx_sl_buffer) - lin->tx_sl_offset, e->lin_frame.time_stamp_ms);
-			lin->tx_sl_offset += 4;
-		}
-
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 	} else if (e->lin_frame.flags & SLLIN_FRAME_FLAG_CRC_ERROR) {
 		static const char can_crc_error_frame[] = "T2000000880000000800000000"; // CAN_ERR_PROT_LOC_CRC_SEQ
 
 		lin->tx_sl_offset = sizeof(can_crc_error_frame) - 1;
 		memcpy(lin->tx_sl_buffer, can_crc_error_frame, lin->tx_sl_offset);
-
-		if (lin->report_time_per_frame) {
-			memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
-			lin->tx_sl_offset += 4;
-		}
-
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 	} else if (e->lin_frame.flags & SLLIN_FRAME_FLAG_PID_ERROR) {
 		static const char can_pid_error_frame[] = "T2000000880000000F00000000"; // CAN_ERR_PROT_LOC_ID12_05
 
 		lin->tx_sl_offset = sizeof(can_pid_error_frame) - 1;
 		memcpy(lin->tx_sl_buffer, can_pid_error_frame, lin->tx_sl_offset);
-
-		if (lin->report_time_per_frame) {
-			memcpy(&lin->tx_sl_buffer[lin->tx_sl_offset], time_stamp_str, 4);
-			lin->tx_sl_offset += 4;
-		}
-
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 	} else {
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
@@ -558,13 +568,14 @@ SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_ele
 			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] >> 4);
 			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i]);
 		}
-
-		if (lin->report_time_per_frame) {
-			sllin_make_time_stamp_string((char*)&lin->tx_sl_buffer[lin->tx_sl_offset], sizeof(lin->tx_sl_buffer) - lin->tx_sl_offset, e->lin_frame.time_stamp_ms);
-			lin->tx_sl_offset += 4;
-		}
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 	}
+
+	if (lin->report_time_per_frame) {
+		sllin_make_time_stamp_string((char*)&lin->tx_sl_buffer[lin->tx_sl_offset], sizeof(lin->tx_sl_buffer) - lin->tx_sl_offset, e->lin_frame.time_stamp_ms);
+		lin->tx_sl_offset += 4;
+	}
+
+	lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 }
 
 SLLIN_RAMFUNC static inline void process_queue(uint8_t index, sllin_queue_element *e)
@@ -586,6 +597,7 @@ SLLIN_RAMFUNC static inline void process_queue(uint8_t index, sllin_queue_elemen
 	case SLLIN_QUEUE_ELEMENT_TYPE_SLEEP:
 	case SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP: {
 		uint16_t id = e->type == SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP ? SLLIN_ID_FLAG_BUS_WAKE_UP : SLLIN_ID_FLAG_BUS_SLEEP;
+
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
@@ -596,6 +608,7 @@ SLLIN_RAMFUNC static inline void process_queue(uint8_t index, sllin_queue_elemen
 			sllin_make_time_stamp_string((char*)&lin->tx_sl_buffer[lin->tx_sl_offset], sizeof(lin->tx_sl_buffer) - lin->tx_sl_offset, e->lin_frame.time_stamp_ms);
 			lin->tx_sl_offset += 4;
 		}
+
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 	} break;
 	default:
@@ -705,19 +718,7 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 			} else {
 				// LOG("ch%u TT\n", index);
 
-				lin->rx_sl_offset = 0;
-				lin->tx_sl_offset = 0;
-				lin->enabled = false;
-				lin->tx_full = false;
-				lin->rx_full = 0;
-				lin->report_time_per_frame = false;
-				lin->report_time_periodically = false;
-#if SLLIN_DEBUG
-				lin->last_ts = -1;
-#endif
-				// clear queue
-				__atomic_store_n(&lin->rx_fifo_gi, 0, __ATOMIC_RELEASE);
-				__atomic_store_n(&lin->rx_fifo_pi, 0, __ATOMIC_RELEASE);
+				reset_channel_state(index);
 
 				// can't call this if disconnected
 				// tud_cdc_n_read_flush(index);
@@ -805,44 +806,44 @@ SLLIN_RAMFUNC extern void sllin_lin_task_notify_isr(uint8_t index, uint32_t coun
 
 uint16_t _sllin_time_stamp_ms;
 
-SLLIN_RAMFUNC static inline void sc_board_can_ts_request(void)
-{
-	uint8_t reg;
-	(void)index;
+// SLLIN_RAMFUNC static inline void sc_board_can_ts_request(void)
+// {
+// 	uint8_t reg;
+// 	(void)index;
 
-	while (1) {
+// 	while (1) {
 
-		reg = __atomic_load_n(&TC2->COUNT16.CTRLBSET.reg, __ATOMIC_ACQUIRE);
+// 		reg = __atomic_load_n(&TC2->COUNT16.CTRLBSET.reg, __ATOMIC_ACQUIRE);
 
-		uint8_t cmd = reg & TC_CTRLBSET_CMD_Msk;
+// 		uint8_t cmd = reg & TC_CTRLBSET_CMD_Msk;
 
-		// SC_DEBUG_ASSERT(cmd == TC_CTRLBSET_CMD_READSYNC || cmd == TC_CTRLBSET_CMD_NONE);
-		if (cmd == TC_CTRLBSET_CMD_READSYNC) {
-			break;
-		}
+// 		// SC_DEBUG_ASSERT(cmd == TC_CTRLBSET_CMD_READSYNC || cmd == TC_CTRLBSET_CMD_NONE);
+// 		if (cmd == TC_CTRLBSET_CMD_READSYNC) {
+// 			break;
+// 		}
 
-		if (likely(__atomic_compare_exchange_n(
-			&TC2->COUNT16.CTRLBSET.reg,
-			&reg,
-			TC_CTRLBSET_CMD_READSYNC,
-			false, /* weak? */
-			__ATOMIC_RELEASE,
-			__ATOMIC_ACQUIRE))) {
-				break;
-			}
+// 		if (likely(__atomic_compare_exchange_n(
+// 			&TC2->COUNT16.CTRLBSET.reg,
+// 			&reg,
+// 			TC_CTRLBSET_CMD_READSYNC,
+// 			false, /* weak? */
+// 			__ATOMIC_RELEASE,
+// 			__ATOMIC_ACQUIRE))) {
+// 				break;
+// 			}
 
-	}
-}
+// 	}
+// }
 
-#define same5x_counter_1MHz_is_current_value_ready() ((__atomic_load_n(&TC2->COUNT16.CTRLBSET.reg, __ATOMIC_ACQUIRE) & TC_CTRLBSET_CMD_Msk) == TC_CTRLBSET_CMD_NONE)
-#define same5x_counter_1MHz_read_unsafe() (TC2->COUNT16.COUNT.reg)
+// #define same5x_counter_1MHz_is_current_value_ready() ((__atomic_load_n(&TC2->COUNT16.CTRLBSET.reg, __ATOMIC_ACQUIRE) & TC_CTRLBSET_CMD_Msk) == TC_CTRLBSET_CMD_NONE)
+// #define same5x_counter_1MHz_read_unsafe() (TC2->COUNT16.COUNT.reg)
 
-#define same5x_counter_1MHz_wait_for_current_value() \
-	({ \
-		while (!same5x_counter_1MHz_is_current_value_ready()); \
-		uint32_t counter = same5x_counter_1MHz_read_unsafe(); \
-		counter; \
-	})
+// #define same5x_counter_1MHz_wait_for_current_value() \
+// 	({ \
+// 		while (!same5x_counter_1MHz_is_current_value_ready()); \
+// 		uint32_t counter = same5x_counter_1MHz_read_unsafe(); \
+// 		counter; \
+// 	})
 
 
 SLLIN_RAMFUNC extern void vApplicationTickHook(void)
