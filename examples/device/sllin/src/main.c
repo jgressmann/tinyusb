@@ -197,6 +197,18 @@ static inline char nibble_to_char(uint8_t nibble)
 	return "0123456789abcdef"[nibble & 0xf];
 }
 
+
+
+static void clear_rx_fifo(uint8_t index)
+{
+	struct lin *lin = NULL;
+
+	lin = &lins[index];
+
+	uint8_t pi = __atomic_load_n(&lin->rx_fifo_pi, __ATOMIC_ACQUIRE);
+	__atomic_store_n(&lin->rx_fifo_gi, pi, __ATOMIC_RELAXED);
+}
+
 static void reset_channel_state(uint8_t index)
 {
 	struct lin *lin = NULL;
@@ -213,9 +225,8 @@ static void reset_channel_state(uint8_t index)
 #if SLLIN_DEBUG
 	lin->last_ts = -1;
 #endif
-	// clear queue
-	uint8_t pi = __atomic_load_n(&lin->rx_fifo_pi, __ATOMIC_ACQUIRE);
-	__atomic_store_n(&lin->rx_fifo_gi, pi, __ATOMIC_RELAXED);
+
+	clear_rx_fifo(index);
 }
 
 SLLIN_RAMFUNC static inline void sllin_make_time_stamp_string(char *buffer, size_t size, uint16_t time_stamp_ms)
@@ -310,7 +321,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		break;
 	case 'L': // slave
 	case 'O': // master
-		reset_channel_state(index);
+		clear_rx_fifo(index);
 		lin->enabled = true;
 		lin->conf.master = lin->rx_sl_buffer[0] == 'O';
 		sllin_board_lin_init(index, &lin->conf);
@@ -522,12 +533,12 @@ SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_ele
 	SLLIN_DEBUG_ASSERT(e->lin_frame.len <= 8);
 
 #if SLLIN_DEBUG
-	if (lin->conf.master) {
-		char time_stamp_str[8];
+	// if (lin->conf.master) {
+	// 	char time_stamp_str[8];
 
-		sllin_make_time_stamp_string(time_stamp_str, sizeof(time_stamp_str), e->lin_frame.time_stamp_ms);
-		LOG("ch%u ts=%s\n", index, time_stamp_str);
-	}
+	// 	sllin_make_time_stamp_string(time_stamp_str, sizeof(time_stamp_str), e->lin_frame.time_stamp_ms);
+	// 	LOG("ch%u ts=%s\n", index, time_stamp_str);
+	// }
 
 	if (-1 != lin->last_ts) {
 		uint16_t delta = e->lin_frame.time_stamp_ms - lin->last_ts;
