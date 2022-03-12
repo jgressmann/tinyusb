@@ -57,8 +57,8 @@ static struct lin {
 	StaticTask_t usb_task_mem;
 	TaskHandle_t usb_task_handle;
 	sllin_queue_element rx_fifo[8];
-	uint8_t rx_sl_buffer[129];
-	uint8_t tx_sl_buffer[129];
+	uint8_t rx_sl_buffer[129]; // power of 2 + 1 to include terminating 0
+	uint8_t tx_sl_buffer[129]; // power of 2 + 1 to include terminating 0
 
 	sllin_conf conf;
 
