@@ -70,9 +70,8 @@ struct slave {
 
 struct lin {
 	Sercom* const sercom;
-	struct slave slave;
 	sllin_lin_int_callback usart_irq_handler;
-	uint16_t bitrate;
+	struct slave slave;
 	uint8_t master_busy;
 };
 
@@ -424,6 +423,8 @@ static void timer_init(void)
 
 SLLIN_RAMFUNC static inline void lin_master_cleanup(struct lin *lin)
 {
+	SLLIN_DEBUG_ISR_ASSERT(lin);
+
 	// // stop timer
 	// sl->node_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
 
@@ -441,7 +442,8 @@ SLLIN_RAMFUNC static inline void lin_master_cleanup(struct lin *lin)
 	// sl->node_timer->COUNT16.INTFLAG.reg = ~0;
 
 
-	__atomic_clear(&lin->master_busy, __ATOMIC_RELEASE);
+	//__atomic_clear(&lin->master_busy, __ATOMIC_RELEASE);
+	__atomic_store_n(&lin->master_busy, 0, __ATOMIC_RELAXED);
 }
 
 SLLIN_RAMFUNC static inline void lin_slave_cleanup(struct lin *lin)
@@ -554,7 +556,6 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	sercom->USART.CTRLA.bit.SWRST = 1; /* reset and disable SERCOM -> enable configuration */
 
 	lin->usart_irq_handler = conf->master ? &lin_usart_int_master : &lin_usart_int_slave;
-	lin->bitrate = conf->bitrate;
 
 
 	// wait for SERCOM to be ready
@@ -579,10 +580,12 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	uint16_t frac = 48000000 / (2 * conf->bitrate) - 8 * baud;
 	sercom->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
 
+	// clear interrupts
 	sercom->USART.INTENCLR.reg = ~0;
 
 	// RXC _must_ be enabled, else data get's stuck in register and we get errors
 	sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
+
 
 	if (conf->master) {
 		lin_master_cleanup(lin);
@@ -592,8 +595,25 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 
 	memset(sl->slave_frame_len, 0, sizeof(sl->slave_frame_len));
 
-	sl->node_timer->COUNT16.CC[0].reg =  (14 * UINT32_C(1000000)) / lin->bitrate;
+	sl->node_timer->COUNT16.CC[0].reg =  (14 * UINT32_C(1000000)) / conf->bitrate;
 	LOG("ch%u data byte timeout CC=%x [us]\n", index, sl->node_timer->COUNT16.CC[0].reg);
+
+	// if (conf->master) {
+	// 	// RXC _must_ be enabled, else data get's stuck in register and we get errors
+	// 	sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
+
+	// 	lin_master_cleanup(lin);
+	// } else {
+	// 	// RXC _must_ be enabled, else data get's stuck in register and we get errors
+	// 	sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
+
+	// 	lin_slave_cleanup(lin);
+
+	// 	memset(sl->slave_frame_len, 0, sizeof(sl->slave_frame_len));
+
+	// 	sl->node_timer->COUNT16.CC[0].reg =  (14 * UINT32_C(1000000)) / conf->bitrate;
+	// 	LOG("ch%u data byte timeout CC=%x [us]\n", index, sl->node_timer->COUNT16.CC[0].reg);
+	// }
 
 	sercom->USART.CTRLA.bit.ENABLE = 1;
 	while (sercom->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
@@ -625,20 +645,17 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	uint8_t crc,
 	uint8_t flags)
 {
-	struct lin *lin = &lins[index];
-	Sercom *s = NULL;
+	struct lin * const lin = &lins[index];
+	Sercom * const s = lin->sercom;
 	uint8_t pid = sllin_id_to_pid(id);
 
 	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(lins));
 	SLLIN_DEBUG_ASSERT(len <= 8);
 
 	if (unlikely(__atomic_load_n(&lin->master_busy, __ATOMIC_ACQUIRE))) {
+		LOG("ch%u master tx busy\n", index);
 		return false;
 	}
-
-	LOG("ch%u master tx 1\n", index);
-
-	// s = lin->sercom;
 
 	if (data) { // store tx frame
 		sllin_board_lin_slave_tx(index, id, len, data, crc, flags | SLLIN_ID_FLAG_MASTER_TX);
@@ -794,8 +811,6 @@ SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index)
 
 		lin_int_wake_up(index);
 	}
-
-
 
 	const uint8_t rx_byte = s->USART.DATA.reg;
 
@@ -972,11 +987,13 @@ SLLIN_RAMFUNC void SERCOM7_3_Handler(void)
 
 SLLIN_RAMFUNC void TC0_Handler(void)
 {
+	LOG("TC0\n");
 	lin_node_timer_int(0);
 }
 
 SLLIN_RAMFUNC void TC1_Handler(void)
 {
+	LOG("TC1\n");
 	lin_node_timer_int(1);
 }
 
