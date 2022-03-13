@@ -603,23 +603,6 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	sl->node_timer->COUNT16.CC[0].reg =  (14 * UINT32_C(1000000)) / conf->bitrate;
 	LOG("ch%u data byte timeout CC=%x [us]\n", index, sl->node_timer->COUNT16.CC[0].reg);
 
-	// if (conf->master) {
-	// 	// RXC _must_ be enabled, else data get's stuck in register and we get errors
-	// 	sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
-
-	// 	lin_master_cleanup(lin);
-	// } else {
-	// 	// RXC _must_ be enabled, else data get's stuck in register and we get errors
-	// 	sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
-
-	// 	lin_slave_cleanup(lin);
-
-	// 	memset(sl->slave_frame_len, 0, sizeof(sl->slave_frame_len));
-
-	// 	sl->node_timer->COUNT16.CC[0].reg =  (14 * UINT32_C(1000000)) / conf->bitrate;
-	// 	LOG("ch%u data byte timeout CC=%x [us]\n", index, sl->node_timer->COUNT16.CC[0].reg);
-	// }
-
 	sercom->USART.CTRLA.bit.ENABLE = 1;
 	while (sercom->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
 
@@ -642,6 +625,23 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	sl->sleep_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 }
 
+SLLIN_RAMFUNC static inline void sllin_board_lin_slave_tx_unsafe(
+	struct slave *sl,
+	uint8_t id,
+	uint8_t len,
+	uint8_t const *data,
+	uint8_t crc,
+	uint8_t flags)
+{
+	if (len) {
+		memcpy(sl->slave_frame_data[id], data, len);
+		sl->slave_frame_crc[id] = crc;
+		sl->slave_frame_flags[id] = flags;
+	}
+
+	__atomic_store_n(&sl->slave_frame_len[id], len, __ATOMIC_RELEASE);
+}
+
 SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	uint8_t index,
 	uint8_t id,
@@ -651,18 +651,15 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	uint8_t flags)
 {
 	struct lin * const lin = &lins[index];
+	struct slave * const sl = &lin->slave;
 	Sercom * const s = lin->sercom;
 	uint8_t pid = sllin_id_to_pid(id);
 	uint8_t step = 0;
 
 	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(lins));
 	SLLIN_DEBUG_ASSERT(len <= 8);
+	SLLIN_DEBUG_ASSERT(id < 64);
 
-
-	// if (unlikely(__atomic_load_n(&lin->master.busy, __ATOMIC_ACQUIRE))) {
-	// 	LOG("ch%u master tx busy\n", index);
-	// 	return false;
-	// }
 
 	step = __atomic_load_n(&lin->master.step, __ATOMIC_ACQUIRE);
 
@@ -671,15 +668,12 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 		return false;
 	}
 
-
-
-	if (data) { // store tx frame
-		sllin_board_lin_slave_tx(index, id, len, data, crc, flags | SLLIN_ID_FLAG_MASTER_TX);
+	if (unlikely(data)) { // store tx frame
+		sllin_board_lin_slave_tx_unsafe(sl, id, len, data, crc, flags | SLLIN_ID_FLAG_MASTER_TX);
 	} else {
-		sllin_board_lin_slave_tx(index, id, 0, NULL, 0, 0);
+		sllin_board_lin_slave_tx_unsafe(sl, id, 0, NULL, 0, 0);
 	}
 
-	__atomic_store_n(&lin->master.busy, 1, __ATOMIC_RELAXED);
 	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_RX_BREAK, __ATOMIC_RELEASE);
 
 
@@ -706,13 +700,7 @@ SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(
 	SLLIN_DEBUG_ASSERT(len <= 8);
 	SLLIN_DEBUG_ASSERT(id < 64);
 
-	if (len) {
-		memcpy(sl->slave_frame_data[id], data, len);
-		sl->slave_frame_crc[id] = crc;
-		sl->slave_frame_flags[id] = flags;
-	}
-
-	__atomic_store_n(&sl->slave_frame_len[id], len, __ATOMIC_RELEASE);
+	sllin_board_lin_slave_tx_unsafe(sl, id, len, data, crc, flags);
 }
 
 
