@@ -43,9 +43,8 @@ enum {
 	SLAVE_PROTO_STEP_TX_CRC,
 	SLAVE_PROTO_STEP_RX_FOREIGN,
 
-	MASTER_PROTO_STEP_RX_PID = 0,
-	MASTER_PROTO_STEP_RX_DATA,
-	MASTER_PROTO_STEP_TX_DATA,
+	MASTER_PROTO_STEP_RX_BREAK = 0,
+	MASTER_PROTO_STEP_RX_PID,
 	MASTER_PROTO_STEP_FINISHED,
 };
 
@@ -68,11 +67,16 @@ struct slave {
 	uint8_t sleep;
 };
 
+struct master {
+	uint8_t step;
+	uint8_t busy;
+};
+
 struct lin {
 	Sercom* const sercom;
 	sllin_lin_int_callback usart_irq_handler;
 	struct slave slave;
-	uint8_t master_busy;
+	struct master master;
 };
 
 static struct lin lins[SLLIN_BOARD_LIN_COUNT] = {
@@ -442,8 +446,9 @@ SLLIN_RAMFUNC static inline void lin_master_cleanup(struct lin *lin)
 	// sl->node_timer->COUNT16.INTFLAG.reg = ~0;
 
 
-	//__atomic_clear(&lin->master_busy, __ATOMIC_RELEASE);
-	__atomic_store_n(&lin->master_busy, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_FINISHED, __ATOMIC_RELEASE);
+
+	__atomic_store_n(&lin->master.busy, 0, __ATOMIC_RELEASE);
 }
 
 SLLIN_RAMFUNC static inline void lin_slave_cleanup(struct lin *lin)
@@ -648,20 +653,33 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	struct lin * const lin = &lins[index];
 	Sercom * const s = lin->sercom;
 	uint8_t pid = sllin_id_to_pid(id);
+	uint8_t step = 0;
 
 	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(lins));
 	SLLIN_DEBUG_ASSERT(len <= 8);
 
-	if (unlikely(__atomic_load_n(&lin->master_busy, __ATOMIC_ACQUIRE))) {
-		LOG("ch%u master tx busy\n", index);
+
+	// if (unlikely(__atomic_load_n(&lin->master.busy, __ATOMIC_ACQUIRE))) {
+	// 	LOG("ch%u master tx busy\n", index);
+	// 	return false;
+	// }
+
+	step = __atomic_load_n(&lin->master.step, __ATOMIC_ACQUIRE);
+
+	if (unlikely(step != MASTER_PROTO_STEP_FINISHED)) {
+		LOG("ch%u master tx busy, step=%u\n", index, step);
 		return false;
 	}
+
+
 
 	if (data) { // store tx frame
 		sllin_board_lin_slave_tx(index, id, len, data, crc, flags | SLLIN_ID_FLAG_MASTER_TX);
 	}
 
-	__atomic_store_n(&lin->master_busy, 1, __ATOMIC_RELEASE);
+	__atomic_store_n(&lin->master.busy, 1, __ATOMIC_RELAXED);
+	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_RX_BREAK, __ATOMIC_RELEASE);
+
 
 	s->USART.CTRLB.bit.LINCMD = 0x2;
 	s->USART.DATA.reg = pid;
@@ -775,39 +793,69 @@ SLLIN_RAMFUNC static void lin_node_timer_int(uint8_t index)
 	lin_slave_cleanup(lin);
 }
 
-
+SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag);
 SLLIN_RAMFUNC static void lin_usart_int_master(uint8_t index)
 {
 	struct lin *lin = &lins[index];
+	Sercom *s = lin->sercom;
 
-	LOG(".");
+	// LOG(".");
 
-	lin_master_cleanup(lin);
+	uint8_t intflag = s->USART.INTFLAG.reg;
 
-	lin_usart_int_slave(index);
+	// LOG("ch%u INTFLAG=%x\n", index, intflag);
+
+	s->USART.INTFLAG.reg = ~0;
+
+	uint8_t step = __atomic_load_n(&lin->master.step, __ATOMIC_ACQUIRE);
+
+	switch (step) {
+	case MASTER_PROTO_STEP_RX_BREAK:
+		if (intflag & SERCOM_USART_INTFLAG_RXBRK) {
+			__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_RX_PID, __ATOMIC_RELAXED);
+		}
+		break;
+	case MASTER_PROTO_STEP_RX_PID:
+		if (intflag & SERCOM_USART_INTFLAG_DRE) {
+			intflag |= SERCOM_USART_INTFLAG_RXC; // fake PID
+			lin_master_cleanup(lin);
+		}
+		break;
+	default:
+		break;
+	}
+
+	lin_usart_int_slave_ex(index, intflag);
 }
 
 SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index)
 {
 	struct lin *lin = &lins[index];
-	struct slave *sl = &lin->slave;
 	Sercom *s = lin->sercom;
+	uint8_t intflag = s->USART.INTFLAG.reg;
 
-	uint32_t intflag = s->USART.INTFLAG.reg;
-
-	LOG("ch%u INTFLAG=%x\n", index, intflag);
+	// LOG("ch%u INTFLAG=%x\n", index, intflag);
 
 	s->USART.INTFLAG.reg = ~0;
 
-	LOG("/");
+	// LOG("/");
 
 	__atomic_thread_fence(__ATOMIC_ACQUIRE);
+
+	lin_usart_int_slave_ex(index, intflag);
+}
+
+SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag)
+{
+	struct lin *lin = &lins[index];
+	struct slave *sl = &lin->slave;
+	Sercom *s = lin->sercom;
 
 	if (intflag & SERCOM_USART_INTFLAG_RXBRK) {
 		lin_slave_cleanup(lin);
 		sl->slave_proto_step = SLAVE_PROTO_STEP_RX_PID;
 
-		LOG("ch%u BREAK\n", index);
+		// LOG("ch%u BREAK\n", index);
 
 		lin_int_wake_up(index);
 	}
@@ -817,7 +865,7 @@ SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index)
 	switch (sl->slave_proto_step) {
 	case SLAVE_PROTO_STEP_RX_PID:
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
-			LOG("ch%u PID=%x\n", index, rx_byte);
+			// LOG("ch%u PID=%x\n", index, rx_byte);
 
 			uint8_t id = sllin_pid_to_id(rx_byte);
 
@@ -987,13 +1035,11 @@ SLLIN_RAMFUNC void SERCOM7_3_Handler(void)
 
 SLLIN_RAMFUNC void TC0_Handler(void)
 {
-	LOG("TC0\n");
 	lin_node_timer_int(0);
 }
 
 SLLIN_RAMFUNC void TC1_Handler(void)
 {
-	LOG("TC1\n");
 	lin_node_timer_int(1);
 }
 
