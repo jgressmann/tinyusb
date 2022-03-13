@@ -57,8 +57,8 @@ struct slave {
 	Tc* const node_timer;
 	Tc* const sleep_timer;
 	sllin_queue_element elem;
+	__attribute__ ((aligned(4))) uint8_t slave_frame_data[64][8];
 	uint8_t slave_frame_len[64];
-	uint8_t slave_frame_data[64][8];
 	uint8_t slave_frame_crc[64];
 	uint8_t slave_frame_flags[64];
 	uint8_t slave_proto_step;
@@ -634,7 +634,15 @@ SLLIN_RAMFUNC static inline void sllin_board_lin_slave_tx_unsafe(
 	uint8_t flags)
 {
 	if (len) {
-		memcpy(sl->slave_frame_data[id], data, len);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-align"
+		uint32_t const *word_src = (uint32_t const *)data;
+		uint32_t *word_dst = (uint32_t *)&sl->slave_frame_data[id][0];
+#pragma GCC diagnostic pop
+
+		word_dst[0] = word_src[0];
+		word_dst[1] = word_src[1];
+
 		sl->slave_frame_crc[id] = crc;
 		sl->slave_frame_flags[id] = flags;
 	}
@@ -669,7 +677,7 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	}
 
 	if (unlikely(data)) { // store tx frame
-		sllin_board_lin_slave_tx_unsafe(sl, id, len, data, crc, flags | SLLIN_ID_FLAG_MASTER_TX);
+		sllin_board_lin_slave_tx_unsafe(sl, id, len, data, crc, flags | SLLIN_FRAME_FLAG_MASTER_TX);
 	} else {
 		sllin_board_lin_slave_tx_unsafe(sl, id, 0, NULL, 0, 0);
 	}
@@ -947,6 +955,8 @@ tx:
 
 				sl->elem.lin_frame.crc = rx_byte;
 				sl->elem.lin_frame.time_stamp_ms = sllin_time_stamp_ms();
+
+				// LOG("ch%u rx id=%x flags=%x\n", index, sl->elem.lin_frame.id, sl->elem.lin_frame.flags);
 
 				sllin_lin_task_queue(index, &sl->elem);
 				sllin_lin_task_notify_isr(index, 1);

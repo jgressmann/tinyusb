@@ -352,7 +352,8 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 					uint8_t id = ((can_id_nibble1 << 4) | can_id_nibble2) & 0x3f;
 					uint8_t pid = sllin_id_to_pid(id);
 					bool enhanced_crc = (can_id_nibble1 & 0x4) == 0x4;
-					uint8_t data[8];
+					uint32_t data32[2];
+					uint8_t *data = (uint8_t *)data32;
 					unsigned crc = sllin_crc_start();
 					uint8_t flags = 0;
 
