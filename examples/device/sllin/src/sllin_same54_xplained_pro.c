@@ -675,6 +675,8 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 
 	if (data) { // store tx frame
 		sllin_board_lin_slave_tx(index, id, len, data, crc, flags | SLLIN_ID_FLAG_MASTER_TX);
+	} else {
+		sllin_board_lin_slave_tx(index, id, 0, NULL, 0, 0);
 	}
 
 	__atomic_store_n(&lin->master.busy, 1, __ATOMIC_RELAXED);
