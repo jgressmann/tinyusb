@@ -69,7 +69,6 @@ struct slave {
 
 struct master {
 	uint8_t step;
-	uint8_t busy;
 };
 
 struct lin {
@@ -429,26 +428,7 @@ SLLIN_RAMFUNC static inline void lin_master_cleanup(struct lin *lin)
 {
 	SLLIN_DEBUG_ISR_ASSERT(lin);
 
-	// // stop timer
-	// sl->node_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
-
-	// lin->master_proto_step = MASTER_PROTO_STEP_FINISHED;
-
-	// // no more interrupts
-	// lin->sercom->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
-
-
-	// // wait for sync
-	// while (sl->node_timer->COUNT16.SYNCBUSY.bit.CTRLB);
-	// // reset value
-	// sl->node_timer->COUNT16.COUNT.reg = 0;
-	// // clear interrupt flags
-	// sl->node_timer->COUNT16.INTFLAG.reg = ~0;
-
-
 	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_FINISHED, __ATOMIC_RELEASE);
-
-	__atomic_store_n(&lin->master.busy, 0, __ATOMIC_RELEASE);
 }
 
 SLLIN_RAMFUNC static inline void lin_slave_cleanup(struct lin *lin)
