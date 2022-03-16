@@ -35,7 +35,6 @@
 #include <supercan.h>
 
 #include <supercan_version.h>
-#include <supercan_version.h>
 
 #include <FreeRTOSConfig.h>
 
@@ -163,6 +162,8 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #	include "supercan_same54_xplained_pro.h"
 #elif defined(TEENSY_4X)
 #	include "supercan_teensy_4x.h"
+#elif defined(FEATHER_M4_CAN_EXPRESS)
+#	include "supercan_feather_m4_can_express.h"
 #else
 #	error "Unsupported board!"
 #endif
@@ -177,5 +178,9 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 
 #ifndef TEENSY_4X
 #	define TEENSY_4X 0
+#endif
+
+#ifndef FEATHER_M4_CAN_EXPRESS
+#	define FEATHER_M4_CAN_EXPRESS 0
 #endif
 

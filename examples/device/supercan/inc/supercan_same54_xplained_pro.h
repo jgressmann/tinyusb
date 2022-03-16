@@ -29,7 +29,7 @@
 #	error "Only include this file for AT SAM E54 Xplained Pro boards"
 #endif
 
-
+#define BOARD_NAME "Adafruit Feather M4 CAN Express"
 #define SC_BOARD_USB_BCD_DEVICE (1 << 8)
 #define SC_BOARD_USB_MANUFACTURER_STRING "Microchip"
 #define SC_BOARD_CAN_COUNT 1

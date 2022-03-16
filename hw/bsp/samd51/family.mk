@@ -11,30 +11,45 @@ CFLAGS += \
   -mfloat-abi=hard \
   -mfpu=fpv4-sp-d16 \
   -nostdlib -nostartfiles \
-  -DCFG_TUSB_MCU=OPT_MCU_SAMD51
+  -DCFG_TUSB_MCU=OPT_MCU_SAME5X
 
 CFLAGS += -Wno-error=undef
 
-SRC_C += \
-	src/portable/microchip/samd/dcd_samd.c \
-	hw/mcu/microchip/samd51/gcc/gcc/startup_samd51.c \
-	hw/mcu/microchip/samd51/gcc/system_samd51.c \
-	hw/mcu/microchip/samd51/hpl/gclk/hpl_gclk.c \
-	hw/mcu/microchip/samd51/hpl/mclk/hpl_mclk.c \
-	hw/mcu/microchip/samd51/hpl/osc32kctrl/hpl_osc32kctrl.c \
-	hw/mcu/microchip/samd51/hpl/oscctrl/hpl_oscctrl.c \
-	hw/mcu/microchip/samd51/hal/src/hal_atomic.c
+# SRC_C += \
+# 	src/portable/microchip/samd/dcd_samd.c \
+# 	hw/mcu/microchip/samd51/gcc/gcc/startup_samd51.c \
+# 	hw/mcu/microchip/samd51/gcc/system_samd51.c \
+# 	hw/mcu/microchip/samd51/hpl/gclk/hpl_gclk.c \
+# 	hw/mcu/microchip/samd51/hpl/mclk/hpl_mclk.c \
+# 	hw/mcu/microchip/samd51/hpl/osc32kctrl/hpl_osc32kctrl.c \
+# 	hw/mcu/microchip/samd51/hpl/oscctrl/hpl_oscctrl.c \
+# 	hw/mcu/microchip/samd51/hal/src/hal_atomic.c
 
+SRC_C += \
+  src/portable/microchip/samd/dcd_samd.c \
+  hw/mcu/microchip/same51/gcc/gcc/startup_same51.c \
+  hw/mcu/microchip/same51/gcc/system_same51.c
+
+# INC += \
+# 	$(TOP)/$(BOARD_PATH) \
+# 	$(TOP)/hw/mcu/microchip/samd51/ \
+# 	$(TOP)/hw/mcu/microchip/samd51/config \
+# 	$(TOP)/hw/mcu/microchip/samd51/include \
+# 	$(TOP)/hw/mcu/microchip/samd51/hal/include \
+# 	$(TOP)/hw/mcu/microchip/samd51/hal/utils/include \
+# 	$(TOP)/hw/mcu/microchip/samd51/hpl/port \
+# 	$(TOP)/hw/mcu/microchip/samd51/hri \
+# 	$(TOP)/hw/mcu/microchip/samd51/CMSIS/Include
 INC += \
 	$(TOP)/$(BOARD_PATH) \
-	$(TOP)/hw/mcu/microchip/samd51/ \
-	$(TOP)/hw/mcu/microchip/samd51/config \
-	$(TOP)/hw/mcu/microchip/samd51/include \
-	$(TOP)/hw/mcu/microchip/samd51/hal/include \
-	$(TOP)/hw/mcu/microchip/samd51/hal/utils/include \
-	$(TOP)/hw/mcu/microchip/samd51/hpl/port \
-	$(TOP)/hw/mcu/microchip/samd51/hri \
-	$(TOP)/hw/mcu/microchip/samd51/CMSIS/Include
+	$(TOP)/hw/mcu/microchip/same51/ \
+	$(TOP)/hw/mcu/microchip/same51/config \
+	$(TOP)/hw/mcu/microchip/same51/include \
+	$(TOP)/hw/mcu/microchip/same51/hal/include \
+	$(TOP)/hw/mcu/microchip/same51/hal/utils/include \
+	$(TOP)/hw/mcu/microchip/same51/hpl/port \
+	$(TOP)/hw/mcu/microchip/same51/hri \
+	$(TOP)/hw/mcu/microchip/same51/CMSIS/Include
 
 # For freeRTOS port source
 FREERTOS_PORT = ARM_CM4F
