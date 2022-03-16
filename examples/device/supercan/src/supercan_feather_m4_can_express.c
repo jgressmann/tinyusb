@@ -23,7 +23,7 @@
 #	define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
 #endif
 
-#define CONF_CPU_FREQUENCY MCLK_SYSTEM_CLOCK
+#define CONF_CPU_FREQUENCY 48000000L
 #define CONF_USB_FREQUENCY 48000000L
 #define USART_BAUDRATE     115200L
 
@@ -91,6 +91,7 @@ static inline void counter_1MHz_init(void)
 	// TC0 and TC1 pair to form a single 32 bit counter
 	// TC1 is enslaved to TC0 and doesn't need to be configured.
 	// DS60001507E-page 1716, 48.6.2.4 Counter Mode
+
 	MCLK->APBAMASK.bit.TC0_ = 1;
 	MCLK->APBAMASK.bit.TC1_ = 1;
 	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup TC0 to use GLCK2 */
@@ -136,18 +137,7 @@ extern void sc_board_leds_on_unsafe(void)
 	}
 }
 
-/** Initializes the clocks from the external 16 MHz crystal / oscillator
- *
- * The goal of this setup is to preserve the second PLL
- * for the application code while still having a reasonable
- * 48 MHz clock for USB / UART.
- *
- * GCLK0:   CONF_CPU_FREQUENCY from PLL0
- * GCLK1:   unused
- * GCLK2:   16 MHz from XOSC1
- * DFLL48M: closed loop from GLCK2
- * GCLK3:   48 MHz
- */
+
 static inline void init_clock(void)
 {
 	/* AUTOWS is enabled by default in REG_NVMCTRL_CTRLA - no need to change the number of wait states when changing the core clock */
@@ -156,67 +146,15 @@ static inline void init_clock(void)
 	 * This means we are running off of the 48 MHz FLL.
 	 */
 
-	/* configure XOSC0 for a 16MHz crystal  / oscillator connected to XIN0/XOUT0 */
-	OSCCTRL->XOSCCTRL[0].reg =
-		OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
-		OSCCTRL_XOSCCTRL_RUNSTDBY |
-		OSCCTRL_XOSCCTRL_ENALC |
-		OSCCTRL_XOSCCTRL_IMULT(4) |
-		OSCCTRL_XOSCCTRL_IPTAT(3) |
-		OSCCTRL_XOSCCTRL_XTALEN |
-		OSCCTRL_XOSCCTRL_ENABLE;
-	while(0 == OSCCTRL->STATUS.bit.XOSCRDY0);
-
-	/* pre-scaler = 8, input = XOSC0, output 2 MHz, output = 160 MHz (>= 96 MHz DS60001507E, page 763) */
-	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC0_Val);
-	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(79);
-	OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
-	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
-
-	// configure GCLK2 for 16MHz from XOSC0
+	// configure GCLK2 for 16MHz from DFLL
 	GCLK->GENCTRL[2].reg =
-		GCLK_GENCTRL_DIV(0) |
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_XOSC0 |
-		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
-
-	/* 80 MHz core clock */
-	GCLK->GENCTRL[0].reg =
-		GCLK_GENCTRL_DIV(2) |
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DPLL0 |  /* DPLL0 */
-		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
-
-	/* Here we are running from the 80 MHz oscillator clock */
-
-
-	/* USB 48 MHz clock */
-	/* setup DFLL48M to use GLCK2 (16 MHz) */
-	GCLK->PCHCTRL[OSCCTRL_GCLK_ID_DFLL48].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN;
-
-	OSCCTRL->DFLLCTRLA.reg = 0;
-	while(1 == OSCCTRL->DFLLSYNC.bit.ENABLE);
-
-	OSCCTRL->DFLLCTRLB.reg = OSCCTRL_DFLLCTRLB_MODE | OSCCTRL_DFLLCTRLB_WAITLOCK;
-	OSCCTRL->DFLLMUL.bit.MUL = 3; // 3 * 16 MHz -> 48 MHz
-
-	OSCCTRL->DFLLCTRLA.reg =
-		OSCCTRL_DFLLCTRLA_ENABLE |
-		OSCCTRL_DFLLCTRLA_RUNSTDBY;
-	while(1 == OSCCTRL->DFLLSYNC.bit.ENABLE);
-
-	// setup 48 MHz GCLK3 from DFLL48M
-	GCLK->GENCTRL[3].reg =
-		GCLK_GENCTRL_DIV(0) |
+		GCLK_GENCTRL_DIV(3) |
 		GCLK_GENCTRL_RUNSTDBY |
 		GCLK_GENCTRL_GENEN |
 		GCLK_GENCTRL_SRC_DFLL |
 		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL3);
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
+
 
 	SystemCoreClock = CONF_CPU_FREQUENCY;
 }
@@ -240,7 +178,7 @@ static inline void uart_init(void)
 		PORT_WRCONFIG_PMUXEN;
 
 	MCLK->APBDMASK.bit.SERCOM5_ = 1;
-	GCLK->PCHCTRL[SERCOM5_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN; // FIX ME
+	GCLK->PCHCTRL[SERCOM5_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
 
 	s->USART.CTRLA.reg = 0x00; /* disable SERCOM -> enable config */
 	while(SERCOM0->USART.SYNCBUSY.bit.ENABLE);
@@ -271,7 +209,7 @@ static inline void init_usb(void)
 	/* USB clock init
 	 * The USB module requires a GCLK_USB of 48 MHz ~ 0.25% clock
 	 * for low speed and full speed operation. */
-	hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK3_Val | GCLK_PCHCTRL_CHEN);
+	hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK0_Val | GCLK_PCHCTRL_CHEN);
 	hri_mclk_set_AHBMASK_USB_bit(MCLK);
 	hri_mclk_set_APBBMASK_USB_bit(MCLK);
 
@@ -321,47 +259,6 @@ extern void sc_board_init_end(void)
 {
 
 }
-
-
-// SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
-// {
-// 	struct same5x_can *can = &same5x_cans[index];
-
-// 	switch (status) {
-// 	case SC_CAN_LED_STATUS_DISABLED:
-// 		led_set(can->led_status_green, 0);
-// 		led_set(can->led_status_red, 0);
-// 		break;
-// 	case SC_CAN_LED_STATUS_ENABLED_OFF_BUS:
-// 		led_set(can->led_status_green, 1);
-// 		led_set(can->led_status_red, 0);
-// 		break;
-// 	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_PASSIVE:
-// 		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_PASSIVE_MS);
-// 		led_set(can->led_status_red, 0);
-// 		break;
-// 	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ACTIVE:
-// 		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
-// 		led_set(can->led_status_red, 0);
-// 		break;
-// 	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_PASSIVE:
-// 		led_set(can->led_status_green, 0);
-// 		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_PASSIVE_MS);
-// 		break;
-// 	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_ACTIVE:
-// 		led_set(can->led_status_green, 0);
-// 		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
-// 		break;
-// 	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_BUS_OFF:
-// 		led_set(can->led_status_green, 0);
-// 		led_blink(can->led_status_red, 1);
-// 		break;
-// 	default:
-// 		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS / 2);
-// 		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS / 2);
-// 		break;
-// 	}
-// }
 
 
 SC_RAMFUNC void CAN1_Handler(void)
