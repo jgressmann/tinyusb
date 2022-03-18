@@ -27,6 +27,23 @@
 #define CONF_USB_FREQUENCY 48000000L
 #define USART_BAUDRATE     115200L
 
+#define PIXEL_GROUP  1
+#define PIXEL_PIN    2
+
+#define PIXEL_CMD_NONE    0
+#define PIXEL_CMD_RESTART 1
+
+#define PIXEL_STATE_BITS  0
+#define PIXEL_STATE_RESET 1
+
+
+struct pixel {
+	uint32_t target; // from the top, each 8 bit grb
+	uint8_t int_left;
+	uint8_t int_state;
+	uint8_t int_bit;
+	uint8_t cmd;
+} pixel;
 
 
 
@@ -63,6 +80,10 @@ static void can_init_module(void)
 
 	same5x_cans[0].m_can = CAN1;
 	same5x_cans[0].interrupt_id = CAN1_IRQn;
+	same5x_cans[0].led_traffic = SC_BOARD_DEBUG_DEFAULT;
+	same5x_cans[0].led_status_green = SC_BOARD_PIXEL_GREEN;
+	same5x_cans[0].led_status_red = SC_BOARD_PIXEL_RED;
+
 
 	for (size_t j = 0; j < TU_ARRAY_SIZE(same5x_cans); ++j) {
 		struct same5x_can *can = &same5x_cans[j];
@@ -104,37 +125,54 @@ static inline void counter_1MHz_init(void)
 	TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT32 | TC_CTRLA_PRESCALER_DIV16;
 	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
 }
-
-struct led {
-	uint8_t pin;
-};
-
-#define LED_STATIC_INITIALIZER(name, pin) \
-	{ pin }
-
-
-static const struct led leds[] = {
-	LED_STATIC_INITIALIZER("debug", PIN_PA23), // board led
-};
-
 static inline void leds_init(void)
 {
-	PORT->Group[0].DIRSET.reg = PIN_PA23;
+	PORT->Group[0].DIRSET.reg = UINT32_C(1) << 23; // PA23, debug led
+	PORT->Group[PIXEL_GROUP].DIRSET.reg = UINT32_C(1) << PIXEL_PIN;  // PB02, Neopixel data line
+
+	// setup timer for pixel data stream
+	MCLK->APBBMASK.bit.TC2_ = 1;
+	GCLK->PCHCTRL[TC2_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup TC0 to use GLCK2 */
+
 }
 
 
 extern void sc_board_led_set(uint8_t index, bool on)
 {
-	SC_DEBUG_ASSERT(index < ARRAY_SIZE(leds));
-
-	gpio_set_pin_level(leds[index].pin, on);
+	switch (index) {
+	case SC_BOARD_DEBUG_DEFAULT:
+		gpio_set_pin_level(PIN_PA23, on);
+		break;
+	case SC_BOARD_PIXEL_RED:
+		if (on) {
+			__atomic_store_n(&pixel.target, pixel.target | 0x00ff0000, __ATOMIC_RELEASE);
+		} else {
+			__atomic_store_n(&pixel.target, (pixel.target & ~0x00ff0000), __ATOMIC_RELEASE);
+		}
+		break;
+	case SC_BOARD_PIXEL_GREEN:
+		if (on) {
+			__atomic_store_n(&pixel.target, pixel.target | 0xff000000, __ATOMIC_RELEASE);
+		} else {
+			__atomic_store_n(&pixel.target, (pixel.target & ~0xff000000), __ATOMIC_RELEASE);
+		}
+		break;
+	case SC_BOARD_PIXEL_BLUE:
+		if (on) {
+			__atomic_store_n(&pixel.target, pixel.target | 0x0000ff00, __ATOMIC_RELEASE);
+		} else {
+			__atomic_store_n(&pixel.target, (pixel.target & ~0x0000ff00), __ATOMIC_RELEASE);
+		}
+		break;
+	}
 }
 
 extern void sc_board_leds_on_unsafe(void)
 {
-	for (size_t i = 0; i < ARRAY_SIZE(leds); ++i) {
-		gpio_set_pin_level(leds[i].pin, 1);
-	}
+	gpio_set_pin_level(PIN_PA23, 1);
+	__atomic_store_n(&pixel.target, 0xffffff00, __ATOMIC_RELEASE);
+
+	// tigger timer
 }
 
 
@@ -235,6 +273,8 @@ extern void sc_board_init_begin(void)
 
 	same5x_init_device_identifier();
 
+	leds_init();
+
 
 	can_init_pins();
 	can_init_clock();
@@ -261,12 +301,84 @@ extern void sc_board_init_end(void)
 }
 
 
+SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
+{
+	struct same5x_can *can = &same5x_cans[index];
+
+	switch (status) {
+	case SC_CAN_LED_STATUS_DISABLED:
+		led_set(can->led_status_green, 0);
+		led_set(can->led_status_red, 0);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_OFF_BUS:
+		led_set(can->led_status_green, 1);
+		led_set(can->led_status_red, 0);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_PASSIVE:
+		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_PASSIVE_MS);
+		led_set(can->led_status_red, 0);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ACTIVE:
+		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
+		led_set(can->led_status_red, 0);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_PASSIVE:
+		led_set(can->led_status_green, 0);
+		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_PASSIVE_MS);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_ACTIVE:
+		led_set(can->led_status_green, 0);
+		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_BUS_OFF:
+		led_set(can->led_status_green, 0);
+		led_blink(can->led_status_red, 1);
+		break;
+	default:
+		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS / 2);
+		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS / 2);
+		break;
+	}
+}
+
+
 SC_RAMFUNC void CAN1_Handler(void)
 {
 	// LOG("CAN1 int\n");
 
 	same5x_can_int(0);
 }
+
+// SC_RAMFUNC void TC2_Handler(void)
+// {
+// 	switch (__atomic_load_n(&pixel.cmd, __ATOMIC_ACQUIRE)) {
+// 	case PIXEL_CMD_RESTART:
+// 		__atomic_store_n(&pixel.cmd, PIXEL_CMD_NONE, __ATOMIC_RELAXED);
+// 		pixel.int_state = PIXEL_STATE_BITS;
+// 		pixel.int_bits_left = 24;
+// 		pixel.int_bits_clocks = 3;
+// 	case PIXEL_CMD_NONE:
+// 		switch (pixel.int_state) {
+// 		case PIXEL_STATE_BITS:
+// 			break;
+// 		case PIXEL_STATE_RESET:
+// 		}
+// 		switch (pixel.int_bits_clocks) {
+// 		case 3:
+// 			if (--left) {
+// 				pixel.int_bit = pixel.;
+// 			} else {
+// 				PORT->Group[1].OUTSET.reg = UINT32_C(1) << 12;
+// 			}
+// 		}
+// 		break;
+// 	}
+// 	if (likely(pixel.left)) {
+
+// 	} else {
+// 		PORT->Group[1].OUTSET.reg = UINT32_C(1) << 12;
+// 	}
+// }
 
 
 #endif // #ifdef FEATHER_M4_CAN_EXPRESS
