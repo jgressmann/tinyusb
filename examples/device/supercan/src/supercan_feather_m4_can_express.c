@@ -238,7 +238,7 @@ extern void sc_board_led_set(uint8_t index, bool on)
 	}
 
 	if (target != pixel.target) {
-		LOG("CAN0 LED change\n");
+		// LOG("CAN0 LED change\n");
 		__atomic_store_n(&pixel.target, target, __ATOMIC_RELEASE);
 		NVIC->STIR = FREQM_IRQn;
 	}
