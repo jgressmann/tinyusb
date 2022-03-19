@@ -10,6 +10,7 @@
 #	error "Only include this file for Adafruit Feather M4 CAN Express boards"
 #endif
 
+
 #define BOARD_NAME "Feather M4 CAN" // too long
 #define SC_BOARD_USB_BCD_DEVICE (1 << 8)
 #define SC_BOARD_USB_MANUFACTURER_STRING "Adafruit"

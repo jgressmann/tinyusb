@@ -27,24 +27,94 @@
 #define CONF_USB_FREQUENCY 48000000L
 #define USART_BAUDRATE     115200L
 
-#define PIXEL_GROUP  1
-#define PIXEL_PIN    2
 
-#define PIXEL_CMD_NONE    0
-#define PIXEL_CMD_RESTART 1
+enum {
+	PIXEL_GROUP = 1,
+	PIXEL_DATA_PIN = 2,
+	PIXEL_POWER_PIN = 3,
 
-#define PIXEL_STATE_BITS  0
-#define PIXEL_STATE_RESET 1
+	PIXEL_GREEN_ON = 0x8,
+	PIXEL_BLUE_ON = 0x8,
+	PIXEL_RED_ON = 0x8,
+	PIXEL_GREEN_SHIFT = 24,
+	PIXEL_RED_SHIFT = 16,
+	PIXEL_BLUE_SHIFT = 8,
+};
+
 
 
 struct pixel {
 	uint32_t target; // from the top, each 8 bit grb
-	uint8_t int_left;
-	uint8_t int_state;
-	uint8_t int_bit;
-	uint8_t cmd;
 } pixel;
 
+
+// @48 MHz
+#define delay_100_ns() \
+	do { \
+		__asm__ __volatile__( \
+			"nop\t\n" \
+			"nop\t\n" \
+			"nop\t\n" \
+			"nop\t\n"); \
+	} while (0)
+
+
+
+static inline void one(void)
+{
+	PORT->Group[PIXEL_GROUP].OUTSET.reg = UINT32_C(1) << PIXEL_DATA_PIN;
+	delay_100_ns();
+	delay_100_ns();
+	delay_100_ns();
+	delay_100_ns();
+	delay_100_ns();
+	delay_100_ns();
+	delay_100_ns();
+	// delay_100_ns();
+	// delay_100_ns();
+	PORT->Group[PIXEL_GROUP].OUTCLR.reg = UINT32_C(1) << PIXEL_DATA_PIN;
+	delay_100_ns();
+	delay_100_ns();
+	delay_100_ns();
+	// delay_100_ns();
+	// delay_100_ns();
+}
+
+static inline void zero(void)
+{
+	PORT->Group[PIXEL_GROUP].OUTSET.reg = UINT32_C(1) << PIXEL_DATA_PIN;
+	delay_100_ns();
+	delay_100_ns();
+	delay_100_ns();
+	// delay_100_ns();
+	PORT->Group[PIXEL_GROUP].OUTCLR.reg = UINT32_C(1) << PIXEL_DATA_PIN;
+	// delay_100_ns();
+	delay_100_ns();
+	delay_100_ns();
+	delay_100_ns();
+	delay_100_ns();
+	delay_100_ns();
+	delay_100_ns();
+	delay_100_ns();
+	// delay_100_ns();
+	// delay_100_ns();
+}
+
+
+SC_RAMFUNC void pixel_update(void)
+{
+	uint32_t target = __atomic_load_n(&pixel.target, __ATOMIC_ACQUIRE);
+
+	for (int i = 0; i < 24; ++i) {
+		if ((target & 0x80000000) == 0x80000000) {
+			one();
+		} else {
+			zero();
+		}
+
+		target <<= 1;
+	}
+}
 
 
 // controller and hardware specific setup of i/o pins for CAN
@@ -125,54 +195,60 @@ static inline void counter_1MHz_init(void)
 	TC0->COUNT32.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT32 | TC_CTRLA_PRESCALER_DIV16;
 	while(1 == TC0->COUNT32.SYNCBUSY.bit.ENABLE);
 }
+
 static inline void leds_init(void)
 {
 	PORT->Group[0].DIRSET.reg = UINT32_C(1) << 23; // PA23, debug led
-	PORT->Group[PIXEL_GROUP].DIRSET.reg = UINT32_C(1) << PIXEL_PIN;  // PB02, Neopixel data line
+	// set pixel power, data pins as output
+	PORT->Group[PIXEL_GROUP].DIRSET.reg = (UINT32_C(1) << PIXEL_DATA_PIN) | (UINT32_C(1) << PIXEL_POWER_PIN);
+	// assert pixel power pin
+	PORT->Group[PIXEL_GROUP].OUTSET.reg = (UINT32_C(1) << PIXEL_POWER_PIN);
+	// clear pixel data pin
+	PORT->Group[PIXEL_GROUP].OUTCLR.reg = (UINT32_C(1) << PIXEL_DATA_PIN);
 
-	// setup timer for pixel data stream
-	MCLK->APBBMASK.bit.TC2_ = 1;
-	GCLK->PCHCTRL[TC2_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN; /* setup TC0 to use GLCK2 */
-
+	/* Hijack FREQM interrupt to set pixel led state from interrupt handler
+	 *
+	 * Looks like we don't need to turn the peripheral on to generated the interrupt.
+	 */
+	NVIC_SetPriority(FREQM_IRQn, SC_ISR_PRIORITY);
+	NVIC_EnableIRQ(FREQM_IRQn);
 }
 
 
 extern void sc_board_led_set(uint8_t index, bool on)
 {
+	uint32_t target = pixel.target;
+
 	switch (index) {
 	case SC_BOARD_DEBUG_DEFAULT:
 		gpio_set_pin_level(PIN_PA23, on);
 		break;
-	case SC_BOARD_PIXEL_RED:
-		if (on) {
-			__atomic_store_n(&pixel.target, pixel.target | 0x00ff0000, __ATOMIC_RELEASE);
-		} else {
-			__atomic_store_n(&pixel.target, (pixel.target & ~0x00ff0000), __ATOMIC_RELEASE);
-		}
-		break;
-	case SC_BOARD_PIXEL_GREEN:
-		if (on) {
-			__atomic_store_n(&pixel.target, pixel.target | 0xff000000, __ATOMIC_RELEASE);
-		} else {
-			__atomic_store_n(&pixel.target, (pixel.target & ~0xff000000), __ATOMIC_RELEASE);
-		}
-		break;
-	case SC_BOARD_PIXEL_BLUE:
-		if (on) {
-			__atomic_store_n(&pixel.target, pixel.target | 0x0000ff00, __ATOMIC_RELEASE);
-		} else {
-			__atomic_store_n(&pixel.target, (pixel.target & ~0x0000ff00), __ATOMIC_RELEASE);
-		}
-		break;
+	case SC_BOARD_PIXEL_RED: {
+		target &= ~(0xff << PIXEL_RED_SHIFT);
+		target |= (PIXEL_RED_ON * on) << PIXEL_RED_SHIFT;
+	} break;
+	case SC_BOARD_PIXEL_GREEN: {
+		target &= ~(0xff << PIXEL_GREEN_SHIFT);
+		target |= (PIXEL_GREEN_ON * on) << PIXEL_GREEN_SHIFT;
+	} break;
+	case SC_BOARD_PIXEL_BLUE: {
+		target &= ~(0xff << PIXEL_BLUE_SHIFT);
+		target |= (PIXEL_BLUE_ON * on) << PIXEL_BLUE_SHIFT;
+	} break;
+	}
+
+	if (target != pixel.target) {
+		LOG("CAN0 LED change\n");
+		__atomic_store_n(&pixel.target, target, __ATOMIC_RELEASE);
+		NVIC->STIR = FREQM_IRQn;
 	}
 }
 
 extern void sc_board_leds_on_unsafe(void)
 {
 	gpio_set_pin_level(PIN_PA23, 1);
-	__atomic_store_n(&pixel.target, 0xffffff00, __ATOMIC_RELEASE);
-
-	// tigger timer
+	pixel.target = 0xffffff00;
+	pixel_update();
 }
 
 
@@ -349,36 +425,11 @@ SC_RAMFUNC void CAN1_Handler(void)
 	same5x_can_int(0);
 }
 
-// SC_RAMFUNC void TC2_Handler(void)
-// {
-// 	switch (__atomic_load_n(&pixel.cmd, __ATOMIC_ACQUIRE)) {
-// 	case PIXEL_CMD_RESTART:
-// 		__atomic_store_n(&pixel.cmd, PIXEL_CMD_NONE, __ATOMIC_RELAXED);
-// 		pixel.int_state = PIXEL_STATE_BITS;
-// 		pixel.int_bits_left = 24;
-// 		pixel.int_bits_clocks = 3;
-// 	case PIXEL_CMD_NONE:
-// 		switch (pixel.int_state) {
-// 		case PIXEL_STATE_BITS:
-// 			break;
-// 		case PIXEL_STATE_RESET:
-// 		}
-// 		switch (pixel.int_bits_clocks) {
-// 		case 3:
-// 			if (--left) {
-// 				pixel.int_bit = pixel.;
-// 			} else {
-// 				PORT->Group[1].OUTSET.reg = UINT32_C(1) << 12;
-// 			}
-// 		}
-// 		break;
-// 	}
-// 	if (likely(pixel.left)) {
+SC_RAMFUNC void FREQM_Handler(void)
+{
+	// LOG("FREQM_Handler\n");
 
-// 	} else {
-// 		PORT->Group[1].OUTSET.reg = UINT32_C(1) << 12;
-// 	}
-// }
-
+	pixel_update();
+}
 
 #endif // #ifdef FEATHER_M4_CAN_EXPRESS
