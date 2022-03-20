@@ -11,7 +11,7 @@
 #endif
 
 
-#define BOARD_NAME "Feather M4 CAN" // too long
+#define BOARD_NAME "Feather M4 CAN" // full name too long
 #define SC_BOARD_USB_BCD_DEVICE (1 << 8)
 #define SC_BOARD_USB_MANUFACTURER_STRING "Adafruit"
 #define SC_BOARD_CAN_COUNT 1

@@ -8,14 +8,11 @@
 
 #ifdef FEATHER_M4_CAN_EXPRESS
 
-#include <FreeRTOS.h>
-#include <timers.h>
-
 #include <supercan_debug.h>
 #include <supercan_board.h>
+#include <leds.h>
 
 #include <hal/include/hal_gpio.h>
-#include <leds.h>
 
 #include <tusb.h>
 
@@ -101,7 +98,7 @@ static inline void zero(void)
 }
 
 
-SC_RAMFUNC void pixel_update(void)
+SC_RAMFUNC static inline void pixel_update(void)
 {
 	uint32_t target = __atomic_load_n(&pixel.target, __ATOMIC_ACQUIRE);
 
@@ -125,16 +122,22 @@ static inline void can_init_pins(void)
 		PORT_WRCONFIG_PINMASK(0xc000) | // PB14/15 = 0xc000, PB12/13 = 0x3000
 		PORT_WRCONFIG_WRPINCFG |
 		PORT_WRCONFIG_WRPMUX |
+		PORT_WRCONFIG_DRVSTR |
 		PORT_WRCONFIG_PMUX(7) |         // H, CAN1, DS60001507E page 32, 910
 		PORT_WRCONFIG_PMUXEN;
 
-	/* The transceiver TCAN1051HGV has a pin (S) for listen only mode.
-	 * Listen-only mode is active when the pin is low (GND).
+	/* The transceiver TCAN1051HGV has a pin (S) for listen only (silent) mode.
+	 * Silent mode is active when the pin is high.
 	 * This pin is connected to the MCU on PB12.
 	 * We don't use this mode, but configure listen only in M_CAN.
+	 *
+	 * There is also a DC/DC converter to supply 5v to the tranceiver.
+	 * This converter is enabled by settings its ~SHDN pin to high.
+	 * This pin is connected to the MCU on PB13.
 	 */
-	PORT->Group[1].DIRSET.reg = UINT32_C(1) << 12;
-	PORT->Group[1].OUTSET.reg = UINT32_C(1) << 12;
+	PORT->Group[1].DIRSET.reg = (UINT32_C(1) << 12) | (UINT32_C(1) << 13);
+	PORT->Group[1].OUTCLR.reg = UINT32_C(1) << 12;
+	PORT->Group[1].OUTSET.reg = UINT32_C(1) << 13;
 }
 
 static inline void can_init_clock(void) // controller and hardware specific setup of clock for the m_can module
@@ -157,15 +160,8 @@ static void can_init_module(void)
 
 	for (size_t j = 0; j < TU_ARRAY_SIZE(same5x_cans); ++j) {
 		struct same5x_can *can = &same5x_cans[j];
+
 		can->features = CAN_FEAT_PERM;
-
-		for (size_t i = 0; i < TU_ARRAY_SIZE(same5x_cans[0].rx_fifo); ++i) {
-			SC_DEBUG_ASSERT(can->rx_frames[i].ts == 0);
-		}
-
-		for (size_t i = 0; i < TU_ARRAY_SIZE(same5x_cans[0].tx_fifo); ++i) {
-			SC_DEBUG_ASSERT(can->tx_frames[i].ts == 0);
-		}
 	}
 
 	m_can_init_begin(CAN1);
@@ -174,7 +170,7 @@ static void can_init_module(void)
 
 	NVIC_SetPriority(CAN1_IRQn, SC_ISR_PRIORITY);
 
-	LOG("M_CAN release %u.%u.%u (%lx)\n", CAN0->CREL.bit.REL, CAN0->CREL.bit.STEP, CAN0->CREL.bit.SUBSTEP, CAN0->CREL.reg);
+	LOG("M_CAN release %u.%u.%u (%lx)\n", CAN1->CREL.bit.REL, CAN1->CREL.bit.STEP, CAN1->CREL.bit.SUBSTEP, CAN1->CREL.reg);
 }
 
 static inline void counter_1MHz_init(void)
@@ -238,7 +234,6 @@ extern void sc_board_led_set(uint8_t index, bool on)
 	}
 
 	if (target != pixel.target) {
-		// LOG("CAN0 LED change\n");
 		__atomic_store_n(&pixel.target, target, __ATOMIC_RELEASE);
 		NVIC->STIR = FREQM_IRQn;
 	}
@@ -326,14 +321,6 @@ static inline void init_usb(void)
 	hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK0_Val | GCLK_PCHCTRL_CHEN);
 	hri_mclk_set_AHBMASK_USB_bit(MCLK);
 	hri_mclk_set_APBBMASK_USB_bit(MCLK);
-
-	// USB pin init
-	gpio_set_pin_direction(PIN_PA24, GPIO_DIRECTION_OUT);
-	gpio_set_pin_level(PIN_PA24, false);
-	gpio_set_pin_pull_mode(PIN_PA24, GPIO_PULL_OFF);
-	gpio_set_pin_direction(PIN_PA25, GPIO_DIRECTION_OUT);
-	gpio_set_pin_level(PIN_PA25, false);
-	gpio_set_pin_pull_mode(PIN_PA25, GPIO_PULL_OFF);
 
 	gpio_set_pin_function(PIN_PA24, PINMUX_PA24H_USB_DM);
 	gpio_set_pin_function(PIN_PA25, PINMUX_PA25H_USB_DP);
