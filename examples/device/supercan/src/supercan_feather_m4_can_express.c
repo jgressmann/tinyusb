@@ -57,7 +57,7 @@ struct pixel {
 
 
 
-static inline void one(void)
+SC_RAMFUNC static inline void one(void)
 {
 	PORT->Group[PIXEL_GROUP].OUTSET.reg = UINT32_C(1) << PIXEL_DATA_PIN;
 	delay_100_ns();
@@ -77,7 +77,7 @@ static inline void one(void)
 	// delay_100_ns();
 }
 
-static inline void zero(void)
+SC_RAMFUNC static inline void zero(void)
 {
 	PORT->Group[PIXEL_GROUP].OUTSET.reg = UINT32_C(1) << PIXEL_DATA_PIN;
 	delay_100_ns();
@@ -345,17 +345,6 @@ extern void sc_board_init_begin(void)
 
 	counter_1MHz_init();
 	init_usb();
-
-	// while (1) {
-	// 	uint32_t c = counter_1MHz_read_sync();
-	// 	counter_1MHz_request_current_value();
-	// 	uint32_t x = 0;
-	// 	while (!counter_1MHz_is_current_value_ready()) {
-	// 		++x;
-	// 	}
-
-	// 	LOG("c=%lx, wait=%lx\n", c, x);
-	// }
 }
 
 extern void sc_board_init_end(void)
