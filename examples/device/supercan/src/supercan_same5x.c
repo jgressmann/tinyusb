@@ -24,8 +24,9 @@
 
 struct same5x_can same5x_cans[SC_BOARD_CAN_COUNT];
 
-void same5x_can_configure(struct same5x_can *c)
+void same5x_can_configure(uint8_t index)
 {
+	struct same5x_can *c = &same5x_cans[index];
 	Can *can = c->m_can;
 
 	m_can_conf_begin(can);
@@ -66,9 +67,14 @@ void same5x_can_configure(struct same5x_can *c)
 		can->CCCR.bit.DAR, can->CCCR.bit.TXP
 	);
 
-
-	// can_log_nominal_bit_timing(c);
-	// can_log_data_bit_timing(c);
+#if SUPERCAN_DEBUG
+	LOG("ch%u ", index);
+	sc_can_log_bit_timing(&c->nm, "NM");
+	LOG("\n");
+	LOG("ch%u ", index);
+	sc_can_log_bit_timing(&c->dt, "DT");
+	LOG("\n");
+#endif
 
 	// reset default TSCV.TSS = 0 (= value always 0)
 	//can->TSCC.reg = CAN_TSCC_TSS_ZERO; // time stamp counter in CAN bittime
@@ -456,7 +462,7 @@ static void can_on(uint8_t index)
 	uint32_t dtbr = SC_BOARD_CAN_CLK_HZ / ((uint32_t)can->dt.brp * (1 + can->dt.tseg1 + can->dt.tseg2));
 	can->dt_us_per_bit_factor_shift8 = (UINT32_C(1000000) << 8) / dtbr;
 
-	same5x_can_configure(can);
+	same5x_can_configure(index);
 
 	current_ecr = can->m_can->ECR;
 
@@ -518,7 +524,7 @@ static void can_on(uint8_t index)
 
 		m_can_init_begin(can->m_can);
 
-		same5x_can_configure(can);
+		same5x_can_configure(index);
 	}
 
 	can->int_init_rx_errors = current_ecr.bit.REC;
@@ -677,7 +683,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	return available;
 }
 
-SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
+SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
 {
 	struct same5x_can *can = &same5x_cans[index];
 	int result = 0;

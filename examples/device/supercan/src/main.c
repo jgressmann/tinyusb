@@ -1423,7 +1423,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 					done = true;
 
 					const TickType_t now = xTaskGetTickCount();
-					send_can_status = send_can_status || now - status_ts >= pdMS_TO_TICKS(128);
+					send_can_status = send_can_status || now - status_ts >= pdMS_TO_TICKS(128); // some boards don't report periodically
 
 		// #if SUPERCAN_DEBUG
 		// 			// loop
@@ -1441,7 +1441,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 					uint8_t * const tx_beg = usb_can->tx_buffers[usb_can->tx_bank];
 					uint8_t * const tx_end = tx_beg + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
 					uint8_t *tx_ptr = tx_beg + usb_can->tx_offsets[usb_can->tx_bank];
-					int consumed = 0;
+					int retrieved = 0;
 
 					if (send_can_status) {
 						struct sc_msg_can_status *msg = NULL;
@@ -1573,10 +1573,10 @@ SC_RAMFUNC static void can_usb_task(void *param)
 						__atomic_store_n(&can->status_get_index, can->status_get_index+1, __ATOMIC_RELEASE);
 					}
 
-					consumed = sc_board_can_place_msgs(index, tx_ptr, tx_end);
-					// LOG("c=%d\n", consumed);
+					retrieved = sc_board_can_retrieve(index, tx_ptr, tx_end);
+					// LOG("r=%d\n", retrieved);
 
-					switch (consumed) {
+					switch (retrieved) {
 					case -1:
 						break;
 					case 0:
@@ -1590,13 +1590,14 @@ SC_RAMFUNC static void can_usb_task(void *param)
 						}
 						break;
 					default:
+						//LOG("%c", '^' + index);
 						sc_board_led_can_traffic_burst(index);
 
 						done = false;
-						SC_DEBUG_ASSERT(consumed > 0);
-						SC_DEBUG_ASSERT((size_t)consumed + usb_can->tx_offsets[usb_can->tx_bank] <= TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]));
-						usb_can->tx_offsets[usb_can->tx_bank] += consumed;
-						tx_ptr += consumed;
+						SC_DEBUG_ASSERT(retrieved > 0);
+						SC_DEBUG_ASSERT((size_t)retrieved + usb_can->tx_offsets[usb_can->tx_bank] <= TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]));
+						usb_can->tx_offsets[usb_can->tx_bank] += retrieved;
+						tx_ptr += retrieved;
 						bus_activity_ts = now;
 						break;
 					}
@@ -1610,7 +1611,6 @@ SC_RAMFUNC static void can_usb_task(void *param)
 						yield = true;
 					}
 				}
-
 
 
 				const bool has_bus_activity = xTaskGetTickCount() - bus_activity_ts < pdMS_TO_TICKS(SC_BUS_ACTIVITY_TIMEOUT_MS);

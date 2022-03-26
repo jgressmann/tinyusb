@@ -116,13 +116,15 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 
 extern void sc_board_can_reset(uint8_t index);
 // SC_RAMFUNC extern void sc_board_can_status_fill(uint8_t index, struct sc_msg_can_status *msg);
-/* place rx / tx / error messages into buffer
+/* retrieve rx / tx / error messages into buffer
+ *
+ * Callee places messages into the
  *
  * return  -1 if no messages
- *         > 0 if messages placed
+ *         > 0 if messages where placed in buffer
  *         0 if insufficient space in buffer
  */
-SC_RAMFUNC extern int sc_board_can_place_msgs(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end);
+SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end);
 
 SC_RAMFUNC static inline uint8_t dlc_to_len(uint8_t dlc)
 {
