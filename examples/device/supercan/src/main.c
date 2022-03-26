@@ -1603,8 +1603,12 @@ SC_RAMFUNC static void can_usb_task(void *param)
 				}
 
 
-				if (sc_can_bulk_in_ep_ready(index) && usb_can->tx_offsets[usb_can->tx_bank]) {
-					sc_can_bulk_in_submit(index, __func__);
+				if (usb_can->tx_offsets[usb_can->tx_bank]) {
+					if (sc_can_bulk_in_ep_ready(index)) {
+						sc_can_bulk_in_submit(index, __func__);
+					} else {
+						yield = true;
+					}
 				}
 
 
