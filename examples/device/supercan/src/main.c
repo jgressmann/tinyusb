@@ -201,12 +201,14 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 	(void)func;
 
 	// LOG("ch%u %s: %u bytes\n", index, func, can->tx_offsets[can->tx_bank]);
+	//LOG("%c", '>' + index);
 
 #if SUPERCAN_DEBUG
 
 	uint32_t rx_ts_last = 0;
 	uint32_t tx_ts_last = 0;
-
+	unsigned rx_offset = 0;
+	unsigned tx_offset = 0;
 
 
 	// LOG("ch%u %s: send %u bytes\n", index, func, can->tx_offsets[can->tx_bank]);
@@ -248,6 +250,13 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 			return;
 		}
 
+		if (hdr->len % SC_MSG_CAN_LEN_MULTIPLE) {
+			LOG("ch%u %s msg offset=%u len=%u is not a multiple of %u\n", index, func, ptr - sptr, hdr->len, SC_MSG_CAN_LEN_MULTIPLE);
+			SC_DEBUG_ASSERT(false);
+			can->tx_offsets[can->tx_bank] = 0;
+			return;
+		}
+
 		switch (hdr->id) {
 		case SC_MSG_CAN_STATUS:
 			break;
@@ -258,13 +267,14 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 				uint32_t delta = (ts - rx_ts_last) & SC_TS_MAX;
 				bool rx_ts_ok = delta <= SC_TS_MAX / 4;
 				if (unlikely(!rx_ts_ok)) {
-					LOG("ch%u rx ts=%lx prev=%lx\n", index, ts, rx_ts_last);
+					LOG("ch%u rx msg index=%u ts=%lx prev=%lx\n", index, rx_offset, ts, rx_ts_last);
 					SC_ASSERT(false);
 					can->tx_offsets[can->tx_bank] = 0;
 					return;
 				}
 			}
 			rx_ts_last = ts;
+			++rx_offset;
 		} break;
 		case SC_MSG_CAN_TXR: {
 			struct sc_msg_can_txr const *msg = (struct sc_msg_can_txr const *)hdr;
@@ -273,13 +283,14 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 				uint32_t delta = (ts - tx_ts_last) & SC_TS_MAX;
 				bool tx_ts_ok = delta <= SC_TS_MAX / 4;
 				if (unlikely(!tx_ts_ok)) {
-					LOG("ch%u tx ts=%lx prev=%lx\n", index, ts, tx_ts_last);
+					LOG("ch%u tx msg index=%u ts=%lx prev=%lx\n", index, tx_offset, ts, tx_ts_last);
 					SC_ASSERT(false);
 					can->tx_offsets[can->tx_bank] = 0;
 					return;
 				}
 			}
 			tx_ts_last = ts;
+			++tx_offset;
 		} break;
 		case SC_MSG_CAN_ERROR:
 			break;
@@ -311,7 +322,9 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 	(void)dcd_edpt_xfer(usb.port, 0x80 | can->pipe, can->tx_buffers[can->tx_bank], can->tx_offsets[can->tx_bank]);
 	can->tx_bank = !can->tx_bank;
 	SC_DEBUG_ASSERT(!can->tx_offsets[can->tx_bank]);
-	// memset(can->tx_buffers[can->tx_bank], 0, MSG_BUFFER_SIZE);
+#if SUPERCAN_DEBUG
+	memset(can->tx_buffers[can->tx_bank], 0xff, MSG_BUFFER_SIZE);
+#endif
 	// LOG("ch%u %s sent\n", index, func);
 }
 
@@ -583,13 +596,13 @@ send_can_info:
 			LOG("ch%u SC_MSG_BUS\n", index);
 			struct sc_msg_config const *tmsg = (struct sc_msg_config const *)msg;
 			int8_t error = SC_ERROR_NONE;
+
 			if (unlikely(msg->len < sizeof(*tmsg))) {
 				LOG("ERROR: msg too short\n");
 				error = SC_ERROR_SHORT;
 			} else {
 				bool was_enabled = can->enabled;
 				bool is_enabled = tmsg->arg != 0;
-
 
 				LOG("ch%u go bus=%d\n", index, is_enabled);
 
@@ -608,6 +621,14 @@ send_can_info:
 						sc_board_can_go_bus(index, is_enabled);
 						can_state_reset(index);
 						sc_board_led_can_status_set(index, SC_CAN_LED_STATUS_ENABLED_OFF_BUS);
+#if SUPERCAN_DEBUG
+						uint8_t *ptr_begin = usb_can->tx_buffers[usb_can->tx_bank];
+						uint8_t *ptr_end = ptr_begin + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
+						int error_retrieve = sc_board_can_retrieve(index, ptr_begin, ptr_end);
+						SC_ASSERT(-1 == error_retrieve); // expected impl to not have any messages queued
+#endif
+						SC_DEBUG_ASSERT(0 == usb_can->tx_offsets[0]);
+						SC_DEBUG_ASSERT(0 == usb_can->tx_offsets[1]);
 					}
 
 					can->enabled = is_enabled;

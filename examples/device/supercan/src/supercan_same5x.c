@@ -306,8 +306,16 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 	can->int_prev_dlec_no_nc = dlec;
 }
 
+#if SUPERCAN_DEBUG
+static int entry_count[SC_BOARD_CAN_COUNT];
+#endif
+
 SC_RAMFUNC void same5x_can_int(uint8_t index)
 {
+#if SUPERCAN_DEBUG
+	int c = __atomic_add_fetch(&entry_count[index], 1, __ATOMIC_ACQ_REL);
+	SC_ISR_ASSERT(c == 1);
+#endif
 	same5x_counter_1MHz_request_current_value();
 
 	struct same5x_can *can = &same5x_cans[index];
@@ -376,6 +384,9 @@ SC_RAMFUNC void same5x_can_int(uint8_t index)
 		// LOG(">");
 		sc_can_notify_task_isr(index, events);
 	}
+#if SUPERCAN_DEBUG
+	__atomic_add_fetch(&entry_count[index], -1, __ATOMIC_ACQ_REL);
+#endif
 }
 
 
@@ -698,19 +709,15 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 			have_data_to_place = true;
 			__atomic_thread_fence(__ATOMIC_ACQUIRE);
 
-			uint8_t rx_count = rx_put_index - can->rx_get_index;
-			if (unlikely(rx_count > SC_BOARD_CAN_RX_FIFO_SIZE)) {
-				LOG("ch%u rx fifo count %u\n", index, rx_count);
-				SC_ASSERT(rx_put_index - can->rx_get_index <= SC_BOARD_CAN_RX_FIFO_SIZE);
-			}
 
-			// has_bus_error = false;
-			// bus_activity_tc = xTaskGetTickCount();
 			uint8_t get_index = can->rx_get_index & (SC_BOARD_CAN_RX_FIFO_SIZE-1);
 			uint8_t bytes = sizeof(struct sc_msg_can_rx);
 			CAN_RXF0E_0_Type r0 = can->rx_frames[get_index].R0;
 			CAN_RXF0E_1_Type r1 = can->rx_frames[get_index].R1;
 			uint8_t can_frame_len = dlc_to_len(r1.bit.DLC);
+
+			SC_DEBUG_ASSERT(rx_put_index - can->rx_get_index <= SC_BOARD_CAN_RX_FIFO_SIZE);
+
 			if (!r0.bit.RTR) {
 				bytes += can_frame_len;
 			}
@@ -764,10 +771,6 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 
 				msg->timestamp_us = ts;
 
-				// LOG("ch%u rx i=%u rx hi=%x lo=%x tscv hi=%x lo=%x\n", index, get_index, rx_high, rx_low, tscv_high, tscv_low);
-				// LOG("ch%u rx i=%u rx=%lx\n", index, get_index, ts);
-
-
 				// LOG("ch%u rx ts %lu\n", index, msg->timestamp_us);
 
 				if (r1.bit.FDF) {
@@ -797,8 +800,6 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 			have_data_to_place = true;
 			SC_DEBUG_ASSERT(tx_put_index - can->tx_get_index <= SC_BOARD_CAN_TX_FIFO_SIZE);
 
-			// has_bus_error = false;
-			// bus_activity_tc = xTaskGetTickCount();
 			uint8_t get_index = can->tx_get_index & (SC_BOARD_CAN_TX_FIFO_SIZE-1);
 			struct sc_msg_can_txr *msg = NULL;
 			if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
@@ -1055,18 +1056,15 @@ SC_RAMFUNC static bool can_poll(
 	uint32_t* const events,
 	uint32_t tsc)
 {
-	SC_DEBUG_ASSERT(events);
-
 	struct same5x_can *can = &same5x_cans[index];
 
-	bool more = false;
 	uint32_t tsv[SC_BOARD_CAN_RX_FIFO_SIZE];
 	uint8_t count = 0;
-	uint8_t pi = 0;
 	unsigned rx_lost = 0;
+	bool more = false;
+	uint8_t pi = 0;
 
 	count = can->m_can->RXF0S.bit.F0FL;
-
 
 	if (count) {
 		more = true;
@@ -1120,21 +1118,24 @@ SC_RAMFUNC static bool can_poll(
 				//__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
 				++rx_lost;
 
-#ifdef SUPERCAN_DEBUG
+#if SUPERCAN_DEBUG
 				{
 					if (rx_lost_reported[index] + UINT32_C(1000000) <= tsc) {
 						rx_lost_reported[index] = tsc;
-						LOG("ch%u rx lost %lx\n", index, ts);
+						LOG("ch%u rx lost %lx pi=%u gi=%u\n", index, ts, pi, rx_get_index);
 					}
 				}
 #endif
 			} else {
-				uint8_t put_index = pi & (SC_BOARD_CAN_RX_FIFO_SIZE-1);
-				can->rx_frames[put_index].R0 = can->rx_fifo[get_index].R0;
-				can->rx_frames[put_index].R1 = can->rx_fifo[get_index].R1;
+				uint8_t const put_index = pi & (SC_BOARD_CAN_RX_FIFO_SIZE-1);
+				CAN_RXF0E_0_Type const r0 = can->rx_fifo[get_index].R0;
+				CAN_RXF0E_1_Type const r1 = can->rx_fifo[get_index].R1;
+
+				can->rx_frames[put_index].R0 = r0;
+				can->rx_frames[put_index].R1 = r1;
 				can->rx_frames[put_index].ts = tsv[get_index];
-				if (likely(!can->rx_frames[put_index].R0.bit.RTR)) {
-					uint8_t can_frame_len = dlc_to_len(can->rx_frames[put_index].R1.bit.DLC);
+				if (likely(!r0.bit.RTR)) {
+					uint8_t can_frame_len = dlc_to_len(r1.bit.DLC);
 					if (likely(can_frame_len)) {
 						memcpy(can->rx_frames[put_index].data, can->rx_fifo[get_index].data, can_frame_len);
 					}
