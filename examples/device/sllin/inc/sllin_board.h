@@ -1,25 +1,6 @@
-/*
- * The MIT License (MIT)
+/* SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
+ * Copyright (c) 2021-2022 Jean Gressmann <jean@0x42.de>
  *
  */
 
@@ -32,6 +13,11 @@
 #include <sllin_debug.h>
 #include <sllin_version.h>
 #include <sllin.h>
+
+#include <FreeRTOSConfig.h>
+
+#define SLLIN_TASK_PRIORITY (configLIBRARY_LOWEST_INTERRUPT_PRIORITY-1)
+#define SLLIN_ISR_PRIORITY (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY+1)
 
 #ifndef likely
 #define likely(x) __builtin_expect(!!(x),1)
@@ -112,8 +98,18 @@ extern uint16_t _sllin_time_stamp_ms;
 #define sllin_time_stamp_ms() __atomic_load_n(&_sllin_time_stamp_ms, __ATOMIC_ACQUIRE)
 
 
-#if defined(SAME54XPLAINEDPRO)
+#ifndef SAME54XPLAINEDPRO
+#	define SAME54XPLAINEDPRO 0
+#endif
+
+#ifndef D5035_02
+#	define D5035_02 0
+#endif
+
+#if SAME54XPLAINEDPRO
 #	include "sllin_same54_xplained_pro.h"
+#elif D5035_02
+#	include "sllin_D5035_02.h"
 #else
 #	error "Unknown board"
 #endif
