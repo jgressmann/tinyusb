@@ -818,46 +818,6 @@ SLLIN_RAMFUNC extern void sllin_lin_task_notify_isr(uint8_t index, uint32_t coun
 
 uint16_t _sllin_time_stamp_ms;
 
-// SLLIN_RAMFUNC static inline void sc_board_can_ts_request(void)
-// {
-// 	uint8_t reg;
-// 	(void)index;
-
-// 	while (1) {
-
-// 		reg = __atomic_load_n(&TC2->COUNT16.CTRLBSET.reg, __ATOMIC_ACQUIRE);
-
-// 		uint8_t cmd = reg & TC_CTRLBSET_CMD_Msk;
-
-// 		// SC_DEBUG_ASSERT(cmd == TC_CTRLBSET_CMD_READSYNC || cmd == TC_CTRLBSET_CMD_NONE);
-// 		if (cmd == TC_CTRLBSET_CMD_READSYNC) {
-// 			break;
-// 		}
-
-// 		if (likely(__atomic_compare_exchange_n(
-// 			&TC2->COUNT16.CTRLBSET.reg,
-// 			&reg,
-// 			TC_CTRLBSET_CMD_READSYNC,
-// 			false, /* weak? */
-// 			__ATOMIC_RELEASE,
-// 			__ATOMIC_ACQUIRE))) {
-// 				break;
-// 			}
-
-// 	}
-// }
-
-// #define same5x_counter_1MHz_is_current_value_ready() ((__atomic_load_n(&TC2->COUNT16.CTRLBSET.reg, __ATOMIC_ACQUIRE) & TC_CTRLBSET_CMD_Msk) == TC_CTRLBSET_CMD_NONE)
-// #define same5x_counter_1MHz_read_unsafe() (TC2->COUNT16.COUNT.reg)
-
-// #define same5x_counter_1MHz_wait_for_current_value() \
-// 	({ \
-// 		while (!same5x_counter_1MHz_is_current_value_ready()); \
-// 		uint32_t counter = same5x_counter_1MHz_read_unsafe(); \
-// 		counter; \
-// 	})
-
-
 SLLIN_RAMFUNC extern void vApplicationTickHook(void)
 {
 	_Static_assert(1000 == configTICK_RATE_HZ, "fix this function");
@@ -881,15 +841,9 @@ SLLIN_RAMFUNC extern void vApplicationTickHook(void)
 	} else {
 		__atomic_store_n(&_sllin_time_stamp_ms, now + 1, __ATOMIC_RELEASE);
 	}
+}
 
-	// sc_board_can_ts_request();
-	// static uint16_t last = 0;
-	// uint16_t ts = same5x_counter_1MHz_wait_for_current_value();
 
-	// if (ts != last) {
-	// 	LOG("ts=%x ch0 sleep=%x\n", _sllin_time_stamp_ms, ts);
-	// 	last = ts;
-	// }
 
 	// static int last_stopped = -1;
 	// bool stopped = TC2->COUNT16.STATUS.bit.STOP;
