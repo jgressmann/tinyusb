@@ -49,7 +49,7 @@ static struct usb {
 	StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_device_stack_mem;
 	uint8_t port;
-	bool mounted;
+	// bool mounted;
 } usb;
 
 static struct lin {
@@ -139,44 +139,6 @@ int main(void)
 	return 0;
 }
 
-void tud_mount_cb(void)
-{
-	LOG("mounted\n");
-	led_blink(0, 250);
-	usb.mounted = true;
-
-
-	PORT->Group[2].OUTSET.reg |= 1ul << 7;
-}
-
-void tud_umount_cb(void)
-{
-	LOG("unmounted\n");
-	led_blink(0, 1000);
-	usb.mounted = false;
-
-	PORT->Group[2].OUTCLR.reg |= 1ul << 7;
-}
-
-void tud_suspend_cb(bool remote_wakeup_en)
-{
-	(void) remote_wakeup_en;
-	LOG("suspend\n");
-	usb.mounted = false;
-	led_blink(0, 500);
-
-
-	PORT->Group[2].OUTCLR.reg |= 1ul << 7;
-}
-
-void tud_resume_cb(void)
-{
-	LOG("resume\n");
-	usb.mounted = true;
-	led_blink(0, 250);
-
-	PORT->Group[2].OUTCLR.reg |= 1ul << 7;
-}
 
 static inline uint8_t char_to_nibble(char c)
 {
@@ -227,6 +189,13 @@ static void reset_channel_state(uint8_t index)
 #endif
 
 	clear_rx_fifo(index);
+}
+
+static inline void reset_channels(void)
+{
+	for (size_t i = 0; i < TU_ARRAY_SIZE(lins); ++i) {
+		reset_channel_state((uint8_t)i);
+	}
 }
 
 SLLIN_RAMFUNC static inline void sllin_make_time_stamp_string(char *buffer, size_t size, uint16_t time_stamp_ms)
@@ -844,11 +813,34 @@ SLLIN_RAMFUNC extern void vApplicationTickHook(void)
 }
 
 
-
-	// static int last_stopped = -1;
-	// bool stopped = TC2->COUNT16.STATUS.bit.STOP;
-	// if (stopped != last_stopped) {
-	// 	LOG("ts=%x ch0 stop=%d\n", _sllin_time_stamp_ms, stopped);
-	// 	last_stopped = stopped;
-	// }
+void tud_mount_cb(void)
+{
+	LOG("mounted\n");
+	led_blink(0, 250);
+	// usb.mounted = true;
 }
+
+void tud_umount_cb(void)
+{
+	LOG("unmounted\n");
+	led_blink(0, 1000);
+	// usb.mounted = false;
+	reset_channels();
+}
+
+void tud_suspend_cb(bool remote_wakeup_en)
+{
+	(void) remote_wakeup_en;
+	LOG("suspend\n");
+	led_blink(0, 500);
+	// usb.mounted = false;
+	reset_channels();
+}
+
+void tud_resume_cb(void)
+{
+	LOG("resume\n");
+	led_blink(0, 250);
+	// usb.mounted = true;
+}
+
