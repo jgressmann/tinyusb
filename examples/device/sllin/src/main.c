@@ -96,7 +96,7 @@ int main(void)
 		"tusb",
 		TU_ARRAY_SIZE(usb.usb_device_stack),
 		NULL,
-		configMAX_PRIORITIES-1,
+		SLLIN_TASK_PRIORITY,
 		usb.usb_device_stack,
 		&usb.usb_device_stack_mem);
 	(void) xTaskCreateStatic(
@@ -104,7 +104,7 @@ int main(void)
 		"led",
 		TU_ARRAY_SIZE(led_task_stack),
 		NULL,
-		configMAX_PRIORITIES-1,
+		SLLIN_TASK_PRIORITY,
 		led_task_stack,
 		&led_task_mem);
 
@@ -120,7 +120,7 @@ int main(void)
 								NULL,
 								TU_ARRAY_SIZE(lin->usb_task_stack),
 								(void*)(uintptr_t)i,
-								configMAX_PRIORITIES-1,
+								SLLIN_TASK_PRIORITY,
 								lin->usb_task_stack,
 								&lin->usb_task_mem);
 
