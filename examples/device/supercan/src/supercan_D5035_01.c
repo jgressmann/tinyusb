@@ -528,7 +528,7 @@ SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
 		break;
 	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_BUS_OFF:
 		led_set(can->led_status_green, 0);
-		led_blink(can->led_status_red, 1);
+		led_set(can->led_status_red, 1);
 		break;
 	default:
 		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS / 2);
