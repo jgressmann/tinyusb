@@ -61,18 +61,18 @@ static struct lin {
 	uint8_t tx_sl_buffer[129]; // power of 2 + 1 to include terminating 0
 
 	sllin_conf conf;
-
+	int led_state;
 	uint8_t rx_sl_offset;
 	uint8_t tx_sl_offset;
 	uint8_t rx_fifo_gi; // not an index, uses full range of type
 	uint8_t rx_fifo_pi; // not an index, uses full range of type
 
 	bool tx_full;
-
 	uint8_t rx_full;
 	bool enabled;
 	bool report_time_per_frame;
 	bool report_time_periodically;
+
 #if SLLIN_DEBUG
 	int32_t last_ts;
 #endif
@@ -139,8 +139,19 @@ int main(void)
 	return 0;
 }
 
+SLLIN_RAMFUNC static inline void set_led(uint8_t index, uint8_t state)
+{
+	struct lin *lin = NULL;
 
-static inline uint8_t char_to_nibble(char c)
+	lin = &lins[index];
+
+	if (unlikely(lin->led_state != state)) {
+		lin->led_state = state;
+		sllin_board_led_lin_status_set(index, state);
+	}
+}
+
+SLLIN_RAMFUNC static inline uint8_t char_to_nibble(char c)
 {
 	if (likely(c >= '0' && c <= '9')) {
 		return c - '0';
@@ -154,7 +165,7 @@ static inline uint8_t char_to_nibble(char c)
 
 }
 
-static inline char nibble_to_char(uint8_t nibble)
+SLLIN_RAMFUNC static inline char nibble_to_char(uint8_t nibble)
 {
 	return "0123456789abcdef"[nibble & 0xf];
 }
@@ -191,10 +202,16 @@ static void reset_channel_state(uint8_t index)
 	clear_rx_fifo(index);
 }
 
-static inline void reset_channels(void)
+static inline void channel_off(uint8_t index)
+{
+	reset_channel_state(index);
+	set_led(index, SLLIN_LIN_LED_STATUS_DISABLED);
+}
+
+static inline void channels_off(void)
 {
 	for (size_t i = 0; i < TU_ARRAY_SIZE(lins); ++i) {
-		reset_channel_state((uint8_t)i);
+		channel_off((uint8_t)i);
 	}
 }
 
@@ -295,11 +312,14 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		lin->conf.master = lin->rx_sl_buffer[0] == 'O';
 		sllin_board_lin_init(index, &lin->conf);
 		LOG("ch%u open %s bitrate=%u sleep timeout=%u [ms]\n", index, lin->conf.master ? "master" : "slave", lin->conf.bitrate, lin->conf.sleep_timeout_ms);
+		set_led(index, SLLIN_LIN_LED_STATUS_ENABLED_OFF_BUS);
 		break;
 	case 'C':
 		LOG("ch%u close\n", index);
 		lin->enabled = false;
 		tud_cdc_n_write_clear(index);
+		sllin_board_lin_uninit(index);
+		set_led(index, SLLIN_LIN_LED_STATUS_ENABLED_OFF_BUS);
 		break;
 	case 't': // master: tx, slave: store response
 		if (likely(lin->enabled)) {
@@ -528,16 +548,19 @@ SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_ele
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
+		set_led(index, SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_ACTIVE);
 	} else if (e->lin_frame.flags & SLLIN_FRAME_FLAG_CRC_ERROR) {
 		static const char can_crc_error_frame[] = "T2000000880000000800000000"; // CAN_ERR_PROT_LOC_CRC_SEQ
 
 		lin->tx_sl_offset = sizeof(can_crc_error_frame) - 1;
 		memcpy(lin->tx_sl_buffer, can_crc_error_frame, lin->tx_sl_offset);
+		set_led(index, SLLIN_LIN_LED_STATUS_ERROR);
 	} else if (e->lin_frame.flags & SLLIN_FRAME_FLAG_PID_ERROR) {
 		static const char can_pid_error_frame[] = "T2000000880000000F00000000"; // CAN_ERR_PROT_LOC_ID12_05
 
 		lin->tx_sl_offset = sizeof(can_pid_error_frame) - 1;
 		memcpy(lin->tx_sl_buffer, can_pid_error_frame, lin->tx_sl_offset);
+		set_led(index, SLLIN_LIN_LED_STATUS_ERROR);
 	} else {
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
@@ -549,6 +572,8 @@ SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_ele
 			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] >> 4);
 			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i]);
 		}
+
+		set_led(index, SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_ACTIVE);
 	}
 
 	if (lin->report_time_per_frame) {
@@ -591,6 +616,8 @@ SLLIN_RAMFUNC static inline void process_queue(uint8_t index, sllin_queue_elemen
 		}
 
 		lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
+
+		set_led(index, SLLIN_QUEUE_ELEMENT_TYPE_SLEEP == e->type ? SLLIN_LIN_LED_STATUS_ON_BUS_SLEEPING : SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_PASSIVE);
 	} break;
 	default:
 		SLLIN_ASSERT(false && "unhandled queue element type");
@@ -699,7 +726,7 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 			} else {
 				// LOG("ch%u TT\n", index);
 
-				reset_channel_state(index);
+				channel_off(index);
 
 				// can't call this if disconnected
 				// tud_cdc_n_read_flush(index);
@@ -719,7 +746,7 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 	}
 }
 
-void tud_cdc_rx_cb(uint8_t index)
+SLLIN_RAMFUNC void tud_cdc_rx_cb(uint8_t index)
 {
 	struct lin *lin = &lins[index];
 
@@ -729,7 +756,7 @@ void tud_cdc_rx_cb(uint8_t index)
 }
 
 
-void tud_cdc_line_state_cb(uint8_t index, bool dtr, bool rts)
+SLLIN_RAMFUNC void tud_cdc_line_state_cb(uint8_t index, bool dtr, bool rts)
 {
 	struct lin *lin = &lins[index];
 
@@ -775,7 +802,7 @@ SLLIN_RAMFUNC extern void sllin_lin_task_notify_isr(uint8_t index, uint32_t coun
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
 	if (likely(count)) {
-		for (uint32_t i = 0; i < count - 1; ++i) {
+		for (uint32_t i = 1; i < count; ++i) {
 			vTaskNotifyGiveFromISR(lin->usb_task_handle, NULL);
 		}
 
@@ -825,7 +852,7 @@ void tud_umount_cb(void)
 	LOG("unmounted\n");
 	led_blink(0, 1000);
 	// usb.mounted = false;
-	reset_channels();
+	channels_off();
 }
 
 void tud_suspend_cb(bool remote_wakeup_en)
@@ -834,7 +861,7 @@ void tud_suspend_cb(bool remote_wakeup_en)
 	LOG("suspend\n");
 	led_blink(0, 500);
 	// usb.mounted = false;
-	reset_channels();
+	channels_off();
 }
 
 void tud_resume_cb(void)

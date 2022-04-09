@@ -29,6 +29,13 @@
 #define CONF_LIN_UART_FREQUENCY 48000000
 
 
+
+/* The board runs off of the 48 MHz internal RC oscillator
+ *
+ * @115200 debug prints KILL LIN timing assumptions!
+*/
+
+
 #if SUPERDFU_APP
 struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_HDR_SECTION_NAME)));
 static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SECTION_NAME))) = {
@@ -81,7 +88,6 @@ void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
 #endif // #if CFG_TUD_DFU_RT
 #endif
 
-/* The board runs off of the 48 MHz internal RC oscillator */
 
 enum {
 	SLAVE_PROTO_STEP_RX_BREAK = 0,
@@ -123,7 +129,9 @@ struct lin {
 	sllin_lin_int_callback usart_irq_handler;
 	struct slave slave;
 	struct master master;
-	uint8_t master_slave_pin;
+	uint8_t const master_slave_pin;
+	uint8_t const led_status_green;
+	uint8_t const led_status_red;
 };
 
 static struct lin lins[SLLIN_BOARD_LIN_COUNT] = {
@@ -132,12 +140,16 @@ static struct lin lins[SLLIN_BOARD_LIN_COUNT] = {
 		.slave.node_timer = TC0, // NOTE: TC0/TC1 don't seem to support different clock speeds, setting one will affect the other.
 		.slave.sleep_timer = TC2,
 		.master_slave_pin = 4,
+		.led_status_green = 5,
+		.led_status_red = 6,
 	},
 	{
 		.sercom = SERCOM0,
 		.slave.node_timer = TC1,
 		.slave.sleep_timer = TC3,
 		.master_slave_pin = 9,
+		.led_status_green = 7,
+		.led_status_red = 8,
 	},
 };
 
@@ -544,6 +556,15 @@ __attribute__((noreturn)) extern void sllin_board_reset(void)
 	__unreachable();
 }
 
+extern void sllin_board_lin_uninit(uint8_t index)
+{
+	struct lin *lin = &lins[index];
+	Sercom *sercom = lin->sercom;
+
+	// disable SERCOM
+	sercom->USART.CTRLA.bit.SWRST = 1;
+}
+
 extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 {
 	struct lin *lin = &lins[index];
@@ -712,6 +733,44 @@ SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(
 }
 
 
+SLLIN_RAMFUNC extern void sllin_board_led_lin_status_set(uint8_t index, int status)
+{
+	struct lin *lin = &lins[index];
+
+	LOG("ch%u set led status %u\n", index, status);
+
+	switch (status) {
+	case SLLIN_LIN_LED_STATUS_DISABLED:
+		led_set(lin->led_status_green, 0);
+		led_set(lin->led_status_red, 0);
+		break;
+	case SLLIN_LIN_LED_STATUS_ENABLED_OFF_BUS:
+		led_set(lin->led_status_green, 1);
+		led_set(lin->led_status_red, 0);
+		break;
+	case SLLIN_LIN_LED_STATUS_ON_BUS_SLEEPING:
+		led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_SLEEPING_MS);
+		led_set(lin->led_status_red, 0);
+		break;
+	case SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_PASSIVE:
+		led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_PASSIVE_MS);
+		led_set(lin->led_status_red, 0);
+		break;
+	case SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_ACTIVE:
+		led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS);
+		led_set(lin->led_status_red, 0);
+		break;
+	case SLLIN_LIN_LED_STATUS_ERROR:
+		led_set(lin->led_status_green, 0);
+		led_blink(lin->led_status_red, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS);
+		break;
+	default:
+		led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS / 2);
+		led_blink(lin->led_status_red, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS / 2);
+		break;
+	}
+}
+
 SLLIN_RAMFUNC static inline void lin_int_bus_sleep(uint8_t index)
 {
 	struct lin *lin = &lins[index];
@@ -735,7 +794,6 @@ SLLIN_RAMFUNC static inline void lin_int_bus_sleep(uint8_t index)
 	}
 }
 
-
 SLLIN_RAMFUNC static inline void lin_int_wake_up(uint8_t index)
 {
 	struct lin *lin = &lins[index];
@@ -745,7 +803,7 @@ SLLIN_RAMFUNC static inline void lin_int_wake_up(uint8_t index)
 	if (__atomic_compare_exchange_n(&sl->sleep, &expected, 0, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
 		sllin_queue_element e;
 
-		LOG("ch%u wake up\n", index);
+		// LOG("ch%u wake up\n", index);
 
 		e.type = SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP;
 		e.time_stamp_ms = sllin_time_stamp_ms();
@@ -806,6 +864,8 @@ SLLIN_RAMFUNC static void lin_usart_int_master(uint8_t index)
 	s->USART.INTFLAG.reg = ~0;
 
 	uint8_t step = __atomic_load_n(&lin->master.step, __ATOMIC_ACQUIRE);
+
+	// LOG("ch%u step=%u\n", index, step);
 
 	switch (step) {
 	case MASTER_PROTO_STEP_RX_BREAK:

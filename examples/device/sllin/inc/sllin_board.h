@@ -67,6 +67,19 @@ enum {
 	SLLIN_FRAME_FLAG_MASTER_TX = 0x20,
 };
 
+enum {
+	SLLIN_LIN_LED_BLINK_DELAY_SLEEPING_MS = 768,
+	SLLIN_LIN_LED_BLINK_DELAY_AWAKE_PASSIVE_MS = 512,
+	SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS = 128,
+
+	SLLIN_LIN_LED_STATUS_DISABLED = 0,
+	SLLIN_LIN_LED_STATUS_ENABLED_OFF_BUS,
+	SLLIN_LIN_LED_STATUS_ON_BUS_SLEEPING,
+	SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_PASSIVE,
+	SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_ACTIVE,
+	SLLIN_LIN_LED_STATUS_ERROR,
+};
+
 
 __attribute__((noreturn)) extern void sllin_board_reset(void);
 extern uint32_t sllin_board_identifier(void);
@@ -74,6 +87,7 @@ extern void sllin_board_init_begin(void);
 extern void sllin_board_init_end(void);
 extern void sllin_board_led_set(uint8_t index, bool on);
 extern void sllin_board_leds_on_unsafe(void);
+extern void sllin_board_lin_uninit(uint8_t index);
 extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf);
 extern void sllin_board_lin_sleep_timeout(uint8_t index, uint16_t timeout_ms);
 SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
@@ -90,6 +104,7 @@ SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(
 	uint8_t const *data,
 	uint8_t crc,
 	uint8_t flags);
+SLLIN_RAMFUNC extern void sllin_board_led_lin_status_set(uint8_t index, int status);
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_def(uint8_t index, uint32_t count);
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_isr(uint8_t index, uint32_t count);
 SLLIN_RAMFUNC extern void sllin_lin_task_queue(uint8_t index, sllin_queue_element const *element);
