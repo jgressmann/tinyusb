@@ -58,7 +58,7 @@ static const tusb_desc_device_t device = {
 	.bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
 
 	.idVendor           = 0x1d50,
-	.idProduct          = 0xdead,
+	.idProduct          = 0x5037,
 	.bcdDevice          = (SLLIN_VERSION_MAJOR << 12) | (SLLIN_VERSION_MINOR << 8) | ((SLLIN_VERSION_PATCH / 10) << 4) | (SLLIN_VERSION_PATCH % 10),
 
 	.iManufacturer      = 0x01,

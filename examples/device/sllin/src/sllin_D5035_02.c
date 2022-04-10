@@ -8,6 +8,9 @@
 
 #if D5035_02
 
+#include <FreeRTOS.h>
+#include <timers.h>
+
 #include <sllin_board.h>
 #include <leds.h>
 

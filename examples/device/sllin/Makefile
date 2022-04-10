@@ -1,5 +1,5 @@
 VID = 1d50
-PID = dead
+PID = 5037
 
 DEPS_SUBMODULES += lib/FreeRTOS-Kernel
 

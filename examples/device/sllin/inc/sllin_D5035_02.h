@@ -9,6 +9,14 @@
 
 #include <sam.h>
 
+#if SUPERDFU_APP
+	#include <dfu_ram.h>
+	#include <dfu_app.h>
+	#include <dfu_usb_descriptors.h>
+	#include <mcu.h>
+	#define DFU_USB_RESET_TIMEOUT_MS 1000
+#endif
+
 
 
 #define SLLIN_BOARD_USB_BCD_DEVICE (1 << 8)
@@ -28,4 +36,6 @@ enum {
 	LED_LIN1_STATUS_RED,
 	SLLIN_BOARD_LED_COUNT
 };
+
+
 
