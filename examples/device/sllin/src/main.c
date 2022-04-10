@@ -218,6 +218,7 @@ static inline void channels_off(void)
 SLLIN_RAMFUNC static inline void sllin_make_time_stamp_string(char *buffer, size_t size, uint16_t time_stamp_ms)
 {
 	SLLIN_DEBUG_ASSERT(size >= 5);
+	(void) size;
 
 	buffer[4] = 0;
 	buffer[3] = nibble_to_char(time_stamp_ms);
