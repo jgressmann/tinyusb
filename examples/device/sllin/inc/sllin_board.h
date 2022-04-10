@@ -117,14 +117,14 @@ extern uint16_t _sllin_time_stamp_ms;
 #	define SAME54XPLAINEDPRO 0
 #endif
 
-#ifndef D5035_02
-#	define D5035_02 0
+#ifndef D5035_50
+#	define D5035_50 0
 #endif
 
 #if SAME54XPLAINEDPRO
 #	include "sllin_same54_xplained_pro.h"
-#elif D5035_02
-#	include "sllin_D5035_02.h"
+#elif D5035_50
+#	include "sllin_D5035_50.h"
 #else
 #	error "Unknown board"
 #endif

@@ -22,9 +22,9 @@ else
 CFLAGS += -DHAVE_ATOMIC_COMPARE_EXCHANGE
 endif
 
-ifeq ($(BOARD),d5035_02)
+ifeq ($(BOARD),d5035_50)
 INC += $(TOP)/examples/device/atsame51_dfu/inc
-CFLAGS += -DRAMFUNC_SECTION_NAME="\".ramfunc\"" -DD5035_02=1
+CFLAGS += -DRAMFUNC_SECTION_NAME="\".ramfunc\"" -DD5035_50=1
 endif
 
 
