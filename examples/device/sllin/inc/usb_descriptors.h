@@ -10,3 +10,4 @@
 
 void usb_get_desc_string(uint8_t index, char *ptr, size_t* in_out_capa_len);
 
+extern uint8_t const desc_ms_os_20[];

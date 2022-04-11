@@ -872,3 +872,94 @@ void tud_resume_cb(void)
 	// usb.mounted = true;
 }
 
+#if CFG_TUD_DFU_RUNTIME
+
+static inline const char* recipient_str(tusb_request_recipient_t r)
+{
+	switch (r) {
+	case TUSB_REQ_RCPT_DEVICE:
+		return "device (0)";
+	case TUSB_REQ_RCPT_INTERFACE:
+		return "interface (1)";
+	case TUSB_REQ_RCPT_ENDPOINT:
+		return "endpoint (2)";
+	case TUSB_REQ_RCPT_OTHER:
+		return "other (3)";
+	default:
+		return "???";
+	}
+}
+
+static inline const char* type_str(tusb_request_type_t value)
+{
+	switch (value) {
+	case TUSB_REQ_TYPE_STANDARD:
+		return "standard (0)";
+	case TUSB_REQ_TYPE_CLASS:
+		return "class (1)";
+	case TUSB_REQ_TYPE_VENDOR:
+		return "vendor (2)";
+	case TUSB_REQ_TYPE_INVALID:
+		return "invalid (3)";
+	default:
+		return "???";
+	}
+}
+
+static inline const char* dir_str(tusb_dir_t value)
+{
+	switch (value) {
+	case TUSB_DIR_OUT:
+		return "out (0)";
+	case TUSB_DIR_IN:
+		return "in (1)";
+	default:
+		return "???";
+	}
+}
+
+bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const * request)
+{
+	LOG("port=%u stage=%u\n", rhport, stage);
+
+	switch (stage) {
+	case CONTROL_STAGE_SETUP: {
+		switch (request->bRequest) {
+		case DFU_VENDOR_REQUEST_MICROSOFT:
+			if (request->wIndex == 7) {
+				// Get Microsoft OS 2.0 compatible descriptor
+				LOG("send MS OS 2.0 compatible descriptor\n");
+				uint16_t total_len;
+				memcpy(&total_len, desc_ms_os_20 + DFU_MS_OS_20_SUBSET_HEADER_FUNCTION_LEN, 2);
+				total_len = tu_le16toh(total_len);
+				return tud_control_xfer(rhport, request, (void*)desc_ms_os_20, total_len);
+			}
+			break;
+		default:
+			LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
+				request->bmRequestType,
+				recipient_str(request->bmRequestType_bit.recipient),
+				type_str(request->bmRequestType_bit.type),
+				dir_str(request->bmRequestType_bit.direction),
+				request->bRequest, request->wValue, request->wIndex,
+				request->wLength);
+			break;
+		}
+	} break;
+	case CONTROL_STAGE_DATA:
+	case CONTROL_STAGE_ACK:
+		switch (request->bRequest) {
+		case DFU_VENDOR_REQUEST_MICROSOFT:
+			return true;
+		default:
+			break;
+		}
+	default:
+		break;
+	}
+
+	// stall unknown request
+	return false;
+}
+
+#endif // CFG_TUD_DFU_RUNTIME

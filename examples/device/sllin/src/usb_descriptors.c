@@ -1,27 +1,9 @@
-/*
- * The MIT License (MIT)
+/* SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
+ * Copyright (c) 2021-2022 Jean Gressmann <jean@0x42.de>
  *
  */
+
 
 #include <tusb.h>
 #include <class/dfu/dfu_rt_device.h>
@@ -44,12 +26,10 @@
 
 
 
-#define USB_BCD 0x200
-
 static const tusb_desc_device_t device = {
 	.bLength            = sizeof(tusb_desc_device_t),
 	.bDescriptorType    = TUSB_DESC_DEVICE,
-	.bcdUSB             = USB_BCD,
+	.bcdUSB             = 0x0210,
 
 	.bDeviceClass       = TUSB_CLASS_MISC,
     .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
@@ -117,6 +97,48 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 	(void) index; // for multiple configurations
 	return desc_configuration;
 }
+
+#if CFG_TUD_DFU_RUNTIME
+
+#define MS_OS_20_SET_HEADER_DESCRIPTOR_LEN 0x0a
+#define MS_OS_20_SUBSET_HEADER_CONFIGURATION_LEN 0x08
+#define DFU_MS_OS_20_DESC_LEN (DFU_MS_OS_20_SUBSET_HEADER_FUNCTION_LEN+DFU_MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN+DFU_MS_OS_20_FEATURE_REG_PROPERTY_DEVICE_GUIDS_DESC_LEN)
+#define MS_OS_20_DESC_LEN (MS_OS_20_SET_HEADER_DESCRIPTOR_LEN + MS_OS_20_SUBSET_HEADER_CONFIGURATION_LEN + DFU_MS_OS_20_DESC_LEN)
+
+
+uint8_t const desc_ms_os_20[] =
+{
+	// Set header: length, type, windows version, total length
+	U16_TO_U8S_LE(MS_OS_20_SET_HEADER_DESCRIPTOR_LEN), U16_TO_U8S_LE(MS_OS_20_SET_HEADER_DESCRIPTOR), U32_TO_U8S_LE(0x06030000), U16_TO_U8S_LE(MS_OS_20_DESC_LEN),
+
+	// Configuration subset header: length, type, configuration index, reserved, configuration total length
+	U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_CONFIGURATION_LEN), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_CONFIGURATION), 0, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN - MS_OS_20_SET_HEADER_DESCRIPTOR_LEN),
+
+	DFU_MS_OS_20_SUBSET_HEADER_FUNCTION_DATA(DFU_INTERFACE_INDEX, DFU_MS_OS_20_DESC_LEN),
+	DFU_MS_OS_20_FEATURE_COMPATBLE_ID_DESC_DATA,
+	DFU_MS_OS_20_FEATURE_REG_PROPERTY_DEVICE_GUIDS_DESC_DATA,
+};
+
+
+TU_VERIFY_STATIC(sizeof(desc_ms_os_20) == MS_OS_20_DESC_LEN, "descriptor size mismatch");
+
+
+
+#define BOS_TOTAL_LEN      (TUD_BOS_DESC_LEN + TUD_BOS_MICROSOFT_OS_DESC_LEN)
+static uint8_t const bos_desc[] =
+{
+	// total length, number of device caps
+	TUD_BOS_DESCRIPTOR(BOS_TOTAL_LEN, 1),
+
+	// Microsoft OS 2.0 descriptor
+	TUD_BOS_MS_OS_20_DESCRIPTOR(MS_OS_20_DESC_LEN, DFU_VENDOR_REQUEST_MICROSOFT)
+};
+
+uint8_t const * tud_descriptor_bos_cb(void)
+{
+	return bos_desc;
+}
+#endif
 
 //--------------------------------------------------------------------+
 // String Descriptors
