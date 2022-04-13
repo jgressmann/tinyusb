@@ -62,7 +62,7 @@ slLIN mostly follows Lawice's protocol with a few modifications for LIN:
 | `L\r`                                  | host to device | Open device in slave mode |
 | `O\r`                                  | host to device | Open device in master mode |
 | `C\r`                                  | host to device | Close device |
-| `tIIILDD...\r`                         | host to device | 1. If the device operates in master mode, this sends a master data frame. </br>2. If the device operatates in slave mode and and length is non-zero, this stores a data reponse.</br>3.  If the device operatates in slave mode and and length is zero, this clears a data reponse. |
+| `tIIILDD...\r`                         | host to device | 1. If the device operates in master mode, this sends a master data frame. </br>2. If the device operatates in slave mode and length is non-zero, this stores a data reponse.</br>3.  If the device operatates in slave mode and and length is zero, this clears a data reponse. |
 | `tIIILDD...\r`                         | device to host | A complete LIN frame (header + data). |
 | `rIIIL\r`                              | host to device | Only valid in master mode. Send LIN header.    |
 | `rIIIL\r`                              | device to host | Header on bus but no slave responded. |
