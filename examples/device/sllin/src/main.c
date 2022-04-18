@@ -518,11 +518,15 @@ SLLIN_RAMFUNC static inline void process_error(uint8_t index, sllin_queue_elemen
 		static const char can_crc_error_frame[] = "T2000001080000000055000000\r"; // CAN_ERR_TRX_CANH_SHORT_TO_BAT, CAN_ERR_TRX_CANL_SHORT_TO_BAT
 		error_frame = can_crc_error_frame;
 	} break;
+	case SLLIN_ERROR_BAD_SYNC: {
+		static const char frame[] = "T2000000880000020300000000\r"; // form error, start of frame
+		error_frame = frame;
+	} break;
 	case SLLIN_ERROR_CRC: {
 		static const char can_crc_error_frame[] = "T2000000880000000800000000\r"; // CAN_ERR_PROT_LOC_CRC_SEQ
 		error_frame = can_crc_error_frame;
 	} break;
-	case SLLIN_ERROR_PID: {
+	case SLLIN_ERROR_BAD_PID: {
 		static const char can_pid_error_frame[] = "T2000000880000000F00000000\r"; // CAN_ERR_PROT_LOC_ID12_05
 		error_frame = can_pid_error_frame;
 	} break;

@@ -977,7 +977,7 @@ SLLIN_RAMFUNC static void lin_timer_int_master(uint8_t index)
 	lin_master_cleanup(lin);
 }
 
-SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag);
+SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag, uint8_t status);
 SLLIN_RAMFUNC static void lin_usart_int_master(uint8_t index)
 {
 	struct lin *lin = &lins[index];
@@ -986,10 +986,12 @@ SLLIN_RAMFUNC static void lin_usart_int_master(uint8_t index)
 	// LOG(".");
 
 	uint8_t intflag = s->USART.INTFLAG.reg;
+	uint8_t status = s->USART.STATUS.reg;
 
 	// LOG("ch%u INTFLAG=%x\n", index, intflag);
 
 	s->USART.INTFLAG.reg = ~0;
+	s->USART.STATUS.reg = ~0;
 
 	uint8_t step = __atomic_load_n(&lin->master.step, __ATOMIC_ACQUIRE);
 
@@ -1011,7 +1013,10 @@ SLLIN_RAMFUNC static void lin_usart_int_master(uint8_t index)
 		break;
 	}
 
-	lin_usart_int_slave_ex(index, intflag);
+	// clear out master done part
+	status &= ~SERCOM_USART_STATUS_TXE;
+
+	lin_usart_int_slave_ex(index, intflag, status);
 }
 
 SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index)
@@ -1019,19 +1024,21 @@ SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index)
 	struct lin *lin = &lins[index];
 	Sercom *s = lin->sercom;
 	uint8_t intflag = s->USART.INTFLAG.reg;
+	uint8_t status = s->USART.STATUS.reg;
 
 	// LOG("ch%u INTFLAG=%x\n", index, intflag);
 
 	s->USART.INTFLAG.reg = ~0;
+	s->USART.STATUS.reg = ~0;
 
 	// LOG("/");
 
 	__atomic_thread_fence(__ATOMIC_ACQUIRE);
 
-	lin_usart_int_slave_ex(index, intflag);
+	lin_usart_int_slave_ex(index, intflag, status);
 }
 
-SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag)
+SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag, uint8_t status)
 {
 	struct lin *lin = &lins[index];
 	struct slave *sl = &lin->slave;
@@ -1095,7 +1102,7 @@ SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag)
 			} else {
 				// bad PID
 				sl->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_ERROR;
-				sl->elem.error = SLLIN_ERROR_PID;
+				sl->elem.error = SLLIN_ERROR_BAD_PID;
 				sl->elem.time_stamp_ms = sllin_time_stamp_ms();
 
 				sllin_lin_task_queue(index, &sl->elem);
@@ -1184,10 +1191,24 @@ tx:
 	}
 
 
-	if (intflag & SERCOM_USART_INTFLAG_ERROR) {
-		LOG("ch%u status=%x\n", index, s->USART.STATUS.reg);
-		s->USART.STATUS.reg = ~0;
-		lin_slave_cleanup(lin);
+	if (unlikely(intflag & SERCOM_USART_INTFLAG_ERROR)) {
+		sl->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_ERROR;
+		sl->elem.time_stamp_ms = sllin_time_stamp_ms();
+		sl->elem.error = SLLIN_ERROR_NONE;
+
+		if (status & SERCOM_USART_STATUS_FERR) {
+			sl->elem.error = SLLIN_ERROR_FRAME;
+		} else if (status & SERCOM_USART_STATUS_ISF) {
+			sl->elem.error = SLLIN_ERROR_BAD_SYNC;
+		} else {
+			LOG("ch%u unhandled status=%x\n", index, status);
+		}
+
+		if (likely(sl->elem.error)) {
+			sllin_lin_task_queue(index, &sl->elem);
+			sllin_lin_task_notify_isr(index, 1);
+			lin_slave_cleanup(lin);
+		}
 	}
 }
 
