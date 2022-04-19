@@ -71,8 +71,8 @@ enum {
 
 enum {
 	SLLIN_ERROR_NONE,
-	SLLIN_ERROR_STUCK_LOW,	//< line stuck low
-	SLLIN_ERROR_STUCK_HIGH,	//< line stuck high
+	SLLIN_ERROR_STUCK_LOW,	//< data line stuck low
+	SLLIN_ERROR_STUCK_HIGH,	//< data line stuck high
 	SLLIN_ERROR_FRAME, 		//< frame error in data byte (e.g. stop bit zero)
 	SLLIN_ERROR_BAD_SYNC, 	//< SYNC field isn't 0x55
 	SLLIN_ERROR_BAD_PID,  	//< invalid PID received
