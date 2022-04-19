@@ -204,6 +204,7 @@ static void reset_channel_state(uint8_t index)
 
 static inline void channel_off(uint8_t index)
 {
+	sllin_board_lin_uninit(index);
 	reset_channel_state(index);
 	set_led(index, SLLIN_LIN_LED_STATUS_DISABLED);
 }
@@ -690,6 +691,7 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 
 	struct lin *lin = &lins[index];
 	bool written = false;
+	bool connected = false;
 
 	while (42) {
 		bool yield = false;
@@ -705,6 +707,8 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 				int c = tud_cdc_n_read_char(index);
 				uint8_t gi = lin->rx_fifo_gi;
 				uint8_t pi = __atomic_load_n(&lin->rx_fifo_pi, __ATOMIC_ACQUIRE);
+
+				connected = true;
 
 				if (-1 == c) {
 					yield = true;
@@ -770,14 +774,18 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 					// LOG("ch%u tx flush\n", index);
 				}
 			} else {
-				// LOG("ch%u TT\n", index);
+				if (connected) {
+					LOG("ch%u TT\n", index);
 
-				channel_off(index);
+					channel_off(index);
 
-				// can't call this if disconnected
-				// tud_cdc_n_read_flush(index);
+					// can't call this if disconnected
+					// tud_cdc_n_read_flush(index);
+				} else {
+					yield = true;
+				}
 
-				yield = true;
+				connected = false;
 			}
 		}
 
