@@ -330,9 +330,9 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 				lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 			} else {
 				// fix me -> cleanup
-				uint8_t can_id_nibble1 = char_to_nibble(lin->rx_sl_buffer[2]);
-				uint8_t can_id_nibble2 = char_to_nibble(lin->rx_sl_buffer[3]);
-				uint8_t frame_len = char_to_nibble(lin->rx_sl_buffer[4]);
+				uint8_t const can_id_nibble1 = char_to_nibble(lin->rx_sl_buffer[2]);
+				uint8_t const can_id_nibble2 = char_to_nibble(lin->rx_sl_buffer[3]);
+				uint8_t const frame_len = char_to_nibble(lin->rx_sl_buffer[4]);
 
 				SLLIN_ASSERT(frame_len <= 8);
 
@@ -340,17 +340,17 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 					LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
 					lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 				} else {
-					uint8_t id = ((can_id_nibble1 << 4) | can_id_nibble2) & 0x3f;
-					uint8_t pid = sllin_id_to_pid(id);
-					bool enhanced_crc = (can_id_nibble1 & 0x4) == 0x4;
+					uint8_t const id = ((can_id_nibble1 << 4) | can_id_nibble2) & 0x3f;
+					uint8_t const pid = sllin_id_to_pid(id);
+					bool const enhanced_crc = (can_id_nibble1 & 0x4) == 0x4;
 					uint32_t data32[2];
 					uint8_t *data = (uint8_t *)data32;
 					unsigned crc = sllin_crc_start();
-					uint8_t flags = 0;
+					uint16_t flags = 0;
 
 					if (enhanced_crc) {
 						crc = sllin_crc_update1(crc, pid);
-						flags |= SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM;
+						flags |= SLLIN_ID_FLAG_ENHANCED_CHECKSUM;
 					}
 
 					for (unsigned i = 0, j = 5; i < frame_len; ++i, j += 2) {
@@ -365,7 +365,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 					LOG("ch%u %s -> id=%x len=%u crc=%x flags=%x\n", index, lin->rx_sl_buffer, id, frame_len, crc, flags);
 
 					if (lin->conf.master) {
-						if (likely(sllin_board_lin_master_tx(index, id, frame_len, data, crc, flags))) {
+						if (likely(sllin_board_lin_master_tx(index, id, frame_len, data, crc, flags | SLLIN_ID_FLAG_MASTER_TX))) {
 							lin->tx_sl_buffer[0] = 'z';
 							lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
 							lin->tx_sl_offset = 2;
@@ -395,17 +395,17 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 				lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 			} else {
 				// fix me -> cleanup
-				uint8_t can_id_nibble1 = char_to_nibble(lin->rx_sl_buffer[2]);
-				uint8_t can_id_nibble2 = char_to_nibble(lin->rx_sl_buffer[3]);
-				uint8_t id = ((can_id_nibble1 << 4) | can_id_nibble2) & 0x3f;
-				bool enhanced_crc = (can_id_nibble1 & 0x4) == 0x4;
-				uint8_t frame_len = char_to_nibble(lin->rx_sl_buffer[4]);
+				uint8_t const can_id_nibble1 = char_to_nibble(lin->rx_sl_buffer[2]);
+				uint8_t const can_id_nibble2 = char_to_nibble(lin->rx_sl_buffer[3]);
+				uint8_t const id = ((can_id_nibble1 << 4) | can_id_nibble2) & 0x3f;
+				bool const enhanced_crc = (can_id_nibble1 & 0x4) == 0x4;
+				uint8_t const frame_len = char_to_nibble(lin->rx_sl_buffer[4]);
 				uint8_t flags = 0;
 
 				SLLIN_ASSERT(frame_len <= 8);
 
 				if (enhanced_crc) {
-					flags |= SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM;
+					flags |= SLLIN_ID_FLAG_ENHANCED_CHECKSUM;
 				}
 
 				// LOG("ch%u %s -> id=%x len=%u flags=%x\n", index, lin->rx_sl_buffer, id, frame_len, flags);
@@ -504,120 +504,128 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 }
 
 
-SLLIN_RAMFUNC static inline void process_error(uint8_t index, sllin_queue_element *e)
-{
-	struct lin *lin = &lins[index];
-	char const * error_frame = NULL;
-	const uint8_t len = 27;
 
-	switch (e->error) {
-	case SLLIN_ERROR_STUCK_LOW: {
-		static const char can_crc_error_frame[] = "T2000001080000000077000000\r"; // CAN_ERR_TRX_CANH_SHORT_TO_GND, CAN_ERR_TRX_CANL_SHORT_TO_GND
-		error_frame = can_crc_error_frame;
-	} break;
-	case SLLIN_ERROR_STUCK_HIGH: {
-		static const char can_crc_error_frame[] = "T2000001080000000055000000\r"; // CAN_ERR_TRX_CANH_SHORT_TO_BAT, CAN_ERR_TRX_CANL_SHORT_TO_BAT
-		error_frame = can_crc_error_frame;
-	} break;
-	case SLLIN_ERROR_FRAME: {
-		static const char frame[] = "T2000000880000010000000000\r"; // form error, single bit errror
-		error_frame = frame;
-	} break;
-	case SLLIN_ERROR_BAD_SYNC: {
-		static const char frame[] = "T2000000880000020300000000\r"; // form error, start of frame
-		error_frame = frame;
-	} break;
-	case SLLIN_ERROR_BAD_PID: {
-		static const char can_pid_error_frame[] = "T2000000880000000F00000000\r"; // CAN_ERR_PROT_LOC_ID12_05
-		error_frame = can_pid_error_frame;
-	} break;
-	case SLLIN_ERROR_CRC: {
-		static const char can_crc_error_frame[] = "T2000000880000000800000000\r"; // CAN_ERR_PROT_LOC_CRC_SEQ
-		error_frame = can_crc_error_frame;
-	} break;
-	default:
-		LOG("unhandled error type=%02x\n", e->error);
-		SLLIN_DEBUG_ASSERT(false && "unhandled error type");
-		static const char can_error_unknown_frame[] = "T2000008080000000000000000\r"; // CAN_ERR_BUSERROR
-		error_frame = can_error_unknown_frame;
-		break;
-	}
+// SLLIN_RAMFUNC static inline void process_error(uint8_t index, sllin_queue_element *e)
+// {
+// 	struct lin *lin = &lins[index];
+// 	char const * error_frame = NULL;
+// 	const uint8_t len = 27;
 
-	lin->tx_sl_offset = len;
-	memcpy(lin->tx_sl_buffer, error_frame, lin->tx_sl_offset);
-	set_led(index, SLLIN_LIN_LED_STATUS_ERROR);
-}
+// 	switch (e->error) {
+// 	case SLLIN_ERROR_STUCK_LOW: {
+// 		static const char can_crc_error_frame[] = "T2000001080000000077000000\r"; // CAN_ERR_TRX_CANH_SHORT_TO_GND, CAN_ERR_TRX_CANL_SHORT_TO_GND
+// 		error_frame = can_crc_error_frame;
+// 	} break;
+// 	case SLLIN_ERROR_STUCK_HIGH: {
+// 		static const char can_crc_error_frame[] = "T2000001080000000055000000\r"; // CAN_ERR_TRX_CANH_SHORT_TO_BAT, CAN_ERR_TRX_CANL_SHORT_TO_BAT
+// 		error_frame = can_crc_error_frame;
+// 	} break;
+// 	// case SLLIN_ERROR_FRAME: {
+// 	// 	static const char frame[] = "T2000000880000010000000000\r"; // form error, single bit errror
+// 	// 	error_frame = frame;
+// 	// } break;
+// 	// case SLLIN_ERROR_BAD_SYNC: {
+// 	// 	static const char frame[] = "T2000000880000020300000000\r"; // form error, start of frame
+// 	// 	error_frame = frame;
+// 	// } break;
+// 	// case SLLIN_ERROR_BAD_PID: {
+// 	// 	static const char can_pid_error_frame[] = "T2000000880000000F00000000\r"; // CAN_ERR_PROT_LOC_ID12_05
+// 	// 	error_frame = can_pid_error_frame;
+// 	// } break;
+// 	// case SLLIN_ERROR_CRC: {
+// 	// 	static const char can_crc_error_frame[] = "T2000000880000000800000000\r"; // CAN_ERR_PROT_LOC_CRC_SEQ
+// 	// 	error_frame = can_crc_error_frame;
+// 	// } break;
+// 	default:
+// 		LOG("unhandled error type=%02x\n", e->error);
+// 		SLLIN_DEBUG_ASSERT(false && "unhandled error type");
+// 		static const char can_error_unknown_frame[] = "T2000008080000000000000000\r"; // CAN_ERR_BUSERROR
+// 		error_frame = can_error_unknown_frame;
+// 		break;
+// 	}
+
+// 	lin->tx_sl_offset = len;
+// 	memcpy(lin->tx_sl_buffer, error_frame, lin->tx_sl_offset);
+// 	set_led(index, SLLIN_LIN_LED_STATUS_ERROR);
+// }
 
 
 SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_element *e)
 {
 	struct lin *lin = &lins[index];
-	uint16_t id = e->lin_frame.id;
+	uint32_t id = e->frame.id;
+	uint8_t led_state = 0;
 
-	if (unlikely(e->lin_frame.flags & SLLIN_FRAME_FLAG_CRC_ERROR)) {
-		e->type = SLLIN_QUEUE_ELEMENT_TYPE_ERROR;
-		e->error = SLLIN_ERROR_CRC;
+	SLLIN_DEBUG_ASSERT(e->frame.len <= 8);
 
-		process_error(index, e);
-		return;
-	}
-
-
-	if (e->lin_frame.flags & SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM) {
-		id |= SLLIN_ID_FLAG_ENHANCED_CHECKSUM;
-	}
-
-	if (e->lin_frame.flags & SLLIN_FRAME_FLAG_FOREIGN) {
-		id |= SLLIN_ID_FLAG_FOREIGN;
-	}
-
-	if (e->lin_frame.flags & SLLIN_FRAME_FLAG_MASTER_TX) {
-		id |= SLLIN_ID_FLAG_MASTER_TX;
-	}
-
-
-	SLLIN_DEBUG_ASSERT(e->lin_frame.len <= 8);
-
-#if SLLIN_DEBUG
-	// if (lin->conf.master) {
-	// 	char time_stamp_str[8];
-
-	// 	sllin_make_time_stamp_string(time_stamp_str, sizeof(time_stamp_str), e->time_stamp_ms);
-	// 	LOG("ch%u ts=%s\n", index, time_stamp_str);
-	// }
-
-	if (-1 != lin->last_ts) {
-		uint16_t delta = e->time_stamp_ms - lin->last_ts;
-
-		if (delta >= UINT16_MAX / 2) {
-			LOG("ch%u last=%x curr=%x\n", index, lin->last_ts, e->time_stamp_ms);
+	if (id & SLLIN_ID_FLAG_BUS_STATE_FLAG) {
+		switch ((id & SLLIN_ID_FLAG_BUS_STATE_MASK) >> SLLIN_ID_FLAG_BUS_STATE_SHIFT) {
+		case SLLIN_ID_FLAG_BUS_STATE_ASLEEP:
+			led_state = SLLIN_LIN_LED_STATUS_ON_BUS_SLEEPING;
+			break;
+		case SLLIN_ID_FLAG_BUS_STATE_AWAKE:
+			led_state = SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_PASSIVE;
+			break;
+		default:
+			led_state = SLLIN_LIN_LED_STATUS_ERROR;
+			break;
 		}
-	}
-
-
-	lin->last_ts = e->time_stamp_ms;
-#endif
-
-	if (e->lin_frame.flags & SLLIN_FRAME_FLAG_NO_RESPONSE) {
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = 'r';
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
-		set_led(index, SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_ACTIVE);
 	} else {
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->lin_frame.len;
+		led_state = SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_ACTIVE;
+	}
 
-		for (unsigned i = 0; i < e->lin_frame.len; ++i) {
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i] >> 4);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->lin_frame.data[i]);
+	set_led(index, led_state);
+
+	if (unlikely(id & ~0x7ff)) {
+		// EFF
+		if (id & SLLIN_ID_FLAG_NO_RESPONSE) {
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = 'R';
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 28);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 24);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 20);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 16);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 12);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->frame.len;
+		} else {
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = 'T';
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 28);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 24);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 20);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 16);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 12);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->frame.len;
+
+			for (unsigned i = 0; i < e->frame.len; ++i) {
+				lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->frame.data[i] >> 4);
+				lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->frame.data[i]);
+			}
 		}
+	} else {
+		// SFF
+		if (id & SLLIN_ID_FLAG_NO_RESPONSE) {
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = 'r';
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->frame.len;
+		} else {
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->frame.len;
 
-		set_led(index, SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_ACTIVE);
+			for (unsigned i = 0; i < e->frame.len; ++i) {
+				lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->frame.data[i] >> 4);
+				lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->frame.data[i]);
+			}
+		}
 	}
 
 	if (lin->report_time_per_frame) {
@@ -626,6 +634,8 @@ SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_ele
 	}
 
 	lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
+
+
 }
 
 SLLIN_RAMFUNC static inline void process_queue(uint8_t index, sllin_queue_element *e)
@@ -633,7 +643,7 @@ SLLIN_RAMFUNC static inline void process_queue(uint8_t index, sllin_queue_elemen
 	struct lin *lin = &lins[index];
 
 	switch (e->type) {
-	case SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME:
+	case SLLIN_QUEUE_ELEMENT_TYPE_FRAME:
 		process_rx_frame(index, e);
 		break;
 	case SLLIN_QUEUE_ELEMENT_TYPE_TIME_STAMP: {
@@ -644,28 +654,28 @@ SLLIN_RAMFUNC static inline void process_queue(uint8_t index, sllin_queue_elemen
 			lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 		}
 	} break;
-	case SLLIN_QUEUE_ELEMENT_TYPE_SLEEP:
-	case SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP: {
-		uint16_t id = e->type == SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP ? SLLIN_ID_FLAG_BUS_WAKE_UP : SLLIN_ID_FLAG_BUS_SLEEP;
+	// case SLLIN_QUEUE_ELEMENT_TYPE_SLEEP:
+	// case SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP: {
+	// 	uint16_t id = e->type == SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP ? SLLIN_ID_FLAG_BUS_WAKE_UP : SLLIN_ID_FLAG_BUS_SLEEP;
 
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0'; // len
+	// 	lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
+	// 	lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
+	// 	lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
+	// 	lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
+	// 	lin->tx_sl_buffer[lin->tx_sl_offset++] = '0'; // len
 
-		if (lin->report_time_per_frame) {
-			sllin_make_time_stamp_string((char*)&lin->tx_sl_buffer[lin->tx_sl_offset], sizeof(lin->tx_sl_buffer) - lin->tx_sl_offset, e->time_stamp_ms);
-			lin->tx_sl_offset += 4;
-		}
+	// 	if (lin->report_time_per_frame) {
+	// 		sllin_make_time_stamp_string((char*)&lin->tx_sl_buffer[lin->tx_sl_offset], sizeof(lin->tx_sl_buffer) - lin->tx_sl_offset, e->time_stamp_ms);
+	// 		lin->tx_sl_offset += 4;
+	// 	}
 
-		lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
+	// 	lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
 
-		set_led(index, SLLIN_QUEUE_ELEMENT_TYPE_SLEEP == e->type ? SLLIN_LIN_LED_STATUS_ON_BUS_SLEEPING : SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_PASSIVE);
-	} break;
-	case SLLIN_QUEUE_ELEMENT_TYPE_ERROR:
-		process_error(index, e);
-		break;
+	// 	set_led(index, SLLIN_QUEUE_ELEMENT_TYPE_SLEEP == e->type ? SLLIN_LIN_LED_STATUS_ON_BUS_SLEEPING : SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_PASSIVE);
+	// } break;
+	// case SLLIN_QUEUE_ELEMENT_TYPE_ERROR:
+	// 	process_error(index, e);
+	// 	break;
 	default:
 		SLLIN_ASSERT(false && "unhandled queue element type");
 		break;

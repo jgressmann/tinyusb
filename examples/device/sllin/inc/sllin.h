@@ -1,27 +1,9 @@
-/*
- * The MIT License (MIT)
+/* SPDX-License-Identifier: MIT
  *
  * Copyright (c) 2021-2022 Jean Gressmann <jean@0x42.de>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- *
  */
+
 
 #pragma once
 
@@ -29,13 +11,34 @@
 
 enum {
 	// use CAN ID free bits to encode information about the frame
-	SLLIN_ID_FLAG_ENHANCED_CHECKSUM = 0x040, // enhanced checksum
-	SLLIN_ID_FLAG_FOREIGN =           0x080, // use CAN ID free bits to encode an frame unknown to the node
-	SLLIN_ID_FLAG_BUS_SLEEP =         0x100, // use CAN ID free bits to encode bus sleep
-	SLLIN_ID_FLAG_BUS_WAKE_UP =       0x200, // use CAN ID free bits to encode bus wake up
-	SLLIN_ID_FLAG_MASTER_TX =         0x400, // use CAN ID free bits to master data frame
+	SLLIN_ID_FLAG_ENHANCED_CHECKSUM = 0x0040, //< enhanced checksum
+	SLLIN_ID_FLAG_MASTER_TX =         0x0080, //< checksum invalid
+	SLLIN_ID_FLAG_FOREIGN =           0x0100, //< frame unknown to the node
+	SLLIN_ID_FLAG_NO_RESPONSE =       0x0200, //< no response
+	// EFF frame from here on out
+	SLLIN_ID_FLAG_LIN_ERROR_SYNC =        0x0800, //< bad sync (not 0x55)
+	SLLIN_ID_FLAG_LIN_ERROR_CRC =         0x1000, //< checksum invalid
+	SLLIN_ID_FLAG_LIN_ERROR_PID =         0x2000, //< bad PID received, CAN ID carries recovered ID
+	SLLIN_ID_FLAG_LIN_ERROR_FORM =        0x4000, //< bit error in some fixed part of the frame e.g. start bit wasn't zero, stop bit wasn't 1, ...
 
+	// bus status
+	SLLIN_ID_FLAG_BUS_STATE_FLAG =     0x10000000, //< bus mode
+	SLLIN_ID_FLAG_BUS_STATE_MASK =     0x03, //<
+	SLLIN_ID_FLAG_BUS_STATE_SHIFT =    0x00, //<
+	SLLIN_ID_FLAG_BUS_STATE_ASLEEP =   0x00, //< bus is asleep
+	SLLIN_ID_FLAG_BUS_STATE_AWAKE =    0x01, //< bus is asleep
+	SLLIN_ID_FLAG_BUS_STATE_ERROR =    0x02, //< bus is in error state
+
+	// bus error (permanent)
+	SLLIN_ID_FLAG_BUS_ERROR_FLAG =        	0x08000000, //< permanaent error on the bus
+	SLLIN_ID_FLAG_BUS_ERROR_MASK =        	0x0C, //<
+	SLLIN_ID_FLAG_BUS_ERROR_SHIFT =        	0x02, //<
+	SLLIN_ID_FLAG_BUS_ERROR_NONE =  	0x00, //< no error
+	SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_GND =  0x01, //< LIN data line shorted to GND
+	SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_VBAT = 0x02, //< LIN data line shorted to VBAT
 };
+
+
 
 static inline uint8_t sllin_id_to_pid(uint8_t id)
 {
@@ -74,6 +77,7 @@ static inline uint_least16_t sllin_crc_update(uint_least16_t crc, uint8_t const 
 static inline uint8_t sllin_crc_finalize(uint_least16_t crc)
 {
 	uint_least16_t factor = crc / 256;
+
 	crc -= factor * 255;
 
 	return (~crc) & 0xff;

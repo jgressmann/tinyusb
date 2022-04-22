@@ -37,10 +37,10 @@ typedef struct sllin_conf {
 } sllin_conf;
 
 enum {
-	SLLIN_QUEUE_ELEMENT_TYPE_RX_FRAME,
-	SLLIN_QUEUE_ELEMENT_TYPE_SLEEP,
-	SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP,
-	SLLIN_QUEUE_ELEMENT_TYPE_ERROR,
+	SLLIN_QUEUE_ELEMENT_TYPE_FRAME,
+	// SLLIN_QUEUE_ELEMENT_TYPE_SLEEP,
+	// SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP,
+	// SLLIN_QUEUE_ELEMENT_TYPE_ERROR,
 	SLLIN_QUEUE_ELEMENT_TYPE_COUNT,
 };
 
@@ -50,34 +50,32 @@ typedef struct _sllin_queue_element {
 	uint16_t time_stamp_ms;
 	union {
 		struct {
-			uint8_t id;
+			uint32_t id;
+			// uint8_t flags;
 			uint8_t crc;
-			uint8_t flags;
 			uint8_t len;
 			uint8_t data[8];
-		} lin_frame;
-		uint8_t error;
+		} frame;
+		// uint8_t error;
 	};
 } sllin_queue_element;
 
-enum {
-	SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM = 0x01,
-	// SLLIN_FRAME_FLAG_PID_ERROR = 0x02,
-	SLLIN_FRAME_FLAG_CRC_ERROR = 0x04,
-	SLLIN_FRAME_FLAG_NO_RESPONSE = 0x08,
-	SLLIN_FRAME_FLAG_FOREIGN = 0x10,
-	SLLIN_FRAME_FLAG_MASTER_TX = 0x20,
-};
+// enum {
+// 	SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM  = 0x01,
+// 	SLLIN_FRAME_FLAG_NO_RESPONSE		= 0x02,
+// 	// SLLIN_FRAME_FLAG_MASTER_TX          = 0x02,
 
-enum {
-	SLLIN_ERROR_NONE,
-	SLLIN_ERROR_STUCK_LOW,	//< data line stuck low
-	SLLIN_ERROR_STUCK_HIGH,	//< data line stuck high
-	SLLIN_ERROR_FRAME, 		//< frame error in data byte (e.g. stop bit zero)
-	SLLIN_ERROR_BAD_SYNC, 	//< SYNC field isn't 0x55
-	SLLIN_ERROR_BAD_PID,  	//< invalid PID received
-	SLLIN_ERROR_CRC,
-};
+// };
+
+// enum {
+// 	SLLIN_ERROR_NONE,
+// 	SLLIN_ERROR_STUCK_LOW,	//< data line stuck low
+// 	SLLIN_ERROR_STUCK_HIGH,	//< data line stuck high
+// 	// SLLIN_ERROR_FRAME, 		//< frame error in data byte (e.g. stop bit zero)
+// 	SLLIN_ERROR_BAD_SYNC, 	//< SYNC field isn't 0x55
+// 	// SLLIN_ERROR_BAD_PID,  	//< invalid PID received
+// 	// SLLIN_ERROR_CRC,
+// };
 
 enum {
 	SLLIN_LIN_LED_BLINK_DELAY_SLEEPING_MS = 768,
