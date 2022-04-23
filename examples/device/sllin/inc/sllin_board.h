@@ -102,18 +102,18 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf);
 extern void sllin_board_lin_sleep_timeout(uint8_t index, uint16_t timeout_ms);
 SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
 	uint8_t index,
-	uint8_t pi,
-	uint8_t len,
-	uint8_t const *data,
-	uint8_t crc,
-	uint8_t flags);
+	uint8_t id,
+	uint8_t const *data);
 SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(
 	uint8_t index,
 	uint8_t id,
+	uint8_t const *data);
+SLLIN_RAMFUNC extern void sllin_board_lin_frame_meta_data_clear(uint8_t index, uint8_t id);
+SLLIN_RAMFUNC extern void sllin_board_lin_frame_meta_data_set(
+	uint8_t index,
+	uint8_t id,
 	uint8_t len,
-	uint8_t const *data,
-	uint8_t crc,
-	uint8_t flags);
+	bool enhanced_crc);
 SLLIN_RAMFUNC extern void sllin_board_led_lin_status_set(uint8_t index, int status);
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_def(uint8_t index, uint32_t count);
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_isr(uint8_t index, uint32_t count);

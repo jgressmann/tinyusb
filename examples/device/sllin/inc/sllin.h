@@ -11,15 +11,30 @@
 
 enum {
 	// use CAN ID free bits to encode information about the frame
-	SLLIN_ID_FLAG_ENHANCED_CHECKSUM = 0x0040, //< enhanced checksum
-	SLLIN_ID_FLAG_MASTER_TX =         0x0080, //< checksum invalid
-	SLLIN_ID_FLAG_FOREIGN =           0x0100, //< frame unknown to the node
-	SLLIN_ID_FLAG_NO_RESPONSE =       0x0200, //< no response
+	SLLIN_ID_FLAG_FRAME_LENGTH_VERIFIED = 0x0040, //< device verifies frame length
+	SLLIN_ID_FLAG_FRAME_CHECKSUM_VERIFIED = 0x0080, //< device verifies frame checksum
+	SLLIN_ID_FLAG_FRAME_DATA_MISSING = 0x0100, //< data byte(s) missing
+	SLLIN_ID_FLAG_FRAME_CRC_MISSING = 0x0200, //< CRC byte missing
+	SLLIN_ID_FLAG_FRAME_TRAIL_DATA = 0x0400, //< there was data past the CRC
 	// EFF frame from here on out
 	SLLIN_ID_FLAG_LIN_ERROR_SYNC =        0x0800, //< bad sync (not 0x55)
 	SLLIN_ID_FLAG_LIN_ERROR_CRC =         0x1000, //< checksum invalid
 	SLLIN_ID_FLAG_LIN_ERROR_PID =         0x2000, //< bad PID received, CAN ID carries recovered ID
 	SLLIN_ID_FLAG_LIN_ERROR_FORM =        0x4000, //< bit error in some fixed part of the frame e.g. start bit wasn't zero, stop bit wasn't 1, ...
+
+
+	// frame repsonse
+	SLLIN_ID_FLAG_FRAME_RESPONSE =     	    0x01000000, //<
+	SLLIN_ID_FLAG_FRAME_RESPONSE_ENABLED =  0x80, //<
+
+	// frame meta data
+	SLLIN_ID_FLAG_FRAME_META_DATA_CLEAR =   0x02000000, //<
+	SLLIN_ID_FLAG_FRAME_META_DATA_SET =     0x04000000, //<
+	// SLLIN_ID_FLAG_FRAME_META_DATA_MASK =     0x01, //<
+	SLLIN_ID_FLAG_FRAME_ENHANCED_CHECKSUM =   0x40, //<
+
+
+
 
 	// bus status
 	SLLIN_ID_FLAG_BUS_STATE_FLAG =     0x10000000, //< bus mode
@@ -33,7 +48,7 @@ enum {
 	SLLIN_ID_FLAG_BUS_ERROR_FLAG =        	0x08000000, //< permanaent error on the bus
 	SLLIN_ID_FLAG_BUS_ERROR_MASK =        	0x0C, //<
 	SLLIN_ID_FLAG_BUS_ERROR_SHIFT =        	0x02, //<
-	SLLIN_ID_FLAG_BUS_ERROR_NONE =  	0x00, //< no error
+	SLLIN_ID_FLAG_BUS_ERROR_NONE =  	    0x00, //< no error
 	SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_GND =  0x01, //< LIN data line shorted to GND
 	SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_VBAT = 0x02, //< LIN data line shorted to VBAT
 };

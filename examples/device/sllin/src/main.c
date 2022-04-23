@@ -323,106 +323,190 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		sllin_board_lin_uninit(index);
 		set_led(index, SLLIN_LIN_LED_STATUS_ENABLED_OFF_BUS);
 		break;
-	case 't': // master: tx, slave: store response
+	// case 't': // master: tx, slave: store response
+	// 	if (likely(lin->enabled)) {
+	// 		if (unlikely(lin->rx_sl_offset < 5)) {
+	// 			LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
+	// 			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
+	// 		} else {
+	// 			// fix me -> cleanup
+	// 			uint8_t const can_id_nibble0 = char_to_nibble(lin->rx_sl_buffer[1]);
+	// 			uint8_t const can_id_nibble1 = char_to_nibble(lin->rx_sl_buffer[2]);
+	// 			uint8_t const can_id_nibble2 = char_to_nibble(lin->rx_sl_buffer[3]);
+	// 			uint8_t const frame_len = char_to_nibble(lin->rx_sl_buffer[4]);
+
+	// 			SLLIN_ASSERT(frame_len <= 8);
+
+	// 			if (unlikely(frame_len * 2 + 5 > lin->rx_sl_offset)) {
+	// 				LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
+	// 				lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
+	// 			} else {
+	// 				uint8_t const id = ((can_id_nibble1 << 4) | can_id_nibble2) & 0x3f;
+	// 				uint8_t const pid = sllin_id_to_pid(id);
+	// 				bool const enhanced_crc = (can_id_nibble1 & 0x4) == 0x4;
+	// 				uint32_t data32[2];
+	// 				uint8_t *data = (uint8_t *)data32;
+	// 				unsigned crc = sllin_crc_start();
+	// 				uint16_t flags = 0;
+
+	// 				if (enhanced_crc) {
+	// 					crc = sllin_crc_update1(crc, pid);
+	// 					flags |= SLLIN_ID_FLAG_ENHANCED_CHECKSUM;
+	// 				}
+
+	// 				for (unsigned i = 0, j = 5; i < frame_len; ++i, j += 2) {
+	// 					uint8_t byte = (char_to_nibble(lin->rx_sl_buffer[j]) << 4) | char_to_nibble(lin->rx_sl_buffer[j+1]);
+
+	// 					data[i] = byte;
+	// 					crc = sllin_crc_update1(crc, byte);
+	// 				}
+
+	// 				crc = sllin_crc_finalize(crc);
+
+	// 				LOG("ch%u %s -> id=%x len=%u crc=%x flags=%x\n", index, lin->rx_sl_buffer, id, frame_len, crc, flags);
+
+	// 				if (lin->conf.master) {
+	// 					if (likely(sllin_board_lin_master_tx(index, id, frame_len, data, crc, flags | SLLIN_ID_FLAG_MASTER_TX))) {
+	// 						lin->tx_sl_buffer[0] = 'z';
+	// 						lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
+	// 						lin->tx_sl_offset = 2;
+	// 					} else {
+	// 						sllin_store_tx_queue_full_error_response(index);
+	// 					}
+	// 				} else {
+	// 					sllin_board_lin_slave_tx(index, id, frame_len, data, crc, flags);
+	// 					lin->tx_sl_buffer[0] = 'z';
+	// 					lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
+	// 					lin->tx_sl_offset = 2;
+	// 				}
+	// 			}
+	// 		}
+	// 	} else {
+	// 		LOG("ch%u refusing to transmit / store reponses when closed\n", index);
+	// 		lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
+	// 	}
+	// 	break;
+	case 'r': // master: tx header
 		if (likely(lin->enabled)) {
-			if (unlikely(lin->rx_sl_offset < 5)) {
-				LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
-				lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
-			} else {
-				// fix me -> cleanup
-				uint8_t const can_id_nibble1 = char_to_nibble(lin->rx_sl_buffer[2]);
-				uint8_t const can_id_nibble2 = char_to_nibble(lin->rx_sl_buffer[3]);
-				uint8_t const frame_len = char_to_nibble(lin->rx_sl_buffer[4]);
-
-				SLLIN_ASSERT(frame_len <= 8);
-
-				if (unlikely(frame_len * 2 + 5 > lin->rx_sl_offset)) {
-					LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
-					lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
-				} else {
+			if (likely(lin->rx_sl_offset >= 4)) {
+				if (likely(lin->conf.master)) {
+					uint8_t const can_id_nibble1 = char_to_nibble(lin->rx_sl_buffer[2]);
+					uint8_t const can_id_nibble2 = char_to_nibble(lin->rx_sl_buffer[3]);
 					uint8_t const id = ((can_id_nibble1 << 4) | can_id_nibble2) & 0x3f;
-					uint8_t const pid = sllin_id_to_pid(id);
-					bool const enhanced_crc = (can_id_nibble1 & 0x4) == 0x4;
-					uint32_t data32[2];
-					uint8_t *data = (uint8_t *)data32;
-					unsigned crc = sllin_crc_start();
-					uint16_t flags = 0;
 
-					if (enhanced_crc) {
-						crc = sllin_crc_update1(crc, pid);
-						flags |= SLLIN_ID_FLAG_ENHANCED_CHECKSUM;
-					}
+					// LOG("ch%u %s -> id=%x len=%u flags=%x\n", index, lin->rx_sl_buffer, id, frame_len, flags);
 
-					for (unsigned i = 0, j = 5; i < frame_len; ++i, j += 2) {
-						uint8_t byte = (char_to_nibble(lin->rx_sl_buffer[j]) << 4) | char_to_nibble(lin->rx_sl_buffer[j+1]);
-
-						data[i] = byte;
-						crc = sllin_crc_update1(crc, byte);
-					}
-
-					crc = sllin_crc_finalize(crc);
-
-					LOG("ch%u %s -> id=%x len=%u crc=%x flags=%x\n", index, lin->rx_sl_buffer, id, frame_len, crc, flags);
-
-					if (lin->conf.master) {
-						if (likely(sllin_board_lin_master_tx(index, id, frame_len, data, crc, flags | SLLIN_ID_FLAG_MASTER_TX))) {
-							lin->tx_sl_buffer[0] = 'z';
-							lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
-							lin->tx_sl_offset = 2;
-						} else {
-							sllin_store_tx_queue_full_error_response(index);
-						}
-					} else {
-						sllin_board_lin_slave_tx(index, id, frame_len, data, crc, flags);
+					if (likely(sllin_board_lin_master_tx(index, id, NULL))) {
 						lin->tx_sl_buffer[0] = 'z';
 						lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
 						lin->tx_sl_offset = 2;
+					} else {
+						sllin_store_tx_queue_full_error_response(index);
 					}
+				} else {
+					LOG("ch%u refusing to transmit in slave mode\n", index);
+					lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 				}
-			}
-		} else {
-			LOG("ch%u refusing to transmit / store reponses when closed\n", index);
-			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
-		}
-		break;
-	case 'r': // master: tx header
-		if (likely(lin->enabled)) {
-			if (unlikely(lin->rx_sl_offset < 5)) {
+			} else {
 				LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
 				lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
-			} else if (unlikely(!lin->conf.master)) {
-				LOG("ch%u refusing to transmit in slave mode\n", index);
-				lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
-			} else {
-				// fix me -> cleanup
-				uint8_t const can_id_nibble1 = char_to_nibble(lin->rx_sl_buffer[2]);
-				uint8_t const can_id_nibble2 = char_to_nibble(lin->rx_sl_buffer[3]);
-				uint8_t const id = ((can_id_nibble1 << 4) | can_id_nibble2) & 0x3f;
-				bool const enhanced_crc = (can_id_nibble1 & 0x4) == 0x4;
-				uint8_t const frame_len = char_to_nibble(lin->rx_sl_buffer[4]);
-				uint8_t flags = 0;
-
-				SLLIN_ASSERT(frame_len <= 8);
-
-				if (enhanced_crc) {
-					flags |= SLLIN_ID_FLAG_ENHANCED_CHECKSUM;
-				}
-
-				// LOG("ch%u %s -> id=%x len=%u flags=%x\n", index, lin->rx_sl_buffer, id, frame_len, flags);
-
-				if (likely(sllin_board_lin_master_tx(index, id, frame_len, NULL, 0, flags))) {
-					lin->tx_sl_buffer[0] = 'z';
-					lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
-					lin->tx_sl_offset = 2;
-				} else {
-					sllin_store_tx_queue_full_error_response(index);
-				}
 			}
 		} else {
 			LOG("ch%u refusing to transmit / store reponses when closed\n", index);
 			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
 		}
 		break;
+	case 'T': {
+		const unsigned MIN_LEN = 10;
+
+		if (likely(lin->enabled)) {
+			if (likely(lin->rx_sl_offset >= 9)) {
+				uint32_t eff_id = 0;
+				uint8_t len = 0;
+				uint8_t lin_id = 0;
+
+				// setup proper response
+				lin->tx_sl_buffer[0] = 'z';
+				lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
+				lin->tx_sl_offset = 2;
+
+				eff_id |= char_to_nibble(lin->rx_sl_buffer[1]);
+				eff_id <<= 4;
+				eff_id |= char_to_nibble(lin->rx_sl_buffer[2]);
+				eff_id <<= 4;
+				eff_id |= char_to_nibble(lin->rx_sl_buffer[3]);
+				eff_id <<= 4;
+				eff_id |= char_to_nibble(lin->rx_sl_buffer[4]);
+				eff_id <<= 4;
+				eff_id |= char_to_nibble(lin->rx_sl_buffer[5]);
+				eff_id <<= 4;
+				eff_id |= char_to_nibble(lin->rx_sl_buffer[6]);
+				eff_id <<= 4;
+				eff_id |= char_to_nibble(lin->rx_sl_buffer[7]);
+				eff_id <<= 4;
+				eff_id |= char_to_nibble(lin->rx_sl_buffer[8]);
+
+				lin_id = eff_id & 0x3f;
+
+				len = char_to_nibble(lin->rx_sl_buffer[9]);
+
+				if (likely(len <= 8)) {
+					if (eff_id & SLLIN_ID_FLAG_FRAME_META_DATA_CLEAR) {
+						LOG("ch%u id=%x MD clears\n", index);
+						sllin_board_lin_frame_meta_data_clear(index, lin_id);
+					}
+
+					if (eff_id & SLLIN_ID_FLAG_FRAME_META_DATA_SET) {
+						LOG("ch%u id=%x MD set len=%u crc=%s\n", index, lin_id, len, (eff_id & SLLIN_ID_FLAG_FRAME_ENHANCED_CHECKSUM) ? "enhanced" : "classic");
+						sllin_board_lin_frame_meta_data_set(index, lin_id, len, eff_id & SLLIN_ID_FLAG_FRAME_ENHANCED_CHECKSUM);
+					}
+
+					if (eff_id & SLLIN_ID_FLAG_FRAME_RESPONSE) {
+						if (likely(!lin->conf.master)) {
+							if (eff_id & SLLIN_ID_FLAG_FRAME_RESPONSE_ENABLED) {
+								if (likely(len * 2 + MIN_LEN >= lin->rx_sl_offset)) {
+									uint32_t data32[2];
+									uint8_t *data = (uint8_t *)data32;
+
+									for (unsigned i = 0, j = MIN_LEN; i < len; ++i, j += 2) {
+										uint8_t byte = (char_to_nibble(lin->rx_sl_buffer[j]) << 4) | char_to_nibble(lin->rx_sl_buffer[j+1]);
+
+										data[i] = byte;
+									}
+
+									LOG("ch%u id=%x enable reponse data=%s\n", index, lin_id, &lin->rx_sl_buffer[MIN_LEN]);
+									sllin_board_lin_slave_tx(index, lin_id, data);
+								} else {
+									LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
+									lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
+									lin->tx_sl_offset = 1;
+								}
+							} else {
+								LOG("ch%u id=%x disable reponse\n", index, lin_id);
+								sllin_board_lin_slave_tx(index, lin_id, NULL);
+							}
+						} else {
+							LOG("ch%u master node doesn't support header response\n", index, lin->rx_sl_buffer);
+							lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
+							lin->tx_sl_offset = 1;
+						}
+					}
+				} else {
+					LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
+					lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
+					lin->tx_sl_offset = 1;
+				}
+			} else {
+				LOG("ch%u malformed command '%s'\n", index, lin->rx_sl_buffer);
+				lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
+				lin->tx_sl_offset = 1;
+			}
+		} else {
+			LOG("ch%u refusing to accept frame meta data when closed\n", index);
+			lin->tx_sl_buffer[0] = SLLIN_ERROR_TERMINATOR;
+			lin->tx_sl_offset = 1;
+		}
+	} break;
 	case 'F': {
 		uint8_t flags = 0;
 
@@ -578,53 +662,54 @@ SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_ele
 
 	if (unlikely(id & ~0x7ff)) {
 		// EFF
-		if (id & SLLIN_ID_FLAG_NO_RESPONSE) {
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = 'R';
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 28);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 24);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 20);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 16);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 12);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->frame.len;
-		} else {
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = 'T';
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 28);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 24);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 20);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 16);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 12);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->frame.len;
+		unsigned bytes = 0;
 
-			for (unsigned i = 0; i < e->frame.len; ++i) {
-				lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->frame.data[i] >> 4);
-				lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->frame.data[i]);
-			}
+		// if (id & SLLIN_ID_FLAG_NO_RESPONSE) {
+		// 	lin->tx_sl_buffer[lin->tx_sl_offset++] = 'R';
+		// } else {
+		// 	lin->tx_sl_buffer[lin->tx_sl_offset++] = 'T';
+		// 	bytes = e->frame.len;
+		// }
+
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = 'T';
+		bytes = e->frame.len;
+
+
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 28);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 24);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 20);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 16);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 12);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->frame.len;
+
+		for (unsigned i = 0; i < bytes; ++i) {
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->frame.data[i] >> 4);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->frame.data[i]);
 		}
 	} else {
 		// SFF
-		if (id & SLLIN_ID_FLAG_NO_RESPONSE) {
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = 'r';
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->frame.len;
-		} else {
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
-			lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->frame.len;
+		unsigned bytes = 0;
 
-			for (unsigned i = 0; i < e->frame.len; ++i) {
-				lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->frame.data[i] >> 4);
-				lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->frame.data[i]);
-			}
+		// if (id & SLLIN_ID_FLAG_NO_RESPONSE) {
+		// 	lin->tx_sl_buffer[lin->tx_sl_offset++] = 'r';
+		// } else {
+		// 	lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
+		// 	bytes = e->frame.len;
+		// }
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = 't';
+		bytes = e->frame.len;
+
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 8);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id >> 4);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(id);
+		lin->tx_sl_buffer[lin->tx_sl_offset++] = '0' + e->frame.len;
+
+		for (unsigned i = 0; i < bytes; ++i) {
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->frame.data[i] >> 4);
+			lin->tx_sl_buffer[lin->tx_sl_offset++] = nibble_to_char(e->frame.data[i]);
 		}
 	}
 
