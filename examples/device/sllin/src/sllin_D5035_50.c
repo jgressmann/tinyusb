@@ -97,7 +97,6 @@ enum {
 	SLAVE_PROTO_STEP_RX_BREAK = 0,
 	SLAVE_PROTO_STEP_RX_PID,
 	SLAVE_PROTO_STEP_TX_DATA,
-	SLAVE_PROTO_STEP_TX_CRC,
 	SLAVE_PROTO_STEP_RX_VERIFIED,
 	SLAVE_PROTO_STEP_RX_UNVERIFIED,
 
@@ -105,7 +104,7 @@ enum {
 	MASTER_PROTO_STEP_RX_PID,
 	MASTER_PROTO_STEP_FINISHED,
 
-	CRC_TYPE_UNKNONWN = -1,
+	CRC_TYPE_UNKNOWN = -1,
 	CRC_TYPE_CLASIC,
 	CRC_TYPE_ENHANCED,
 };
@@ -654,6 +653,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	Sercom *sercom = lin->sercom;
 	unsigned sof_len_bit_times = 0;
 
+	// clear known frames
 	for (size_t i = 0; i < TU_ARRAY_SIZE(sl->slave_frame_enabled); ++i) {
 		sl->slave_frame_enabled[i] = 0;
 		sl->slave_frame_crc_type[i] = -1;
@@ -713,8 +713,6 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	lin_master_cleanup(lin);
 
 
-
-
 	// LOG("ch%u data byte timeout CC=%x [us]\n", index, sl->data_timer->COUNT16.CC[0].reg);
 	sl->data_timer->COUNT16.CC[0].reg = (14 * UINT32_C(1000000)) / conf->bitrate;
 	LOG("ch%u data byte timeout %x [us]\n", index, sl->data_timer->COUNT16.CC[0].reg);
@@ -753,9 +751,6 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	// clear interrupts
 	sl->sleep_timer->COUNT16.INTFLAG.reg = ~0;
 
-	// __atomic_store_n(&sl->sleep, 0, __ATOMIC_RELEASE);
-
-
 	sl->sleep_timer->COUNT16.CC[0].reg = ((conf->sleep_timeout_ms * (uint32_t)SLEEP_TIMER_HZ) + 500) / 1000;
 	LOG("ch%u sleep timer CC=%x COUNT=%x\n", index, sl->sleep_timer->COUNT16.CC[0].reg, sl->sleep_timer->COUNT16.COUNT.reg);
 
@@ -771,7 +766,7 @@ SLLIN_RAMFUNC extern void sllin_board_lin_frame_meta_data_clear(uint8_t index, u
 	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(lins));
 	SLLIN_DEBUG_ASSERT(id < 64);
 
-	sl->slave_frame_crc_type[id] = -1;
+	sl->slave_frame_crc_type[id] = CRC_TYPE_UNKNOWN;
 	sl->slave_frame_len[id] = -1;
 }
 
@@ -929,18 +924,6 @@ SLLIN_RAMFUNC static inline void lin_int_bus_sleep(uint8_t index)
 
 	SLLIN_ISR_ASSERT(0 == sl->sleep_timer->COUNT16.COUNT.reg);
 
-	// if (__atomic_compare_exchange_n(&sl->sleep, &expected, 1, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
-	// 	sllin_queue_element e;
-
-	// 	LOG("ch%u bus sleep\n", index);
-
-	// 	e.type = SLLIN_QUEUE_ELEMENT_TYPE_SLEEP;
-	// 	e.time_stamp_ms = sllin_time_stamp_ms();
-
-	// 	sllin_lin_task_queue(index, &e);
-	// 	sllin_lin_task_notify_isr(index, 1);
-	// }
-
 	lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_ASLEEP, SLLIN_ID_FLAG_BUS_ERROR_NONE);
 }
 
@@ -948,25 +931,12 @@ SLLIN_RAMFUNC static inline void lin_int_wake_up(uint8_t index)
 {
 	struct lin *lin = &lins[index];
 	struct slave *sl = &lin->slave;
-// 	uint8_t expected = 1;
-
-// 	if (__atomic_compare_exchange_n(&sl->sleep, &expected, 0, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
-// 		sllin_queue_element e;
-
-// 		// LOG("ch%u wake up\n", index);
-
-// 		e.type = SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP;
-// 		e.time_stamp_ms = sllin_time_stamp_ms();
-
-// 		sllin_lin_task_queue(index, &e);
-// 		sllin_lin_task_notify_isr(index, 1);
-// 	}
 
 	lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_AWAKE, SLLIN_ID_FLAG_BUS_ERROR_NONE);
 
 	// (re-)start timer
-	sl->sleep_timer->COUNT16.COUNT.reg = 0;
-	sl->sleep_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;;
+	sl->sleep_timer->COUNT16.COUNT.reg = 0; // required?
+	sl->sleep_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 }
 
 SLLIN_RAMFUNC static void lin_timer_int_slave(uint8_t index)
@@ -1001,34 +971,15 @@ SLLIN_RAMFUNC static void lin_timer_int_slave(uint8_t index)
 			sl->elem.frame.id |= SLLIN_ID_FLAG_FRAME_TRAIL_DATA;
 		}
 	} else {
-		if (sl->slave_rx_offset < 9) {
-			if (sl->slave_rx_offset) {
+		if (sl->slave_rx_offset) {
+			if (sl->slave_rx_offset < 9) {
+				// attempt to reconstruct crc
 				sl->elem.frame.crc = sl->elem.frame.data[--sl->elem.frame.len];
-			} else {
-				// no response
+			} else if (sl->slave_rx_offset > 9) {
+				sl->elem.frame.id |= SLLIN_ID_FLAG_FRAME_TRAIL_DATA;
 			}
-		} else if (sl->slave_rx_offset > 9) {
-			sl->elem.frame.id |= SLLIN_ID_FLAG_FRAME_TRAIL_DATA;
 		}
 	}
-
-	// if (sl->elem.frame.len) {
-	// 	if (sl->elem.frame.len < 8) {
-	// 		sl->elem.frame.crc = sl->elem.frame.data[--sl->elem.frame.len];
-	// 		// undo last crc round
-	// 		sl->slave_crc_rx -= sl->elem.frame.crc;
-
-	// 		// compute final crc
-	// 		sl->slave_crc_rx -= sllin_crc_finalize(sl->slave_crc_rx);
-
-	// 		if (sl->slave_crc_rx != sl->elem.frame.crc) {
-	// 			sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_CRC;
-	// 		}
-	// 	}
-	// } else {
-	// 	// sl->elem.frame.flags |= SLLIN_FRAME_FLAG_NO_RESPONSE;
-	// 	sl->elem.frame.id |= SLLIN_ID_FLAG_NO_RESPONSE;
-	// }
 
 	sl->elem.time_stamp_ms = sllin_time_stamp_ms();
 
@@ -1192,7 +1143,7 @@ SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag,
 			// LOG("ch%u PID=%x\n", index, rx_byte);
 
 			uint8_t const id = sllin_pid_to_id(rx_byte);
-			bool const known = sl->slave_frame_crc_type[id] != CRC_TYPE_UNKNONWN;
+			bool const known = sl->slave_frame_crc_type[id] != CRC_TYPE_UNKNOWN;
 
 			sl->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_FRAME;
 			sl->elem.frame.id = id;
@@ -1217,6 +1168,7 @@ SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag,
 
 			if (known) {
 				SLLIN_DEBUG_ISR_ASSERT(sl->slave_frame_len[id] >= 0 && sl->slave_frame_len[id] <= 8);
+
 				sl->elem.frame.id |= SLLIN_ID_FLAG_FRAME_LENGTH_VERIFIED | SLLIN_ID_FLAG_FRAME_CHECKSUM_VERIFIED;
 				sl->slave_crc_rx = sllin_crc_start();
 
@@ -1224,30 +1176,17 @@ SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag,
 					sl->slave_crc_rx = sllin_crc_update1(sl->slave_crc_rx, rx_byte);
 				}
 
-				// sl->elem.frame.len = sl->slave_frame_len[id];
-
 				if (sl->slave_frame_enabled[id]) {
 					sl->slave_crc_tx = sl->slave_crc_rx;
 					s->USART.INTENSET.reg = SERCOM_USART_INTENSET_DRE;
 					sl->slave_proto_step = SLAVE_PROTO_STEP_TX_DATA;
-					// intflag &= ~SERCOM_USART_INTFLAG_RXC;
 
 					goto tx;
 				} else {
 					sl->slave_proto_step = SLAVE_PROTO_STEP_RX_VERIFIED;
-					// intflag &= ~SERCOM_USART_INTFLAG_RXC;
-
-					// // start frame data timer
-					// sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 				}
 			} else {
-				// sl->elem.frame.id |= SLLIN_ID_FLAG_FOREIGN;
-				// sl->elem.frame.len = 0;
 				sl->slave_proto_step = SLAVE_PROTO_STEP_RX_UNVERIFIED;
-				// intflag &= ~SERCOM_USART_INTFLAG_RXC;
-
-				// // start frame data timer
-				// sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 			}
 		}
 		break;
@@ -1275,81 +1214,13 @@ tx:
 			// LOG("ch%u TX=%x\n", index, tx_byte);
 		}
 
-		// if (intflag & SERCOM_USART_INTFLAG_RXC) {
-		// 	// uint8_t const id = sl->elem.frame.id & 0x3f;
-
-		// 	if (unlikely(status & SERCOM_USART_STATUS_FERR)) {
-		// 		status &= ~SERCOM_USART_STATUS_FERR;
-		// 		sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_FORM;
-		// 	}
-
-		// 	// reset data timer
-		// 	sl->data_timer->COUNT16.COUNT.reg = 0;
-
-		// 	// // LOG("ch%u RX=%x\n", index, rx_byte);
-		// 	// if (rx_byte != sl->slave_frame_data[id][sl->slave_rx_offset]) {
-		// 	// 	LOG("ch%u offset=%u TX!=RX %x %x\n", index, sl->slave_rx_offset, sl->slave_frame_data[id][sl->slave_rx_offset], rx_byte);
-		// 	// 	sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_CRC;
-		// 	// }
-
-		// 	sl->slave_crc_rx = sllin_crc_update1(sl->slave_crc_rx, rx_byte);
-
-		// 	sl->elem.frame.data[sl->elem.frame.len++] = rx_byte;
-		// 	++sl->slave_rx_offset;
-		// }
 		lin_usart_int_slave_rx_verified(index, intflag, status, rx_byte);
 		break;
-	// case SLAVE_PROTO_STEP_TX_CRC:
-	// 	if (intflag & SERCOM_USART_INTFLAG_RXC) {
-	// 		// uint8_t const id = sl->elem.frame.id & 0x3f;
-
-	// 		if (unlikely(status & SERCOM_USART_STATUS_FERR)) {
-	// 			status &= ~SERCOM_USART_STATUS_FERR;
-	// 			sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_FORM;
-	// 		}
-
-	// 		// LOG("ch%u RX=%x\n", index, rx_byte);
-	// 		if (sl->slave_rx_offset < sl->elem.frame.len) {
-	// 			// if (rx_byte != sl->slave_frame_data[id][sl->slave_rx_offset]) {
-	// 			// 	LOG("ch%u offset=%u TX!=RX %x %x\n", index, sl->slave_rx_offset, sl->slave_frame_data[id][sl->slave_rx_offset], rx_byte);
-	// 			// 	sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_CRC;
-	// 			// }
-
-	// 			sl->slave_crc_rx = sllin_crc_update1(sl->slave_crc_rx, rx_byte);
-
-	// 			sl->elem.frame.data[sl->slave_rx_offset++] = rx_byte;
-	// 		} else {
-	// 			// if (rx_byte != sl->slave_frame_crc[id]) {
-	// 			// 	LOG("ch%u crc TX!=RX %x %x\n", index, sl->slave_frame_crc[id], rx_byte);
-	// 			// 	sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_CRC;
-	// 			// }
-
-	// 			sl->slave_crc_rx = sllin_crc_finalize(sl->slave_crc_rx);
-
-	// 			if (sl->slave_crc_rx != rx_byte) {
-	// 				LOG("ch%u crc TX=%02x RX(TX)=%02x CALC=%02x\n", index, sl->slave_crc_tx, rx_byte, sl->slave_crc_rx);
-	// 				sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_CRC;
-	// 			}
-
-	// 			sl->elem.frame.crc = rx_byte;
-	// 			sl->elem.time_stamp_ms = sllin_time_stamp_ms();
-
-	// 			// LOG("ch%u rx id=%x flags=%x\n", index, id, sl->elem.frame.flags);
-
-	// 			sllin_lin_task_queue(index, &sl->elem);
-	// 			sllin_lin_task_notify_isr(index, 1);
-	// 			lin_slave_cleanup(lin);
-	// 		}
-	// 	}
-	// 	break;
 	case SLAVE_PROTO_STEP_RX_VERIFIED:
-
 		lin_usart_int_slave_rx_verified(index, intflag, status, rx_byte);
 		break;
 	case SLAVE_PROTO_STEP_RX_UNVERIFIED:
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
-			// uint8_t const id = sl->elem.frame.id & 0x3f;
-
 			if (status & SERCOM_USART_STATUS_FERR) {
 				status &= ~SERCOM_USART_STATUS_FERR;
 				sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_FORM;
@@ -1365,7 +1236,6 @@ tx:
 				sl->elem.frame.crc = rx_byte;
 			} else {
 				// too much data
-				// sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_TRAIL;
 			}
 
 			++sl->slave_rx_offset;
