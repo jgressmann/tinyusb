@@ -38,10 +38,13 @@ typedef struct sllin_conf {
 
 enum {
 	SLLIN_QUEUE_ELEMENT_TYPE_FRAME,
-	// SLLIN_QUEUE_ELEMENT_TYPE_SLEEP,
-	// SLLIN_QUEUE_ELEMENT_TYPE_WAKE_UP,
-	// SLLIN_QUEUE_ELEMENT_TYPE_ERROR,
 	SLLIN_QUEUE_ELEMENT_TYPE_COUNT,
+};
+
+enum {
+	SLLIN_CRC_TYPE_UNKNOWN = -1,
+	SLLIN_CRC_TYPE_CLASSIC,
+	SLLIN_CRC_TYPE_ENHANCED,
 };
 
 typedef struct _sllin_queue_element {
@@ -51,31 +54,12 @@ typedef struct _sllin_queue_element {
 	union {
 		struct {
 			uint32_t id;
-			// uint8_t flags;
 			uint8_t crc;
 			uint8_t len;
 			uint8_t data[8];
 		} frame;
-		// uint8_t error;
 	};
 } sllin_queue_element;
-
-// enum {
-// 	SLLIN_FRAME_FLAG_ENHANCED_CHECKSUM  = 0x01,
-// 	SLLIN_FRAME_FLAG_NO_RESPONSE		= 0x02,
-// 	// SLLIN_FRAME_FLAG_MASTER_TX          = 0x02,
-
-// };
-
-// enum {
-// 	SLLIN_ERROR_NONE,
-// 	SLLIN_ERROR_STUCK_LOW,	//< data line stuck low
-// 	SLLIN_ERROR_STUCK_HIGH,	//< data line stuck high
-// 	// SLLIN_ERROR_FRAME, 		//< frame error in data byte (e.g. stop bit zero)
-// 	SLLIN_ERROR_BAD_SYNC, 	//< SYNC field isn't 0x55
-// 	// SLLIN_ERROR_BAD_PID,  	//< invalid PID received
-// 	// SLLIN_ERROR_CRC,
-// };
 
 enum {
 	SLLIN_LIN_LED_BLINK_DELAY_SLEEPING_MS = 768,
@@ -100,24 +84,13 @@ extern void sllin_board_leds_on_unsafe(void);
 extern void sllin_board_lin_uninit(uint8_t index);
 extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf);
 extern void sllin_board_lin_sleep_timeout(uint8_t index, uint16_t timeout_ms);
-SLLIN_RAMFUNC extern bool sllin_board_lin_master_tx(
-	uint8_t index,
-	uint8_t id,
-	uint8_t const *data);
-SLLIN_RAMFUNC extern void sllin_board_lin_slave_tx(
-	uint8_t index,
-	uint8_t id,
-	uint8_t const *data);
-SLLIN_RAMFUNC extern void sllin_board_lin_frame_meta_data_clear(uint8_t index, uint8_t id);
-SLLIN_RAMFUNC extern void sllin_board_lin_frame_meta_data_set(
-	uint8_t index,
-	uint8_t id,
-	uint8_t len,
-	bool enhanced_crc);
+SLLIN_RAMFUNC extern bool sllin_board_lin_master_request(uint8_t index, uint8_t id);
+SLLIN_RAMFUNC extern void sllin_board_lin_slave_respond(uint8_t index, uint8_t id, bool respond);
 SLLIN_RAMFUNC extern void sllin_board_led_lin_status_set(uint8_t index, int status);
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_def(uint8_t index, uint32_t count);
 SLLIN_RAMFUNC extern void sllin_lin_task_notify_isr(uint8_t index, uint32_t count);
 SLLIN_RAMFUNC extern void sllin_lin_task_queue(uint8_t index, sllin_queue_element const *element);
+
 
 extern uint16_t _sllin_time_stamp_ms;
 #define sllin_time_stamp_ms() __atomic_load_n(&_sllin_time_stamp_ms, __ATOMIC_ACQUIRE)
@@ -138,3 +111,12 @@ extern uint16_t _sllin_time_stamp_ms;
 #else
 #	error "Unknown board"
 #endif
+
+
+struct sllin_frame_data {
+	__attribute__ ((aligned(4))) uint8_t data[64][8];
+	uint8_t len[64];
+	uint8_t crc[64];
+};
+
+extern struct sllin_frame_data sllin_frame_data[SLLIN_BOARD_LIN_COUNT];
