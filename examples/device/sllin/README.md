@@ -106,7 +106,7 @@ These are always from from device to host and do not carry any LIN frame data.
 
 
 | Start Bit | Length | Description |
-|:----------|:=------|:------------|
+|:----------|:-------|:------------|
 | `0`       | `2`    | Bus State |
 | `2`       | `2`    | Bus Error |
 
