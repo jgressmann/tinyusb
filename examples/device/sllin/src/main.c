@@ -715,6 +715,9 @@ SLLIN_RAMFUNC static void lin_usb_task(void* param)
 				}
 
 				connected = false;
+
+				// may still get pending events such as the time stamp event
+				clear_rx_fifo(index);
 			}
 		}
 
