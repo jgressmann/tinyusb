@@ -25,7 +25,6 @@ sudo slcand -l -F -b 4b00 /dev/ttyACM1
 
 #### Configure Response
 
-
 Configure response for ID 'b' using classic checksum. Note, the `-x` suppresses echoing the CAN frame
 
 ```
@@ -140,12 +139,12 @@ These are always from from device to host and do not carry any LIN frame data.
 
 | Start Bit | Length | LDescription |
 |-----------|--------|----------
-| `16`       | `2`    | CRC type |
+| `16`       | `2`    | CRC computation |
 
-##### CRC Types
+##### CRC Computation
 
 | Value      | Description |
 |--------------|-------
 | `0x00` | take CRC field as is |
-| `0x01` | ignore CRF field, compute classic CRC |
-| `0x02` | ignore CRF field, compute enhanced CRC |
+| `0x01` | ignore CRC field, compute classic CRC |
+| `0x02` | ignore CRC field, compute enhanced CRC |
