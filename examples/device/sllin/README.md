@@ -73,15 +73,13 @@ slLIN mostly follows Lawice's protocol with a few modifications for LIN:
 
 ## Frame Coding
 
-
-
 ### LIN frames
 
 Length and data of the carrying CAN frame must be valid. A length of `0` implies an unanswered request.
 
 
-| Start Bit | Length | LDescription |
-|-----------|--------|----------
+| Start Bit | Length | Description |
+|:----------|:-------|:------------|
 | `0`       | `6`    | LIN-ID |
 | `6`       | `8`    | CRC |
 
@@ -89,7 +87,7 @@ Length and data of the carrying CAN frame must be valid. A length of `0` implies
 
 
 | Bitmask      | Description |
-|--------------|-------
+|:-------------|:------------|
 | `0x00004000` | bad sync field (not 0x55). This is typically the only flag |
 | `0x00008000` | bad PID received, LIN-ID carries recovered ID |
 | `0x00010000` | bit error in some fixed part of the frame e.g. start bit wasn't 0, stop bit wasn't 1, ... |
@@ -102,28 +100,28 @@ Length and data of the carrying CAN frame must be valid. A length of `0` implies
 These are always from from device to host and do not carry any LIN frame data.
 
 | Bitmask      | Description |
-|--------------|-------
+|:-------------|:------------|
 | `0x10000000` | bus status bits are valid |
 | `0x08000000` | bus error bits are valid |
 
 
-| Start Bit | Length | LDescription |
-|-----------|--------|----------
+| Start Bit | Length | Description |
+|:----------|:=------|:------------|
 | `0`       | `2`    | Bus State |
 | `2`       | `2`    | Bus Error |
 
 ###### Bus State
 
-| Value      | Description |
-|--------------|-------
+| Value  | Description |
+|:-------|:------------|
 | `0x00` | bus is asleep |
 | `0x01` | bus is awake |
 | `0x02` | bus is in error state |
 
 ###### Bus Error
 
-| Value      | Description |
-|--------------|-------
+| Value  | Description |
+|:-------|:------------|
 | `0x00` | no error |
 | `0x01` | bus shorted to GND |
 | `0x02` | bus shorted to VBAT |
@@ -132,19 +130,19 @@ These are always from from device to host and do not carry any LIN frame data.
 #### Host to Device Frames
 
 | Bitmask      | Description |
-|--------------|-------
+|:-------------|:------------|
 | `0x00004000` | Enables frame response if set, else disables. |
 | `0x00008000` | store LIN frame data. The CAN frames length and data must be valid |
 
 
-| Start Bit | Length | LDescription |
-|-----------|--------|----------
-| `16`       | `2`    | CRC computation |
+| Start Bit | Length | Description |
+|-----------|--------|-------------|
+| `16`      | `2`    | CRC computation |
 
 ##### CRC Computation
 
-| Value      | Description |
-|--------------|-------
+| Value  | Description |
+|:-------|:------------|
 | `0x00` | take CRC field as is |
 | `0x01` | ignore CRC field, compute classic CRC |
 | `0x02` | ignore CRC field, compute enhanced CRC |
