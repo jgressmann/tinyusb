@@ -119,7 +119,8 @@ struct slave {
 	Tc* const data_timer;
 	sllin_queue_element elem;
 	uint8_t slave_frame_enabled[64];
-	uint16_t data_byte_timeout_us;
+	uint16_t timeout_pid_us;
+	uint16_t timeout_data_us;
 	uint8_t slave_proto_step;
 	uint8_t slave_tx_offset;
 	uint8_t slave_rx_offset;
@@ -698,8 +699,9 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 
 
 	// LOG("ch%u data byte timeout CC=%x [us]\n", index, sl->data_timer->COUNT16.CC[0].reg);
-	sl->data_byte_timeout_us = (16 * UINT32_C(1000000)) / conf->bitrate;
-	sl->data_timer->COUNT16.CC[0].reg = sl->data_byte_timeout_us;
+	sl->timeout_data_us = (14 * UINT32_C(1000000)) / conf->bitrate;
+	sl->timeout_pid_us = ((14 + 10) * UINT32_C(1000000)) / conf->bitrate;
+	sl->data_timer->COUNT16.CC[0].reg = sl->timeout_data_us;
 	LOG("ch%u data byte timeout %x [us]\n", index, sl->data_timer->COUNT16.CC[0].reg);
 
 	sof_len_bit_times = 13 + sercom->USART.CTRLC.bit.BRKLEN * 4;
@@ -720,8 +722,8 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 		break;
 	}
 
-	// add a little bit of extra time for the RX to hit the UART
-	sof_len_bit_times += 4; // half a byte
+	// // add a little bit of extra time for the RX to hit the UART
+	// sof_len_bit_times += 4; // half a byte
 
 	ma->sof_timer->COUNT16.CC[0].reg = (sof_len_bit_times * UINT32_C(1000000)) / conf->bitrate;
 	LOG("ch%u SOF timeout %x [us]\n", index, ma->sof_timer->COUNT16.CC[0].reg);
@@ -773,7 +775,7 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_request(uint8_t index, uint8_t 
 	SLLIN_DEBUG_ASSERT(0 == ma->sof_timer->COUNT16.COUNT.reg);
 
 	// start timer
-	LOG("+");
+	// LOG("+");
 	ma->sof_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 
 	// race against other interrupt?
@@ -952,7 +954,7 @@ SLLIN_RAMFUNC static void lin_timer_int_data(uint8_t index)
 	// allow next header
 	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_FINISHED, __ATOMIC_RELEASE);
 
-	LOG("|");
+	// LOG("|");
 }
 
 SLLIN_RAMFUNC static void lin_timer_int_sof(uint8_t index)
@@ -966,7 +968,7 @@ SLLIN_RAMFUNC static void lin_timer_int_sof(uint8_t index)
 
 	SLLIN_DEBUG_ISR_ASSERT(0 == ma->sof_timer->COUNT16.COUNT.reg);
 
-	LOG("*");
+	// LOG("*");
 	sof_timer_cleanup(lin);
 
 	// clear interupt and status
@@ -1021,12 +1023,13 @@ SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag,
 		sl->slave_proto_step = SLAVE_PROTO_STEP_RX_PID;
 
 		// cleanup SOF timeout
-		LOG("-");
+		// LOG("-");
 		sof_timer_cleanup(lin);
 
-		// start frame data timer
-		LOG("[");
+		// start data timer for PID
+		// LOG("[");
 		SLLIN_DEBUG_ISR_ASSERT(0 == sl->data_timer->COUNT16.COUNT.reg);
+		sl->data_timer->COUNT16.CC[0].reg = sl->timeout_pid_us;
 		sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 	}
 
@@ -1039,8 +1042,6 @@ SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag,
 
 			uint8_t const id = sllin_pid_to_id(rx_byte);
 			uint8_t const pid = sllin_id_to_pid(id);
-
-
 
 			sl->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_FRAME;
 			sl->elem.frame.id = id;
@@ -1060,9 +1061,9 @@ SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag,
 			// clear out flag for PID
 			intflag &= ~SERCOM_USART_INTFLAG_RXC;
 
-
-			// restart data counter
+			// restart data timer for payload
 			sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+			sl->data_timer->COUNT16.CC[0].reg = sl->timeout_data_us;
 
 
 			if (sl->slave_frame_enabled[id]) {
@@ -1089,11 +1090,8 @@ tx:
 
 			if (likely(sl->slave_tx_offset < len)) {
 				tx_byte = fd->data[id][sl->slave_tx_offset++];
-				// sl->slave_crc_tx = sllin_crc_update1(sl->slave_crc_tx, tx_byte);
 			} else {
 				sl->slave_proto_step = SLAVE_PROTO_STEP_RX_DATA;
-				// sl->slave_crc_tx = sllin_crc_finalize(sl->slave_crc_tx);
-				// tx_byte = (uint8_t)sl->slave_crc_tx;
 				tx_byte = fd->crc[id];
 				s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 			}
@@ -1115,7 +1113,7 @@ rx:
 
 			// reset data timer
 			sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
-			LOG("{");
+			// LOG("{");
 
 			// LOG("ch%u RX=%x\n", index, rx_byte);
 			if (sl->slave_rx_offset < 8) {
@@ -1150,8 +1148,7 @@ rx:
 	}
 }
 
-#define ISR_ATTRS SLLIN_RAMFUNC
-// __attribute__((naked))
+#define ISR_ATTRS SLLIN_RAMFUNC __attribute__((naked))
 
 ISR_ATTRS void SERCOM1_0_Handler(void)
 {
