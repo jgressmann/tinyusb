@@ -28,13 +28,13 @@ sudo slcand -l -F -b 4b00 /dev/ttyACM1
 Configure response for ID 'b' using classic checksum. Note, the `-x` suppresses echoing the CAN frame
 
 ```
-cangen slcan1 -x -e -L 4 -n 1 -D deadbeef -I 1c00b
+cangen slcan1 -x -e -L 4 -n 1 -D deadbeef -I 31000b
 ```
 
 Configure response for ID '23' using enhanced checksum.
 
 ```
-cangen slcan1 -x -e -L 8 -n 1 -D f00f00AA55AA55AA -I 2c017
+cangen slcan1 -x -e -L 8 -n 1 -D f00f00AA55AA55AA -I 320017
 ```
 
 
@@ -81,18 +81,18 @@ Length and data of the carrying CAN frame must be valid. A length of `0` implies
 | Start Bit | Length | Description |
 |:----------|:-------|:------------|
 | `0`       | `6`    | LIN-ID |
-| `6`       | `8`    | CRC |
+| `8`       | `8`    | CRC |
 
 #### Device to Host Frames
 
 
 | Bitmask      | Description |
 |:-------------|:------------|
-| `0x00004000` | bad sync field (not 0x55). This is typically the only flag |
-| `0x00008000` | bad PID received, LIN-ID carries recovered ID |
-| `0x00010000` | bit error in some fixed part of the frame e.g. start bit wasn't 0, stop bit wasn't 1, ... |
-| `0x00020000` | more than 9 bytes on bus |
-| `0x00040000` | request was not answered by this node |
+| `0x00010000` | bad sync field (not 0x55). This is typically the only flag |
+| `0x00020000` | bad PID received, LIN-ID carries recovered ID |
+| `0x00040000` | bit error in some fixed part of the frame e.g. start bit wasn't 0, stop bit wasn't 1, ... |
+| `0x00080000` | more than 9 bytes on bus |
+| `0x00100000` | request was not answered by this node |
 
 
 ##### Bus Error and State Frame
@@ -131,8 +131,8 @@ These are always from from device to host and do not carry any LIN frame data.
 
 | Bitmask      | Description |
 |:-------------|:------------|
-| `0x00004000` | Enables frame response if set, else disables. |
-| `0x00008000` | store LIN frame data. The CAN frames length and data must be valid |
+| `0x00100000` | Enables frame response if set, else disables. |
+| `0x00200000` | store LIN frame data. The CAN frames length and data must be valid |
 
 
 | Start Bit | Length | Description |
