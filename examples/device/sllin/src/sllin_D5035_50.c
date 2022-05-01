@@ -98,10 +98,6 @@ enum {
 	SLAVE_PROTO_STEP_RX_PID,
 	SLAVE_PROTO_STEP_TX_DATA,
 	SLAVE_PROTO_STEP_RX_DATA,
-
-	MASTER_PROTO_STEP_RX_BREAK = 0,
-	MASTER_PROTO_STEP_RX_PID,
-	MASTER_PROTO_STEP_FINISHED,
 };
 
 
@@ -124,7 +120,7 @@ struct slave {
 
 struct master {
 	Tc* const sof_timer;
-	uint8_t step;
+	uint8_t busy;
 };
 
 struct lin {
@@ -695,7 +691,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 
 	lin_slave_cleanup(lin);
 	sof_timer_cleanup(lin);
-	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_FINISHED, __ATOMIC_RELAXED);
+	__atomic_store_n(&lin->master.busy, 0, __ATOMIC_RELAXED);
 
 
 	// LOG("ch%u data byte timeout CC=%x [us]\n", index, sl->data_timer->COUNT16.CC[0].reg);
@@ -750,27 +746,26 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	sl->sleep_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 }
 
-SLLIN_RAMFUNC extern bool sllin_board_lin_master_request(uint8_t index, uint8_t id)
+SLLIN_RAMFUNC static bool sllin_board_lin_master_tx(uint8_t index, uint8_t data, uint8_t cmd)
 {
 	struct lin * const lin = &lins[index];
 	struct master * const ma = &lin->master;
 	struct slave * const sl = &lin->slave;
 	Sercom * const s = lin->sercom;
-	uint8_t pid = sllin_id_to_pid(id);
-	uint8_t step = 0;
+	uint8_t busy = 0;
 
 	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(lins));
-	SLLIN_DEBUG_ASSERT(id < 64);
 
-	step = __atomic_load_n(&lin->master.step, __ATOMIC_ACQUIRE);
 
-	if (unlikely(step != MASTER_PROTO_STEP_FINISHED)) {
-		LOG("ch%u master tx busy, step=%u\n", index, step);
-		LOG("ch%u data timer stop=%u\n", index, sl->data_timer->COUNT16.STATUS.bit.STOP);
+	busy = __atomic_load_n(&lin->master.busy, __ATOMIC_ACQUIRE);
+
+	if (unlikely(busy)) {
+		LOG("ch%u master tx busy\n", index);
+		LOG("ch%u data timer stop=%u sof timer stop=\n", index, sl->data_timer->COUNT16.STATUS.bit.STOP, ma->sof_timer->COUNT16.STATUS.bit.STOP);
 		return false;
 	}
 
-	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_RX_BREAK, __ATOMIC_RELEASE);
+	__atomic_store_n(&lin->master.busy, 1, __ATOMIC_RELEASE);
 
 	// // restart sleep timer
 	// sl->sleep_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
@@ -783,10 +778,22 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_request(uint8_t index, uint8_t 
 
 	// race against other interrupt?
 
-	s->USART.CTRLB.bit.LINCMD = 0x2;
-	s->USART.DATA.reg = pid;
+	s->USART.CTRLB.bit.LINCMD = cmd;
+	s->USART.DATA.reg = data;
 
 	return true;
+}
+
+SLLIN_RAMFUNC extern bool sllin_board_lin_master_break(uint8_t index)
+{
+	return sllin_board_lin_master_tx(index, 0, 1);
+}
+
+SLLIN_RAMFUNC extern bool sllin_board_lin_master_request(uint8_t index, uint8_t id)
+{
+	SLLIN_DEBUG_ASSERT(id < 64);
+
+	return sllin_board_lin_master_tx(index, sllin_id_to_pid(id), 2);
 }
 
 
@@ -921,7 +928,9 @@ SLLIN_RAMFUNC static inline void lin_timer_int_data(uint8_t index)
 	case SLAVE_PROTO_STEP_RX_PID: {
 		LOG("ch%u rx timeout pid\n", index);
 		bool rx_pin = (PORT->Group[LIN_SERCOM_PORT_GROUP].IN.reg & (1u << lin->rx_pin_index)) != 0;
-		lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_ERROR, rx_pin ? SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_VBAT : SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_GND);
+		if (!rx_pin) {
+			lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_ERROR, SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_GND);
+		}
 	} break;
 	default: {
 		bool rx_pin = true;
@@ -957,7 +966,7 @@ SLLIN_RAMFUNC static inline void lin_timer_int_data(uint8_t index)
 	lin_slave_cleanup(lin);
 
 	// allow next header
-	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_FINISHED, __ATOMIC_RELEASE);
+	__atomic_store_n(&lin->master.busy, 0, __ATOMIC_RELEASE);
 
 	// LOG("|");
 }
@@ -993,7 +1002,7 @@ SLLIN_RAMFUNC static inline void lin_timer_int_sof(uint8_t index)
 	lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_ERROR, rx_pin ? SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_VBAT : SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_GND);
 
 	// allow next header
-	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_FINISHED, __ATOMIC_RELEASE);
+	__atomic_store_n(&lin->master.busy, 0, __ATOMIC_RELEASE);
 	// LOG("*");
 }
 

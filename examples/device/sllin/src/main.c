@@ -319,20 +319,37 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		break;
 	case 'r': // master: tx header
 		if (likely(lin->enabled)) {
-			if (likely(lin->rx_sl_offset >= 4)) {
+			if (likely(lin->rx_sl_offset >= 5)) {
 				if (likely(lin->conf.master)) {
-					uint8_t const can_id_nibble1 = char_to_nibble(lin->rx_sl_buffer[2]);
-					uint8_t const can_id_nibble2 = char_to_nibble(lin->rx_sl_buffer[3]);
-					uint8_t const id = ((can_id_nibble1 << 4) | can_id_nibble2) & 0x3f;
+					uint_least16_t can_id = 0;
+
+					can_id <<= 4;
+					can_id |= char_to_nibble(lin->rx_sl_buffer[1]);
+					can_id <<= 4;
+					can_id |= char_to_nibble(lin->rx_sl_buffer[2]);
+					can_id <<= 4;
+					can_id |= char_to_nibble(lin->rx_sl_buffer[3]);
 
 					// LOG("ch%u %s -> id=%x len=%u flags=%x\n", index, lin->rx_sl_buffer, id, frame_len, flags);
 
-					if (likely(sllin_board_lin_master_request(index, id))) {
-						lin->tx_sl_buffer[0] = 'z';
-						lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
-						lin->tx_sl_offset = 2;
+					if (SLLIN_ID_FLAG_BUS_BREAK & can_id) {
+						if (likely(sllin_board_lin_master_break(index))) {
+							lin->tx_sl_buffer[0] = 'z';
+							lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
+							lin->tx_sl_offset = 2;
+						} else {
+							sllin_store_tx_queue_full_error_response(index);
+						}
 					} else {
-						sllin_store_tx_queue_full_error_response(index);
+						uint8_t const id = can_id & 0x3f;
+
+						if (likely(sllin_board_lin_master_request(index, id))) {
+							lin->tx_sl_buffer[0] = 'z';
+							lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
+							lin->tx_sl_offset = 2;
+						} else {
+							sllin_store_tx_queue_full_error_response(index);
+						}
 					}
 				} else {
 					LOG("ch%u refusing to transmit in slave mode\n", index);

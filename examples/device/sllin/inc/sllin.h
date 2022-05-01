@@ -47,6 +47,8 @@ enum {
 	SLLIN_ID_FLAG_BUS_ERROR_NONE =  	    0x00, //< no error
 	SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_GND =  0x01, //< LIN data line shorted to GND
 	SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_VBAT = 0x02, //< LIN data line shorted to VBAT
+
+	SLLIN_ID_FLAG_BUS_BREAK = 0x100, //< send BREAK w/o SYNC, PID
 };
 
 

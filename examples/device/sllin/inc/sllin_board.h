@@ -84,6 +84,7 @@ extern void sllin_board_leds_on_unsafe(void);
 extern void sllin_board_lin_uninit(uint8_t index);
 extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf);
 extern void sllin_board_lin_sleep_timeout(uint8_t index, uint16_t timeout_ms);
+SLLIN_RAMFUNC extern bool sllin_board_lin_master_break(uint8_t index);
 SLLIN_RAMFUNC extern bool sllin_board_lin_master_request(uint8_t index, uint8_t id);
 SLLIN_RAMFUNC extern void sllin_board_lin_slave_respond(uint8_t index, uint8_t id, bool respond);
 SLLIN_RAMFUNC extern void sllin_board_led_lin_status_set(uint8_t index, int status);
