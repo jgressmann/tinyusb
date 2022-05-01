@@ -439,7 +439,7 @@ static void timer_init(void)
 		sof_timer->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
 
 		// generate overflow interrupt
-		sof_timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF;
+		sof_timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
 
 		// set to max so we don't time out
 		sof_timer->COUNT16.CC[0].reg = 0xffff;
@@ -448,7 +448,7 @@ static void timer_init(void)
 		sof_timer->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER_DIV16;
 
 		// stop & oneshot
-		sof_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_CMD_STOP;
+		sof_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_LUPD | TC_CTRLBSET_CMD_STOP;
 		while (sof_timer->COUNT16.SYNCBUSY.bit.CTRLB);
 
 		// reset to zero
@@ -463,7 +463,7 @@ static void timer_init(void)
 		data_timer->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
 
 		// generate overflow interrupt
-		data_timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF;
+		data_timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
 
 		// set to max so we don't time out
 		data_timer->COUNT16.CC[0].reg = 0xffff;
@@ -472,7 +472,8 @@ static void timer_init(void)
 		data_timer->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER_DIV16;
 
 		// stop & oneshot
-		data_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_CMD_STOP;
+		data_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_LUPD | TC_CTRLBSET_CMD_STOP;
+		// data_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_CMD_STOP;
 		while (data_timer->COUNT16.SYNCBUSY.bit.CTRLB);
 
 		// reset to zero
@@ -486,7 +487,7 @@ static void timer_init(void)
 		stc->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
 
 		// generate overflow interrupt
-		stc->COUNT16.INTENSET.reg = TC_INTENSET_OVF;
+		stc->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
 
 		// set to max so we don't time out
 		stc->COUNT16.CC[0].reg = 0xffff;
@@ -495,7 +496,7 @@ static void timer_init(void)
 		stc->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 |  TC_CTRLA_PRESCALER_DIV256;
 
 		// stop & oneshot
-		stc->COUNT16.CTRLBSET.reg = TC_CTRLBSET_CMD_STOP;
+		stc->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_LUPD | TC_CTRLBSET_CMD_STOP;
 		while (stc->COUNT16.SYNCBUSY.bit.CTRLB);
 
 		// reset to zero
@@ -525,6 +526,8 @@ SLLIN_RAMFUNC static inline void lin_slave_cleanup(struct lin *lin)
 
 	// stop timer
 	sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
+	// set PID timeout
+	sl->data_timer->COUNT16.CC[0].reg = sl->timeout_pid_us;
 
 	sl->slave_proto_step = SLAVE_PROTO_STEP_RX_BREAK;
 	sl->slave_tx_offset = 0;
@@ -593,10 +596,8 @@ extern void sllin_board_init_begin(void)
 #endif
 	leds_init();
 
+	LOG("USB init\n");
 	usb_init();
-
-	// LOG("USB init\n");
-	// usb_init();
 
 	LOG("timer init\n");
 	timer_init();
@@ -691,14 +692,16 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 
 	lin_slave_cleanup(lin);
 	sof_timer_cleanup(lin);
-	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_FINISHED, __ATOMIC_RELEASE);
+	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_FINISHED, __ATOMIC_RELAXED);
 
 
 	// LOG("ch%u data byte timeout CC=%x [us]\n", index, sl->data_timer->COUNT16.CC[0].reg);
 	sl->timeout_data_us = (14 * UINT32_C(1000000)) / conf->bitrate;
+	LOG("ch%u data byte timeout %x [us]\n", index, sl->timeout_data_us);
 	sl->timeout_pid_us = ((14 + 10) * UINT32_C(1000000)) / conf->bitrate;
+	LOG("ch%u PID byte timeout %x [us]\n", index, sl->timeout_pid_us);
+
 	sl->data_timer->COUNT16.CC[0].reg = sl->timeout_data_us;
-	LOG("ch%u data byte timeout %x [us]\n", index, sl->data_timer->COUNT16.CC[0].reg);
 
 	sof_len_bit_times = 13 + sercom->USART.CTRLC.bit.BRKLEN * 4;
 	sof_len_bit_times += 20; // SYNC, PID
@@ -740,8 +743,10 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	sl->sleep_timer->COUNT16.CC[0].reg = ((conf->sleep_timeout_ms * (uint32_t)SLEEP_TIMER_HZ) + 500) / 1000;
 	LOG("ch%u sleep timer CC=%x COUNT=%x\n", index, sl->sleep_timer->COUNT16.CC[0].reg, sl->sleep_timer->COUNT16.COUNT.reg);
 
-	// start timer
+	// start sleep timer
 	sl->sleep_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+
+	// sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 }
 
 SLLIN_RAMFUNC extern bool sllin_board_lin_master_request(uint8_t index, uint8_t id)
@@ -760,13 +765,14 @@ SLLIN_RAMFUNC extern bool sllin_board_lin_master_request(uint8_t index, uint8_t 
 
 	if (unlikely(step != MASTER_PROTO_STEP_FINISHED)) {
 		LOG("ch%u master tx busy, step=%u\n", index, step);
+		LOG("ch%u data timer stop=%u\n", index, sl->data_timer->COUNT16.STATUS.bit.STOP);
 		return false;
 	}
 
 	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_RX_BREAK, __ATOMIC_RELEASE);
 
-	// restart sleep timer
-	sl->sleep_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+	// // restart sleep timer
+	// sl->sleep_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 
 	SLLIN_DEBUG_ASSERT(0 == ma->sof_timer->COUNT16.COUNT.reg);
 
@@ -882,17 +888,19 @@ SLLIN_RAMFUNC static inline void lin_int_wake_up(uint8_t index)
 	sl->sleep_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 }
 
-SLLIN_RAMFUNC static void lin_timer_int_data(uint8_t index)
+SLLIN_RAMFUNC static inline void lin_timer_int_data(uint8_t index)
 {
 	// frame byte timeout
 
 	struct lin *lin = &lins[index];
 	struct slave *sl = &lin->slave;
 	Sercom *s = lin->sercom;
+	uint8_t const intflag = sl->data_timer->COUNT16.INTFLAG.reg;
 
 	sl->data_timer->COUNT16.INTFLAG.reg = ~0;
 
-	SLLIN_ISR_ASSERT(0 == sl->data_timer->COUNT16.COUNT.reg);
+	SLLIN_DEBUG_ISR_ASSERT(0 == sl->data_timer->COUNT16.COUNT.reg);
+	SLLIN_DEBUG_ISR_ASSERT((intflag & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)) == TC_INTFLAG_OVF);
 
 	// LOG("ch%u frame data timeout\n", index);
 
@@ -950,10 +958,10 @@ SLLIN_RAMFUNC static void lin_timer_int_data(uint8_t index)
 	// allow next header
 	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_FINISHED, __ATOMIC_RELEASE);
 
-	// LOG("|");
+	LOG("|");
 }
 
-SLLIN_RAMFUNC static void lin_timer_int_sof(uint8_t index)
+SLLIN_RAMFUNC static inline void lin_timer_int_sof(uint8_t index)
 {
 	// sof timeout
 
@@ -964,7 +972,6 @@ SLLIN_RAMFUNC static void lin_timer_int_sof(uint8_t index)
 
 	SLLIN_DEBUG_ISR_ASSERT(0 == ma->sof_timer->COUNT16.COUNT.reg);
 
-	// LOG("*");
 	sof_timer_cleanup(lin);
 
 	// clear interupt and status
@@ -980,15 +987,16 @@ SLLIN_RAMFUNC static void lin_timer_int_sof(uint8_t index)
 
 	// allow next header
 	__atomic_store_n(&lin->master.step, MASTER_PROTO_STEP_FINISHED, __ATOMIC_RELEASE);
+	LOG("*");
 }
-
-SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag, uint8_t status);
 
 
 SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index)
 {
 	struct lin *lin = &lins[index];
+	struct slave *sl = &lin->slave;
 	Sercom *s = lin->sercom;
+	struct sllin_frame_data const *fd = &sllin_frame_data[index];
 	uint8_t intflag = s->USART.INTFLAG.reg;
 	uint8_t status = s->USART.STATUS.reg;
 
@@ -997,35 +1005,29 @@ SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index)
 	s->USART.INTFLAG.reg = ~0;
 	s->USART.STATUS.reg = ~0;
 
-	// LOG("/");
+	LOG("/");
 
-	__atomic_thread_fence(__ATOMIC_ACQUIRE);
+	// __atomic_thread_fence(__ATOMIC_ACQUIRE);
 
-	lin_usart_int_slave_ex(index, intflag, status);
-}
-
-
-SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag, uint8_t status)
-{
-	struct lin *lin = &lins[index];
-	struct slave *sl = &lin->slave;
-	Sercom *s = lin->sercom;
-	struct sllin_frame_data const *fd = &sllin_frame_data[index];
 
 	if (intflag & SERCOM_USART_INTFLAG_RXBRK) {
-		lin_int_wake_up(index);
-
 		lin_slave_cleanup(lin);
-		sl->slave_proto_step = SLAVE_PROTO_STEP_RX_PID;
-
 		// cleanup SOF timeout
 		// LOG("-");
 		sof_timer_cleanup(lin);
 
+		lin_int_wake_up(index);
+
+		sl->slave_proto_step = SLAVE_PROTO_STEP_RX_PID;
+
 		// start data timer for PID
 		// LOG("[");
 		SLLIN_DEBUG_ISR_ASSERT(0 == sl->data_timer->COUNT16.COUNT.reg);
-		sl->data_timer->COUNT16.CC[0].reg = sl->timeout_pid_us;
+		SLLIN_DEBUG_ISR_ASSERT(0 == sl->data_timer->COUNT16.INTFLAG.reg);
+		SLLIN_DEBUG_ISR_ASSERT(TC_CTRLBSET_CMD_NONE_Val == sl->data_timer->COUNT16.CTRLBSET.bit.CMD);
+		SLLIN_DEBUG_ISR_ASSERT(sl->data_timer->COUNT16.STATUS.bit.STOP);
+		SLLIN_DEBUG_ISR_ASSERT(!(sl->data_timer->COUNT16.INTFLAG.reg & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)));
+
 		sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 	}
 
@@ -1038,6 +1040,14 @@ SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag,
 
 			uint8_t const id = sllin_pid_to_id(rx_byte);
 			uint8_t const pid = sllin_id_to_pid(id);
+
+			// stop timer
+			// NOTE : a simple re-trigger doesn't work, likely because we also change TOP
+			SLLIN_DEBUG_ISR_ASSERT(sl->data_timer->COUNT16.CC[0].reg == sl->timeout_pid_us);
+			SLLIN_DEBUG_ISR_ASSERT(!(sl->data_timer->COUNT16.INTFLAG.reg & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)));
+			SLLIN_DEBUG_ISR_ASSERT(sl->data_timer->COUNT16.COUNT.reg < sl->timeout_pid_us);
+			SLLIN_DEBUG_ISR_ASSERT(!sl->data_timer->COUNT16.STATUS.bit.STOP);
+			sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
 
 			sl->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_FRAME;
 			sl->elem.frame.id = id;
@@ -1058,9 +1068,9 @@ SLLIN_RAMFUNC static void lin_usart_int_slave_ex(uint8_t index, uint8_t intflag,
 			intflag &= ~SERCOM_USART_INTFLAG_RXC;
 
 			// restart data timer for payload
-			sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+			while (sl->data_timer->COUNT16.SYNCBUSY.bit.CTRLB);
 			sl->data_timer->COUNT16.CC[0].reg = sl->timeout_data_us;
-
+			sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 
 			if (sl->slave_frame_enabled[id]) {
 				SLLIN_DEBUG_ISR_ASSERT(fd->len[id] >= 0 && fd->len[id] <= 8);
@@ -1108,8 +1118,12 @@ rx:
 			}
 
 			// reset data timer
+			SLLIN_DEBUG_ISR_ASSERT(sl->data_timer->COUNT16.CC[0].reg == sl->timeout_data_us);
+			SLLIN_DEBUG_ISR_ASSERT(!(sl->data_timer->COUNT16.INTFLAG.reg & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)));
+			SLLIN_DEBUG_ISR_ASSERT(sl->data_timer->COUNT16.COUNT.reg < sl->timeout_data_us);
+			SLLIN_DEBUG_ISR_ASSERT(!sl->data_timer->COUNT16.STATUS.bit.STOP);
+
 			sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
-			// LOG("{");
 
 			// LOG("ch%u RX=%x\n", index, rx_byte);
 			if (sl->slave_rx_offset < 8) {
@@ -1121,6 +1135,10 @@ rx:
 			}
 
 			++sl->slave_rx_offset;
+
+			// // restart timer
+			// while (sl->data_timer->COUNT16.SYNCBUSY.bit.CTRLB);
+			// sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 		}
 		break;
 	}
@@ -1142,9 +1160,12 @@ rx:
 			// }
 		}
 	}
+
+	// LOG("sl->data_timer->COUNT16.CTRLBSET=%x\n", sl->data_timer->COUNT16.CTRLBSET.reg);
 }
 
-#define ISR_ATTRS SLLIN_RAMFUNC __attribute__((naked))
+#define ISR_ATTRS SLLIN_RAMFUNC extern
+//__attribute__((naked))
 
 ISR_ATTRS void SERCOM1_0_Handler(void)
 {
@@ -1188,6 +1209,7 @@ ISR_ATTRS void SERCOM0_3_Handler(void)
 
 ISR_ATTRS void TC0_Handler(void)
 {
+	// LOG("data\n");
 	lin_timer_int_data(0);
 }
 
@@ -1198,6 +1220,7 @@ ISR_ATTRS void TC1_Handler(void)
 
 ISR_ATTRS void TC2_Handler(void)
 {
+	// LOG("sleep\n");
 	lin_int_bus_sleep(0);
 }
 
@@ -1208,6 +1231,7 @@ ISR_ATTRS void TC3_Handler(void)
 
 ISR_ATTRS void TC4_Handler(void)
 {
+	// LOG("spf\n");
 	lin_timer_int_sof(0);
 }
 
