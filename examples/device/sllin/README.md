@@ -64,7 +64,7 @@ slLIN mostly follows Lawice's protocol with a few modifications for LIN:
 | `O\r`                                  | host to device | Open device in master mode |
 | `C\r`                                  | host to device | Close device |
 | `TIIIIIIIILDD...\r`                       | both | See next section for CAN-ID decoding |
-| `rIIIL\r`                              | host to device | Only valid in master mode. Send LIN header.    |
+| `rIIIL\r`                              | host to device | Only valid in master mode. Send LIN header |
 | `n\r`                                  | both           | Request device name                            |
 | `Yn\r`</br>(where n is 0 or 1)         | host to device | Enable / disable periodic time stamp transmission.</br>If enabled, the device sends the current time stamp approx. once per second as `YTTTT\r`.</br>The format of the time stamp follows the Lawicel format, c.f. documentation of `Zn\r` command. |
 | `shhhh\r`</br>(hex values)             | host to device | Set device baud rate, e.g  `4b00` sets 19200 Baud/s |
@@ -75,8 +75,7 @@ slLIN mostly follows Lawice's protocol with a few modifications for LIN:
 
 ### LIN frames
 
-Length and data of the carrying CAN frame must be valid. A length of `0` implies an unanswered request.
-
+Length and data of the carrying CAN frame must be valid.
 
 | Start Bit | Length | Description |
 |:----------|:-------|:------------|
@@ -85,6 +84,7 @@ Length and data of the carrying CAN frame must be valid. A length of `0` implies
 
 #### Device to Host Frames
 
+A length of `0` implies an unanswered request.
 
 | Bitmask      | Description |
 |:-------------|:------------|
@@ -93,38 +93,6 @@ Length and data of the carrying CAN frame must be valid. A length of `0` implies
 | `0x00040000` | bit error in some fixed part of the frame e.g. start bit wasn't 0, stop bit wasn't 1, ... |
 | `0x00080000` | more than 9 bytes on bus |
 | `0x00100000` | request was not answered by this node |
-
-
-##### Bus Error and State Frame
-
-These are always from from device to host and do not carry any LIN frame data.
-
-| Bitmask      | Description |
-|:-------------|:------------|
-| `0x10000000` | bus status bits are valid |
-| `0x08000000` | bus error bits are valid |
-
-
-| Start Bit | Length | Description |
-|:----------|:-------|:------------|
-| `0`       | `2`    | Bus State |
-| `2`       | `2`    | Bus Error |
-
-###### Bus State
-
-| Value  | Description |
-|:-------|:------------|
-| `0x00` | bus is asleep |
-| `0x01` | bus is awake |
-| `0x02` | bus is in error state |
-
-###### Bus Error
-
-| Value  | Description |
-|:-------|:------------|
-| `0x00` | no error |
-| `0x01` | bus shorted to GND |
-| `0x02` | bus shorted to VBAT |
 
 
 #### Host to Device Frames
@@ -146,3 +114,44 @@ These are always from from device to host and do not carry any LIN frame data.
 | `0x00` | take CRC field as is |
 | `0x01` | ignore CRC field, compute classic CRC |
 | `0x02` | ignore CRC field, compute enhanced CRC |
+
+
+### Bus Error and State Frame
+
+These are always from from device to host and do not carry any LIN frame data.
+
+| Bitmask      | Description |
+|:-------------|:------------|
+| `0x10000000` | bus status bits are valid |
+| `0x08000000` | bus error bits are valid |
+
+
+| Start Bit | Length | Description |
+|:----------|:-------|:------------|
+| `0`       | `2`    | Bus State |
+| `2`       | `2`    | Bus Error |
+
+#### Bus State
+
+| Value  | Description |
+|:-------|:------------|
+| `0x00` | bus is asleep |
+| `0x01` | bus is awake |
+| `0x02` | bus is in error state |
+
+#### Bus Error
+
+| Value  | Description |
+|:-------|:------------|
+| `0x00` | no error |
+| `0x01` | bus shorted to GND |
+| `0x02` | bus shorted to VBAT |
+
+### Master Transmission
+
+To put a LIN header on the bus, send  a remote request (RTR) CAN frame. Encode the LIN-ID as CAN-ID.
+The protected identifier is computed by the device. The length part of the RTR frame is ignored.
+
+To send only the break BREAK field only send a RTR frame with an ID of `0x100`.
+
+To send a master request frame, store the target payload as response on the device, then send a header with the master request ID.
