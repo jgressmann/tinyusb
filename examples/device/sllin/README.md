@@ -11,13 +11,13 @@ This is project slLIN. A LIN protocol inspired by Lawicel' serial line CAN proto
 
 ### Linux
 
-Configure for master mode, 19200 baud
+Configure for master mode, 19200 baud.
 
 ```
 sudo slcand -o -F -b 4b00 /dev/ttyACM1
 ```
 
-Configure for slave mode, 19200 baud
+Configure for slave mode, 19200 baud.
 
 ```
 sudo slcand -l -F -b 4b00 /dev/ttyACM1
@@ -25,7 +25,7 @@ sudo slcand -l -F -b 4b00 /dev/ttyACM1
 
 #### Configure Response
 
-Configure response for ID 'b' using classic checksum. Note, the `-x` suppresses echoing the CAN frame
+Configure response for ID 'b' using classic checksum. Note, the `-x` suppresses echoing of the CAN frame.
 
 ```
 cangen slcan1 -x -e -L 4 -n 1 -D deadbeef -I 31000b
@@ -38,7 +38,7 @@ cangen slcan1 -x -e -L 8 -n 1 -D f00f00AA55AA55AA -I 320017
 ```
 
 
-#### Send Master Requests
+#### Frame Request
 
 Send header for ID 'b'. Again, the `-x` suppresses the local echo of the RTR frame.
 
@@ -46,9 +46,9 @@ Send header for ID 'b'. Again, the `-x` suppresses the local echo of the RTR fra
 cangen slcan0  -x -R -I b -n 1
 ```
 
-#### Send Master Frames
+#### Master Transmission
 
-To send a master frame, first configure the frame data as you would for a slave, then send the request.
+To send a master request frame, first configure the frame data as you would for a response, then send the header.
 
 ## Serial Line CAN (slcan) Protocol
 
@@ -75,8 +75,6 @@ slLIN mostly follows Lawice's protocol with a few modifications for LIN:
 
 ### LIN frames
 
-Length and data of the carrying CAN frame must be valid.
-
 | Start Bit | Length | Description |
 |:----------|:-------|:------------|
 | `0`       | `6`    | LIN-ID |
@@ -96,6 +94,8 @@ A length of `0` implies an unanswered request.
 
 
 #### Host to Device Frames
+
+Length and data of the carrying CAN frame must be valid.
 
 | Bitmask      | Description |
 |:-------------|:------------|
