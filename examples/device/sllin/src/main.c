@@ -485,7 +485,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		lin->tx_sl_offset = 6;
 	} break;
 	case 'v': { // firmware version
-		lin->tx_sl_offset = usnprintf((char*)lin->tx_sl_buffer, sizeof(lin->tx_sl_buffer), "%s%c", SLLIN_VERSION_STR, SLLIN_OK_TERMINATOR);
+		lin->tx_sl_offset = usnprintf((char*)lin->tx_sl_buffer, sizeof(lin->tx_sl_buffer), "v%s%c", SLLIN_VERSION_STR, SLLIN_OK_TERMINATOR);
 	} break;
 	case 'n': {
 		size_t capa_len = sizeof(lin->tx_sl_buffer) - 2;

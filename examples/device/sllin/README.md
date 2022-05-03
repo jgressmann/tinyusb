@@ -69,6 +69,7 @@ slLIN mostly follows Lawice's protocol with a few modifications for LIN:
 | `Yn\r`</br>(where n is 0 or 1)         | host to device | Enable / disable periodic time stamp transmission.</br>If enabled, the device sends the current time stamp approx. once per second as `YTTTT\r`.</br>The format of the time stamp follows the Lawicel format, c.f. documentation of `Zn\r` command. |
 | `shhhh\r`</br>(hex values)             | host to device | Set device baud rate, e.g  `4b00` sets 19200 Baud/s |
 | `Sn\r`                                 | host to device | Set sleep timeout in seconds, i.e. `S0` sets 4 seconds, `S1` 5 seconds... |
+| `v\r`                                  | both | Query firmware version |
 
 
 ## Frame Coding
