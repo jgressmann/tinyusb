@@ -484,14 +484,8 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		lin->tx_sl_buffer[5] = SLLIN_OK_TERMINATOR;
 		lin->tx_sl_offset = 6;
 	} break;
-	case 'v': {
-		lin->tx_sl_buffer[0] = 'V';
-		lin->tx_sl_buffer[1] = '0';
-		lin->tx_sl_buffer[2] = '1';
-		lin->tx_sl_buffer[3] = nibble_to_char(SLLIN_VERSION_MAJOR);
-		lin->tx_sl_buffer[4] = nibble_to_char(SLLIN_VERSION_MINOR);
-		lin->tx_sl_buffer[5] = SLLIN_OK_TERMINATOR;
-		lin->tx_sl_offset = 6;
+	case 'v': { // firmware version
+		lin->tx_sl_offset = usnprintf((char*)lin->tx_sl_buffer, sizeof(lin->tx_sl_buffer), "%s%c", SLLIN_VERSION_STR, SLLIN_OK_TERMINATOR);
 	} break;
 	case 'n': {
 		size_t capa_len = sizeof(lin->tx_sl_buffer) - 2;
