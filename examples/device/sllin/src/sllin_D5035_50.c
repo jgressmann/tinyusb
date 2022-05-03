@@ -664,13 +664,12 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	struct slave *sl = &lin->slave;
 	struct master *ma = &lin->master;
 	Sercom *sercom = lin->sercom;
-	unsigned sof_len_bit_times = 0;
 
 	for (size_t i = 0; i < TU_ARRAY_SIZE(sl->slave_frame_enabled); ++i) {
 		sl->slave_frame_enabled[i] = 0;
 	}
 
-	__atomic_store_n(&lin->bus_state, SLLIN_ID_FLAG_BUS_STATE_ASLEEP, __ATOMIC_RELAXED);
+	__atomic_store_n(&lin->bus_state, SLLIN_ID_FLAG_BUS_STATE_AWAKE, __ATOMIC_RELAXED);
 	__atomic_store_n(&lin->bus_error, SLLIN_ID_FLAG_BUS_ERROR_NONE, __ATOMIC_RELAXED);
 
 	// disable timers
@@ -876,17 +875,17 @@ SLLIN_RAMFUNC extern void sllin_board_led_lin_status_set(uint8_t index, int stat
 	}
 }
 
-SLLIN_RAMFUNC static inline void lin_int_update_bus_status(uint8_t index, uint8_t bus_state, uint8_t bus_error)
+SLLIN_RAMFUNC static inline bool lin_int_update_bus_status(uint8_t index, uint8_t bus_state, uint8_t bus_error)
 {
 	struct lin *lin = &lins[index];
-	uint8_t bus_state_current = __atomic_load_n(&lin->bus_state, __ATOMIC_ACQUIRE);
-	uint8_t bus_error_current = __atomic_load_n(&lin->bus_error, __ATOMIC_ACQUIRE);
+	uint8_t bus_state_current = __atomic_load_n(&lin->bus_state, __ATOMIC_RELAXED);
+	uint8_t bus_error_current = __atomic_load_n(&lin->bus_error, __ATOMIC_RELAXED);
 
 	if (unlikely(bus_state_current != bus_state || bus_error_current != bus_error)) {
 		sllin_queue_element e;
 
-		__atomic_store_n(&lin->bus_state, bus_state, __ATOMIC_RELEASE);
-		__atomic_store_n(&lin->bus_error, bus_error, __ATOMIC_RELEASE);
+		__atomic_store_n(&lin->bus_state, bus_state, __ATOMIC_RELAXED);
+		__atomic_store_n(&lin->bus_error, bus_error, __ATOMIC_RELAXED);
 
 		e.type = SLLIN_QUEUE_ELEMENT_TYPE_FRAME;
 		e.time_stamp_ms = sllin_time_stamp_ms();
@@ -896,7 +895,11 @@ SLLIN_RAMFUNC static inline void lin_int_update_bus_status(uint8_t index, uint8_
 
 		sllin_lin_task_queue(index, &e);
 		sllin_lin_task_notify_isr(index, 1);
+
+		return true;
 	}
+
+	return false;
 }
 
 SLLIN_RAMFUNC static inline void lin_int_bus_sleep(uint8_t index)
@@ -908,7 +911,11 @@ SLLIN_RAMFUNC static inline void lin_int_bus_sleep(uint8_t index)
 
 	SLLIN_DEBUG_ISR_ASSERT(0 == sl->sleep_timer->COUNT16.COUNT.reg);
 
-	lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_ASLEEP, SLLIN_ID_FLAG_BUS_ERROR_NONE);
+	if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_ASLEEP, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
+		LOG("ch%u sleep\n", index);
+	}
+
+
 	// LOG("z");
 }
 
@@ -917,10 +924,14 @@ SLLIN_RAMFUNC static inline void lin_int_wake_up(uint8_t index)
 	struct lin *lin = &lins[index];
 	struct slave *sl = &lin->slave;
 
-	lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_AWAKE, SLLIN_ID_FLAG_BUS_ERROR_NONE);
+	if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_AWAKE, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
+		LOG("ch%u wake\n", index);
+	}
 
 	// (re-)start timer DS60001507E-page 1717
 	// LOG("y");
+
+
 	// time _might_ be running
 	timer_start_or_restart16(sl->sleep_timer);
 }
