@@ -778,8 +778,11 @@ SLLIN_RAMFUNC static bool sllin_board_lin_master_tx(uint8_t index, uint8_t data,
 {
 	struct lin * const lin = &lins[index];
 	struct master * const ma = &lin->master;
+	struct slave * const sl = &lin->slave;
 	Sercom * const s = lin->sercom;
 	uint8_t busy = 0;
+
+	(void)sl;
 
 	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(lins));
 
