@@ -778,7 +778,6 @@ SLLIN_RAMFUNC static bool sllin_board_lin_master_tx(uint8_t index, uint8_t data,
 {
 	struct lin * const lin = &lins[index];
 	struct master * const ma = &lin->master;
-	struct slave * const sl = &lin->slave;
 	Sercom * const s = lin->sercom;
 	uint8_t busy = 0;
 
@@ -932,6 +931,8 @@ SLLIN_RAMFUNC static inline void lin_timer_int_data(uint8_t index)
 	Sercom *s = lin->sercom;
 	uint8_t const intflag = sl->data_timer->COUNT16.INTFLAG.reg;
 
+	(void)intflag;
+
 	sl->data_timer->COUNT16.INTFLAG.reg = ~0;
 
 	SLLIN_DEBUG_ISR_ASSERT(0 == sl->data_timer->COUNT16.COUNT.reg);
@@ -1009,6 +1010,9 @@ SLLIN_RAMFUNC static inline void lin_timer_int_sof(uint8_t index)
 	struct master *ma = &lin->master;
 	struct slave *sl = &lin->slave;
 	bool rx_pin = (PORT->Group[LIN_SERCOM_PORT_GROUP].IN.reg & (1u << lin->rx_pin_index)) != 0;
+
+	(void)ma;
+	(void)sl;
 
 	SLLIN_DEBUG_ISR_ASSERT(0 == ma->sof_timer->COUNT16.COUNT.reg);
 
