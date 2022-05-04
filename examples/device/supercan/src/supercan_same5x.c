@@ -70,10 +70,8 @@ void same5x_can_configure(uint8_t index)
 #if SUPERCAN_DEBUG
 	LOG("ch%u ", index);
 	sc_can_log_bit_timing(&c->nm, "NM");
-	LOG("\n");
 	LOG("ch%u ", index);
 	sc_can_log_bit_timing(&c->dt, "DT");
-	LOG("\n");
 #endif
 
 	// reset default TSCV.TSS = 0 (= value always 0)
@@ -92,7 +90,7 @@ void same5x_can_configure(uint8_t index)
 			| CAN_DBTP_DTSEG1(c->dt.tseg1-1)
 			| CAN_DBTP_DTSEG2(c->dt.tseg2-1)
 			| CAN_DBTP_DSJW(c->dt.sjw-1)
-			| CAN_DBTP_TDC;
+			| ((sc_bitrate(c->dt.brp, c->dt.tseg1, c->dt.tseg2) >= 1000000) * CAN_DBTP_TDC); // enable TDC for bitrates >= 1MBit/s
 
 	// transmitter delay compensation offset
 	// can->TDCR.bit.TDCO = tu_min8((1 + c->dtbt_tseg1 + c->dtbt_tseg2) / 2, M_CAN_TDCR_TDCO_MAX);

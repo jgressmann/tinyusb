@@ -58,7 +58,7 @@ extern void sc_can_log_bit_timing(sc_can_bit_timing const *c, char const* name)
 
 	LOG("%s clock[mhz]=%u brp=%u sjw=%u tseg1=%u tseg2=%u bitrate=%lu sp=%u/1000\n",
 		name, SC_BOARD_CAN_CLK_HZ / 1000000, c->brp, c->sjw, c->tseg1, c->tseg2,
-		SC_BOARD_CAN_CLK_HZ / ((uint32_t)c->brp * (1 + c->tseg1 + c->tseg2)),
+		sc_bitrate(c->brp, c->tseg1, c->tseg2),
 		((1 + c->tseg1) * 1000) / (1 + c->tseg1 + c->tseg2)
 	);
 }

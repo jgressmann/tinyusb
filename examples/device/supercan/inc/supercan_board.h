@@ -167,3 +167,9 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #	define FEATHER_M4_CAN_EXPRESS 0
 #endif
 
+
+SC_RAMFUNC static inline uint32_t sc_bitrate(unsigned brp, unsigned tseg1, unsigned tseg2)
+{
+	return SC_BOARD_CAN_CLK_HZ / ((uint32_t)brp * (1 + tseg1 + tseg2));
+}
+
