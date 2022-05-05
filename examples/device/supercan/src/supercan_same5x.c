@@ -24,6 +24,19 @@
 
 struct same5x_can same5x_cans[SC_BOARD_CAN_COUNT];
 
+void same5x_can_init(void)
+{
+	memset(same5x_cans, 0, sizeof(same5x_cans));
+
+	for (size_t i = 0; i < TU_ARRAY_SIZE(same5x_cans); ++i) {
+		struct same5x_can *can = &same5x_cans[i];
+
+		// init bit timings so we can always safelye compute the bit rate (see can_on)
+		can->nm = sc_board_can_nm_bit_timing_range((uint8_t)i)->min;
+		can->dt = sc_board_can_dt_bit_timing_range((uint8_t)i)->min;
+	}
+}
+
 void same5x_can_configure(uint8_t index)
 {
 	struct same5x_can *c = &same5x_cans[index];
@@ -90,7 +103,7 @@ void same5x_can_configure(uint8_t index)
 			| CAN_DBTP_DTSEG1(c->dt.tseg1-1)
 			| CAN_DBTP_DTSEG2(c->dt.tseg2-1)
 			| CAN_DBTP_DSJW(c->dt.sjw-1)
-			| ((sc_bitrate(c->dt.brp, c->dt.tseg1, c->dt.tseg2) >= 1000000) * CAN_DBTP_TDC); // enable TDC for bitrates >= 1MBit/s
+			| (sc_bitrate(c->dt.brp, c->dt.tseg1, c->dt.tseg2) >= 1000000) * CAN_DBTP_TDC; // enable TDC for bitrates >= 1MBit/s
 
 	// transmitter delay compensation offset
 	// can->TDCR.bit.TDCO = tu_min8((1 + c->dtbt_tseg1 + c->dtbt_tseg2) / 2, M_CAN_TDCR_TDCO_MAX);
@@ -464,12 +477,18 @@ static void can_on(uint8_t index)
 {
 	struct same5x_can *can = &same5x_cans[index];
 	CAN_ECR_Type current_ecr;
+	uint32_t dtbr = 0;
 
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(same5x_cans));
 
-	can->nm_us_per_bit = UINT32_C(1000000) / (SC_BOARD_CAN_CLK_HZ / ((uint32_t)can->nm.brp * (1 + can->nm.tseg1 + can->nm.tseg2)));
-	uint32_t dtbr = SC_BOARD_CAN_CLK_HZ / ((uint32_t)can->dt.brp * (1 + can->dt.tseg1 + can->dt.tseg2));
-	can->dt_us_per_bit_factor_shift8 = (UINT32_C(1000000) << 8) / dtbr;
+	can->nm_us_per_bit = UINT32_C(1000000) / sc_bitrate(can->nm.brp, can->nm.tseg1, can->nm.tseg2);
+	dtbr = SC_BOARD_CAN_CLK_HZ / sc_bitrate(can->dt.brp, can->dt.tseg1, can->dt.tseg2);
+
+	if (likely(dtbr > 0)) {
+		can->dt_us_per_bit_factor_shift8 = (UINT32_C(1000000) << 8) / dtbr;
+	} else {
+		can->dt_us_per_bit_factor_shift8 = 32;
+	}
 
 	same5x_can_configure(index);
 

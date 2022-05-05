@@ -138,6 +138,7 @@ SC_RAMFUNC static inline void sc_board_can_ts_request(uint8_t index)
 
 SC_RAMFUNC extern uint32_t sc_board_can_ts_wait(uint8_t index);
 
+extern void same5x_can_init(void);
 extern void same5x_can_configure(uint8_t index);
 extern void same5x_init_device_identifier(void);
 SC_RAMFUNC extern void same5x_can_int(uint8_t index);

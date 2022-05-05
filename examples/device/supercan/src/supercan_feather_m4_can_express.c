@@ -149,7 +149,7 @@ static inline void can_init_clock(void) // controller and hardware specific setu
 
 static void can_init_module(void)
 {
-	memset(&same5x_cans, 0, sizeof(same5x_cans));
+	same5x_can_init();
 
 	same5x_cans[0].m_can = CAN1;
 	same5x_cans[0].interrupt_id = CAN1_IRQn;
