@@ -525,10 +525,16 @@ send_can_info:
 				bt_target.tseg1 = tu_max16(nm_bt->min.tseg1, tu_min16(tmsg->tseg1, nm_bt->max.tseg1));
 				bt_target.tseg2 = tu_max8(nm_bt->min.tseg2, tu_min8(tmsg->tseg2, nm_bt->max.tseg2));
 
-				LOG("ch%u ", index);
-				sc_can_log_bit_timing(&bt_target, "nominal");
+				LOG("ch%u target nominal settings brp=%u sjw=%u tseg1=%u tseg2=%u\n", index, bt_target.brp, bt_target.sjw, bt_target.tseg1, bt_target.tseg2);
 
-				sc_board_can_nm_bit_timing_set(index, &bt_target);
+				if (likely(bt_target.brp >= 1)) { // bitrate computation devides by 0
+					LOG("ch%u ", index);
+					sc_can_log_bit_timing(&bt_target, "nominal");
+
+					sc_board_can_nm_bit_timing_set(index, &bt_target);
+				} else {
+					error = SC_ERROR_PARAM;
+				}
 			}
 
 			sc_cmd_place_error_reply(index, error);
@@ -550,10 +556,16 @@ send_can_info:
 				bt_target.tseg1 = tu_max16(dt_bt->min.tseg1, tu_min16(tmsg->tseg1, dt_bt->max.tseg1));
 				bt_target.tseg2 = tu_max8(dt_bt->min.tseg2, tu_min8(tmsg->tseg2, dt_bt->max.tseg2));
 
-				LOG("ch%u ", index);
-				sc_can_log_bit_timing(&bt_target, "data");
+				LOG("ch%u target data settings brp=%u sjw=%u tseg1=%u tseg2=%u\n", index, bt_target.brp, bt_target.sjw, bt_target.tseg1, bt_target.tseg2);
 
-				sc_board_can_dt_bit_timing_set(index, &bt_target);
+				if (likely(bt_target.brp >= 1)) { // bitrate computation devides by 0
+					LOG("ch%u ", index);
+					sc_can_log_bit_timing(&bt_target, "data");
+
+					sc_board_can_dt_bit_timing_set(index, &bt_target);
+				} else {
+					error = SC_ERROR_PARAM;
+				}
 			}
 
 			sc_cmd_place_error_reply(index, error);
