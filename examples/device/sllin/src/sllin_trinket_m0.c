@@ -120,33 +120,6 @@ static inline void leds_init(void)
 }
 
 
-
-
-
-// extern uint32_t _svectors;
-// extern uint32_t _evectors;
-
-// static void move_vector_table_to_ram(void)
-// {
-// #pragma GCC diagnostic push
-// #pragma GCC diagnostic ignored "-Wstringop-overflow"
-// #pragma GCC diagnostic ignored "-Warray-bounds"
-// 	void* vectors_ram = (void*)(uint32_t)&_svectors;
-
-// 	memcpy(vectors_ram, (void*)SCB->VTOR, MCU_VECTOR_TABLE_ALIGNMENT);
-// 	SCB->VTOR = (uint32_t)vectors_ram;
-// #pragma GCC diagnostic pop
-// }
-
-
-// static inline void same5x_enable_cache(void)
-// {
-// 	// DS60001507E-page 83
-// 	if (!CMCC->SR.bit.CSTS) {
-// 		CMCC->CTRL.bit.CEN = 1;
-// 	}
-// }
-
 static uint32_t device_identifier;
 
 extern uint32_t sllin_board_identifier(void)
@@ -155,57 +128,64 @@ extern uint32_t sllin_board_identifier(void)
 }
 
 
-void same5x_init_device_identifier(void)
+static void sam_init_device_identifier(void)
 {
-// 	uint32_t serial_number[4];
-// 	int error = CRC32E_NONE;
+	uint32_t serial_number[4] = {
+		*(uint32_t const *)0x0080A00C,
+		*(uint32_t const *)0x0080A040,
+		*(uint32_t const *)0x0080A044,
+		*(uint32_t const *)0x0080A048
+	};
+	int error = CRC32E_NONE;
 
-// 	// same51_get_serial_number(serial_number);
+#if SLLIN_DEBUG
+	char serial_buffer[64];
+	memset(serial_buffer, '0', 32);
+	char hex_buffer[16];
+	int chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[0]);
+	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
+	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[1]);
+	memcpy(&serial_buffer[16-chars], hex_buffer, chars);
+	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[2]);
+	memcpy(&serial_buffer[24-chars], hex_buffer, chars);
+	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[3]);
+	memcpy(&serial_buffer[32-chars], hex_buffer, chars);
+	serial_buffer[32] = 0;
+	LOG("SAM serial number %s\n", serial_buffer);
+#endif
 
-// #if SLLIN_DEBUG
-// 	char serial_buffer[64];
-// 	memset(serial_buffer, '0', 32);
-// 	char hex_buffer[16];
-// 	int chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[0]);
-// 	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
-// 	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[1]);
-// 	memcpy(&serial_buffer[16-chars], hex_buffer, chars);
-// 	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[2]);
-// 	memcpy(&serial_buffer[24-chars], hex_buffer, chars);
-// 	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[3]);
-// 	memcpy(&serial_buffer[32-chars], hex_buffer, chars);
-// 	serial_buffer[32] = 0;
-// 	LOG("SAM serial number %s\n", serial_buffer);
-// #endif
+#if TU_LITTLE_ENDIAN == TU_BYTE_ORDER
+	// swap integers so they have printf layout
+	serial_number[0] = __builtin_bswap32(serial_number[0]);
+	serial_number[1] = __builtin_bswap32(serial_number[1]);
+	serial_number[2] = __builtin_bswap32(serial_number[2]);
+	serial_number[3] = __builtin_bswap32(serial_number[3]);
+#endif
 
-// #if TU_LITTLE_ENDIAN == TU_BYTE_ORDER
-// 	// swap integers so they have printf layout
-// 	serial_number[0] = __builtin_bswap32(serial_number[0]);
-// 	serial_number[1] = __builtin_bswap32(serial_number[1]);
-// 	serial_number[2] = __builtin_bswap32(serial_number[2]);
-// 	serial_number[3] = __builtin_bswap32(serial_number[3]);
-// #endif
+	error = crc32f((uint32_t)serial_number, 16, CRC32E_FLAG_UNLOCK, &device_identifier);
+	if (unlikely(error)) {
+		device_identifier = serial_number[0];
+		LOG("ERROR: failed to compute CRC32: %d. Using fallback device identifier\n", error);
+	}
 
-// 	error = crc32f((uint32_t)serial_number, 16, CRC32E_FLAG_UNLOCK, &device_identifier);
-// 	if (unlikely(error)) {
-// 		device_identifier = serial_number[0];
-// 	LOG("ERROR: failed to compute CRC32: %d. Using fallback device identifier\n", error);
-// 	}
-
-// #if SLLIN_DEBUG
-// 	memset(serial_buffer, '0', 8);
-// 	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", device_identifier);
-// 	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
-// 	serial_buffer[8] = 0;
-// 	LOG("device identifier %s\n", serial_buffer);
-// #endif
+#if SLLIN_DEBUG
+	memset(serial_buffer, '0', 8);
+	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", device_identifier);
+	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
+	serial_buffer[8] = 0;
+	LOG("device identifier %s\n", serial_buffer);
+#endif
 }
 
 extern void sllin_board_led_set(uint8_t index, bool on)
 {
-	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(leds));
+	switch (index) {
+	case 0:
+		gpio_set_pin_level(leds[index].pin, on);
+		break;
+	}
 
-	gpio_set_pin_level(leds[index].pin, on);
+
 }
 
 extern void sllin_board_leds_on_unsafe(void)
@@ -215,7 +195,7 @@ extern void sllin_board_leds_on_unsafe(void)
 	}
 }
 
-static inline void uart_init_ex(uint32_t hz)
+static inline void uart_init(void)
 {
 	// PORT->Group[0].WRCONFIG.reg =
 	// 	PORT_WRCONFIG_WRPINCFG |
@@ -256,17 +236,12 @@ static inline void uart_init_ex(uint32_t hz)
 		SERCOM_USART_CTRLA_TXPO(1);   /* SERCOM PAD[2] is used for data transmission */
 
 	BOARD_SERCOM->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN; /* transmitter enabled */
-	uint16_t baud = hz / (16 * USART_BAURATE);
-	uint16_t frac = hz / (2 * USART_BAURATE) - 8 * baud;
+	uint16_t baud = CONF_CPU_FREQUENCY / (16 * USART_BAURATE);
+	uint16_t frac = CONF_CPU_FREQUENCY / (2 * USART_BAURATE) - 8 * baud;
 	BOARD_SERCOM->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
 
 	BOARD_SERCOM->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
 	while(BOARD_SERCOM->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
-}
-
-static inline void uart_init(void)
-{
-	uart_init_ex(CONF_CPU_FREQUENCY);
 }
 
 
@@ -618,7 +593,7 @@ extern void sllin_board_init_begin(void)
 
 	leds_init();
 
-	same5x_init_device_identifier();
+	sam_init_device_identifier();
 
 	LOG("USB init\n");
 	usb_init();

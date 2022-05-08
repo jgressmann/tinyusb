@@ -12,7 +12,6 @@
 #include <FreeRTOS.h>
 #include <timers.h>
 
-#include <sllin_board.h>
 #include <leds.h>
 
 #include <hal/include/hal_gpio.h>
