@@ -75,8 +75,8 @@ struct lin {
 	struct master master;
 	uint8_t const rx_pin_index;
 	// uint8_t const master_slave_pin;
-	// uint8_t const led_status_green;
-	// uint8_t const led_status_red;
+	uint8_t const led_status_green;
+	uint8_t const led_status_red;
 	uint8_t bus_state;
 	uint8_t bus_error;
 };
@@ -89,8 +89,8 @@ static struct lin lins[SLLIN_BOARD_LIN_COUNT] = {
 		.master.sof_timer = TC4,
 		.rx_pin_index = 8,
 		// .master_slave_pin = 4,
-		// .led_status_green = 5,
-		// .led_status_red = 6,
+		.led_status_green = SLLIN_BOARD_DOTSTAR_GREEN,
+		.led_status_red = SLLIN_BOARD_DOTSTAR_RED,
 	}
 };
 
@@ -104,19 +104,96 @@ struct led {
 
 static const struct led leds[] = {
 	LED_STATIC_INITIALIZER("debug_default", PIN_PA10), // board led
-	// LED_STATIC_INITIALIZER("debug_red", PIN_PA18),
-	// LED_STATIC_INITIALIZER("debug_orange", PIN_PA19),
-	// LED_STATIC_INITIALIZER("debug_green", PIN_PB16),
-	// LED_STATIC_INITIALIZER("debug_blue", PIN_PB17),
-	// LED_STATIC_INITIALIZER("lin0_green", PIN_PB00),
-	// LED_STATIC_INITIALIZER("lin0_red", PIN_PB01),
-	// LED_STATIC_INITIALIZER("lin1_green", PIN_PB02),
-	// LED_STATIC_INITIALIZER("lin1_red", PIN_PB03),
 };
+
+static struct {
+	// uint32_t sof;
+	uint8_t a;
+	uint8_t b;
+	uint8_t g;
+	uint8_t r;
+	// uint32_t eof;
+} dotstar = {
+	// .sof = 0,
+	.a = 0xe1,
+	.b = 0,
+	.g = 0,
+	.r = 0,
+	// .eof = 0xffffffff,
+};
+
+SLLIN_RAMFUNC static inline void dotstar_update(void)
+{
+	Sercom * const s = SERCOM1;
+
+	s->SPI.DATA.reg = 0x00;
+	while (!s->SPI.INTFLAG.bit.DRE);
+	s->SPI.DATA.reg = 0x00;
+	while (!s->SPI.INTFLAG.bit.DRE);
+	s->SPI.DATA.reg = 0x00;
+	while (!s->SPI.INTFLAG.bit.DRE);
+	s->SPI.DATA.reg = 0x00;
+	while (!s->SPI.INTFLAG.bit.DRE);
+	s->SPI.DATA.reg = dotstar.a;
+	while (!s->SPI.INTFLAG.bit.DRE);
+	s->SPI.DATA.reg = dotstar.b;
+	while (!s->SPI.INTFLAG.bit.DRE);
+	s->SPI.DATA.reg = dotstar.g;
+	while (!s->SPI.INTFLAG.bit.DRE);
+	s->SPI.DATA.reg = dotstar.r;
+	while (!s->SPI.INTFLAG.bit.DRE);
+	s->SPI.DATA.reg = 0xff;
+	while (!s->SPI.INTFLAG.bit.DRE);
+	s->SPI.DATA.reg = 0xff;
+	while (!s->SPI.INTFLAG.bit.DRE);
+	s->SPI.DATA.reg = 0xff;
+	while (!s->SPI.INTFLAG.bit.DRE);
+	s->SPI.DATA.reg = 0xff;
+	while (!s->SPI.INTFLAG.bit.DRE);
+}
 
 static inline void leds_init(void)
 {
+	Sercom * const s = SERCOM1;
+
+	// the one true LED
 	PORT->Group[0].DIRSET.reg = PIN_PA10;
+
+	// Drive APA-102-2022 with SPI on SERCOM1
+
+	PORT->Group[0].WRCONFIG.reg =
+		PORT_WRCONFIG_WRPINCFG |
+		PORT_WRCONFIG_WRPMUX |
+		PORT_WRCONFIG_PMUX(3) |    /* function D */
+		PORT_WRCONFIG_DRVSTR |
+		PORT_WRCONFIG_PINMASK(0x0003) | /* PA00, PA1 */
+		PORT_WRCONFIG_PMUXEN;
+
+	PM->APBCMASK.bit.SERCOM1_ = 1;
+	GCLK->CLKCTRL.reg =
+		GCLK_CLKCTRL_GEN_GCLK2 |
+		GCLK_CLKCTRL_CLKEN |
+		GCLK_CLKCTRL_ID_SERCOM1_CORE;
+
+
+	s->SPI.CTRLA.reg = SERCOM_SPI_CTRLA_SWRST; /* disable SERCOM -> enable config */
+	while(s->SPI.SYNCBUSY.bit.SWRST); /* wait for SERCOM to be ready */
+
+	s->SPI.BAUD.reg = SERCOM_SPI_BAUD_BAUD(7); // 1 MHz
+
+	s->SPI.INTENSET.reg = SERCOM_SPI_INTENSET_DRE | SERCOM_SPI_INTENSET_ERROR;
+
+
+
+	s->SPI.CTRLA.reg =
+		SERCOM_SPI_CTRLA_ENABLE |
+		SERCOM_SPI_CTRLA_DIPO(2) | // input on PAD2 PAD0 = DO, PAD1 = SCK
+		SERCOM_SPI_CTRLA_MODE(3); // master mode
+	while(s->SPI.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
+
+	LOG("dotstar init\n");
+
+	dotstar_update();
 }
 
 
@@ -180,12 +257,25 @@ static void sam_init_device_identifier(void)
 extern void sllin_board_led_set(uint8_t index, bool on)
 {
 	switch (index) {
-	case 0:
+	case SLLIN_BOARD_DEBUG_DEFAULT:
 		gpio_set_pin_level(leds[index].pin, on);
 		break;
+	case SLLIN_BOARD_DOTSTAR_RED:
+		dotstar.r = on * 0xff;
+		// LOG("r=%u\n", on > 0);
+		dotstar_update();
+		break;
+	case SLLIN_BOARD_DOTSTAR_GREEN:
+		dotstar.g = on * 0xff;
+		// LOG("g=%u\n", on > 0);
+		dotstar_update();
+		break;
+	case SLLIN_BOARD_DOTSTAR_BLUE:
+		dotstar.b = on * 0xff;
+		// LOG("b=%u\n", on > 0);
+		dotstar_update();
+		break;
 	}
-
-
 }
 
 extern void sllin_board_leds_on_unsafe(void)
@@ -193,24 +283,15 @@ extern void sllin_board_leds_on_unsafe(void)
 	for (size_t i = 0; i < TU_ARRAY_SIZE(leds); ++i) {
 		gpio_set_pin_level(leds[i].pin, 1);
 	}
+
+	dotstar.r = 0xff;
+	dotstar.g = 0xff;
+	dotstar.b = 0xff;
+	dotstar_update();
 }
 
 static inline void uart_init(void)
 {
-	// PORT->Group[0].WRCONFIG.reg =
-	// 	PORT_WRCONFIG_WRPINCFG |
-	// 	PORT_WRCONFIG_WRPMUX |
-	// 	PORT_WRCONFIG_PMUX(3) |    /* function D */
-	// 	PORT_WRCONFIG_DRVSTR |
-	// 	PORT_WRCONFIG_PINMASK(0x0300) | /* PA08, PA9 */
-	// 	PORT_WRCONFIG_PMUXEN;
-
-	// PM->APBCMASK.bit.SERCOM2_ = 1;
-	// GCLK->CLKCTRL.reg =
-	// 	GCLK_CLKCTRL_GEN_GCLK0 |
-	// 	GCLK_CLKCTRL_CLKEN |
-	// 	GCLK_CLKCTRL_ID_SERCOM2_CORE;
-
 	PORT->Group[0].WRCONFIG.reg =
 		PORT_WRCONFIG_WRPINCFG |
 		PORT_WRCONFIG_WRPMUX |
@@ -301,36 +382,55 @@ static inline void clock_init(void)
 	while (GCLK->STATUS.bit.SYNCBUSY);
 
 	SystemCoreClock = CONF_CPU_FREQUENCY;
+
+	// Setup 16 MHz on GCLK2
+	GCLK->GENDIV.reg =
+		GCLK_GENDIV_DIV(3) |
+		GCLK_GENDIV_ID(2);
+
+	GCLK->GENCTRL.reg =
+		GCLK_GENCTRL_SRC_DFLL48M |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_IDC |
+		GCLK_GENCTRL_ID(2);
+	while (GCLK->STATUS.bit.SYNCBUSY);
+
+
+	// Setup 1 MHz on GCLK3
+	GCLK->GENDIV.reg =
+		GCLK_GENDIV_DIV(48) |
+		GCLK_GENDIV_ID(3);
+
+	GCLK->GENCTRL.reg =
+		GCLK_GENCTRL_SRC_DFLL48M |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_IDC |
+		GCLK_GENCTRL_ID(3);
+	while (GCLK->STATUS.bit.SYNCBUSY);
 }
-
-
 
 
 static inline void lin_init_once(void)
 {
 	// // lin0
-	// // gpio_set_pin_function(PIN_PA00, PINMUX_PA00D_SERCOM1_PAD0);
-	// // gpio_set_pin_function(PIN_PA01, PINMUX_PA01D_SERCOM1_PAD1);
-	// PORT->Group[0].WRCONFIG.reg =
-	// 	PORT_WRCONFIG_WRPINCFG |
-	// 	PORT_WRCONFIG_WRPMUX |
-	// 	PORT_WRCONFIG_PMUX(3) |    /* function D */
-	// 	PORT_WRCONFIG_INEN |
-	// 	PORT_WRCONFIG_PINMASK(0x0003) | /* PA00, PA01 */
-	// 	PORT_WRCONFIG_PMUXEN;
+	PORT->Group[0].WRCONFIG.reg =
+		PORT_WRCONFIG_WRPINCFG |
+		PORT_WRCONFIG_WRPMUX |
+		PORT_WRCONFIG_PMUX(3) |    /* function D */
+		PORT_WRCONFIG_DRVSTR |
+		PORT_WRCONFIG_PINMASK(0x0300) | /* PA08, PA9 */
+		PORT_WRCONFIG_PMUXEN;
 
-	// MCLK->APBAMASK.bit.SERCOM1_ = 1;
-	// GCLK->PCHCTRL[SERCOM1_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
+	PM->APBCMASK.bit.SERCOM2_ = 1;
+	GCLK->CLKCTRL.reg =
+		GCLK_CLKCTRL_GEN_GCLK0 |
+		GCLK_CLKCTRL_CLKEN |
+		GCLK_CLKCTRL_ID_SERCOM2_CORE;
 
-	// NVIC_SetPriority(SERCOM1_0_IRQn, SLLIN_ISR_PRIORITY);
-	// NVIC_SetPriority(SERCOM1_1_IRQn, SLLIN_ISR_PRIORITY);
-	// NVIC_SetPriority(SERCOM1_2_IRQn, SLLIN_ISR_PRIORITY);
-	// NVIC_SetPriority(SERCOM1_3_IRQn, SLLIN_ISR_PRIORITY);
 
-	// NVIC_EnableIRQ(SERCOM1_0_IRQn);
-	// NVIC_EnableIRQ(SERCOM1_1_IRQn);
-	// NVIC_EnableIRQ(SERCOM1_2_IRQn);
-	// NVIC_EnableIRQ(SERCOM1_3_IRQn);
+	NVIC_SetPriority(SERCOM2_IRQn, SLLIN_ISR_PRIORITY);
+
+	NVIC_EnableIRQ(SERCOM2_IRQn);
 
 	// // master / slave pin
 	// // PB04 lin0
@@ -557,16 +657,15 @@ static inline void usb_init(void)
 		GCLK_CLKCTRL_CLKEN |
 		GCLK_CLKCTRL_ID_USB;
 
-	gpio_set_pin_direction(PIN_PA24, GPIO_DIRECTION_OUT);
-	gpio_set_pin_level(PIN_PA24, false);
-	gpio_set_pin_pull_mode(PIN_PA24, GPIO_PULL_OFF);
-	gpio_set_pin_direction(PIN_PA25, GPIO_DIRECTION_OUT);
-	gpio_set_pin_level(PIN_PA25, false);
-	gpio_set_pin_pull_mode(PIN_PA25, GPIO_PULL_OFF);
+	// gpio_set_pin_direction(PIN_PA24, GPIO_DIRECTION_OUT);
+	// gpio_set_pin_level(PIN_PA24, false);
+	// gpio_set_pin_pull_mode(PIN_PA24, GPIO_PULL_OFF);
+	// gpio_set_pin_direction(PIN_PA25, GPIO_DIRECTION_OUT);
+	// gpio_set_pin_level(PIN_PA25, false);
+	// gpio_set_pin_pull_mode(PIN_PA25, GPIO_PULL_OFF);
 
 	gpio_set_pin_function(PIN_PA24, PINMUX_PA24G_USB_DM);
 	gpio_set_pin_function(PIN_PA25, PINMUX_PA25G_USB_DP);
-
 }
 
 extern void sllin_board_init_begin(void)
@@ -576,16 +675,11 @@ extern void sllin_board_init_begin(void)
 	NVMCTRL->CTRLB.bit.READMODE = NVMCTRL_CTRLB_READMODE_DETERMINISTIC_Val;
 	// NVMCTRL->CTRLB.bit.RWS = 2;
 
-
 	// Don't divide peripheral clock
 	PM->CPUSEL.reg = PM_CPUSEL_CPUDIV(0);
 	PM->APBASEL.reg = PM_APBASEL_APBADIV(0);
 	PM->APBBSEL.reg = PM_APBBSEL_APBBDIV(0);
 	PM->APBCSEL.reg = PM_APBCSEL_APBCDIV(0);
-	PM->AHBMASK.reg = ~0;
-	PM->APBAMASK.reg = ~0;
-
-
 
 
 	clock_init();
@@ -653,7 +747,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	sercom->USART.CTRLA.reg  =
 		SERCOM_USART_CTRLA_SAMPR(1) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
 		SERCOM_USART_CTRLA_SAMPA(0) |
-		SERCOM_USART_CTRLA_FORM(conf->master ? 0x2 : 0x4) | /* 0x2 LIN master, 0x4 LIN slave, ... */
+		SERCOM_USART_CTRLA_FORM(0x4) | /* break & auto baud */
 		SERCOM_USART_CTRLA_DORD | /* LSB first */
 		SERCOM_USART_CTRLA_MODE(1) | /* 0x0 USART with external clock, 0x1 USART with internal clock */
 		SERCOM_USART_CTRLA_IBON | /* assert RX buffer overflow immediately */
@@ -785,36 +879,36 @@ SLLIN_RAMFUNC extern void sllin_board_led_lin_status_set(uint8_t index, int stat
 
 	// LOG("ch%u set led status %u\n", index, status);
 
-	// switch (status) {
-	// case SLLIN_LIN_LED_STATUS_DISABLED:
-	// 	led_set(lin->led_status_green, 0);
-	// 	led_set(lin->led_status_red, 0);
-	// 	break;
-	// case SLLIN_LIN_LED_STATUS_ENABLED_OFF_BUS:
-	// 	led_set(lin->led_status_green, 1);
-	// 	led_set(lin->led_status_red, 0);
-	// 	break;
-	// case SLLIN_LIN_LED_STATUS_ON_BUS_SLEEPING:
-	// 	led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_SLEEPING_MS);
-	// 	led_set(lin->led_status_red, 0);
-	// 	break;
-	// case SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_PASSIVE:
-	// 	led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_PASSIVE_MS);
-	// 	led_set(lin->led_status_red, 0);
-	// 	break;
-	// case SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_ACTIVE:
-	// 	led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS);
-	// 	led_set(lin->led_status_red, 0);
-	// 	break;
-	// case SLLIN_LIN_LED_STATUS_ERROR:
-	// 	led_set(lin->led_status_green, 0);
-	// 	led_blink(lin->led_status_red, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS);
-	// 	break;
-	// default:
-	// 	led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS / 2);
-	// 	led_blink(lin->led_status_red, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS / 2);
-	// 	break;
-	// }
+	switch (status) {
+	case SLLIN_LIN_LED_STATUS_DISABLED:
+		led_set(lin->led_status_green, 0);
+		led_set(lin->led_status_red, 0);
+		break;
+	case SLLIN_LIN_LED_STATUS_ENABLED_OFF_BUS:
+		led_set(lin->led_status_green, 1);
+		led_set(lin->led_status_red, 0);
+		break;
+	case SLLIN_LIN_LED_STATUS_ON_BUS_SLEEPING:
+		led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_SLEEPING_MS);
+		led_set(lin->led_status_red, 0);
+		break;
+	case SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_PASSIVE:
+		led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_PASSIVE_MS);
+		led_set(lin->led_status_red, 0);
+		break;
+	case SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_ACTIVE:
+		led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS);
+		led_set(lin->led_status_red, 0);
+		break;
+	case SLLIN_LIN_LED_STATUS_ERROR:
+		led_set(lin->led_status_green, 0);
+		led_blink(lin->led_status_red, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS);
+		break;
+	default:
+		led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS / 2);
+		led_blink(lin->led_status_red, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS / 2);
+		break;
+	}
 }
 
 SLLIN_RAMFUNC static inline bool lin_int_update_bus_status(uint8_t index, uint8_t bus_state, uint8_t bus_error)
@@ -1141,44 +1235,9 @@ rx:
 
 #define ISR_ATTRS SLLIN_RAMFUNC __attribute__((naked))
 
-ISR_ATTRS void SERCOM1_0_Handler(void)
+ISR_ATTRS void SERCOM2_Handler(void)
 {
 	lin_usart_int_slave(0);
-}
-
-ISR_ATTRS void SERCOM1_1_Handler(void)
-{
-	lin_usart_int_slave(0);
-}
-
-ISR_ATTRS void SERCOM1_2_Handler(void)
-{
-	lin_usart_int_slave(0);
-}
-
-ISR_ATTRS void SERCOM1_3_Handler(void)
-{
-	lin_usart_int_slave(0);
-}
-
-ISR_ATTRS void SERCOM0_0_Handler(void)
-{
-	lin_usart_int_slave(1);
-}
-
-ISR_ATTRS void SERCOM0_1_Handler(void)
-{
-	lin_usart_int_slave(1);
-}
-
-ISR_ATTRS void SERCOM0_2_Handler(void)
-{
-	lin_usart_int_slave(1);
-}
-
-ISR_ATTRS void SERCOM0_3_Handler(void)
-{
-	lin_usart_int_slave(1);
 }
 
 ISR_ATTRS void TC0_Handler(void)
