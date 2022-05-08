@@ -264,74 +264,40 @@ static inline void uart_init_ex(uint32_t hz)
 	while(BOARD_SERCOM->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
 }
 
-static inline void uart_init()
+static inline void uart_init(void)
 {
 	uart_init_ex(CONF_CPU_FREQUENCY);
 }
 
-static inline void clock_init_8mhz(void)
-{
-	SYSCTRL->OSC8M.bit.PRESC = 0; // Don't prescale -> 8 [MHz]
-
-	// setup 8 MHz on GCLK2
-	GCLK->GENDIV.reg =
-		GCLK_GENDIV_DIV(0) |
-		GCLK_GENDIV_ID(2);
-
-	GCLK->GENCTRL.reg =
-		GCLK_GENCTRL_SRC_OSC8M |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_IDC |
-		GCLK_GENCTRL_ID(2);
-	while (GCLK->STATUS.bit.SYNCBUSY);
-}
 
 static inline void clock_init(void)
 {
+	// MUST be set, else DFLL setup fails
+	SYSCTRL->OSC8M.bit.PRESC = 0; // Don't prescale -> 8 [MHz]
 
-
-
-	// // ensure no division
-	// GCLK->GENDIV.reg =
-	// 	GCLK_GENDIV_DIV(1) |
-	// 	GCLK_GENDIV_ID(0);
-
-	// // start with XXX MHz internal OSC clock
-	// GCLK->GENCTRL.reg =
-	// 	GCLK_GENCTRL_SRC_OSC8M |
-	// 	GCLK_GENCTRL_GENEN |
-	// 	GCLK_GENCTRL_IDC |
-	// 	GCLK_GENCTRL_ID(0);
-	// while (GCLK->STATUS.bit.SYNCBUSY);
-
-
-	// for (uint8_t i = 0; i < 64; ++i) {
 	// Setup DFLL
 	// 1. turn off DFLL
 	SYSCTRL->DFLLCTRL.reg = 0;
 	while (SYSCTRL->PCLKSR.bit.DFLLRDY);
-	// SYSCTRL->DFLLCTRL.reg = SYSCTRL_DFLLCTRL_ENABLE;
-	// while (!SYSCTRL->PCLKSR.bit.DFLLRDY);
 
-	// // // 2. load calibration
 
-	// // Load coarse value from NVM, Atmel-42181G–SAM-D21_Datasheet–09/2015 p.32
-	// // 63:58 DFLL48M COARSE CALDFLL48M Coarse calibration value. Should be written to DFLLVAL register.
-	// // 73:64 DFLL48M FINE CALDFLL48M Fine calibration value. Should be written to DFLLVAL register.
+	// 2. load calibration
+
+	// Load coarse value from NVM, Atmel-42181G–SAM-D21_Datasheet–09/2015 p.32
+	// 63:58 DFLL48M COARSE CALDFLL48M Coarse calibration value. Should be written to DFLLVAL register.
+	// 73:64 DFLL48M FINE CALDFLL48M Fine calibration value. Should be written to DFLLVAL register.
 	uint32_t const NVM_CAL_AREA = 0x806020;
 	uint8_t const coarse = ((*(uint8_t*)(NVM_CAL_AREA + 7)) >> 2) & 0x3f;
 	uint16_t const fine = (*(uint16_t*)(NVM_CAL_AREA + 8)) & 0x3ff;
-	// unsigned coarse = 0xa;
-	// unsigned fine = 0x200;
 
-	LOG("DFLL coarse=%x fine=%x\n", coarse, fine);
+
+	// LOG("DFLL coarse=%x fine=%x\n", coarse, fine);
 
 	SYSCTRL->DFLLVAL.reg =
 		SYSCTRL_DFLLVAL_COARSE(coarse) |
 		SYSCTRL_DFLLVAL_FINE(fine);
 
-	// LOG("DFLL coarse=%x\n", i);
-	// SYSCTRL->DFLLVAL.reg = SYSCTRL_DFLLVAL_COARSE(i);
+
 
 
 
@@ -344,27 +310,21 @@ static inline void clock_init(void)
 		0;
 
 
-
-	// GCLK->CLKCTRL.reg =
-	// 	GCLK_CLKCTRL_GEN_GCLK2 |
-	// 	GCLK_CLKCTRL_CLKEN |
-	// 	GCLK_CLKCTRL_ID_DFLL48;
-
 	// 4. start DFLL
 	SYSCTRL->DFLLCTRL.reg =
 		SYSCTRL_DFLLCTRL_ENABLE |
 		SYSCTRL_DFLLCTRL_USBCRM |
 		SYSCTRL_DFLLCTRL_MODE |
-		// SYSCTRL_DFLLCTRL_RUNSTDBY |
-		// SYSCTRL_DFLLCTRL_ONDEMAND |
-		// SYSCTRL_DFLLCTRL_WAITLOCK |
 		SYSCTRL_DFLLCTRL_CCDIS |
 		0;
 	while (!SYSCTRL->PCLKSR.bit.DFLLRDY);
 
 
 
-	LOG("DFLL ready PCLKSR=%lx\n", SYSCTRL->PCLKSR.reg);
+	// LOG("DFLL ready PCLKSR=%lx\n", SYSCTRL->PCLKSR.reg);
+
+
+	NVMCTRL->CTRLB.bit.RWS = 2;
 
 	// Setup CPU to use 48 MHz
 	GCLK->GENCTRL.reg =
@@ -374,22 +334,11 @@ static inline void clock_init(void)
 		GCLK_GENCTRL_ID(0);
 	while (GCLK->STATUS.bit.SYNCBUSY);
 
-	uart_init_ex(48000000);
-
-	// LOG("MCLK switched to DFLL coarse=%u\n", i);
+	// uart_init_ex(48000000);
 
 
-	// // back to 8MHz
-	// GCLK->GENCTRL.reg =
-	// 	GCLK_GENCTRL_SRC_OSC8M |
-	// 	GCLK_GENCTRL_GENEN |
-	// 	GCLK_GENCTRL_IDC |
-	// 	GCLK_GENCTRL_ID(0);
-	// while (GCLK->STATUS.bit.SYNCBUSY);
 
-	// uart_init_ex(8000000);
 
-	// }
 
 
 	// // setup 16 MHz on GCLK3
@@ -685,7 +634,7 @@ extern void sllin_board_init_begin(void)
 	// Atmel-42181G–SAM-D21_Datasheet–09/2015, p. 367
 	// setup deterministic wait states
 	NVMCTRL->CTRLB.bit.READMODE = NVMCTRL_CTRLB_READMODE_DETERMINISTIC_Val;
-	NVMCTRL->CTRLB.bit.RWS = 2;
+	// NVMCTRL->CTRLB.bit.RWS = 2;
 
 
 	// Don't divide peripheral clock
@@ -701,8 +650,9 @@ extern void sllin_board_init_begin(void)
 
 	leds_init();
 
-	clock_init_8mhz();
-	uart_init_ex(8000000);
+	// clock_init_8mhz();
+	clock_init();
+	// uart_init_ex(8000000);
 
 
 	// PORT->Group[0].OUTCLR.reg = UINT32_C(1) << PIN_PA10;
@@ -721,17 +671,18 @@ extern void sllin_board_init_begin(void)
 
 	// leds_init();
 
-	LOG("USB init\n");
+	// LOG("USB init\n");
 	usb_init();
 //// USB Pin Init
 
-	LOG("timer init\n");
+	// LOG("timer init\n");
 	timer_init();
 
-	LOG("LIN init once\n");
+	// LOG("LIN init once\n");
 	lin_init_once();
 
-	clock_init();
+	// clock_init();
+	uart_init();
 
 	PORT->Group[0].OUTSET.reg = UINT32_C(1) << PIN_PA10;
 
