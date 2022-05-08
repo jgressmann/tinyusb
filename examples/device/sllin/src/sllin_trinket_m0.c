@@ -272,9 +272,6 @@ static inline void uart_init(void)
 
 static inline void clock_init(void)
 {
-	// MUST be set, else DFLL setup fails
-	SYSCTRL->OSC8M.bit.PRESC = 0; // Don't prescale -> 8 [MHz]
-
 	// Setup DFLL
 	// 1. turn off DFLL
 	SYSCTRL->DFLLCTRL.reg = 0;
@@ -298,9 +295,6 @@ static inline void clock_init(void)
 		SYSCTRL_DFLLVAL_FINE(fine);
 
 
-
-
-
 	// 3. Setup target frequency from 1 [ms] USB SOF
 	// USB clock sync, Atmel-42181G–SAM-D21_Datasheet–09/2015 p.156
 	SYSCTRL->DFLLMUL.reg =
@@ -320,10 +314,7 @@ static inline void clock_init(void)
 	while (!SYSCTRL->PCLKSR.bit.DFLLRDY);
 
 
-
-	// LOG("DFLL ready PCLKSR=%lx\n", SYSCTRL->PCLKSR.reg);
-
-
+	// Must increase to 2 for 48 MHz
 	NVMCTRL->CTRLB.bit.RWS = 2;
 
 	// Setup CPU to use 48 MHz
@@ -334,33 +325,7 @@ static inline void clock_init(void)
 		GCLK_GENCTRL_ID(0);
 	while (GCLK->STATUS.bit.SYNCBUSY);
 
-	// uart_init_ex(48000000);
-
-
-
-
-
-
-	// // setup 16 MHz on GCLK3
-	// // GCLK->GENCTRL.reg =
-	// // 	GCLK_GENCTRL_ID(3);
-
-	// GCLK->GENDIV.reg =
-	// 	GCLK_GENDIV_DIV(3) |
-	// 	GCLK_GENDIV_ID(3);
-
-	// GCLK->GENCTRL.reg =
-	// 	GCLK_GENCTRL_SRC_DFLL48M |
-	// 	GCLK_GENCTRL_GENEN |
-	// 	GCLK_GENCTRL_IDC |
-	// 	GCLK_GENCTRL_ID(3);
-	// while (GCLK->STATUS.bit.SYNCBUSY);
-
 	SystemCoreClock = CONF_CPU_FREQUENCY;
-
-
-
-
 }
 
 
@@ -648,48 +613,21 @@ extern void sllin_board_init_begin(void)
 
 
 
-	leds_init();
-
-	// clock_init_8mhz();
 	clock_init();
-	// uart_init_ex(8000000);
-
-
-	// PORT->Group[0].OUTCLR.reg = UINT32_C(1) << PIN_PA10;
-	// PORT->Group[0].OUTSET.reg = UINT32_C(1) << PIN_PA10;
-
-
-
-	// LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
-	// move_vector_table_to_ram();
-	// LOG("Vectors RAM @ %p\n", (void*)SCB->VTOR);
-
-	// LOG("Enabling cache\n");
-	// same5x_enable_cache();
-
-	// same5x_init_device_identifier();
-
-	// leds_init();
-
-	// LOG("USB init\n");
-	usb_init();
-//// USB Pin Init
-
-	// LOG("timer init\n");
-	timer_init();
-
-	// LOG("LIN init once\n");
-	lin_init_once();
-
-	// clock_init();
 	uart_init();
 
-	PORT->Group[0].OUTSET.reg = UINT32_C(1) << PIN_PA10;
+	leds_init();
 
-	// while (1) {
-	// 	//LOG("CONF_CPU_FREQUENCY=%lu\n", (unsigned long)CONF_CPU_FREQUENCY);
-	// 	board_uart_write("hallo\n", 6);
-	// }
+	same5x_init_device_identifier();
+
+	LOG("USB init\n");
+	usb_init();
+
+	LOG("timer init\n");
+	timer_init();
+
+	LOG("LIN init once\n");
+	lin_init_once();
 }
 
 extern void sllin_board_init_end(void)
