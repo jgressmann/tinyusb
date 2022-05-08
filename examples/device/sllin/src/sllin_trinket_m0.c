@@ -4,94 +4,41 @@
  *
  */
 
-
 #include <sllin_board.h>
 
-#if D5035_50
+#if TRINKET_M0
 
-#include <FreeRTOS.h>
-#include <timers.h>
 
-#include <sllin_board.h>
 #include <leds.h>
 
 #include <hal/include/hal_gpio.h>
 #include <crc32.h>
-#include <mcu.h>
 #include <bsp/board.h>
 
 
 
 #include <tusb.h>
-#include <class/dfu/dfu_rt_device.h>
+
 
 #define SLEEP_TIMER_HZ 3906 // (1 MHZ / 256)
 #define LIN_SERCOM_PORT_GROUP 0
 #define MASTER_SLAVE_PIN_GROUP 1
-#define BOARD_SERCOM SERCOM2
+#define BOARD_SERCOM SERCOM0	// TinyUSB board setup
 #define USART_BAURATE      115200
 #define CONF_CPU_FREQUENCY 48000000
 #define CONF_LIN_UART_FREQUENCY 48000000
 
 
+// Word 0: 0x0080A00C
+// Word 1: 0x0080A040
+// Word 2: 0x0080A044
+// Word 3: 0x0080A048
 
 /* The board runs off of the 48 MHz internal RC oscillator
  *
  * @115200 debug prints KILL LIN timing assumptions!
 */
 
-
-#if SUPERDFU_APP
-struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_HDR_SECTION_NAME)));
-static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SECTION_NAME))) = {
-	.hdr_magic = DFU_APP_HDR_MAGIC_STRING,
-	.hdr_version = DFU_APP_HDR_VERSION,
-	.app_version_major = SLLIN_VERSION_MAJOR,
-	.app_version_minor = SLLIN_VERSION_MINOR,
-	.app_version_patch = SLLIN_VERSION_PATCH,
-	.app_watchdog_timeout_s = 1,
-	.app_name = SLLIN_NAME,
-};
-
-static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(DFU_APP_FTR_SECTION_NAME))) = {
-	.magic = DFU_APP_FTR_MAGIC_STRING,
-};
-
-static struct dfu {
-	StaticTimer_t timer_mem;
-	TimerHandle_t timer_handle;
-} dfu;
-
-static void dfu_timer_expired(TimerHandle_t t);
-static void dfu_timer_expired(TimerHandle_t t)
-{
-	(void)t;
-
-	LOG("DFU detach timer expired\n");
-
-	/*
-	 * This is wrong. DFU 1.1. specification wants us to wait for USB reset.
-	 * However, without these lines, the device can't be updated on Windows using
-	 * dfu-util. Updating from Linux works either way. All hail compatibility (sigh).
-	 */
-	dfu_request_dfu(1);
-	NVIC_SystemReset();
-}
-
-#if CFG_TUD_DFU_RUNTIME
-void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
-{
-	LOG("tud_dfu_runtime_reboot_to_dfu_cb\n");
-	/* The timer seems to be necessary, else dfu-util
-	 * will fail spurriously with EX_IOERR (74).
-	 */
-	xTimerStart(dfu.timer_handle, pdMS_TO_TICKS(ms));
-
-	// dfu_request_dfu(1);
-	// NVIC_SystemReset();
-}
-#endif // #if CFG_TUD_DFU_RT
-#endif
 
 
 enum {
@@ -127,34 +74,24 @@ struct lin {
 	struct slave slave;
 	struct master master;
 	uint8_t const rx_pin_index;
-	uint8_t const master_slave_pin;
-	uint8_t const led_status_green;
-	uint8_t const led_status_red;
+	// uint8_t const master_slave_pin;
+	// uint8_t const led_status_green;
+	// uint8_t const led_status_red;
 	uint8_t bus_state;
 	uint8_t bus_error;
 };
 
 static struct lin lins[SLLIN_BOARD_LIN_COUNT] = {
 	{
-		.sercom = SERCOM1,
-		.slave.data_timer = TC0, // NOTE: TC0/TC1 don't seem to support different clock speeds, setting one will affect the other.
-		.slave.sleep_timer = TC2,
+		.sercom = SERCOM2,
+		.slave.data_timer = TC3, // NOTE: TC0/TC1 don't seem to support different clock speeds, setting one will affect the other.
+		.slave.sleep_timer = TC5,
 		.master.sof_timer = TC4,
-		.rx_pin_index = 1,
-		.master_slave_pin = 4,
-		.led_status_green = 5,
-		.led_status_red = 6,
-	},
-	{
-		.sercom = SERCOM0,
-		.slave.data_timer = TC1,
-		.slave.sleep_timer = TC3,
-		.master.sof_timer = TC5,
-		.rx_pin_index = 5,
-		.master_slave_pin = 9,
-		.led_status_green = 7,
-		.led_status_red = 8,
-	},
+		.rx_pin_index = 8,
+		// .master_slave_pin = 4,
+		// .led_status_green = 5,
+		// .led_status_red = 6,
+	}
 };
 
 struct led {
@@ -166,51 +103,49 @@ struct led {
 
 
 static const struct led leds[] = {
-	LED_STATIC_INITIALIZER("debug_default", PIN_PA02), // board led
-	LED_STATIC_INITIALIZER("debug_red", PIN_PA18),
-	LED_STATIC_INITIALIZER("debug_orange", PIN_PA19),
-	LED_STATIC_INITIALIZER("debug_green", PIN_PB16),
-	LED_STATIC_INITIALIZER("debug_blue", PIN_PB17),
-	LED_STATIC_INITIALIZER("lin0_green", PIN_PB00),
-	LED_STATIC_INITIALIZER("lin0_red", PIN_PB01),
-	LED_STATIC_INITIALIZER("lin1_green", PIN_PB02),
-	LED_STATIC_INITIALIZER("lin1_red", PIN_PB03),
+	LED_STATIC_INITIALIZER("debug_default", PIN_PA10), // board led
+	// LED_STATIC_INITIALIZER("debug_red", PIN_PA18),
+	// LED_STATIC_INITIALIZER("debug_orange", PIN_PA19),
+	// LED_STATIC_INITIALIZER("debug_green", PIN_PB16),
+	// LED_STATIC_INITIALIZER("debug_blue", PIN_PB17),
+	// LED_STATIC_INITIALIZER("lin0_green", PIN_PB00),
+	// LED_STATIC_INITIALIZER("lin0_red", PIN_PB01),
+	// LED_STATIC_INITIALIZER("lin1_green", PIN_PB02),
+	// LED_STATIC_INITIALIZER("lin1_red", PIN_PB03),
 };
 
 static inline void leds_init(void)
 {
-	PORT->Group[0].DIRSET.reg = PORT_PA02 | PORT_PA18 | PORT_PA19;
-	PORT->Group[1].DIRSET.reg = PORT_PB16 | PORT_PB17 | PORT_PB00 | PORT_PB01 | PORT_PB02 | PORT_PB03;
-}
-
-#define POWER_LED LED_DEBUG_0
-#define USB_LED LED_DEBUG_3
-
-
-
-extern uint32_t _svectors;
-extern uint32_t _evectors;
-
-static void move_vector_table_to_ram(void)
-{
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstringop-overflow"
-#pragma GCC diagnostic ignored "-Warray-bounds"
-	void* vectors_ram = (void*)(uint32_t)&_svectors;
-
-	memcpy(vectors_ram, (void*)SCB->VTOR, MCU_VECTOR_TABLE_ALIGNMENT);
-	SCB->VTOR = (uint32_t)vectors_ram;
-#pragma GCC diagnostic pop
+	PORT->Group[0].DIRSET.reg = PIN_PA10;
 }
 
 
-static inline void same5x_enable_cache(void)
-{
-	// DS60001507E-page 83
-	if (!CMCC->SR.bit.CSTS) {
-		CMCC->CTRL.bit.CEN = 1;
-	}
-}
+
+
+
+// extern uint32_t _svectors;
+// extern uint32_t _evectors;
+
+// static void move_vector_table_to_ram(void)
+// {
+// #pragma GCC diagnostic push
+// #pragma GCC diagnostic ignored "-Wstringop-overflow"
+// #pragma GCC diagnostic ignored "-Warray-bounds"
+// 	void* vectors_ram = (void*)(uint32_t)&_svectors;
+
+// 	memcpy(vectors_ram, (void*)SCB->VTOR, MCU_VECTOR_TABLE_ALIGNMENT);
+// 	SCB->VTOR = (uint32_t)vectors_ram;
+// #pragma GCC diagnostic pop
+// }
+
+
+// static inline void same5x_enable_cache(void)
+// {
+// 	// DS60001507E-page 83
+// 	if (!CMCC->SR.bit.CSTS) {
+// 		CMCC->CTRL.bit.CEN = 1;
+// 	}
+// }
 
 static uint32_t device_identifier;
 
@@ -222,48 +157,48 @@ extern uint32_t sllin_board_identifier(void)
 
 void same5x_init_device_identifier(void)
 {
-	uint32_t serial_number[4];
-	int error = CRC32E_NONE;
+// 	uint32_t serial_number[4];
+// 	int error = CRC32E_NONE;
 
-	same51_get_serial_number(serial_number);
+// 	// same51_get_serial_number(serial_number);
 
-#if SLLIN_DEBUG
-	char serial_buffer[64];
-	memset(serial_buffer, '0', 32);
-	char hex_buffer[16];
-	int chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[0]);
-	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
-	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[1]);
-	memcpy(&serial_buffer[16-chars], hex_buffer, chars);
-	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[2]);
-	memcpy(&serial_buffer[24-chars], hex_buffer, chars);
-	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[3]);
-	memcpy(&serial_buffer[32-chars], hex_buffer, chars);
-	serial_buffer[32] = 0;
-	LOG("SAM serial number %s\n", serial_buffer);
-#endif
+// #if SLLIN_DEBUG
+// 	char serial_buffer[64];
+// 	memset(serial_buffer, '0', 32);
+// 	char hex_buffer[16];
+// 	int chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[0]);
+// 	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
+// 	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[1]);
+// 	memcpy(&serial_buffer[16-chars], hex_buffer, chars);
+// 	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[2]);
+// 	memcpy(&serial_buffer[24-chars], hex_buffer, chars);
+// 	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[3]);
+// 	memcpy(&serial_buffer[32-chars], hex_buffer, chars);
+// 	serial_buffer[32] = 0;
+// 	LOG("SAM serial number %s\n", serial_buffer);
+// #endif
 
-#if TU_LITTLE_ENDIAN == TU_BYTE_ORDER
-	// swap integers so they have printf layout
-	serial_number[0] = __builtin_bswap32(serial_number[0]);
-	serial_number[1] = __builtin_bswap32(serial_number[1]);
-	serial_number[2] = __builtin_bswap32(serial_number[2]);
-	serial_number[3] = __builtin_bswap32(serial_number[3]);
-#endif
+// #if TU_LITTLE_ENDIAN == TU_BYTE_ORDER
+// 	// swap integers so they have printf layout
+// 	serial_number[0] = __builtin_bswap32(serial_number[0]);
+// 	serial_number[1] = __builtin_bswap32(serial_number[1]);
+// 	serial_number[2] = __builtin_bswap32(serial_number[2]);
+// 	serial_number[3] = __builtin_bswap32(serial_number[3]);
+// #endif
 
-	error = crc32f((uint32_t)serial_number, 16, CRC32E_FLAG_UNLOCK, &device_identifier);
-	if (unlikely(error)) {
-		device_identifier = serial_number[0];
-	LOG("ERROR: failed to compute CRC32: %d. Using fallback device identifier\n", error);
-	}
+// 	error = crc32f((uint32_t)serial_number, 16, CRC32E_FLAG_UNLOCK, &device_identifier);
+// 	if (unlikely(error)) {
+// 		device_identifier = serial_number[0];
+// 	LOG("ERROR: failed to compute CRC32: %d. Using fallback device identifier\n", error);
+// 	}
 
-#if SLLIN_DEBUG
-	memset(serial_buffer, '0', 8);
-	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", device_identifier);
-	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
-	serial_buffer[8] = 0;
-	LOG("device identifier %s\n", serial_buffer);
-#endif
+// #if SLLIN_DEBUG
+// 	memset(serial_buffer, '0', 8);
+// 	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", device_identifier);
+// 	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
+// 	serial_buffer[8] = 0;
+// 	LOG("device identifier %s\n", serial_buffer);
+// #endif
 }
 
 extern void sllin_board_led_set(uint8_t index, bool on)
@@ -280,223 +215,368 @@ extern void sllin_board_leds_on_unsafe(void)
 	}
 }
 
-static inline void uart_init(void)
+static inline void uart_init_ex(uint32_t hz)
 {
+	// PORT->Group[0].WRCONFIG.reg =
+	// 	PORT_WRCONFIG_WRPINCFG |
+	// 	PORT_WRCONFIG_WRPMUX |
+	// 	PORT_WRCONFIG_PMUX(3) |    /* function D */
+	// 	PORT_WRCONFIG_DRVSTR |
+	// 	PORT_WRCONFIG_PINMASK(0x0300) | /* PA08, PA9 */
+	// 	PORT_WRCONFIG_PMUXEN;
+
+	// PM->APBCMASK.bit.SERCOM2_ = 1;
+	// GCLK->CLKCTRL.reg =
+	// 	GCLK_CLKCTRL_GEN_GCLK0 |
+	// 	GCLK_CLKCTRL_CLKEN |
+	// 	GCLK_CLKCTRL_ID_SERCOM2_CORE;
+
 	PORT->Group[0].WRCONFIG.reg =
 		PORT_WRCONFIG_WRPINCFG |
 		PORT_WRCONFIG_WRPMUX |
 		PORT_WRCONFIG_PMUX(3) |    /* function D */
 		PORT_WRCONFIG_DRVSTR |
-		PORT_WRCONFIG_PINMASK(0x0300) | /* PA08, PA9 */
+		PORT_WRCONFIG_PINMASK(0x00c0) | /* PA06, PA7 */
 		PORT_WRCONFIG_PMUXEN;
 
-	MCLK->APBBMASK.bit.SERCOM2_ = 1;
-	GCLK->PCHCTRL[SERCOM2_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
+	PM->APBCMASK.bit.SERCOM0_ = 1;
+	GCLK->CLKCTRL.reg =
+		GCLK_CLKCTRL_GEN_GCLK0 |
+		GCLK_CLKCTRL_CLKEN |
+		GCLK_CLKCTRL_ID_SERCOM0_CORE;
 
-	BOARD_SERCOM->USART.CTRLA.reg = 0x00; /* disable SERCOM -> enable config */
-	while(BOARD_SERCOM->USART.SYNCBUSY.bit.ENABLE);
+	BOARD_SERCOM->USART.CTRLA.reg = SERCOM_USART_CTRLA_SWRST; /* disable SERCOM -> enable config */
+	while(BOARD_SERCOM->USART.SYNCBUSY.bit.SWRST); /* wait for SERCOM to be ready */
 
 	BOARD_SERCOM->USART.CTRLA.reg =
 		SERCOM_USART_CTRLA_SAMPR(1) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
 		SERCOM_USART_CTRLA_DORD |     /* LSB first */
 		SERCOM_USART_CTRLA_MODE(1) |  /* 0x0 USART with external clock, 0x1 USART with internal clock */
-		SERCOM_USART_CTRLA_RXPO(1) |  /* SERCOM PAD[1] is used for data reception */
-		SERCOM_USART_CTRLA_TXPO(0);   /* SERCOM PAD[0] is used for data transmission */
+		SERCOM_USART_CTRLA_RXPO(3) |  /* SERCOM PAD[3] is used for data reception */
+		SERCOM_USART_CTRLA_TXPO(1);   /* SERCOM PAD[2] is used for data transmission */
 
 	BOARD_SERCOM->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN; /* transmitter enabled */
-	uint16_t baud = CONF_CPU_FREQUENCY / (16 * USART_BAURATE);
-	uint16_t frac = CONF_CPU_FREQUENCY / (2 * USART_BAURATE) - 8 * baud;
+	uint16_t baud = hz / (16 * USART_BAURATE);
+	uint16_t frac = hz / (2 * USART_BAURATE) - 8 * baud;
 	BOARD_SERCOM->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
 
 	BOARD_SERCOM->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
 	while(BOARD_SERCOM->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
 }
 
+static inline void uart_init()
+{
+	uart_init_ex(CONF_CPU_FREQUENCY);
+}
+
+static inline void clock_init_8mhz(void)
+{
+	SYSCTRL->OSC8M.bit.PRESC = 0; // Don't prescale -> 8 [MHz]
+
+	// setup 8 MHz on GCLK2
+	GCLK->GENDIV.reg =
+		GCLK_GENDIV_DIV(0) |
+		GCLK_GENDIV_ID(2);
+
+	GCLK->GENCTRL.reg =
+		GCLK_GENCTRL_SRC_OSC8M |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_IDC |
+		GCLK_GENCTRL_ID(2);
+	while (GCLK->STATUS.bit.SYNCBUSY);
+}
+
+static inline void clock_init(void)
+{
+
+
+
+	// // ensure no division
+	// GCLK->GENDIV.reg =
+	// 	GCLK_GENDIV_DIV(1) |
+	// 	GCLK_GENDIV_ID(0);
+
+	// // start with XXX MHz internal OSC clock
+	// GCLK->GENCTRL.reg =
+	// 	GCLK_GENCTRL_SRC_OSC8M |
+	// 	GCLK_GENCTRL_GENEN |
+	// 	GCLK_GENCTRL_IDC |
+	// 	GCLK_GENCTRL_ID(0);
+	// while (GCLK->STATUS.bit.SYNCBUSY);
+
+
+	// for (uint8_t i = 0; i < 64; ++i) {
+	// Setup DFLL
+	// 1. turn off DFLL
+	SYSCTRL->DFLLCTRL.reg = 0;
+	while (SYSCTRL->PCLKSR.bit.DFLLRDY);
+	// SYSCTRL->DFLLCTRL.reg = SYSCTRL_DFLLCTRL_ENABLE;
+	// while (!SYSCTRL->PCLKSR.bit.DFLLRDY);
+
+	// // // 2. load calibration
+
+	// // Load coarse value from NVM, Atmel-42181G–SAM-D21_Datasheet–09/2015 p.32
+	// // 63:58 DFLL48M COARSE CALDFLL48M Coarse calibration value. Should be written to DFLLVAL register.
+	// // 73:64 DFLL48M FINE CALDFLL48M Fine calibration value. Should be written to DFLLVAL register.
+	uint32_t const NVM_CAL_AREA = 0x806020;
+	uint8_t const coarse = ((*(uint8_t*)(NVM_CAL_AREA + 7)) >> 2) & 0x3f;
+	uint16_t const fine = (*(uint16_t*)(NVM_CAL_AREA + 8)) & 0x3ff;
+	// unsigned coarse = 0xa;
+	// unsigned fine = 0x200;
+
+	LOG("DFLL coarse=%x fine=%x\n", coarse, fine);
+
+	SYSCTRL->DFLLVAL.reg =
+		SYSCTRL_DFLLVAL_COARSE(coarse) |
+		SYSCTRL_DFLLVAL_FINE(fine);
+
+	// LOG("DFLL coarse=%x\n", i);
+	// SYSCTRL->DFLLVAL.reg = SYSCTRL_DFLLVAL_COARSE(i);
+
+
+
+	// 3. Setup target frequency from 1 [ms] USB SOF
+	// USB clock sync, Atmel-42181G–SAM-D21_Datasheet–09/2015 p.156
+	SYSCTRL->DFLLMUL.reg =
+		SYSCTRL_DFLLMUL_MUL(0xBB80) |
+		SYSCTRL_DFLLMUL_FSTEP(1) |
+		SYSCTRL_DFLLMUL_CSTEP(1) |
+		0;
+
+
+
+	// GCLK->CLKCTRL.reg =
+	// 	GCLK_CLKCTRL_GEN_GCLK2 |
+	// 	GCLK_CLKCTRL_CLKEN |
+	// 	GCLK_CLKCTRL_ID_DFLL48;
+
+	// 4. start DFLL
+	SYSCTRL->DFLLCTRL.reg =
+		SYSCTRL_DFLLCTRL_ENABLE |
+		SYSCTRL_DFLLCTRL_USBCRM |
+		SYSCTRL_DFLLCTRL_MODE |
+		// SYSCTRL_DFLLCTRL_RUNSTDBY |
+		// SYSCTRL_DFLLCTRL_ONDEMAND |
+		// SYSCTRL_DFLLCTRL_WAITLOCK |
+		SYSCTRL_DFLLCTRL_CCDIS |
+		0;
+	while (!SYSCTRL->PCLKSR.bit.DFLLRDY);
+
+
+
+	LOG("DFLL ready PCLKSR=%lx\n", SYSCTRL->PCLKSR.reg);
+
+	// Setup CPU to use 48 MHz
+	GCLK->GENCTRL.reg =
+		GCLK_GENCTRL_SRC_DFLL48M |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_IDC |
+		GCLK_GENCTRL_ID(0);
+	while (GCLK->STATUS.bit.SYNCBUSY);
+
+	uart_init_ex(48000000);
+
+	// LOG("MCLK switched to DFLL coarse=%u\n", i);
+
+
+	// // back to 8MHz
+	// GCLK->GENCTRL.reg =
+	// 	GCLK_GENCTRL_SRC_OSC8M |
+	// 	GCLK_GENCTRL_GENEN |
+	// 	GCLK_GENCTRL_IDC |
+	// 	GCLK_GENCTRL_ID(0);
+	// while (GCLK->STATUS.bit.SYNCBUSY);
+
+	// uart_init_ex(8000000);
+
+	// }
+
+
+	// // setup 16 MHz on GCLK3
+	// // GCLK->GENCTRL.reg =
+	// // 	GCLK_GENCTRL_ID(3);
+
+	// GCLK->GENDIV.reg =
+	// 	GCLK_GENDIV_DIV(3) |
+	// 	GCLK_GENDIV_ID(3);
+
+	// GCLK->GENCTRL.reg =
+	// 	GCLK_GENCTRL_SRC_DFLL48M |
+	// 	GCLK_GENCTRL_GENEN |
+	// 	GCLK_GENCTRL_IDC |
+	// 	GCLK_GENCTRL_ID(3);
+	// while (GCLK->STATUS.bit.SYNCBUSY);
+
+	SystemCoreClock = CONF_CPU_FREQUENCY;
+
+
+
+
+}
+
+
+
 
 static inline void lin_init_once(void)
 {
-	// lin0
-	// gpio_set_pin_function(PIN_PA00, PINMUX_PA00D_SERCOM1_PAD0);
-	// gpio_set_pin_function(PIN_PA01, PINMUX_PA01D_SERCOM1_PAD1);
-	PORT->Group[0].WRCONFIG.reg =
-		PORT_WRCONFIG_WRPINCFG |
-		PORT_WRCONFIG_WRPMUX |
-		PORT_WRCONFIG_PMUX(3) |    /* function D */
-		PORT_WRCONFIG_INEN |
-		PORT_WRCONFIG_PINMASK(0x0003) | /* PA00, PA01 */
-		PORT_WRCONFIG_PMUXEN;
+	// // lin0
+	// // gpio_set_pin_function(PIN_PA00, PINMUX_PA00D_SERCOM1_PAD0);
+	// // gpio_set_pin_function(PIN_PA01, PINMUX_PA01D_SERCOM1_PAD1);
+	// PORT->Group[0].WRCONFIG.reg =
+	// 	PORT_WRCONFIG_WRPINCFG |
+	// 	PORT_WRCONFIG_WRPMUX |
+	// 	PORT_WRCONFIG_PMUX(3) |    /* function D */
+	// 	PORT_WRCONFIG_INEN |
+	// 	PORT_WRCONFIG_PINMASK(0x0003) | /* PA00, PA01 */
+	// 	PORT_WRCONFIG_PMUXEN;
 
-	MCLK->APBAMASK.bit.SERCOM1_ = 1;
-	GCLK->PCHCTRL[SERCOM1_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
+	// MCLK->APBAMASK.bit.SERCOM1_ = 1;
+	// GCLK->PCHCTRL[SERCOM1_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
 
-	NVIC_SetPriority(SERCOM1_0_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(SERCOM1_1_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(SERCOM1_2_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(SERCOM1_3_IRQn, SLLIN_ISR_PRIORITY);
+	// NVIC_SetPriority(SERCOM1_0_IRQn, SLLIN_ISR_PRIORITY);
+	// NVIC_SetPriority(SERCOM1_1_IRQn, SLLIN_ISR_PRIORITY);
+	// NVIC_SetPriority(SERCOM1_2_IRQn, SLLIN_ISR_PRIORITY);
+	// NVIC_SetPriority(SERCOM1_3_IRQn, SLLIN_ISR_PRIORITY);
 
-	NVIC_EnableIRQ(SERCOM1_0_IRQn);
-	NVIC_EnableIRQ(SERCOM1_1_IRQn);
-	NVIC_EnableIRQ(SERCOM1_2_IRQn);
-	NVIC_EnableIRQ(SERCOM1_3_IRQn);
+	// NVIC_EnableIRQ(SERCOM1_0_IRQn);
+	// NVIC_EnableIRQ(SERCOM1_1_IRQn);
+	// NVIC_EnableIRQ(SERCOM1_2_IRQn);
+	// NVIC_EnableIRQ(SERCOM1_3_IRQn);
 
-	// lin1
-	// gpio_set_pin_function(PIN_PA04, PINMUX_PA04D_SERCOM0_PAD0);
-	// gpio_set_pin_function(PIN_PA05, PINMUX_PA05D_SERCOM0_PAD1);
-	PORT->Group[0].WRCONFIG.reg =
-		PORT_WRCONFIG_WRPINCFG |
-		PORT_WRCONFIG_WRPMUX |
-		PORT_WRCONFIG_PMUX(3) |    /* function D */
-		PORT_WRCONFIG_INEN |
-		PORT_WRCONFIG_PINMASK(0x0030) | /* PA04, PA05 */
-		PORT_WRCONFIG_PMUXEN;
+	// // master / slave pin
+	// // PB04 lin0
+	// // PB09 lin1
+	// PORT->Group[MASTER_SLAVE_PIN_GROUP].DIRSET.reg = (1ul << 4) | (1ul << 9);
 
-	MCLK->APBAMASK.bit.SERCOM0_ = 1;
-	GCLK->PCHCTRL[SERCOM0_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
-
-	NVIC_SetPriority(SERCOM0_0_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(SERCOM0_1_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(SERCOM0_2_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(SERCOM0_3_IRQn, SLLIN_ISR_PRIORITY);
-
-	NVIC_EnableIRQ(SERCOM0_0_IRQn);
-	NVIC_EnableIRQ(SERCOM0_1_IRQn);
-	NVIC_EnableIRQ(SERCOM0_2_IRQn);
-	NVIC_EnableIRQ(SERCOM0_3_IRQn);
-
-	// master / slave pin
-	// PB04 lin0
-	// PB09 lin1
-	PORT->Group[MASTER_SLAVE_PIN_GROUP].DIRSET.reg = (1ul << 4) | (1ul << 9);
-	PORT->Group[MASTER_SLAVE_PIN_GROUP].OUTCLR.reg = (1ul << 4) | (1ul << 9);
 }
 
 static void timer_init(void)
 {
-	GCLK->GENCTRL[4].reg =
-		GCLK_GENCTRL_DIV(3) |	/* 48Mhz -> 16MHz */
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DFLL |
-		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL4); /* wait for the synchronization between clock domains to be complete */
+	// GCLK->GENCTRL[4].reg =
+	// 	GCLK_GENCTRL_DIV(3) |	/* 48Mhz -> 16MHz */
+	// 	GCLK_GENCTRL_RUNSTDBY |
+	// 	GCLK_GENCTRL_GENEN |
+	// 	GCLK_GENCTRL_SRC_DFLL |
+	// 	GCLK_GENCTRL_IDC;
+	// while(1 == GCLK->SYNCBUSY.bit.GENCTRL4); /* wait for the synchronization between clock domains to be complete */
 
-	GCLK->GENCTRL[5].reg =
-		GCLK_GENCTRL_DIV(48) |	/* 48Mhz -> 1MHz */
-		// GCLK_GENCTRL_DIVSEL |   /* divide by 2^(DIV+1) */
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DFLL |
-		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL5); /* wait for the synchronization between clock domains to be complete */
-
-
-	MCLK->APBAMASK.bit.TC0_ = 1;
-	MCLK->APBAMASK.bit.TC1_ = 1;
-	MCLK->APBBMASK.bit.TC2_ = 1;
-	MCLK->APBBMASK.bit.TC3_ = 1;
-	MCLK->APBCMASK.bit.TC4_ = 1;
-	MCLK->APBCMASK.bit.TC5_ = 1;
-
-	// TC0/1 are connected to the SAME peripheral clock, TC2/3 likewise
-	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
-	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
-	GCLK->PCHCTRL[TC2_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK5 | GCLK_PCHCTRL_CHEN;
-	GCLK->PCHCTRL[TC3_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK5 | GCLK_PCHCTRL_CHEN;
-	GCLK->PCHCTRL[TC4_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
-	GCLK->PCHCTRL[TC5_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
-
-	NVIC_SetPriority(TC0_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(TC1_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(TC2_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(TC3_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(TC4_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(TC5_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_EnableIRQ(TC0_IRQn);
-	NVIC_EnableIRQ(TC1_IRQn);
-	NVIC_EnableIRQ(TC2_IRQn);
-	NVIC_EnableIRQ(TC3_IRQn);
-	NVIC_EnableIRQ(TC4_IRQn);
-	NVIC_EnableIRQ(TC5_IRQn);
-
-	for (size_t i = 0; i < TU_ARRAY_SIZE(lins); ++i) {
-		struct lin *lin = &lins[i];
-		struct slave *sl = &lin->slave;
-		struct master *ma = &lin->master;
-		Tc* data_timer = sl->data_timer;
-		Tc* stc = sl->sleep_timer;
-		Tc* sof_timer = ma->sof_timer;
-
-		// MASTER
-		// sof timeout
-		sof_timer->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
-		while (sof_timer->COUNT16.SYNCBUSY.bit.SWRST);
-
-		sof_timer->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
-
-		// generate overflow interrupt
-		sof_timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
-
-		// set to max so we don't time out
-		sof_timer->COUNT16.CC[0].reg = 0xffff;
-
-		// enable
-		sof_timer->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER_DIV16;
-
-		// stop & oneshot
-		sof_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_LUPD | TC_CTRLBSET_CMD_STOP;
-		while (sof_timer->COUNT16.SYNCBUSY.bit.CTRLB);
-
-		// reset to zero
-		sof_timer->COUNT16.COUNT.reg = 0;
-
-		// SLAVE
-
-		// reponse timeout
-		data_timer->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
-		while (data_timer->COUNT16.SYNCBUSY.bit.SWRST);
-
-		data_timer->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
-
-		// generate overflow interrupt
-		data_timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
-
-		// set to max so we don't time out
-		data_timer->COUNT16.CC[0].reg = 0xffff;
-
-		// enable
-		data_timer->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER_DIV16;
-
-		// stop & oneshot
-		data_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_LUPD | TC_CTRLBSET_CMD_STOP;
-		// data_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_CMD_STOP;
-		while (data_timer->COUNT16.SYNCBUSY.bit.CTRLB);
-
-		// reset to zero
-		data_timer->COUNT16.COUNT.reg = 0;
+	// GCLK->GENCTRL[5].reg =
+	// 	GCLK_GENCTRL_DIV(48) |	/* 48Mhz -> 1MHz */
+	// 	// GCLK_GENCTRL_DIVSEL |   /* divide by 2^(DIV+1) */
+	// 	GCLK_GENCTRL_RUNSTDBY |
+	// 	GCLK_GENCTRL_GENEN |
+	// 	GCLK_GENCTRL_SRC_DFLL |
+	// 	GCLK_GENCTRL_IDC;
+	// while(1 == GCLK->SYNCBUSY.bit.GENCTRL5); /* wait for the synchronization between clock domains to be complete */
 
 
-		// sleep timeout
-		stc->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
-		while (stc->COUNT16.SYNCBUSY.bit.SWRST);
+	// MCLK->APBAMASK.bit.TC0_ = 1;
+	// MCLK->APBAMASK.bit.TC1_ = 1;
+	// MCLK->APBBMASK.bit.TC2_ = 1;
+	// MCLK->APBBMASK.bit.TC3_ = 1;
+	// MCLK->APBCMASK.bit.TC4_ = 1;
+	// MCLK->APBCMASK.bit.TC5_ = 1;
 
-		stc->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
+	// // TC0/1 are connected to the SAME peripheral clock, TC2/3 likewise
+	// GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
+	// GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
+	// GCLK->PCHCTRL[TC2_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK5 | GCLK_PCHCTRL_CHEN;
+	// GCLK->PCHCTRL[TC3_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK5 | GCLK_PCHCTRL_CHEN;
+	// GCLK->PCHCTRL[TC4_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
+	// GCLK->PCHCTRL[TC5_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
 
-		// generate overflow interrupt
-		stc->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
+	// NVIC_SetPriority(TC0_IRQn, SLLIN_ISR_PRIORITY);
+	// NVIC_SetPriority(TC1_IRQn, SLLIN_ISR_PRIORITY);
+	// NVIC_SetPriority(TC2_IRQn, SLLIN_ISR_PRIORITY);
+	// NVIC_SetPriority(TC3_IRQn, SLLIN_ISR_PRIORITY);
+	// NVIC_SetPriority(TC4_IRQn, SLLIN_ISR_PRIORITY);
+	// NVIC_SetPriority(TC5_IRQn, SLLIN_ISR_PRIORITY);
+	// NVIC_EnableIRQ(TC0_IRQn);
+	// NVIC_EnableIRQ(TC1_IRQn);
+	// NVIC_EnableIRQ(TC2_IRQn);
+	// NVIC_EnableIRQ(TC3_IRQn);
+	// NVIC_EnableIRQ(TC4_IRQn);
+	// NVIC_EnableIRQ(TC5_IRQn);
 
-		// set to max so we don't time out
-		stc->COUNT16.CC[0].reg = 0xffff;
+	// for (size_t i = 0; i < TU_ARRAY_SIZE(lins); ++i) {
+	// 	struct lin *lin = &lins[i];
+	// 	struct slave *sl = &lin->slave;
+	// 	struct master *ma = &lin->master;
+	// 	Tc* data_timer = sl->data_timer;
+	// 	Tc* stc = sl->sleep_timer;
+	// 	Tc* sof_timer = ma->sof_timer;
 
-		// enable
-		stc->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 |  TC_CTRLA_PRESCALER_DIV256;
+	// 	// MASTER
+	// 	// sof timeout
+	// 	sof_timer->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
+	// 	while (sof_timer->COUNT16.SYNCBUSY.bit.SWRST);
 
-		// stop & oneshot
-		stc->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_LUPD | TC_CTRLBSET_CMD_STOP;
-		while (stc->COUNT16.SYNCBUSY.bit.CTRLB);
+	// 	sof_timer->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
 
-		// reset to zero
-		stc->COUNT16.COUNT.reg = 0;
-	}
+	// 	// generate overflow interrupt
+	// 	sof_timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
+
+	// 	// set to max so we don't time out
+	// 	sof_timer->COUNT16.CC[0].reg = 0xffff;
+
+	// 	// enable
+	// 	sof_timer->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER_DIV16;
+
+	// 	// stop & oneshot
+	// 	sof_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_LUPD | TC_CTRLBSET_CMD_STOP;
+	// 	while (sof_timer->COUNT16.SYNCBUSY.bit.CTRLB);
+
+	// 	// reset to zero
+	// 	sof_timer->COUNT16.COUNT.reg = 0;
+
+	// 	// SLAVE
+
+	// 	// reponse timeout
+	// 	data_timer->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
+	// 	while (data_timer->COUNT16.SYNCBUSY.bit.SWRST);
+
+	// 	data_timer->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
+
+	// 	// generate overflow interrupt
+	// 	data_timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
+
+	// 	// set to max so we don't time out
+	// 	data_timer->COUNT16.CC[0].reg = 0xffff;
+
+	// 	// enable
+	// 	data_timer->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER_DIV16;
+
+	// 	// stop & oneshot
+	// 	data_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_LUPD | TC_CTRLBSET_CMD_STOP;
+	// 	// data_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_CMD_STOP;
+	// 	while (data_timer->COUNT16.SYNCBUSY.bit.CTRLB);
+
+	// 	// reset to zero
+	// 	data_timer->COUNT16.COUNT.reg = 0;
+
+
+	// 	// sleep timeout
+	// 	stc->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
+	// 	while (stc->COUNT16.SYNCBUSY.bit.SWRST);
+
+	// 	stc->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
+
+	// 	// generate overflow interrupt
+	// 	stc->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
+
+	// 	// set to max so we don't time out
+	// 	stc->COUNT16.CC[0].reg = 0xffff;
+
+	// 	// enable
+	// 	stc->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 |  TC_CTRLA_PRESCALER_DIV256;
+
+	// 	// stop & oneshot
+	// 	stc->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_LUPD | TC_CTRLBSET_CMD_STOP;
+	// 	while (stc->COUNT16.SYNCBUSY.bit.CTRLB);
+
+	// 	// reset to zero
+	// 	stc->COUNT16.COUNT.reg = 0;
+	// }
 }
 
 
@@ -507,7 +587,7 @@ static void timer_init(void)
 SLLIN_RAMFUNC static inline void timer_cleanup_end(Tc* timer)
 {
 	// wait for sync
-	while (timer->COUNT16.SYNCBUSY.bit.CTRLB);
+	while (timer->COUNT16.STATUS.bit.SYNCBUSY);
 	// reset value
 	timer->COUNT16.COUNT.reg = 0;
 	// clear interrupt flags
@@ -546,7 +626,7 @@ SLLIN_RAMFUNC static inline void timer_cleanup_end(Tc* timer)
 	do { \
 		(tc)->COUNT16.COUNT.reg = 0; \
 		(tc)->COUNT16.INTFLAG.reg = ~0; \
-		while ((tc)->COUNT16.SYNCBUSY.reg); \
+		while ((tc)->COUNT16.STATUS.bit.SYNCBUSY); \
 		(tc)->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val; \
 	} while (0)
 
@@ -581,75 +661,89 @@ SLLIN_RAMFUNC static inline void lin_slave_cleanup(struct lin *lin)
 
 static inline void usb_init(void)
 {
-	NVIC_SetPriority(USB_0_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(USB_1_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(USB_2_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(USB_3_IRQn, SLLIN_ISR_PRIORITY);
+	NVIC_SetPriority(USB_IRQn, SLLIN_ISR_PRIORITY);
 
+	GCLK->CLKCTRL.reg =
+		GCLK_CLKCTRL_GEN_GCLK0 |
+		GCLK_CLKCTRL_CLKEN |
+		GCLK_CLKCTRL_ID_USB;
 
-	/* USB clock init
-	 * The USB module requires a GCLK_USB of 48 MHz ~ 0.25% clock
-	 * for low speed and full speed operation.
-	 */
-	hri_gclk_write_PCHCTRL_reg(GCLK, USB_GCLK_ID, GCLK_PCHCTRL_GEN_GCLK0_Val | GCLK_PCHCTRL_CHEN);
-	hri_mclk_set_AHBMASK_USB_bit(MCLK);
-	hri_mclk_set_APBBMASK_USB_bit(MCLK);
+	gpio_set_pin_direction(PIN_PA24, GPIO_DIRECTION_OUT);
+	gpio_set_pin_level(PIN_PA24, false);
+	gpio_set_pin_pull_mode(PIN_PA24, GPIO_PULL_OFF);
+	gpio_set_pin_direction(PIN_PA25, GPIO_DIRECTION_OUT);
+	gpio_set_pin_level(PIN_PA25, false);
+	gpio_set_pin_pull_mode(PIN_PA25, GPIO_PULL_OFF);
 
-	gpio_set_pin_function(PIN_PA24, PINMUX_PA24H_USB_DM);
-	gpio_set_pin_function(PIN_PA25, PINMUX_PA25H_USB_DP);
+	gpio_set_pin_function(PIN_PA24, PINMUX_PA24G_USB_DM);
+	gpio_set_pin_function(PIN_PA25, PINMUX_PA25G_USB_DP);
+
 }
 
 extern void sllin_board_init_begin(void)
 {
-	// clock_init();
-
-	SystemCoreClock = CONF_CPU_FREQUENCY;
-
-	uart_init();
-	LOG("CONF_CPU_FREQUENCY=%lu\n", (unsigned long)CONF_CPU_FREQUENCY);
-
-	LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
-	move_vector_table_to_ram();
-	LOG("Vectors RAM @ %p\n", (void*)SCB->VTOR);
-
-	LOG("Enabling cache\n");
-	same5x_enable_cache();
-
-	same5x_init_device_identifier();
+	// Atmel-42181G–SAM-D21_Datasheet–09/2015, p. 367
+	// setup deterministic wait states
+	NVMCTRL->CTRLB.bit.READMODE = NVMCTRL_CTRLB_READMODE_DETERMINISTIC_Val;
+	NVMCTRL->CTRLB.bit.RWS = 2;
 
 
-#if SUPERDFU_APP
-	LOG(
-		"%s v%u.%u.%u starting...\n",
-		dfu_app_hdr.app_name,
-		dfu_app_hdr.app_version_major,
-		dfu_app_hdr.app_version_minor,
-		dfu_app_hdr.app_version_patch);
+	// Don't divide peripheral clock
+	PM->CPUSEL.reg = PM_CPUSEL_CPUDIV(0);
+	PM->APBASEL.reg = PM_APBASEL_APBADIV(0);
+	PM->APBBSEL.reg = PM_APBBSEL_APBBDIV(0);
+	PM->APBCSEL.reg = PM_APBCSEL_APBCDIV(0);
+	PM->AHBMASK.reg = ~0;
+	PM->APBAMASK.reg = ~0;
 
-	dfu_request_dfu(0); // no bootloader request
 
-	dfu.timer_handle = xTimerCreateStatic("dfu", pdMS_TO_TICKS(DFU_USB_RESET_TIMEOUT_MS), pdFALSE, NULL, &dfu_timer_expired, &dfu.timer_mem);
-#endif
+
+
 	leds_init();
+
+	clock_init_8mhz();
+	uart_init_ex(8000000);
+
+
+	// PORT->Group[0].OUTCLR.reg = UINT32_C(1) << PIN_PA10;
+	// PORT->Group[0].OUTSET.reg = UINT32_C(1) << PIN_PA10;
+
+
+
+	// LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
+	// move_vector_table_to_ram();
+	// LOG("Vectors RAM @ %p\n", (void*)SCB->VTOR);
+
+	// LOG("Enabling cache\n");
+	// same5x_enable_cache();
+
+	// same5x_init_device_identifier();
+
+	// leds_init();
 
 	LOG("USB init\n");
 	usb_init();
+//// USB Pin Init
 
 	LOG("timer init\n");
 	timer_init();
 
 	LOG("LIN init once\n");
 	lin_init_once();
+
+	clock_init();
+
+	PORT->Group[0].OUTSET.reg = UINT32_C(1) << PIN_PA10;
+
+	// while (1) {
+	// 	//LOG("CONF_CPU_FREQUENCY=%lu\n", (unsigned long)CONF_CPU_FREQUENCY);
+	// 	board_uart_write("hallo\n", 6);
+	// }
 }
 
 extern void sllin_board_init_end(void)
 {
 	led_blink(0, 2000);
-	led_set(POWER_LED, 1);
-
-#if SUPERDFU_APP
-	dfu_app_watchdog_disable();
-#endif
 }
 
 __attribute__((noreturn)) extern void sllin_board_reset(void)
@@ -719,11 +813,11 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
 
 
-	if (conf->master) {
-		PORT->Group[MASTER_SLAVE_PIN_GROUP].OUTSET.reg = 1ul << lin->master_slave_pin;
-	} else {
-		PORT->Group[MASTER_SLAVE_PIN_GROUP].OUTCLR.reg = 1ul << lin->master_slave_pin;
-	}
+	// if (conf->master) {
+	// 	PORT->Group[MASTER_SLAVE_PIN_GROUP].OUTSET.reg = 1ul << lin->master_slave_pin;
+	// } else {
+	// 	PORT->Group[MASTER_SLAVE_PIN_GROUP].OUTCLR.reg = 1ul << lin->master_slave_pin;
+	// }
 
 	lin_slave_cleanup(lin);
 	sof_timer_cleanup(lin);
@@ -741,7 +835,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	while (sercom->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
 
 	// wait for sleep timer sync
-	while (sl->sleep_timer->COUNT16.SYNCBUSY.bit.CTRLB);
+	while (sl->sleep_timer->COUNT16.STATUS.bit.SYNCBUSY);
 
 	// reset value
 	sl->sleep_timer->COUNT16.COUNT.reg = 0;
@@ -788,8 +882,8 @@ SLLIN_RAMFUNC static bool sllin_board_lin_master_tx(uint8_t index, uint8_t data,
 
 	// race against other interrupt?
 
-	s->USART.CTRLB.bit.LINCMD = cmd;
-	s->USART.DATA.reg = data;
+	// s->USART.CTRLB.bit.LINCMD = cmd;
+	// s->USART.DATA.reg = data;
 
 	return true;
 }
@@ -827,36 +921,36 @@ SLLIN_RAMFUNC extern void sllin_board_led_lin_status_set(uint8_t index, int stat
 
 	// LOG("ch%u set led status %u\n", index, status);
 
-	switch (status) {
-	case SLLIN_LIN_LED_STATUS_DISABLED:
-		led_set(lin->led_status_green, 0);
-		led_set(lin->led_status_red, 0);
-		break;
-	case SLLIN_LIN_LED_STATUS_ENABLED_OFF_BUS:
-		led_set(lin->led_status_green, 1);
-		led_set(lin->led_status_red, 0);
-		break;
-	case SLLIN_LIN_LED_STATUS_ON_BUS_SLEEPING:
-		led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_SLEEPING_MS);
-		led_set(lin->led_status_red, 0);
-		break;
-	case SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_PASSIVE:
-		led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_PASSIVE_MS);
-		led_set(lin->led_status_red, 0);
-		break;
-	case SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_ACTIVE:
-		led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS);
-		led_set(lin->led_status_red, 0);
-		break;
-	case SLLIN_LIN_LED_STATUS_ERROR:
-		led_set(lin->led_status_green, 0);
-		led_blink(lin->led_status_red, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS);
-		break;
-	default:
-		led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS / 2);
-		led_blink(lin->led_status_red, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS / 2);
-		break;
-	}
+	// switch (status) {
+	// case SLLIN_LIN_LED_STATUS_DISABLED:
+	// 	led_set(lin->led_status_green, 0);
+	// 	led_set(lin->led_status_red, 0);
+	// 	break;
+	// case SLLIN_LIN_LED_STATUS_ENABLED_OFF_BUS:
+	// 	led_set(lin->led_status_green, 1);
+	// 	led_set(lin->led_status_red, 0);
+	// 	break;
+	// case SLLIN_LIN_LED_STATUS_ON_BUS_SLEEPING:
+	// 	led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_SLEEPING_MS);
+	// 	led_set(lin->led_status_red, 0);
+	// 	break;
+	// case SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_PASSIVE:
+	// 	led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_PASSIVE_MS);
+	// 	led_set(lin->led_status_red, 0);
+	// 	break;
+	// case SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_ACTIVE:
+	// 	led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS);
+	// 	led_set(lin->led_status_red, 0);
+	// 	break;
+	// case SLLIN_LIN_LED_STATUS_ERROR:
+	// 	led_set(lin->led_status_green, 0);
+	// 	led_blink(lin->led_status_red, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS);
+	// 	break;
+	// default:
+	// 	led_blink(lin->led_status_green, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS / 2);
+	// 	led_blink(lin->led_status_red, SLLIN_LIN_LED_BLINK_DELAY_AWAKE_ACTIVE_MS / 2);
+	// 	break;
+	// }
 }
 
 SLLIN_RAMFUNC static inline bool lin_int_update_bus_status(uint8_t index, uint8_t bus_state, uint8_t bus_error)
@@ -1253,4 +1347,4 @@ ISR_ATTRS void TC5_Handler(void)
 	lin_timer_int_sof(1);
 }
 
-#endif // #if D5035_50
+#endif // #if TRINKET_M0

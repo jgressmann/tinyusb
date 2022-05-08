@@ -17,7 +17,7 @@ INC += \
 
 
 ifeq ($(BOARD),trinket_m0)
-CFLAGS += -DRAMFUNC_SECTION_NAME="\".ramfunc\""
+CFLAGS += -DRAMFUNC_SECTION_NAME="\".ramfunc\"" -DTRINKET_M0=1
 else
 CFLAGS += -DHAVE_ATOMIC_COMPARE_EXCHANGE
 endif

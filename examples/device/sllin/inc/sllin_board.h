@@ -105,10 +105,16 @@ extern uint16_t _sllin_time_stamp_ms;
 #	define D5035_50 0
 #endif
 
+#ifndef TRINKET_M0
+#	define TRINKET_M0 0
+#endif
+
 #if SAME54XPLAINEDPRO
 #	include "sllin_same54_xplained_pro.h"
 #elif D5035_50
 #	include "sllin_D5035_50.h"
+#elif TRINKET_M0
+#	include "sllin_trinket_m0.h"
 #else
 #	error "Unknown board"
 #endif

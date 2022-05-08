@@ -459,8 +459,17 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 	} break;
 	case 'F': {
 		uint8_t flags = 0;
-
-		if (__atomic_fetch_and(&lin->rx_full, 0, __ATOMIC_ACQ_REL)) {
+		uint8_t rx_full = 0;
+#if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
+		// NOT supported on Cortex-M0
+		rx_full = __atomic_exchange_n(&lin->rx_full, 0, __ATOMIC_ACQ_REL);
+#else
+		taskENTER_CRITICAL();
+		rx_full = lin->rx_full;
+		lin->rx_full = 0;
+		taskEXIT_CRITICAL();
+#endif
+		if (rx_full) {
 			flags |= 0x1;
 		}
 
@@ -779,7 +788,13 @@ SLLIN_RAMFUNC extern void sllin_lin_task_queue(uint8_t index, sllin_queue_elemen
 
 		__atomic_store_n(&lin->rx_fifo_pi, pi + 1, __ATOMIC_RELEASE);
 	} else {
+#if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
 		__atomic_store_n(&lin->rx_full, 1, __ATOMIC_RELEASE);
+#else
+		taskENTER_CRITICAL();
+		lin->rx_full = 1;
+		taskEXIT_CRITICAL();
+#endif
 	}
 }
 
