@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License (MIT)
  *
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
@@ -84,8 +84,10 @@ void board_init(void)
   board_led_write(false);
 
   // Button init
+#ifdef BUTTON_PIN
   gpio_set_pin_direction(BUTTON_PIN, GPIO_DIRECTION_IN);
   gpio_set_pin_pull_mode(BUTTON_PIN, BUTTON_STATE_ACTIVE ? GPIO_PULL_DOWN : GPIO_PULL_UP);
+#endif
 
   uart_init();
 
@@ -133,7 +135,11 @@ void board_led_write(bool state)
 
 uint32_t board_button_read(void)
 {
+#ifdef BUTTON_PIN
   return BUTTON_STATE_ACTIVE == gpio_get_pin_level(BUTTON_PIN);
+#else
+  return 0;
+#endif
 }
 
 #if defined(UART_SERCOM)
