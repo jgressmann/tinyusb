@@ -500,7 +500,6 @@ SLLIN_RAMFUNC static inline void lin_slave_cleanup(struct lin *lin)
 	sl->slave_proto_step = SLAVE_PROTO_STEP_RX_BREAK;
 	sl->slave_tx_offset = 0;
 	sl->slave_rx_offset = 0;
-	sl->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_FRAME;
 	sl->elem.frame.id = 0;
 	sl->elem.frame.len = 0;
 
@@ -600,6 +599,9 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	struct lin *lin = &lins[index];
 	struct slave *sl = &lin->slave;
 	Sercom *sercom = lin->sercom;
+
+	// set queue element type
+	sl->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_FRAME;
 
 	for (size_t i = 0; i < TU_ARRAY_SIZE(sl->slave_frame_enabled); ++i) {
 		sl->slave_frame_enabled[i] = 0;
