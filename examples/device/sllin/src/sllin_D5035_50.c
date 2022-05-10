@@ -1038,7 +1038,7 @@ SLLIN_RAMFUNC static void lin_usart_int(uint8_t index)
 	struct sllin_frame_data const *fd = &sllin_frame_data[index];
 	uint8_t intflag = s->USART.INTFLAG.reg;
 	uint8_t status = s->USART.STATUS.reg;
-	uint8_t const master_proto_step = __atomic_load_n(&ma->proto_step, __ATOMIC_ACQUIRE);
+	uint8_t master_proto_step = __atomic_load_n(&ma->proto_step, __ATOMIC_ACQUIRE);
 
 	// LOG("ch%u INTFLAG=%x\n", index, intflag);
 
@@ -1053,7 +1053,9 @@ SLLIN_RAMFUNC static void lin_usart_int(uint8_t index)
 			intflag &= ~SERCOM_USART_INTFLAG_DRE;
 
 			s->USART.DATA.reg = ma->pid;
+			s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 			__atomic_store_n(&ma->proto_step, MASTER_PROTO_STEP_FINISHED, __ATOMIC_RELEASE);
+			master_proto_step = MASTER_PROTO_STEP_FINISHED;
 			// LOG("tx pid=%x\n", ma->pid);
 		}
 		break;
