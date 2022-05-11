@@ -713,7 +713,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	sercom->USART.INTENCLR.reg = ~0;
 
 	// RXC _must_ be enabled, else data get's stuck in register and we get errors
-	sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC | SERCOM_USART_INTENSET_DRE;
+	sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
 
 
 	if (conf->master) {
@@ -734,7 +734,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	lin->master.break_timeout_us = (13 * 10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
 	LOG("ch%u break timeout %x [us]\n", index, lin->master.break_timeout_us);
 
-	lin->master.high_timeout_us = (1 * 10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
+	lin->master.high_timeout_us = (2 * 10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
 	LOG("ch%u high timeout %x [us]\n", index, lin->master.high_timeout_us);
 
 
@@ -1004,7 +1004,7 @@ SLLIN_RAMFUNC static void lin_timer_int(uint8_t index)
 		// LOG("break\n");
 
 
-		if (ma->pid == MASTER_PROTO_TX_BREAK_ONLY_PID) {
+		if (unlikely(ma->pid == MASTER_PROTO_TX_BREAK_ONLY_PID)) {
 			ma->proto_step = MASTER_PROTO_STEP_FINISHED;
 		} else {
 			// do this here to waste cycles while TX is high
@@ -1014,7 +1014,7 @@ SLLIN_RAMFUNC static void lin_timer_int(uint8_t index)
 		}
 	} break;
 	case TIMER_TYPE_HIGH: {
-		lin->timer->COUNT16.CC[0].reg = lin->sof_timeout_us;
+		lin->timer->COUNT16.CC[0].reg = lin->sof_timeout_us - ma->high_timeout_us;
 		__atomic_store_n(&lin->timer_type, TIMER_TYPE_SOF, __ATOMIC_RELEASE);
 		lin->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 
@@ -1077,7 +1077,7 @@ SLLIN_RAMFUNC static void lin_usart_int(uint8_t index)
 
 
 		if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_AWAKE, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
-			// LOG("ch%u wake\n", index);
+			LOG("ch%u wake\n", index);
 		}
 
 		sl->slave_proto_step = SLAVE_PROTO_STEP_RX_PID;
