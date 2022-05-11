@@ -129,7 +129,6 @@ struct slave {
 };
 
 struct master {
-	uint16_t break_baud_rate;
 	uint16_t break_timeout_us;
 	uint16_t high_timeout_us;
 	uint8_t busy;
@@ -142,7 +141,6 @@ struct lin {
 	Tc* const timer;
 	struct slave slave;
 	struct master master;
-	uint16_t default_baud_rate;
 	uint16_t sof_timeout_us;
 	uint8_t const rx_pin_index;
 	uint8_t const master_slave_pin;  // set for master, clear for slave
@@ -681,33 +679,8 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 
 	uint16_t baud = CONF_LIN_UART_FREQUENCY / (16 * conf->bitrate);
 	uint16_t frac = CONF_LIN_UART_FREQUENCY / (2 * conf->bitrate) - 8 * baud;
-	lin->default_baud_rate = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
+	sercom->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
 	LOG("ch%u data baud=%x frac=%x\n", index, baud, frac);
-	// Baud rate for break Should be slowed enough that 1 stop bit plus 8 data bits
-	// (=9) >= 13 regular bit times of low. This gives a factor of 0.692307692 by
-	// which to slow down the baud rate.
-	uint16_t break_baud_rate = (uint16_t)((UINT32_C(69) * conf->bitrate) / 100);
-	baud = CONF_LIN_UART_FREQUENCY / (16 * break_baud_rate);
-	frac = CONF_LIN_UART_FREQUENCY / (2 * break_baud_rate) - 8 * baud;
-	lin->master.break_baud_rate = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
-	LOG("ch%u break baud=%x frac=%x\n", index, baud, frac);
-
-
-
-
-
-	// uint16_t baud = 65536 - ((UINT32_C(1048576) * (conf->bitrate / 10)) / (CONF_LIN_UART_FREQUENCY / 10));
-	// lin->default_baud_rate = baud;
-	// LOG("ch%u data baud=%x\n", index, baud);
-	// // Baud rate for break Should be slowed enough that 1 stop bit plus 8 data bits
-	// // (=9) >= 13 regular bit times of low. This gives a factor of 0.692307692 by
-	// // which to slow down the baud rate.
-	// uint16_t break_baud_rate = (uint16_t)((UINT32_C(69) * conf->bitrate) / 100);
-	// baud = 65536 - (UINT32_C(1048576) * (break_baud_rate / 10)) / (CONF_LIN_UART_FREQUENCY / 10);
-	// lin->master.break_baud_rate = baud;
-	// LOG("ch%u break baud=%x\n", index, baud);
-
-	sercom->USART.BAUD.reg = lin->default_baud_rate;
 
 	// clear interrupts
 	sercom->USART.INTENCLR.reg = ~0;
@@ -731,7 +704,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	lin->sof_timeout_us = (14 * 34 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
 	LOG("ch%u SOF timeout %x [us]\n", index, lin->sof_timeout_us);
 
-	lin->master.break_timeout_us = (13 * 10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
+	lin->master.break_timeout_us = (14 * 10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
 	LOG("ch%u break timeout %x [us]\n", index, lin->master.break_timeout_us);
 
 	lin->master.high_timeout_us = (2 * 10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
