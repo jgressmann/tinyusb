@@ -37,7 +37,7 @@ enum {
 	SLLIN_ID_FLAG_BUS_STATE_MASK =     0x03, //<
 	SLLIN_ID_FLAG_BUS_STATE_SHIFT =    0x00, //<
 	SLLIN_ID_FLAG_BUS_STATE_ASLEEP =   0x00, //< bus is asleep
-	SLLIN_ID_FLAG_BUS_STATE_AWAKE =    0x01, //< bus is asleep
+	SLLIN_ID_FLAG_BUS_STATE_AWAKE =    0x01, //< bus is awake
 	SLLIN_ID_FLAG_BUS_STATE_ERROR =    0x02, //< bus is in error state
 
 	// bus error (permanent)
