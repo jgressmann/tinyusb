@@ -1068,11 +1068,6 @@ SLLIN_RAMFUNC static void lin_usart_int(uint8_t index)
 
 		// LOG("-");
 
-
-		if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_AWAKE, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
-			LOG("ch%u wake\n", index);
-		}
-
 		sl->slave_proto_step = SLAVE_PROTO_STEP_RX_PID;
 
 		if (ma->proto_step != MASTER_PROTO_STEP_FINISHED) {
@@ -1091,6 +1086,10 @@ SLLIN_RAMFUNC static void lin_usart_int(uint8_t index)
 			uint8_t const pid = sllin_id_to_pid(id);
 
 			timer_cleanup_begin(lin->timer);
+
+			if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_AWAKE, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
+				LOG("ch%u wake\n", index);
+			}
 
 			// LOG("ch%u PID=%x\n", index, rx_byte);
 
