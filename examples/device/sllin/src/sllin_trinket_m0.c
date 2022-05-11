@@ -406,19 +406,6 @@ static inline void clock_init(void)
 		GCLK_GENCTRL_IDC |
 		GCLK_GENCTRL_ID(2);
 	while (GCLK->STATUS.bit.SYNCBUSY);
-
-
-	// Setup 1 MHz on GCLK3
-	GCLK->GENDIV.reg =
-		GCLK_GENDIV_DIV(48) |
-		GCLK_GENDIV_ID(3);
-
-	GCLK->GENCTRL.reg =
-		GCLK_GENCTRL_SRC_DFLL48M |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_IDC |
-		GCLK_GENCTRL_ID(3);
-	while (GCLK->STATUS.bit.SYNCBUSY);
 }
 
 
