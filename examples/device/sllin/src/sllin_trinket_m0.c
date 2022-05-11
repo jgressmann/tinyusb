@@ -19,8 +19,6 @@
 
 #include <tusb.h>
 
-
-#define SLEEP_TIMER_HZ 3906 // (1 MHZ / 256)
 #define LIN_SERCOM_PORT_GROUP 0
 #define MASTER_SLAVE_PIN_GROUP 1
 #define BOARD_SERCOM SERCOM0	// TinyUSB board setup
@@ -29,10 +27,6 @@
 #define CONF_LIN_UART_FREQUENCY 48000000
 
 
-// Word 0: 0x0080A00C
-// Word 1: 0x0080A040
-// Word 2: 0x0080A044
-// Word 3: 0x0080A048
 
 /* The board runs off of the 48 MHz internal RC oscillator
  *
@@ -46,49 +40,67 @@ enum {
 	SLAVE_PROTO_STEP_RX_PID,
 	SLAVE_PROTO_STEP_TX_DATA,
 	SLAVE_PROTO_STEP_RX_DATA,
+
+	MASTER_PROTO_STEP_TX_BREAK = 0,
+	MASTER_PROTO_STEP_TX_SYNC,
+	MASTER_PROTO_STEP_FINISHED,
+
+	MASTER_PROTO_TX_BREAK_ONLY_PID = 0xff, // any non-valid PID will do
+
+	TIMER_TYPE_SLEEP = 0,
+	TIMER_TYPE_BREAK,
+	TIMER_TYPE_HIGH,
+	TIMER_TYPE_SOF,
+	TIMER_TYPE_DATA,
 };
 
 
-SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index);
-SLLIN_RAMFUNC static void lin_timer_int_data(uint8_t index);
-SLLIN_RAMFUNC static void lin_timer_int_sof(uint8_t index);
+SLLIN_RAMFUNC static void lin_usart_int(uint8_t index);
+SLLIN_RAMFUNC static void lin_timer_int(uint8_t index);
+
 
 
 struct slave {
-	Tc* const sleep_timer;
-	Tc* const data_timer;
 	sllin_queue_element elem;
 	uint8_t slave_frame_enabled[64];
+	uint32_t sleep_timeout_us;
+	uint32_t sleep_elapsed_us;
+	uint16_t data_timeout_us;
 	uint8_t slave_proto_step;
 	uint8_t slave_tx_offset;
 	uint8_t slave_rx_offset;
 };
 
 struct master {
-	Tc* const sof_timer;
+	uint16_t break_timeout_us;
+	uint16_t high_timeout_us;
 	uint8_t busy;
+	uint8_t proto_step;
+	uint8_t pid;
 };
 
 struct lin {
 	Sercom* const sercom;
+	Tc* const timer;
 	struct slave slave;
 	struct master master;
+	uint16_t sof_timeout_us;
+	uint16_t baud;
 	uint8_t const rx_pin_index;
-	// uint8_t const master_slave_pin;
+	uint8_t const master_slave_pin;  // set for master, clear for slave
 	uint8_t const led_status_green;
 	uint8_t const led_status_red;
 	uint8_t bus_state;
 	uint8_t bus_error;
+	uint8_t timer_type;
 };
 
 static struct lin lins[SLLIN_BOARD_LIN_COUNT] = {
 	{
 		.sercom = SERCOM2,
-		.slave.data_timer = TC3, // NOTE: TC0/TC1 don't seem to support different clock speeds, setting one will affect the other.
-		.slave.sleep_timer = TC5,
-		.master.sof_timer = TC4,
+		.timer = TC3,
 		.rx_pin_index = 8,
-		// .master_slave_pin = 4,
+		.master_slave_pin = 2,
 		.led_status_green = SLLIN_BOARD_DOTSTAR_GREEN,
 		.led_status_red = SLLIN_BOARD_DOTSTAR_RED,
 	}
@@ -584,21 +596,6 @@ SLLIN_RAMFUNC static inline void timer_cleanup_end(Tc* timer)
 }
 
 
-#define timer_cleanup(tc) \
-	do { \
-		timer_cleanup_begin(tc); \
-		timer_cleanup_end(tc); \
-	} while (0)
-
-
-#define sleep_timer_cleanup(lin) \
-	do { \
-		timer_cleanup((lin)->slave.sleep_timer); \
-	} while (0)
-
-#define sof_timer_cleanup(lin) timer_cleanup((lin)->master.sof_timer)
-
-
 
 /* According to DS60001507E-page 1717 it should
  * suffice to write the re-trigger command. This
@@ -626,26 +623,62 @@ SLLIN_RAMFUNC static inline void timer_cleanup_end(Tc* timer)
 	} while (0)
 
 
+#define sof_start_or_restart_begin(lin) \
+	do { \
+		timer_start_or_restart_begin(lin->timer); \
+		lin->timer->COUNT16.CC[0].reg = lin->sof_timeout_us; \
+		lin->timer_type = TIMER_TYPE_SOF; \
+	} while (0)
+
+#define sof_start_or_restart_end(lin) timer_start_or_restart_end(lin->timer)
 
 
-SLLIN_RAMFUNC static inline void lin_slave_cleanup(struct lin *lin)
+#define break_start_or_restart_begin(lin) \
+	do { \
+		timer_start_or_restart_begin(lin->timer); \
+		lin->timer->COUNT16.CC[0].reg = lin->master.break_timeout_us; \
+		lin->timer_type = TIMER_TYPE_BREAK; \
+	} while (0)
+
+#define break_start_or_restart_end(lin) timer_start_or_restart_end(lin->timer)
+
+
+#define sof_start_or_restart(lin) \
+	do { \
+		sof_start_or_restart_begin(lin); \
+		sof_start_or_restart_end(lin); \
+	} while (0)
+
+
+//
+
+#define sleep_start(lin) \
+	do { \
+		(lin)->slave.sleep_elapsed_us = 0; \
+		(lin)->timer_type = TIMER_TYPE_SLEEP; \
+		(lin)->timer->COUNT16.CC[0].reg = 0xffff; \
+		(lin)->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val; \
+	} while (0)
+
+SLLIN_RAMFUNC static inline void lin_cleanup_master_tx(struct lin *lin)
 {
 	struct slave *sl = &lin->slave;
-
-	// stop timer
-	timer_cleanup_begin(sl->data_timer);
 
 
 	sl->slave_proto_step = SLAVE_PROTO_STEP_RX_BREAK;
 	sl->slave_tx_offset = 0;
 	sl->slave_rx_offset = 0;
-	sl->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_FRAME;
 	sl->elem.frame.id = 0;
 	sl->elem.frame.len = 0;
+}
 
-	lin->sercom->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
+SLLIN_RAMFUNC static inline void lin_cleanup_full(struct lin *lin)
+{
+	Sercom *const s = lin->sercom;
 
-	timer_cleanup_end(sl->data_timer);
+	lin_cleanup_master_tx(lin);
+
+	s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 }
 
 static inline void usb_init(void)
@@ -723,20 +756,22 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 {
 	struct lin *lin = &lins[index];
 	struct slave *sl = &lin->slave;
-	struct master *ma = &lin->master;
 	Sercom *sercom = lin->sercom;
+
+
 
 	for (size_t i = 0; i < TU_ARRAY_SIZE(sl->slave_frame_enabled); ++i) {
 		sl->slave_frame_enabled[i] = 0;
 	}
 
+
+	lin->master.pid = MASTER_PROTO_TX_BREAK_ONLY_PID;
+
 	__atomic_store_n(&lin->bus_state, SLLIN_ID_FLAG_BUS_STATE_AWAKE, __ATOMIC_RELAXED);
 	__atomic_store_n(&lin->bus_error, SLLIN_ID_FLAG_BUS_ERROR_NONE, __ATOMIC_RELAXED);
 
-	// disable timers
-	sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
-	sl->sleep_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
-	ma->sof_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val;
+	// disable timer
+	timer_cleanup_begin(lin->timer);
 
 	// disable SERCOM
 	sercom->USART.CTRLA.bit.SWRST = 1; /* reset and disable SERCOM -> enable configuration */
@@ -763,6 +798,8 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	uint16_t baud = CONF_LIN_UART_FREQUENCY / (16 * conf->bitrate);
 	uint16_t frac = CONF_LIN_UART_FREQUENCY / (2 * conf->bitrate) - 8 * baud;
 	sercom->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
+	LOG("ch%u data baud=%x frac=%x\n", index, baud, frac);
+	lin->baud = sercom->USART.BAUD.reg;
 
 	// clear interrupts
 	sercom->USART.INTENCLR.reg = ~0;
@@ -771,52 +808,44 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
 
 
-	// if (conf->master) {
-	// 	PORT->Group[MASTER_SLAVE_PIN_GROUP].OUTSET.reg = 1ul << lin->master_slave_pin;
-	// } else {
-	// 	PORT->Group[MASTER_SLAVE_PIN_GROUP].OUTCLR.reg = 1ul << lin->master_slave_pin;
-	// }
+	if (conf->master) {
+		PORT->Group[MASTER_SLAVE_PIN_GROUP].OUTSET.reg = 1ul << lin->master_slave_pin;
+	} else {
+		PORT->Group[MASTER_SLAVE_PIN_GROUP].OUTCLR.reg = 1ul << lin->master_slave_pin;
+	}
 
-	lin_slave_cleanup(lin);
-	sof_timer_cleanup(lin);
-	__atomic_store_n(&lin->master.busy, 0, __ATOMIC_RELAXED);
+	lin_cleanup_full(lin);
+	lin->master.busy = 0;
 
+	sl->data_timeout_us = (14 * 10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
+	LOG("ch%u data byte timeout %x [us]\n", index, sl->data_timeout_us);
 
-	sl->data_timer->COUNT16.CC[0].reg = (14 * 10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
-	LOG("ch%u data byte timeout %x [us]\n", index, sl->data_timer->COUNT16.CC[0].reg);
+	lin->sof_timeout_us = (14 * 34 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
+	LOG("ch%u SOF timeout %x [us]\n", index, lin->sof_timeout_us);
 
-	ma->sof_timer->COUNT16.CC[0].reg = (14 * 34 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
-	LOG("ch%u SOF timeout %x [us]\n", index, ma->sof_timer->COUNT16.CC[0].reg);
+	lin->master.break_timeout_us = (13 * 10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
+	LOG("ch%u break timeout %x [us]\n", index, lin->master.break_timeout_us);
+
+	lin->master.high_timeout_us = (1 * 10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
+	LOG("ch%u high timeout %x [us]\n", index, lin->master.high_timeout_us);
+
 
 
 	sercom->USART.CTRLA.bit.ENABLE = 1;
-	while (sercom->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
+	while (sercom->USART.SYNCBUSY.reg); /* wait for SERCOM to be ready */
 
-	// wait for sleep timer sync
-	while (sl->sleep_timer->COUNT16.STATUS.bit.SYNCBUSY);
+	timer_cleanup_end(lin->timer);
 
-	// reset value
-	sl->sleep_timer->COUNT16.COUNT.reg = 0;
+	sl->sleep_timeout_us = conf->sleep_timeout_ms * UINT32_C(1000);
 
-	// clear interrupts
-	sl->sleep_timer->COUNT16.INTFLAG.reg = ~0;
-
-	sl->sleep_timer->COUNT16.CC[0].reg = ((conf->sleep_timeout_ms * (uint32_t)SLEEP_TIMER_HZ) + 500) / 1000;
-	LOG("ch%u sleep timer CC=%x COUNT=%x\n", index, sl->sleep_timer->COUNT16.CC[0].reg, sl->sleep_timer->COUNT16.COUNT.reg);
-
-	// start sleep timer
-	sl->sleep_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+	sleep_start(lin);
 }
 
-SLLIN_RAMFUNC static bool sllin_board_lin_master_tx(uint8_t index, uint8_t data, uint8_t cmd)
+SLLIN_RAMFUNC static bool sllin_board_lin_master_tx(uint8_t index, uint8_t pid)
 {
 	struct lin * const lin = &lins[index];
-	struct master * const ma = &lin->master;
-	struct slave * const sl = &lin->slave;
 	Sercom * const s = lin->sercom;
 	uint8_t busy = 0;
-
-	(void)sl;
 
 	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(lins));
 
@@ -824,38 +853,50 @@ SLLIN_RAMFUNC static bool sllin_board_lin_master_tx(uint8_t index, uint8_t data,
 	busy = __atomic_load_n(&lin->master.busy, __ATOMIC_ACQUIRE);
 
 	if (unlikely(busy)) {
-		LOG("ch%u master tx busy\n", index);
-		LOG("ch%u data timer stop=%u sof timer stop=%u\n", index, sl->data_timer->COUNT16.STATUS.bit.STOP, ma->sof_timer->COUNT16.STATUS.bit.STOP);
+		LOG("ch%u master busy\n", index);
 		return false;
 	}
 
-	__atomic_store_n(&lin->master.busy, 1, __ATOMIC_RELEASE);
+	// Disable sercom, see below.
+	s->USART.CTRLA.bit.ENABLE = 0;
 
-	SLLIN_DEBUG_ASSERT(0 == ma->sof_timer->COUNT16.COUNT.reg);
+	break_start_or_restart_begin(lin);
+
+	__atomic_store_n(&lin->master.busy, 1, __ATOMIC_RELAXED);
+	lin->master.pid = pid;
+	lin->master.proto_step = MASTER_PROTO_STEP_TX_BREAK;
+
+	/* Because the unit is in auto baud mode
+	 * the baud rate register gets constantly updated.
+	 * When sending the header it is thus imperative
+	 * that we reset the baud rate to the proper value
+	 * prior to sending sync.
+	 */
+	while (s->USART.SYNCBUSY.reg);
+	s->USART.BAUD.reg = lin->baud;
+	s->USART.CTRLA.bit.ENABLE = 1;
+	while (s->USART.SYNCBUSY.reg);
+
+	PORT->Group[LIN_SERCOM_PORT_GROUP].PINCFG[lin->rx_pin_index-1].reg = 0;
 
 	// (re)start timer, could be running bc/ some fiddled with the LIN wire and BREAK was detected
 	// LOG("+");
-	timer_start_or_restart(ma->sof_timer);
 
-
-	// race against other interrupt?
-
-	// s->USART.CTRLB.bit.LINCMD = cmd;
-	// s->USART.DATA.reg = data;
+	break_start_or_restart_end(lin);
 
 	return true;
 }
 
 SLLIN_RAMFUNC extern bool sllin_board_lin_master_break(uint8_t index)
 {
-	return sllin_board_lin_master_tx(index, 0, 1);
+	return sllin_board_lin_master_tx(index, MASTER_PROTO_TX_BREAK_ONLY_PID);
 }
 
 SLLIN_RAMFUNC extern bool sllin_board_lin_master_request(uint8_t index, uint8_t id)
 {
 	SLLIN_DEBUG_ASSERT(id < 64);
 
-	return sllin_board_lin_master_tx(index, sllin_id_to_pid(id), 2);
+	return sllin_board_lin_master_tx(index, sllin_id_to_pid(id));
 }
 
 
@@ -938,68 +979,29 @@ SLLIN_RAMFUNC static inline bool lin_int_update_bus_status(uint8_t index, uint8_
 	return false;
 }
 
-SLLIN_RAMFUNC static inline void lin_int_bus_sleep(uint8_t index)
+SLLIN_RAMFUNC static inline void usart_clear(Sercom *s)
 {
-	struct lin *lin = &lins[index];
-	struct slave *sl = &lin->slave;
-
-	sl->sleep_timer->COUNT16.INTFLAG.reg = ~0;
-
-	SLLIN_DEBUG_ISR_ASSERT(0 == sl->sleep_timer->COUNT16.COUNT.reg);
-
-	if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_ASLEEP, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
-		LOG("ch%u sleep\n", index);
-	}
-
-
-	// LOG("z");
-}
-
-SLLIN_RAMFUNC static inline void lin_int_wake_up(uint8_t index)
-{
-	struct lin *lin = &lins[index];
-	struct slave *sl = &lin->slave;
-
-	timer_start_or_restart_begin(sl->sleep_timer);
-
-	if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_AWAKE, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
-		LOG("ch%u wake\n", index);
-	}
-
-	// (re-)start timer DS60001507E-page 1717
-	// LOG("y");
-
-
-	// time _might_ be running
-	timer_start_or_restart_end(sl->sleep_timer);
-}
-
-SLLIN_RAMFUNC static inline void lin_timer_int_data(uint8_t index)
-{
-	// frame byte timeout
-
-	struct lin *lin = &lins[index];
-	struct slave *sl = &lin->slave;
-	Sercom *s = lin->sercom;
-	uint8_t const intflag = sl->data_timer->COUNT16.INTFLAG.reg;
-
-	(void)intflag;
-
-	sl->data_timer->COUNT16.INTFLAG.reg = ~0;
-
-	SLLIN_DEBUG_ISR_ASSERT(0 == sl->data_timer->COUNT16.COUNT.reg);
-	SLLIN_DEBUG_ISR_ASSERT((intflag & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)) == TC_INTFLAG_OVF);
-
-	// LOG("ch%u frame data timeout\n", index);
-
-	// __atomic_thread_fence(__ATOMIC_ACQUIRE);
-
 	// clear interupt and status
 	s->USART.INTFLAG.reg = ~0;
 	s->USART.STATUS.reg = ~0;
 
 	// read data to prevent buffer overflow
 	(void)s->USART.DATA.reg;
+}
+
+SLLIN_RAMFUNC static void on_data_timeout(uint8_t index)
+{
+	struct lin *lin = &lins[index];
+	struct slave *sl = &lin->slave;
+	Sercom *s = lin->sercom;
+
+
+	// LOG("ch%u frame data timeout\n", index);
+	usart_clear(s);
+	// s->USART.CTRLA.bit.ENABLE = 0;
+	// while (s->USART.SYNCBUSY.reg);
+	// s->USART.CTRLA.bit.ENABLE = 1;
+
 
 	switch (sl->slave_proto_step) {
 	case SERCOM_USART_INTFLAG_RXBRK:
@@ -1008,9 +1010,10 @@ SLLIN_RAMFUNC static inline void lin_timer_int_data(uint8_t index)
 	case SLAVE_PROTO_STEP_RX_PID: {
 		LOG("ch%u rx timeout pid\n", index);
 		bool rx_pin = (PORT->Group[LIN_SERCOM_PORT_GROUP].IN.reg & (1u << lin->rx_pin_index)) != 0;
-		if (!rx_pin) {
+		if (rx_pin) {
+			sleep_start(lin);
+		} else {
 			lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_ERROR, SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_GND);
-			sleep_timer_cleanup(lin);
 		}
 	} break;
 	default: {
@@ -1030,22 +1033,21 @@ SLLIN_RAMFUNC static inline void lin_timer_int_data(uint8_t index)
 		}
 
 		if (rx_pin) {
-
 			sl->elem.time_stamp_ms = sllin_time_stamp_ms();
 
 			SLLIN_DEBUG_ISR_ASSERT(sl->elem.frame.len <= 8);
 
 			sllin_lin_task_queue(index, &sl->elem);
 			sllin_lin_task_notify_isr(index, 1);
+
+			sleep_start(lin);
 		} else {
 			lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_ERROR, SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_GND);
-			sleep_timer_cleanup(lin);
 		}
 	} break;
 	}
 
-
-	lin_slave_cleanup(lin);
+	lin_cleanup_full(lin);
 
 	// allow next header
 	__atomic_store_n(&lin->master.busy, 0, __ATOMIC_RELEASE);
@@ -1053,48 +1055,92 @@ SLLIN_RAMFUNC static inline void lin_timer_int_data(uint8_t index)
 	// LOG("|");
 }
 
-SLLIN_RAMFUNC static inline void lin_timer_int_sof(uint8_t index)
+SLLIN_RAMFUNC static void lin_timer_int(uint8_t index)
 {
-	// sof timeout
-
 	struct lin *lin = &lins[index];
-	Sercom *s = lin->sercom;
-	struct master *ma = &lin->master;
 	struct slave *sl = &lin->slave;
-	bool rx_pin = (PORT->Group[LIN_SERCOM_PORT_GROUP].IN.reg & (1u << lin->rx_pin_index)) != 0;
-
-	(void)ma;
-	(void)sl;
-
-	SLLIN_DEBUG_ISR_ASSERT(0 == ma->sof_timer->COUNT16.COUNT.reg);
-
-	sof_timer_cleanup(lin);
-	sleep_timer_cleanup(lin);
-
-	SLLIN_DEBUG_ISR_ASSERT(0 == sl->data_timer->COUNT16.COUNT.reg);
-	SLLIN_DEBUG_ISR_ASSERT(0 == sl->data_timer->COUNT16.INTFLAG.reg);
-	SLLIN_DEBUG_ISR_ASSERT(TC_CTRLBSET_CMD_NONE_Val == sl->data_timer->COUNT16.CTRLBSET.bit.CMD);
-	SLLIN_DEBUG_ISR_ASSERT(sl->data_timer->COUNT16.STATUS.bit.STOP);
-
-	// clear interupt and status
-	s->USART.INTFLAG.reg = ~0;
-	s->USART.STATUS.reg = ~0;
-
-	// read data to prevent buffer overflow
-	(void)s->USART.DATA.reg;
-
-	LOG("ch%u sof timeout rx=%u\n", index, rx_pin);
-
-	lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_ERROR, rx_pin ? SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_VBAT : SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_GND);
+	struct master *ma = &lin->master;
+	Sercom *s = lin->sercom;
+	uint8_t const intflag = lin->timer->COUNT16.INTFLAG.reg;
 
 
-	// allow next header
-	__atomic_store_n(&lin->master.busy, 0, __ATOMIC_RELEASE);
-	// LOG("*");
+	(void)intflag;
+
+	lin->timer->COUNT16.INTFLAG.reg = ~0;
+
+	SLLIN_DEBUG_ISR_ASSERT(0 == lin->timer->COUNT16.COUNT.reg);
+	SLLIN_DEBUG_ISR_ASSERT(lin->timer->COUNT16.STATUS.bit.STOP);
+	SLLIN_DEBUG_ISR_ASSERT((intflag & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)) == TC_INTFLAG_OVF);
+
+	switch (lin->timer_type) {
+	case TIMER_TYPE_DATA:
+		on_data_timeout(index);
+		break;
+	case TIMER_TYPE_SLEEP:
+		sl->sleep_elapsed_us += 0x10000;
+
+		if (likely(sl->sleep_elapsed_us < sl->sleep_timeout_us)) {
+			SLLIN_DEBUG_ISR_ASSERT(lin->timer->COUNT16.STATUS.bit.STOP);
+			SLLIN_DEBUG_ISR_ASSERT(!(lin->timer->COUNT16.INTFLAG.reg & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)));
+			lin->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+		} else {
+			if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_ASLEEP, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
+				LOG("ch%u asleep\n", index);
+			}
+			// LOG("z");
+		}
+		break;
+	case TIMER_TYPE_SOF: {
+		bool rx_pin = (PORT->Group[LIN_SERCOM_PORT_GROUP].IN.reg & (1u << lin->rx_pin_index)) != 0;
+
+		// clean up master part
+		ma->proto_step = MASTER_PROTO_STEP_FINISHED;
+		s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
+
+		LOG("ch%u sof timeout rx=%u\n", index, rx_pin);
+
+		lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_ERROR, rx_pin ? SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_VBAT : SLLIN_ID_FLAG_BUS_ERROR_SHORT_TO_GND);
+
+		// allow next header
+		__atomic_store_n(&lin->master.busy, 0, __ATOMIC_RELEASE);
+		// LOG("*");
+	} break;
+	case TIMER_TYPE_BREAK: {
+		// drive pin through UART
+		PORT->Group[LIN_SERCOM_PORT_GROUP].PINCFG[lin->rx_pin_index-1].reg = PORT_PINCFG_PMUXEN;
+		// LOG("break\n");
+
+
+		if (unlikely(ma->pid == MASTER_PROTO_TX_BREAK_ONLY_PID)) {
+			ma->proto_step = MASTER_PROTO_STEP_FINISHED;
+			// start sof timer
+			lin->timer->COUNT16.CC[0].reg = lin->sof_timeout_us;
+			lin->timer_type = TIMER_TYPE_SOF;
+			lin->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+		} else {
+			// start high timer
+			lin->timer->COUNT16.CC[0].reg = ma->high_timeout_us;
+			lin->timer_type = TIMER_TYPE_HIGH;
+			lin->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+		}
+	} break;
+	case TIMER_TYPE_HIGH: {
+		ma->proto_step = MASTER_PROTO_STEP_TX_SYNC;
+		s->USART.INTENSET.reg = SERCOM_USART_INTENSET_DRE;
+		s->USART.DATA.reg = 0x55;
+
+		lin->timer->COUNT16.CC[0].reg = lin->sof_timeout_us - ma->high_timeout_us;
+		lin->timer_type = TIMER_TYPE_SOF;
+		lin->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+	} break;
+	default:
+		LOG("ch%u unhandled timer type %u\n", index, lin->timer_type);
+		SLLIN_DEBUG_ISR_ASSERT(false);
+		break;
+	}
 }
 
-
-SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index)
+SLLIN_RAMFUNC static void lin_usart_int(uint8_t index)
 {
 	struct lin *lin = &lins[index];
 	struct slave *sl = &lin->slave;
@@ -1111,22 +1157,41 @@ SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index)
 
 	// LOG("/");
 
-	if (intflag & SERCOM_USART_INTFLAG_RXBRK) {
-		// Restart the timer in case the BREAK wasn't sent by this device.
-		// Technically the SOF timeout is too long but if we are lenient here,
-		// we don't have to reconfigure the timer.
-		timer_start_or_restart_begin(ma->sof_timer);
+	switch (ma->proto_step) {
+	case MASTER_PROTO_STEP_TX_SYNC:
+		if (intflag & SERCOM_USART_INTFLAG_DRE) {
+			intflag &= ~SERCOM_USART_INTFLAG_DRE;
 
-		lin_slave_cleanup(lin);
+			s->USART.DATA.reg = ma->pid;
+			s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
+			ma->proto_step = MASTER_PROTO_STEP_FINISHED;
+
+			// LOG("tx pid=%x\n", ma->pid);
+		}
+		break;
+	}
+
+	if (intflag & SERCOM_USART_INTFLAG_RXBRK) {
+		if (ma->proto_step != MASTER_PROTO_STEP_FINISHED) {
+			// wait for pull down timer to expire before pulling up
+			lin_cleanup_master_tx(lin);
+		} else {
+			// Restart the timer in case the BREAK wasn't sent by this device.
+			// Technically the SOF timeout is too long but if we are lenient here,
+			// we don't have to reconfigure the timer.
+			sof_start_or_restart_begin(lin);
+			lin_cleanup_full(lin);
+		}
 
 		// LOG("-");
 
-
-		lin_int_wake_up(index);
-
 		sl->slave_proto_step = SLAVE_PROTO_STEP_RX_PID;
 
-		timer_start_or_restart_end(ma->sof_timer);
+		if (ma->proto_step != MASTER_PROTO_STEP_FINISHED) {
+
+		} else {
+			sof_start_or_restart_end(lin);
+		}
 	}
 
 	const uint8_t rx_byte = s->USART.DATA.reg;
@@ -1134,15 +1199,16 @@ SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index)
 	switch (sl->slave_proto_step) {
 	case SLAVE_PROTO_STEP_RX_PID:
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
-			// LOG("ch%u PID=%x\n", index, rx_byte);
-
 			uint8_t const id = sllin_pid_to_id(rx_byte);
 			uint8_t const pid = sllin_id_to_pid(id);
 
-			timer_cleanup_begin(ma->sof_timer);
+			timer_cleanup_begin(lin->timer);
 
-			SLLIN_DEBUG_ISR_ASSERT(sl->data_timer->COUNT16.STATUS.bit.STOP);
-			SLLIN_DEBUG_ISR_ASSERT(!(sl->data_timer->COUNT16.INTFLAG.reg & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)));
+			if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_AWAKE, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
+				LOG("ch%u awake\n", index);
+			}
+
+			// LOG("ch%u PID=%x\n", index, rx_byte);
 
 			sl->elem.frame.id |= id;
 
@@ -1156,10 +1222,13 @@ SLLIN_RAMFUNC static void lin_usart_int_slave(uint8_t index)
 			// clear out flag for PID
 			intflag &= ~SERCOM_USART_INTFLAG_RXC;
 
-			timer_cleanup_end(ma->sof_timer);
+			// setup data timer
+			lin->timer->COUNT16.CC[0].reg = sl->data_timeout_us;
+			lin->timer_type = TIMER_TYPE_DATA;
+			timer_cleanup_end(lin->timer);
 
 			// here we know the timer is stopped
-			sl->data_timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+			lin->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 
 			if (sl->slave_frame_enabled[id]) {
 				SLLIN_DEBUG_ISR_ASSERT(fd->len[id] >= 0 && fd->len[id] <= 8);
@@ -1202,9 +1271,9 @@ tx:
 rx:
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
 			// reset data timer
-			SLLIN_DEBUG_ISR_ASSERT(!(sl->data_timer->COUNT16.INTFLAG.reg & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)));
+			SLLIN_DEBUG_ISR_ASSERT(!(lin->timer->COUNT16.INTFLAG.reg & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)));
 
-			timer_start_or_restart_begin(sl->data_timer);
+			timer_start_or_restart_begin(lin->timer);
 
 			// LOG("ch%u RX=%x\n", index, rx_byte);
 			if (sl->slave_rx_offset < 8) {
@@ -1217,7 +1286,7 @@ rx:
 
 			++sl->slave_rx_offset;
 
-			timer_start_or_restart_end(sl->data_timer);
+			timer_start_or_restart_end(lin->timer);
 		}
 		break;
 	}
@@ -1237,37 +1306,12 @@ rx:
 
 ISR_ATTRS void SERCOM2_Handler(void)
 {
-	lin_usart_int_slave(0);
-}
-
-ISR_ATTRS void TC0_Handler(void)
-{
-	lin_timer_int_data(0);
-}
-
-ISR_ATTRS void TC1_Handler(void)
-{
-	lin_timer_int_data(1);
-}
-
-ISR_ATTRS void TC2_Handler(void)
-{
-	lin_int_bus_sleep(0);
+	lin_usart_int(0);
 }
 
 ISR_ATTRS void TC3_Handler(void)
 {
-	lin_int_bus_sleep(1);
-}
-
-ISR_ATTRS void TC4_Handler(void)
-{
-	lin_timer_int_sof(0);
-}
-
-ISR_ATTRS void TC5_Handler(void)
-{
-	lin_timer_int_sof(1);
+	lin_timer_int(0);
 }
 
 #endif // #if TRINKET_M0
