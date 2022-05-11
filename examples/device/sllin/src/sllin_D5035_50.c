@@ -968,7 +968,7 @@ SLLIN_RAMFUNC static void lin_timer_int(uint8_t index)
 			lin->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 		} else {
 			if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_ASLEEP, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
-				LOG("ch%u sleep\n", index);
+				LOG("ch%u asleep\n", index);
 			}
 			// LOG("z");
 		}
@@ -1088,7 +1088,7 @@ SLLIN_RAMFUNC static void lin_usart_int(uint8_t index)
 			timer_cleanup_begin(lin->timer);
 
 			if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_AWAKE, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
-				LOG("ch%u wake\n", index);
+				LOG("ch%u awake\n", index);
 			}
 
 			// LOG("ch%u PID=%x\n", index, rx_byte);
