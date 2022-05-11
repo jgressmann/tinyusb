@@ -20,7 +20,7 @@
 #include <tusb.h>
 
 #define LIN_SERCOM_PORT_GROUP 0
-#define MASTER_SLAVE_PIN_GROUP 1
+#define MASTER_SLAVE_PIN_GROUP 0
 #define BOARD_SERCOM SERCOM0	// TinyUSB board setup
 #define USART_BAURATE      115200
 #define CONF_CPU_FREQUENCY 48000000
@@ -28,7 +28,7 @@
 
 
 
-/* The board runs off of the 48 MHz internal RC oscillator
+/* The board runs off of the 48 MHz internal RC oscillator with USB clock recovery
  *
  * @115200 debug prints KILL LIN timing assumptions!
 */
@@ -99,7 +99,7 @@ static struct lin lins[SLLIN_BOARD_LIN_COUNT] = {
 	{
 		.sercom = SERCOM2,
 		.timer = TC3,
-		.rx_pin_index = 8,
+		.rx_pin_index = 9,
 		.master_slave_pin = 2,
 		.led_status_green = SLLIN_BOARD_DOTSTAR_GREEN,
 		.led_status_red = SLLIN_BOARD_DOTSTAR_RED,
@@ -424,7 +424,7 @@ static inline void clock_init(void)
 
 static inline void lin_init_once(void)
 {
-	// // lin0
+	// lin0
 	PORT->Group[0].WRCONFIG.reg =
 		PORT_WRCONFIG_WRPINCFG |
 		PORT_WRCONFIG_WRPMUX |
@@ -444,140 +444,57 @@ static inline void lin_init_once(void)
 
 	NVIC_EnableIRQ(SERCOM2_IRQn);
 
-	// // master / slave pin
-	// // PB04 lin0
-	// // PB09 lin1
-	// PORT->Group[MASTER_SLAVE_PIN_GROUP].DIRSET.reg = (1ul << 4) | (1ul << 9);
+	// master / slave pin
+	// PA02 lin0
+	PORT->Group[MASTER_SLAVE_PIN_GROUP].DIRSET.reg = (1ul << 2);
 
+	// set tx pin as out to low
+	PORT->Group[LIN_SERCOM_PORT_GROUP].DIRSET.reg = (1ul << 8);
+
+	for (uint8_t i = 0; i < TU_ARRAY_SIZE(lins); ++i) {
+		struct lin *lin = &lins[i];
+		struct slave *sl = &lin->slave;
+
+		// set queue element type
+		sl->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_FRAME;
+	}
 }
 
 static void timer_init(void)
 {
-	// GCLK->GENCTRL[4].reg =
-	// 	GCLK_GENCTRL_DIV(3) |	/* 48Mhz -> 16MHz */
-	// 	GCLK_GENCTRL_RUNSTDBY |
-	// 	GCLK_GENCTRL_GENEN |
-	// 	GCLK_GENCTRL_SRC_DFLL |
-	// 	GCLK_GENCTRL_IDC;
-	// while(1 == GCLK->SYNCBUSY.bit.GENCTRL4); /* wait for the synchronization between clock domains to be complete */
+	PM->APBCMASK.bit.TCC2_ = 1;
+	PM->APBCMASK.bit.TC3_ = 1;
+	GCLK->CLKCTRL.reg =
+		GCLK_CLKCTRL_GEN_GCLK2 |
+		GCLK_CLKCTRL_CLKEN |
+		GCLK_CLKCTRL_ID_TCC2_TC3;
 
-	// GCLK->GENCTRL[5].reg =
-	// 	GCLK_GENCTRL_DIV(48) |	/* 48Mhz -> 1MHz */
-	// 	// GCLK_GENCTRL_DIVSEL |   /* divide by 2^(DIV+1) */
-	// 	GCLK_GENCTRL_RUNSTDBY |
-	// 	GCLK_GENCTRL_GENEN |
-	// 	GCLK_GENCTRL_SRC_DFLL |
-	// 	GCLK_GENCTRL_IDC;
-	// while(1 == GCLK->SYNCBUSY.bit.GENCTRL5); /* wait for the synchronization between clock domains to be complete */
+	NVIC_SetPriority(TC3_IRQn, SLLIN_ISR_PRIORITY);
+	NVIC_EnableIRQ(TC3_IRQn);
 
+	for (size_t i = 0; i < TU_ARRAY_SIZE(lins); ++i) {
+		struct lin *lin = &lins[i];
+		Tc* timer = lin->timer;
 
-	// MCLK->APBAMASK.bit.TC0_ = 1;
-	// MCLK->APBAMASK.bit.TC1_ = 1;
-	// MCLK->APBBMASK.bit.TC2_ = 1;
-	// MCLK->APBBMASK.bit.TC3_ = 1;
-	// MCLK->APBCMASK.bit.TC4_ = 1;
-	// MCLK->APBCMASK.bit.TC5_ = 1;
+		timer->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
+		while (timer->COUNT16.STATUS.bit.SYNCBUSY);
 
-	// // TC0/1 are connected to the SAME peripheral clock, TC2/3 likewise
-	// GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
-	// GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
-	// GCLK->PCHCTRL[TC2_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK5 | GCLK_PCHCTRL_CHEN;
-	// GCLK->PCHCTRL[TC3_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK5 | GCLK_PCHCTRL_CHEN;
-	// GCLK->PCHCTRL[TC4_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
-	// GCLK->PCHCTRL[TC5_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
+		// timer overflow interrupt
+		timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
 
-	// NVIC_SetPriority(TC0_IRQn, SLLIN_ISR_PRIORITY);
-	// NVIC_SetPriority(TC1_IRQn, SLLIN_ISR_PRIORITY);
-	// NVIC_SetPriority(TC2_IRQn, SLLIN_ISR_PRIORITY);
-	// NVIC_SetPriority(TC3_IRQn, SLLIN_ISR_PRIORITY);
-	// NVIC_SetPriority(TC4_IRQn, SLLIN_ISR_PRIORITY);
-	// NVIC_SetPriority(TC5_IRQn, SLLIN_ISR_PRIORITY);
-	// NVIC_EnableIRQ(TC0_IRQn);
-	// NVIC_EnableIRQ(TC1_IRQn);
-	// NVIC_EnableIRQ(TC2_IRQn);
-	// NVIC_EnableIRQ(TC3_IRQn);
-	// NVIC_EnableIRQ(TC4_IRQn);
-	// NVIC_EnableIRQ(TC5_IRQn);
+		// set to max so we don't time out
+		timer->COUNT16.CC[0].reg = 0xffff;
 
-	// for (size_t i = 0; i < TU_ARRAY_SIZE(lins); ++i) {
-	// 	struct lin *lin = &lins[i];
-	// 	struct slave *sl = &lin->slave;
-	// 	struct master *ma = &lin->master;
-	// 	Tc* data_timer = sl->data_timer;
-	// 	Tc* stc = sl->sleep_timer;
-	// 	Tc* sof_timer = ma->sof_timer;
+		// enable
+		timer->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER_DIV16 | TC_CTRLA_WAVEGEN_MFRQ;
 
-	// 	// MASTER
-	// 	// sof timeout
-	// 	sof_timer->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
-	// 	while (sof_timer->COUNT16.SYNCBUSY.bit.SWRST);
+		// stop & oneshot
+		timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_CMD_STOP;
+		while (timer->COUNT16.STATUS.bit.SYNCBUSY);
 
-	// 	sof_timer->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
-
-	// 	// generate overflow interrupt
-	// 	sof_timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
-
-	// 	// set to max so we don't time out
-	// 	sof_timer->COUNT16.CC[0].reg = 0xffff;
-
-	// 	// enable
-	// 	sof_timer->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER_DIV16;
-
-	// 	// stop & oneshot
-	// 	sof_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_LUPD | TC_CTRLBSET_CMD_STOP;
-	// 	while (sof_timer->COUNT16.SYNCBUSY.bit.CTRLB);
-
-	// 	// reset to zero
-	// 	sof_timer->COUNT16.COUNT.reg = 0;
-
-	// 	// SLAVE
-
-	// 	// reponse timeout
-	// 	data_timer->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
-	// 	while (data_timer->COUNT16.SYNCBUSY.bit.SWRST);
-
-	// 	data_timer->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
-
-	// 	// generate overflow interrupt
-	// 	data_timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
-
-	// 	// set to max so we don't time out
-	// 	data_timer->COUNT16.CC[0].reg = 0xffff;
-
-	// 	// enable
-	// 	data_timer->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER_DIV16;
-
-	// 	// stop & oneshot
-	// 	data_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_LUPD | TC_CTRLBSET_CMD_STOP;
-	// 	// data_timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_CMD_STOP;
-	// 	while (data_timer->COUNT16.SYNCBUSY.bit.CTRLB);
-
-	// 	// reset to zero
-	// 	data_timer->COUNT16.COUNT.reg = 0;
-
-
-	// 	// sleep timeout
-	// 	stc->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
-	// 	while (stc->COUNT16.SYNCBUSY.bit.SWRST);
-
-	// 	stc->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
-
-	// 	// generate overflow interrupt
-	// 	stc->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
-
-	// 	// set to max so we don't time out
-	// 	stc->COUNT16.CC[0].reg = 0xffff;
-
-	// 	// enable
-	// 	stc->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 |  TC_CTRLA_PRESCALER_DIV256;
-
-	// 	// stop & oneshot
-	// 	stc->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT | TC_CTRLBSET_LUPD | TC_CTRLBSET_CMD_STOP;
-	// 	while (stc->COUNT16.SYNCBUSY.bit.CTRLB);
-
-	// 	// reset to zero
-	// 	stc->COUNT16.COUNT.reg = 0;
-	// }
+		// reset to zero
+		timer->COUNT16.COUNT.reg = 0;
+	}
 }
 
 
@@ -998,9 +915,6 @@ SLLIN_RAMFUNC static void on_data_timeout(uint8_t index)
 
 	// LOG("ch%u frame data timeout\n", index);
 	usart_clear(s);
-	// s->USART.CTRLA.bit.ENABLE = 0;
-	// while (s->USART.SYNCBUSY.reg);
-	// s->USART.CTRLA.bit.ENABLE = 1;
 
 
 	switch (sl->slave_proto_step) {
@@ -1302,7 +1216,7 @@ rx:
 	}
 }
 
-#define ISR_ATTRS SLLIN_RAMFUNC __attribute__((naked))
+#define ISR_ATTRS SLLIN_RAMFUNC
 
 ISR_ATTRS void SERCOM2_Handler(void)
 {
