@@ -7,9 +7,6 @@
 #pragma once
 
 
-#include <sam.h>
-
-
 
 #define SLLIN_BOARD_USB_BCD_DEVICE (1 << 8)
 #define SLLIN_BOARD_USB_MANUFACTURER_STRING "Adafruit"
@@ -24,3 +21,9 @@ enum {
 	SLLIN_BOARD_LED_COUNT
 };
 
+
+#define SAM_CONF_LIN_UART_FREQUENCY 48000000
+#define sam_timer_sync_wait(tc) while ((tc)->COUNT16.STATUS.bit.SYNCBUSY)
+
+
+#include "sllin_sam.h"

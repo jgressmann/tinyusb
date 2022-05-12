@@ -38,4 +38,9 @@ enum {
 };
 
 
+#define SAM_CONF_LIN_UART_FREQUENCY 48000000
+#define sam_timer_sync_wait(tc) while ((tc)->COUNT16.SYNCBUSY.bit.CTRLB)
+
+
+#include "sllin_sam.h"
 
