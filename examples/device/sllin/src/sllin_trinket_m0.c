@@ -20,14 +20,15 @@
 #define USART_BAURATE      115200
 #define CONF_CPU_FREQUENCY 48000000
 
+enum {
+	DOTSTAR_NORMAL_LED_INTENSITY = 0x40,
+
+	DMA_DESCS = 1
+};
 
 
-
-/* The board runs off of the 48 MHz internal RC oscillator with USB clock recovery
- *
- * @115200 debug prints KILL LIN timing assumptions!
-*/
-
+static uint32_t dma_wb[DMA_DESCS * 4] __attribute__ ((aligned(16)));	// 16 byte per channel
+static DmacDescriptor dma_desc[DMA_DESCS] __attribute__ ((aligned(16)));
 
 struct sam_lin sam_lins[SLLIN_BOARD_LIN_COUNT] = {
 	{
@@ -41,52 +42,26 @@ struct sam_lin sam_lins[SLLIN_BOARD_LIN_COUNT] = {
 };
 
 static struct {
-	// uint32_t sof;
-	uint8_t a;
-	uint8_t b;
-	uint8_t g;
-	uint8_t r;
-	// uint32_t eof;
+	volatile uint32_t sof;
+	volatile uint8_t a;
+	volatile uint8_t b;
+	volatile uint8_t g;
+	volatile uint8_t r;
+	volatile uint32_t eof;
 } dotstar = {
-	// .sof = 0,
-	.a = 0xe1,
+	.sof = 0,
+	.a = 0xff,
 	.b = 0,
 	.g = 0,
 	.r = 0,
-	// .eof = 0xffffffff,
+	.eof = 0xffffffff,
 };
 
-SLLIN_RAMFUNC static inline void dotstar_update(void)
-{
-	Sercom * const s = SERCOM1;
+_Static_assert(sizeof(dotstar) == 12, "");
 
-	s->SPI.DATA.reg = 0x00;
-	while (!s->SPI.INTFLAG.bit.DRE);
-	s->SPI.DATA.reg = 0x00;
-	while (!s->SPI.INTFLAG.bit.DRE);
-	s->SPI.DATA.reg = 0x00;
-	while (!s->SPI.INTFLAG.bit.DRE);
-	s->SPI.DATA.reg = 0x00;
-	while (!s->SPI.INTFLAG.bit.DRE);
-	s->SPI.DATA.reg = dotstar.a;
-	while (!s->SPI.INTFLAG.bit.DRE);
-	s->SPI.DATA.reg = dotstar.b;
-	while (!s->SPI.INTFLAG.bit.DRE);
-	s->SPI.DATA.reg = dotstar.g;
-	while (!s->SPI.INTFLAG.bit.DRE);
-	s->SPI.DATA.reg = dotstar.r;
-	while (!s->SPI.INTFLAG.bit.DRE);
-	s->SPI.DATA.reg = 0xff;
-	while (!s->SPI.INTFLAG.bit.DRE);
-	s->SPI.DATA.reg = 0xff;
-	while (!s->SPI.INTFLAG.bit.DRE);
-	s->SPI.DATA.reg = 0xff;
-	while (!s->SPI.INTFLAG.bit.DRE);
-	s->SPI.DATA.reg = 0xff;
-	while (!s->SPI.INTFLAG.bit.DRE);
-}
+#define dotstar_update() do { DMAC->CHCTRLA.reg = DMAC_CHCTRLA_ENABLE; } while (0)
 
-static inline void leds_init(void)
+static void leds_init(void)
 {
 	Sercom * const s = SERCOM1;
 
@@ -114,20 +89,46 @@ static inline void leds_init(void)
 	while(s->SPI.SYNCBUSY.bit.SWRST); /* wait for SERCOM to be ready */
 
 	s->SPI.BAUD.reg = SERCOM_SPI_BAUD_BAUD(7); // 1 MHz
-
 	s->SPI.INTENSET.reg = SERCOM_SPI_INTENSET_DRE | SERCOM_SPI_INTENSET_ERROR;
-
-
-
 	s->SPI.CTRLA.reg =
 		SERCOM_SPI_CTRLA_ENABLE |
 		SERCOM_SPI_CTRLA_DIPO(2) | // input on PAD2 PAD0 = DO, PAD1 = SCK
 		SERCOM_SPI_CTRLA_MODE(3); // master mode
+
 	while(s->SPI.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
 
-	LOG("dotstar init\n");
 
-	dotstar_update();
+	// DMA setup to transfer w/o CPU
+
+	dma_desc[0].BTCTRL.reg =
+		DMAC_BTCTRL_VALID |
+		DMAC_BTCTRL_BEATSIZE_BYTE |
+		DMAC_BTCTRL_SRCINC;
+
+	dma_desc[0].BTCNT.reg = 12;
+	dma_desc[0].SRCADDR.reg = (uint32_t)(((uint8_t*)&dotstar) + sizeof(dotstar));
+	dma_desc[0].DSTADDR.reg = (uint32_t)&s->SPI.DATA;
+	dma_desc[0].DESCADDR.reg = 0;
+
+
+	DMAC->CTRL.bit.SWRST = 1;
+	while (DMAC->CTRL.bit.SWRST);
+
+	DMAC->BASEADDR.reg = (uint32_t)(void*)dma_desc;
+	DMAC->WRBADDR.reg = (uint32_t)(void*)dma_wb;
+	DMAC->CHID.reg = 0;
+	DMAC->CHCTRLB.reg =
+		DMAC_CHCTRLB_TRIGSRC(0x04) | // SERCOM1 TX
+		DMAC_CHCTRLB_TRIGACT_BEAT |
+		0;
+	DMAC->CHCTRLA.reg = DMAC_CHCTRLA_ENABLE;
+
+	DMAC->CTRL.reg =
+		DMAC_CTRL_DMAENABLE |
+		DMAC_CTRL_LVLEN0 |
+		DMAC_CTRL_LVLEN1 |
+		DMAC_CTRL_LVLEN2 |
+		DMAC_CTRL_LVLEN3;
 }
 
 
@@ -145,17 +146,17 @@ extern void sllin_board_led_set(uint8_t index, bool on)
 		PORT->Group[0].OUT.reg = ((uint32_t)on) << 10;
 		break;
 	case SLLIN_BOARD_DOTSTAR_RED:
-		dotstar.r = on * 0xff;
+		dotstar.r = on * DOTSTAR_NORMAL_LED_INTENSITY;
 		// LOG("r=%u\n", on > 0);
 		dotstar_update();
 		break;
 	case SLLIN_BOARD_DOTSTAR_GREEN:
-		dotstar.g = on * 0xff;
+		dotstar.g = on * DOTSTAR_NORMAL_LED_INTENSITY;
 		// LOG("g=%u\n", on > 0);
 		dotstar_update();
 		break;
 	case SLLIN_BOARD_DOTSTAR_BLUE:
-		dotstar.b = on * 0xff;
+		dotstar.b = on * DOTSTAR_NORMAL_LED_INTENSITY;
 		// LOG("b=%u\n", on > 0);
 		dotstar_update();
 		break;
