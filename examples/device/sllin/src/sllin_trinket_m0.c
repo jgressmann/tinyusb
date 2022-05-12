@@ -381,13 +381,6 @@ extern void sllin_board_init_begin(void)
 	// Atmel-42181G–SAM-D21_Datasheet–09/2015, p. 367
 	// setup deterministic wait states
 	NVMCTRL->CTRLB.bit.READMODE = NVMCTRL_CTRLB_READMODE_DETERMINISTIC_Val;
-	// NVMCTRL->CTRLB.bit.RWS = 2;
-
-	// Don't divide peripheral clock
-	PM->CPUSEL.reg = PM_CPUSEL_CPUDIV(0);
-	PM->APBASEL.reg = PM_APBASEL_APBADIV(0);
-	PM->APBBSEL.reg = PM_APBBSEL_APBBDIV(0);
-	PM->APBCSEL.reg = PM_APBCSEL_APBCDIV(0);
 
 
 	clock_init();
