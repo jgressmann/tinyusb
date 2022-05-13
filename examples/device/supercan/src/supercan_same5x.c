@@ -21,6 +21,36 @@
 #	define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
 #endif
 
+static const sc_can_bit_timing_range nm_range = {
+	.min = {
+		.brp = M_CAN_NMBT_BRP_MIN,
+		.tseg1 = M_CAN_NMBT_TSEG1_MIN,
+		.tseg2 = M_CAN_NMBT_TSEG2_MIN,
+		.sjw = M_CAN_NMBT_SJW_MIN,
+	},
+	.max = {
+		.brp = M_CAN_NMBT_BRP_MAX,
+		.tseg1 = M_CAN_NMBT_TSEG1_MAX,
+		.tseg2 = M_CAN_NMBT_TSEG2_MAX,
+		.sjw = M_CAN_NMBT_SJW_MAX,
+	},
+};
+
+static const sc_can_bit_timing_range dt_range = {
+	.min = {
+		.brp = M_CAN_DTBT_BRP_MIN,
+		.tseg1 = M_CAN_DTBT_TSEG1_MIN,
+		.tseg2 = M_CAN_DTBT_TSEG2_MIN,
+		.sjw = M_CAN_DTBT_SJW_MIN,
+	},
+	.max = {
+		.brp = M_CAN_DTBT_BRP_MAX,
+		.tseg1 = M_CAN_DTBT_TSEG1_MAX,
+		.tseg2 = M_CAN_DTBT_TSEG2_MAX,
+		.sjw = M_CAN_DTBT_SJW_MAX,
+	},
+};
+
 
 struct same5x_can same5x_cans[SC_BOARD_CAN_COUNT];
 
@@ -577,8 +607,8 @@ static inline void can_reset(uint8_t index)
 	can_off(index);
 
 	can->features = CAN_FEAT_PERM;
-	memset(&can->nm, 0, sizeof(can->nm));
-	memset(&can->dt, 0, sizeof(can->dt));
+	can->nm = nm_range.min;
+	can->dt = dt_range.min;
 }
 
 static uint32_t device_identifier;
@@ -1259,46 +1289,14 @@ extern sc_can_bit_timing_range const* sc_board_can_nm_bit_timing_range(uint8_t i
 {
 	(void)index;
 
-	static const sc_can_bit_timing_range range = {
-
-		.min = {
-			.brp = M_CAN_NMBT_BRP_MIN,
-			.tseg1 = M_CAN_NMBT_TSEG1_MIN,
-			.tseg2 = M_CAN_NMBT_TSEG2_MIN,
-			.sjw = M_CAN_NMBT_SJW_MIN,
-		},
-		.max = {
-			.brp = M_CAN_NMBT_BRP_MAX,
-			.tseg1 = M_CAN_NMBT_TSEG1_MAX,
-			.tseg2 = M_CAN_NMBT_TSEG2_MAX,
-			.sjw = M_CAN_NMBT_SJW_MAX,
-		},
-	};
-
-	return &range;
+	return &nm_range;
 }
 
 extern sc_can_bit_timing_range const* sc_board_can_dt_bit_timing_range(uint8_t index)
 {
 	(void)index;
 
-	static const sc_can_bit_timing_range range = {
-
-		.min = {
-			.brp = M_CAN_DTBT_BRP_MIN,
-			.tseg1 = M_CAN_DTBT_TSEG1_MIN,
-			.tseg2 = M_CAN_DTBT_TSEG2_MIN,
-			.sjw = M_CAN_DTBT_SJW_MIN,
-		},
-		.max = {
-			.brp = M_CAN_DTBT_BRP_MAX,
-			.tseg1 = M_CAN_DTBT_TSEG1_MAX,
-			.tseg2 = M_CAN_DTBT_TSEG2_MAX,
-			.sjw = M_CAN_DTBT_SJW_MAX,
-		},
-	};
-
-	return &range;
+	return &dt_range;
 }
 
 extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
