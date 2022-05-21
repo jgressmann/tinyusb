@@ -149,7 +149,7 @@ SLLIN_RAMFUNC static inline void sam_timer_cleanup_end(Tc* timer)
 		(lin)->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val; \
 	} while (0)
 
-SLLIN_RAMFUNC static inline void lin_cleanup_master_tx(struct sam_lin *lin)
+SLLIN_RAMFUNC static inline void lin_cleanup_master_tx(struct sam_lin *lin, uint8_t slave_proto_step)
 {
 	struct slave *sl = &lin->slave;
 
@@ -161,11 +161,11 @@ SLLIN_RAMFUNC static inline void lin_cleanup_master_tx(struct sam_lin *lin)
 	sl->elem.frame.len = 0;
 }
 
-SLLIN_RAMFUNC static inline void lin_cleanup_full(struct sam_lin *lin)
+SLLIN_RAMFUNC static inline void lin_cleanup_full(struct sam_lin *lin, uint8_t slave_proto_step)
 {
 	Sercom *const s = lin->sercom;
 
-	lin_cleanup_master_tx(lin);
+	lin_cleanup_master_tx(lin, slave_proto_step);
 
 	s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 }
