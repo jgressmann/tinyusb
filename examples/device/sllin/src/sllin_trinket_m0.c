@@ -263,14 +263,6 @@ static inline void clock_init(void)
 
 	SystemCoreClock = CONF_CPU_FREQUENCY;
 
-	// // setup 8MHz clock
-	// SYSCTRL->OSC8M.bit.ENABLE = 0;
-	// while (SYSCTRL->OSC8M.bit.ENABLE);
-	// SYSCTRL->OSC8M.bit.PRESC = 0;
-	// SYSCTRL->OSC8M.bit.ENABLE = 1;
-	// while (!SYSCTRL->OSC8M.bit.ENABLE);
-
-
 	// Setup 16 MHz on GCLK2
 	GCLK->GENDIV.reg =
 		GCLK_GENDIV_DIV(3) |
@@ -282,18 +274,6 @@ static inline void clock_init(void)
 		GCLK_GENCTRL_IDC |
 		GCLK_GENCTRL_ID(2);
 	while (GCLK->STATUS.bit.SYNCBUSY);
-
-	// // Setup 8 MHz on GCLK3
-	// GCLK->GENDIV.reg =
-	// 	GCLK_GENDIV_DIV(1) |
-	// 	GCLK_GENDIV_ID(3);
-
-	// GCLK->GENCTRL.reg =
-	// 	GCLK_GENCTRL_SRC_OSC8M |
-	// 	GCLK_GENCTRL_GENEN |
-	// 	GCLK_GENCTRL_IDC |
-	// 	GCLK_GENCTRL_ID(3);
-	// while (GCLK->STATUS.bit.SYNCBUSY);
 }
 
 

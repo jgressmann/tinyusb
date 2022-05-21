@@ -163,7 +163,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 		PORT->Group[lin->master_slave_port_pin_mux >> 5].OUTCLR.reg = UINT32_C(1) << (lin->master_slave_port_pin_mux & 0x1f);
 	}
 
-	lin_cleanup_full(lin);
+	lin_cleanup_full(lin, SLAVE_PROTO_STEP_RX_BREAK);
 	lin->master.busy = 0;
 
 	sl->data_timeout_us = (14 * 10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
@@ -172,7 +172,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	lin->sof_timeout_us = (14 * 34 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
 	LOG("ch%u SOF timeout %x [us]\n", index, lin->sof_timeout_us);
 
-	lin->master.break_timeout_us = (14 * 13 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
+	lin->master.break_timeout_us = (10 * 13 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
 	LOG("ch%u break timeout %x [us]\n", index, lin->master.break_timeout_us);
 
 	lin->master.high_timeout_us = (10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
@@ -405,7 +405,7 @@ SLLIN_RAMFUNC static void on_data_timeout(uint8_t index)
 	} break;
 	}
 
-	lin_cleanup_full(lin);
+	lin_cleanup_full(lin, SLAVE_PROTO_STEP_RX_BREAK);
 
 	// allow next header
 	__atomic_store_n(&lin->master.busy, 0, __ATOMIC_RELEASE);
@@ -533,28 +533,24 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 	}
 #if SAM_CONF_AUTOBAUD
 	if (intflag & SERCOM_USART_INTFLAG_RXBRK) {
+		const uint8_t next_step = SLAVE_PROTO_STEP_RX_PID;
 #else
 	if (0) {
-#endif
+		const uint8_t next_step = SLAVE_PROTO_STEP_RX_SYNC;
 rxbrk:
+#endif
 		if (ma->proto_step == MASTER_PROTO_STEP_FINISHED) {
 			// Restart the timer in case the BREAK wasn't sent by this device.
 			// Technically the SOF timeout is too long but if we are lenient here,
 			// we don't have to reconfigure the timer.
 			sof_start_or_restart_begin(lin);
-			lin_cleanup_full(lin);
+			lin_cleanup_full(lin, next_step);
 		} else {
 			// wait for pull down timer to expire before pulling up
-			lin_cleanup_master_tx(lin);
+			lin_cleanup_master_tx(lin, next_step);
 		}
 
-		LOG("-");
-
-#if SAM_CONF_AUTOBAUD
-		sl->slave_proto_step = SLAVE_PROTO_STEP_RX_PID;
-#else
-		sl->slave_proto_step = SLAVE_PROTO_STEP_RX_SYNC;
-#endif
+		// LOG("-");
 
 		if (ma->proto_step == MASTER_PROTO_STEP_FINISHED) {
 			sof_start_or_restart_end(lin);
@@ -584,7 +580,7 @@ rxbrk:
 	} break;
 	case SLAVE_PROTO_STEP_RX_SYNC: {
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
-			LOG("S");
+			// LOG("S");
 
 			if (unlikely(0x55 != rx_byte)) {
 				sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_SYNC;
@@ -601,7 +597,7 @@ rxbrk:
 
 			sam_timer_cleanup_begin(lin->timer);
 
-			LOG("|");
+			// LOG("|");
 
 
 			if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_AWAKE, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
