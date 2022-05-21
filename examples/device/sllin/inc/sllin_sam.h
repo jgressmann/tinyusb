@@ -15,6 +15,7 @@
 
 enum {
 	SLAVE_PROTO_STEP_RX_BREAK = 0,
+	SLAVE_PROTO_STEP_RX_SYNC,
 	SLAVE_PROTO_STEP_RX_PID,
 	SLAVE_PROTO_STEP_TX_DATA,
 	SLAVE_PROTO_STEP_RX_DATA,
@@ -95,7 +96,7 @@ SLLIN_RAMFUNC static inline void sam_timer_cleanup_end(Tc* timer)
 
 /* According to DS60001507E-page 1717 it should
  * suffice to write the re-trigger command. This
- * _does_ work if there is a pausse after the write
+ * _does_ work if there is a pause after the write
  * during which the timer isn't manipulated.
  * It does _not_ work for data byte timeouts or
  * wake up timeouts (basically any case in which the command

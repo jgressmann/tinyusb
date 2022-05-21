@@ -127,7 +127,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	sercom->USART.CTRLA.reg  =
 		SERCOM_USART_CTRLA_SAMPR(1) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
 		SERCOM_USART_CTRLA_SAMPA(0) |
-		SERCOM_USART_CTRLA_FORM(0x4) | /* break & auto baud */
+		SERCOM_USART_CTRLA_FORM(0x0) | /* break & auto baud */
 		SERCOM_USART_CTRLA_DORD | /* LSB first */
 		SERCOM_USART_CTRLA_MODE(1) | /* 0x0 USART with external clock, 0x1 USART with internal clock */
 		SERCOM_USART_CTRLA_IBON | /* assert RX buffer overflow immediately */
@@ -171,7 +171,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	lin->master.break_timeout_us = (13 * 10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
 	LOG("ch%u break timeout %x [us]\n", index, lin->master.break_timeout_us);
 
-	lin->master.high_timeout_us = (1 * 10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
+	lin->master.high_timeout_us = (10 * UINT32_C(1000000)) / (conf->bitrate * UINT32_C(10));
 	LOG("ch%u high timeout %x [us]\n", index, lin->master.high_timeout_us);
 
 
@@ -416,7 +416,8 @@ SLLIN_RAMFUNC void sam_lin_timer_int(uint8_t index)
 
 	lin->timer->COUNT16.INTFLAG.reg = ~0;
 
-	SLLIN_DEBUG_ISR_ASSERT(0 == lin->timer->COUNT16.COUNT.reg);
+	SLLIN_DEBUG_ISR_ASSERT(lin->timer->COUNT16.CTRLBSET.bit.ONESHOT);
+	SLLIN_DEBUG_ISR_ASSERT(0 == lin->timer->COUNT16.COUNT.reg || lin->timer->COUNT16.CC[0].reg == lin->timer->COUNT16.COUNT.reg);
 	SLLIN_DEBUG_ISR_ASSERT(lin->timer->COUNT16.STATUS.bit.STOP);
 	SLLIN_DEBUG_ISR_ASSERT((intflag & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)) == TC_INTFLAG_OVF);
 
@@ -510,8 +511,8 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 		if (intflag & SERCOM_USART_INTFLAG_DRE) {
 			intflag &= ~SERCOM_USART_INTFLAG_DRE;
 
-			s->USART.DATA.reg = ma->pid;
 			s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
+			s->USART.DATA.reg = ma->pid;
 			ma->proto_step = MASTER_PROTO_STEP_FINISHED;
 
 			// LOG("tx pid=%x\n", ma->pid);
@@ -531,7 +532,7 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 			lin_cleanup_full(lin);
 		}
 
-		// LOG("-");
+		LOG("-");
 
 		sl->slave_proto_step = SLAVE_PROTO_STEP_RX_PID;
 
@@ -544,7 +545,37 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 
 	const uint8_t rx_byte = s->USART.DATA.reg;
 
+	// if (intflag & SERCOM_USART_INTFLAG_RXC) {
+	// 	LOG("ch%u RX=%x\n", index, rx_byte);
+	// }
+
+	// LOG("ch%u sps=%u\n", index, sl->slave_proto_step);
+
 	switch (sl->slave_proto_step) {
+	case SLAVE_PROTO_STEP_RX_BREAK: {
+		const uint8_t BREAK_INT_FLAGS = SERCOM_USART_INTFLAG_RXC | SERCOM_USART_INTFLAG_ERROR;
+
+		if (unlikely((intflag & BREAK_INT_FLAGS) == BREAK_INT_FLAGS && rx_byte == 0 && (status & SERCOM_USART_STATUS_FERR))) {
+			status &= ~SERCOM_USART_STATUS_FERR;
+			LOG("-");
+			sof_start_or_restart_begin(lin);
+			lin_cleanup_full(lin);
+			sof_start_or_restart_end(lin);
+
+			sl->slave_proto_step = SLAVE_PROTO_STEP_RX_SYNC;
+		}
+	} break;
+	case SLAVE_PROTO_STEP_RX_SYNC: {
+		if (intflag & SERCOM_USART_INTFLAG_RXC) {
+			LOG("S");
+
+			if (unlikely(0x55 != rx_byte)) {
+				sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_SYNC;
+			}
+
+			sl->slave_proto_step = SLAVE_PROTO_STEP_RX_PID;
+		}
+	} break;
 	case SLAVE_PROTO_STEP_RX_PID:
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
 			uint8_t const id = sllin_pid_to_id(rx_byte);
@@ -552,11 +583,14 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 
 			sam_timer_cleanup_begin(lin->timer);
 
+			LOG("|");
+
+
 			if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_AWAKE, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
 				LOG("ch%u awake\n", index);
 			}
 
-			// LOG("ch%u PID=%x\n", index, rx_byte);
+			// LOG("ch%u PID=%x baud=%x frac=%x\n", index, rx_byte, s->USART.BAUD.reg & 0x1fff, s->USART.BAUD.reg >> 13);
 
 			sl->elem.frame.id |= id;
 

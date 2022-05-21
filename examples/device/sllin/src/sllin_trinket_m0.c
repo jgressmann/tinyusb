@@ -147,17 +147,14 @@ extern void sllin_board_led_set(uint8_t index, bool on)
 		break;
 	case SLLIN_BOARD_DOTSTAR_RED:
 		dotstar.r = on * DOTSTAR_NORMAL_LED_INTENSITY;
-		// LOG("r=%u\n", on > 0);
 		dotstar_update();
 		break;
 	case SLLIN_BOARD_DOTSTAR_GREEN:
 		dotstar.g = on * DOTSTAR_NORMAL_LED_INTENSITY;
-		// LOG("g=%u\n", on > 0);
 		dotstar_update();
 		break;
 	case SLLIN_BOARD_DOTSTAR_BLUE:
 		dotstar.b = on * DOTSTAR_NORMAL_LED_INTENSITY;
-		// LOG("b=%u\n", on > 0);
 		dotstar_update();
 		break;
 	}
@@ -167,9 +164,9 @@ extern void sllin_board_leds_on_unsafe(void)
 {
 	PORT->Group[0].OUTSET.reg = UINT32_C(1) << 10;
 
-	dotstar.r = 0xff;
-	dotstar.g = 0xff;
-	dotstar.b = 0xff;
+	dotstar.r = DOTSTAR_NORMAL_LED_INTENSITY;
+	dotstar.g = DOTSTAR_NORMAL_LED_INTENSITY;
+	dotstar.b = DOTSTAR_NORMAL_LED_INTENSITY;
 	dotstar_update();
 }
 
@@ -266,6 +263,14 @@ static inline void clock_init(void)
 
 	SystemCoreClock = CONF_CPU_FREQUENCY;
 
+	// // setup 8MHz clock
+	// SYSCTRL->OSC8M.bit.ENABLE = 0;
+	// while (SYSCTRL->OSC8M.bit.ENABLE);
+	// SYSCTRL->OSC8M.bit.PRESC = 0;
+	// SYSCTRL->OSC8M.bit.ENABLE = 1;
+	// while (!SYSCTRL->OSC8M.bit.ENABLE);
+
+
 	// Setup 16 MHz on GCLK2
 	GCLK->GENDIV.reg =
 		GCLK_GENDIV_DIV(3) |
@@ -277,6 +282,18 @@ static inline void clock_init(void)
 		GCLK_GENCTRL_IDC |
 		GCLK_GENCTRL_ID(2);
 	while (GCLK->STATUS.bit.SYNCBUSY);
+
+	// // Setup 8 MHz on GCLK3
+	// GCLK->GENDIV.reg =
+	// 	GCLK_GENDIV_DIV(1) |
+	// 	GCLK_GENDIV_ID(3);
+
+	// GCLK->GENCTRL.reg =
+	// 	GCLK_GENCTRL_SRC_OSC8M |
+	// 	GCLK_GENCTRL_GENEN |
+	// 	GCLK_GENCTRL_IDC |
+	// 	GCLK_GENCTRL_ID(3);
+	// while (GCLK->STATUS.bit.SYNCBUSY);
 }
 
 
@@ -293,7 +310,7 @@ static inline void lin_init_once(void)
 
 	PM->APBCMASK.bit.SERCOM2_ = 1;
 	GCLK->CLKCTRL.reg =
-		GCLK_CLKCTRL_GEN_GCLK0 |
+		GCLK_CLKCTRL_GEN_GCLK2 |
 		GCLK_CLKCTRL_CLKEN |
 		GCLK_CLKCTRL_ID_SERCOM2_CORE;
 
@@ -333,6 +350,9 @@ static void timer_init(void)
 
 		// timer overflow interrupt
 		timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF | TC_INTENSET_ERR;
+
+		// enable COUNT register sampling
+		timer->COUNT16.READREQ.reg = TC_READREQ_RCONT | 0x10;
 
 		// set to max so we don't time out
 		timer->COUNT16.CC[0].reg = 0xffff;

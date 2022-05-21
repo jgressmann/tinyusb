@@ -22,7 +22,7 @@ enum {
 };
 
 
-#define SAM_CONF_LIN_UART_FREQUENCY 48000000
+#define SAM_CONF_LIN_UART_FREQUENCY 16000000
 #define sam_timer_sync_wait(tc) while ((tc)->COUNT16.STATUS.bit.SYNCBUSY)
 
 
