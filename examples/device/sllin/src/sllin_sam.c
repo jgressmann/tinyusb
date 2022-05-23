@@ -565,7 +565,6 @@ rxbrk:
 	// 	LOG("ch%u RX=%x\n", index, rx_byte);
 	// }
 
-	// LOG("ch%u sps=%u\n", index, sl->slave_proto_step);
 
 	switch (sl->slave_proto_step) {
 #if !SAM_CONF_AUTOBAUD
@@ -580,10 +579,11 @@ rxbrk:
 	} break;
 	case SLAVE_PROTO_STEP_RX_SYNC: {
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
-			// LOG("S");
-
 			if (unlikely(0x55 != rx_byte)) {
 				sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_SYNC;
+				LOG("X");
+			} else {
+				LOG("S");
 			}
 
 			sl->slave_proto_step = SLAVE_PROTO_STEP_RX_PID;
