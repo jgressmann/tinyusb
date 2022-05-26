@@ -37,7 +37,7 @@ enum {
 	SLLIN_ID_FLAG_BUS_STATE_MASK =     0x03, //<
 	SLLIN_ID_FLAG_BUS_STATE_SHIFT =    0x00, //<
 	SLLIN_ID_FLAG_BUS_STATE_ASLEEP =   0x00, //< bus is asleep
-	SLLIN_ID_FLAG_BUS_STATE_AWAKE =    0x01, //< bus is awake
+	SLLIN_ID_FLAG_BUS_STATE_AWAKE =    0x01, //< bus is asleep
 	SLLIN_ID_FLAG_BUS_STATE_ERROR =    0x02, //< bus is in error state
 
 	// bus error (permanent)
@@ -70,29 +70,29 @@ static inline uint8_t sllin_id_to_pid(uint8_t id)
 	return map[id & 0x3f];
 }
 
-static inline uint8_t sllin_pid_to_id(uint8_t pid)
-{
-	return pid & 0x3f;
-}
+#define sllin_pid_to_id(pid) (pid & 0x3f)
+
+typedef uint8_t sllin_crc_t;
 
 #define sllin_crc_start() 0
-#define sllin_crc_update1(crc, byte) (crc + byte)
+static inline sllin_crc_t sllin_crc_update1(sllin_crc_t crc, uint8_t byte)
+{
+	uint_least16_t x = crc;
 
+	x += byte;
+	x += x >> 8;
+	x &= 0xff;
 
-static inline uint_least16_t sllin_crc_update(uint_least16_t crc, uint8_t const * data, unsigned bytes)
+	return (uint8_t)x;
+}
+
+static inline sllin_crc_t sllin_crc_update(sllin_crc_t crc, uint8_t const * data, unsigned bytes)
 {
 	for (unsigned i = 0; i < bytes; ++i) {
-		crc += data[i];
+		crc = sllin_crc_update1(crc, data[i]);
 	}
 
 	return crc;
 }
 
-static inline uint8_t sllin_crc_finalize(uint_least16_t crc)
-{
-	uint_least16_t factor = crc / 256;
-
-	crc -= factor * 255;
-
-	return (~crc) & 0xff;
-}
+#define sllin_crc_finalize(crc) ((~(crc)) & 0xff)
