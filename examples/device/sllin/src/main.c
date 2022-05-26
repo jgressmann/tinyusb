@@ -419,13 +419,13 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 								LOG("ch%u id=%x store crc=%x\n", index, lin_id, fd->crc[lin_id]);
 								break;
 							case SLLIN_ID_FLAG_FRAME_CRC_COMP_CLASSIC: {
-								uint_least16_t crc = sllin_crc_start();
+								sllin_crc_t crc = sllin_crc_start();
 								crc = sllin_crc_update(crc, data, len);
 								fd->crc[lin_id] = sllin_crc_finalize(crc);
 								LOG("ch%u id=%x compute classic crc=%x\n", index, lin_id, fd->crc[lin_id]);
 							} break;
 							case SLLIN_ID_FLAG_FRAME_CRC_COMP_ENHANCED: {
-								uint_least16_t crc = sllin_crc_start();
+								sllin_crc_t crc = sllin_crc_start();
 								crc = sllin_crc_update1(crc, sllin_id_to_pid(lin_id));
 								crc = sllin_crc_update(crc, data, len);
 								fd->crc[lin_id] = sllin_crc_finalize(crc);
