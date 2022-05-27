@@ -306,9 +306,9 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 		clear_rx_fifo(index);
 		lin->enabled = true;
 		lin->conf.master = lin->rx_sl_buffer[0] == 'O';
+		set_led(index, SLLIN_LIN_LED_STATUS_ON_BUS_AWAKE_PASSIVE);
 		sllin_board_lin_init(index, &lin->conf);
 		LOG("ch%u open %s bitrate=%u sleep timeout=%u [ms]\n", index, lin->conf.master ? "master" : "slave", lin->conf.bitrate, lin->conf.sleep_timeout_ms);
-		set_led(index, SLLIN_LIN_LED_STATUS_ENABLED_OFF_BUS);
 		break;
 	case 'C':
 		LOG("ch%u close\n", index);
