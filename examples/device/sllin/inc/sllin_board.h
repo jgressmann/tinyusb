@@ -41,12 +41,6 @@ enum {
 	SLLIN_QUEUE_ELEMENT_TYPE_COUNT,
 };
 
-enum {
-	SLLIN_CRC_TYPE_UNKNOWN = -1,
-	SLLIN_CRC_TYPE_CLASSIC,
-	SLLIN_CRC_TYPE_ENHANCED,
-};
-
 typedef struct _sllin_queue_element {
 	uint8_t type;
 	uint8_t reserved;

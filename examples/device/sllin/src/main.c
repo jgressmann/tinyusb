@@ -194,9 +194,6 @@ SLLIN_RAMFUNC static inline char nibble_to_char(uint8_t nibble)
 	return "0123456789abcdef"[nibble & 0xf];
 }
 
-
-
-
 static inline void channel_off(uint8_t index)
 {
 	sllin_board_lin_uninit(index);
@@ -594,8 +591,6 @@ SLLIN_RAMFUNC static inline void process_rx_frame(uint8_t index, sllin_queue_ele
 	}
 
 	lin->tx_sl_buffer[lin->tx_sl_offset++] = SLLIN_OK_TERMINATOR;
-
-
 }
 
 SLLIN_RAMFUNC static inline void process_queue(uint8_t index, sllin_queue_element *e)
@@ -856,14 +851,12 @@ void tud_mount_cb(void)
 {
 	LOG("mounted\n");
 	led_blink(0, 250);
-	// usb.mounted = true;
 }
 
 void tud_umount_cb(void)
 {
 	LOG("unmounted\n");
 	led_blink(0, 1000);
-	// usb.mounted = false;
 	channels_off();
 }
 
@@ -872,7 +865,6 @@ void tud_suspend_cb(bool remote_wakeup_en)
 	(void) remote_wakeup_en;
 	LOG("suspend\n");
 	led_blink(0, 500);
-	// usb.mounted = false;
 	channels_off();
 }
 
@@ -880,7 +872,6 @@ void tud_resume_cb(void)
 {
 	LOG("resume\n");
 	led_blink(0, 250);
-	// usb.mounted = true;
 }
 
 #if CFG_TUD_DFU_RUNTIME
