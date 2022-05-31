@@ -48,6 +48,9 @@ struct slave {
 	uint8_t slave_proto_step;
 	uint8_t slave_tx_offset;
 	uint8_t slave_rx_offset;
+#if SLLIN_DEBUG
+	uint8_t rx_byte;
+#endif
 };
 
 struct master {

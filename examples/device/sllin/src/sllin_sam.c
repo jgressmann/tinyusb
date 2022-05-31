@@ -366,7 +366,7 @@ SLLIN_RAMFUNC static void on_data_timeout(uint8_t index)
 		LOG("ch%u SLAVE_PROTO_STEP_RX_SYNC timeout unhandled\n", index);
 		break;
 	case SLAVE_PROTO_STEP_RX_PID: {
-		LOG("ch%u rx timeout pid\n", index);
+		LOG("ch%u rx timeout pid last rx=%x\n", index, sl->rx_byte);
 		bool rx_pin = (PORT->Group[sercom_rx_pin_group].IN.reg & (UINT32_C(1) << sercom_rx_pin)) != 0;
 		if (rx_pin) {
 			sleep_start(lin);
@@ -429,6 +429,13 @@ SLLIN_RAMFUNC void sam_lin_timer_int(uint8_t index)
 	lin->timer->COUNT16.INTFLAG.reg = ~0;
 
 	SLLIN_DEBUG_ISR_ASSERT(lin->timer->COUNT16.CTRLBSET.bit.ONESHOT);
+
+	// This can happen if we restart the timer while the interrupt is already
+	// queued on the NVIC for execution
+	if (unlikely(!lin->timer->COUNT16.STATUS.bit.STOP)) {
+		return;
+	}
+
 	SLLIN_DEBUG_ISR_ASSERT(0 == lin->timer->COUNT16.COUNT.reg);
 	SLLIN_DEBUG_ISR_ASSERT(lin->timer->COUNT16.STATUS.bit.STOP);
 	SLLIN_DEBUG_ISR_ASSERT((intflag & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)) == TC_INTFLAG_OVF);
@@ -561,6 +568,10 @@ rxbrk:
 
 	const uint8_t rx_byte = s->USART.DATA.reg;
 
+#if SLLIN_DEBUG
+	sl->rx_byte = rx_byte;
+#endif
+
 	// if (intflag & SERCOM_USART_INTFLAG_RXC) {
 	// 	LOG("ch%u RX=%x\n", index, rx_byte);
 	// }
@@ -611,9 +622,6 @@ rxbrk:
 			if (unlikely(pid != rx_byte)) {
 				sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_PID;
 			}
-
-			// sum up length
-			sl->elem.frame.len = 0;
 
 			// clear out flag for PID
 			intflag &= ~SERCOM_USART_INTFLAG_RXC;
@@ -666,8 +674,8 @@ tx:
 	case SLAVE_PROTO_STEP_RX_DATA:
 rx:
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
-			// reset data timer
-			SLLIN_DEBUG_ISR_ASSERT(!(lin->timer->COUNT16.INTFLAG.reg & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)));
+			// reset data timer TC_INTFLAG_OVF can happen if we debug log
+			SLLIN_DEBUG_ISR_ASSERT(!(lin->timer->COUNT16.INTFLAG.reg & (TC_INTFLAG_ERR)));
 
 			sam_timer_start_or_restart_begin(lin->timer);
 
