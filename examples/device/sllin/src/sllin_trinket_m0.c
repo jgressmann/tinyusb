@@ -34,6 +34,7 @@ struct sam_lin sam_lins[SLLIN_BOARD_LIN_COUNT] = {
 	{
 		.sercom = SERCOM2,
 		.timer = TC3,
+		.timer_irq = TC3_IRQn,
 		.rx_port_pin_mux = 9,
 		.master_slave_port_pin_mux = 2,
 		.led_status_green = SLLIN_BOARD_DOTSTAR_GREEN,

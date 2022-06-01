@@ -96,6 +96,7 @@ struct sam_lin sam_lins[SLLIN_BOARD_LIN_COUNT] = {
 	{
 		.sercom = SERCOM1,
 		.timer = TC0, // NOTE: TC0/TC1 don't seem to support different clock speeds, setting one will affect the other.
+		.timer_irq = TC0_IRQn,
 		.rx_port_pin_mux = 1,
 		.master_slave_port_pin_mux = (MASTER_SLAVE_PIN_GROUP << 5) | 4,
 		.led_status_green = 5,
@@ -104,6 +105,7 @@ struct sam_lin sam_lins[SLLIN_BOARD_LIN_COUNT] = {
 	{
 		.sercom = SERCOM0,
 		.timer = TC1,
+		.timer_irq = TC1_IRQn,
 		.rx_port_pin_mux = 5,
 		.master_slave_port_pin_mux = (MASTER_SLAVE_PIN_GROUP << 5) | 9,
 		.led_status_green = 7,

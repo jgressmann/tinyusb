@@ -66,6 +66,7 @@ struct sam_lin {
 	Tc* const timer;
 	struct slave slave;
 	struct master master;
+	IRQn_Type const timer_irq;
 	uint16_t sof_timeout_us;
 	uint16_t baud;
 	uint8_t const rx_port_pin_mux;            // (GROUP << 5) | PIN
@@ -83,16 +84,18 @@ uint32_t sam_init_device_identifier(uint32_t const serial_number[4]);
 void sam_lin_init_once(void);
 
 
-#define sam_timer_cleanup_begin(tc) do { (tc)->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val; } while (0)
+#define sam_timer_cleanup_begin(lin) do { (lin)->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_STOP_Val; } while (0)
 
-SLLIN_RAMFUNC static inline void sam_timer_cleanup_end(Tc* timer)
+SLLIN_RAMFUNC static inline void sam_timer_cleanup_end(struct sam_lin * const lin)
 {
 	// wait for sync
-	sam_timer_sync_wait(timer);
+	sam_timer_sync_wait(lin->timer);
 	// reset value
-	timer->COUNT16.COUNT.reg = 0;
+	lin->timer->COUNT16.COUNT.reg = 0;
 	// clear interrupt flags
-	timer->COUNT16.INTFLAG.reg = ~0;
+	lin->timer->COUNT16.INTFLAG.reg = ~0;
+	// if there is an interrupt pending, clear it
+	NVIC_ClearPendingIRQ(lin->timer_irq);
 }
 
 
@@ -107,40 +110,40 @@ SLLIN_RAMFUNC static inline void sam_timer_cleanup_end(Tc* timer)
  *
  * Thus here is a solution that appears to work.
  */
-#define sam_timer_start_or_restart_begin(tc) sam_timer_cleanup_begin(tc)
-#define sam_timer_start_or_restart_end(tc) \
+#define sam_timer_start_or_restart_begin(lin) sam_timer_cleanup_begin(lin)
+#define sam_timer_start_or_restart_end(lin) \
 	do { \
-		(tc)->COUNT16.COUNT.reg = 0; \
-		(tc)->COUNT16.INTFLAG.reg = ~0; \
-		sam_timer_sync_wait(tc); \
-		(tc)->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val; \
+		sam_timer_cleanup_end(lin); \
+		(lin)->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val; \
 	} while (0)
 
-#define sam_timer_start_or_restart(tc) \
+#define sam_timer_start_or_restart(lin) \
 	do { \
-		timer_start_or_restart_begin(tc); \
-		timer_start_or_restart_end(tc); \
+		timer_start_or_restart_begin(lin); \
+		timer_start_or_restart_end(lin); \
 	} while (0)
 
 
-#define sof_start_or_restart_begin(lin) \
+#define sof_start_or_restart_begin(lin) sam_timer_start_or_restart_begin(lin)
+
+#define sof_start_or_restart_end(lin) \
 	do { \
-		sam_timer_start_or_restart_begin(lin->timer); \
-		lin->timer->COUNT16.CC[0].reg = lin->sof_timeout_us; \
+		sam_timer_cleanup_end(lin); \
 		lin->timer_type = TIMER_TYPE_SOF; \
+		lin->timer->COUNT16.CC[0].reg = lin->sof_timeout_us; \
+		(lin)->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val; \
 	} while (0)
 
-#define sof_start_or_restart_end(lin) sam_timer_start_or_restart_end(lin->timer)
 
+#define break_start_or_restart_begin(lin) sam_timer_cleanup_begin(lin)
 
-#define break_start_or_restart_begin(lin) \
+#define break_start_or_restart_end(lin) \
 	do { \
-		sam_timer_start_or_restart_begin(lin->timer); \
-		lin->timer->COUNT16.CC[0].reg = lin->master.break_timeout_us; \
+		sam_timer_cleanup_end(lin); \
 		lin->timer_type = TIMER_TYPE_BREAK; \
+		lin->timer->COUNT16.CC[0].reg = lin->master.break_timeout_us; \
+		(lin)->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val; \
 	} while (0)
-
-#define break_start_or_restart_end(lin) sam_timer_start_or_restart_end(lin->timer)
 
 
 

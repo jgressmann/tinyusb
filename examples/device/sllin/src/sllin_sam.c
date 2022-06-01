@@ -116,7 +116,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	__atomic_store_n(&lin->bus_error, SLLIN_ID_FLAG_BUS_ERROR_NONE, __ATOMIC_RELAXED);
 
 	// disable timer
-	sam_timer_cleanup_begin(lin->timer);
+	sam_timer_cleanup_begin(lin);
 
 	// disable SERCOM
 	sercom->USART.CTRLA.bit.SWRST = 1; /* reset and disable SERCOM -> enable configuration */
@@ -183,7 +183,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	sercom->USART.CTRLA.bit.ENABLE = 1;
 	while (sercom->USART.SYNCBUSY.reg); /* wait for SERCOM to be ready */
 
-	sam_timer_cleanup_end(lin->timer);
+	sam_timer_cleanup_end(lin);
 
 	sl->sleep_timeout_us = conf->sleep_timeout_ms * UINT32_C(1000);
 
@@ -429,16 +429,10 @@ SLLIN_RAMFUNC void sam_lin_timer_int(uint8_t index)
 	lin->timer->COUNT16.INTFLAG.reg = ~0;
 
 	SLLIN_DEBUG_ISR_ASSERT(lin->timer->COUNT16.CTRLBSET.bit.ONESHOT);
-
-	// This can happen if we restart the timer while the interrupt is already
-	// queued on the NVIC for execution
-	if (unlikely(!lin->timer->COUNT16.STATUS.bit.STOP)) {
-		return;
-	}
-
 	SLLIN_DEBUG_ISR_ASSERT(0 == lin->timer->COUNT16.COUNT.reg);
 	SLLIN_DEBUG_ISR_ASSERT(lin->timer->COUNT16.STATUS.bit.STOP);
 	SLLIN_DEBUG_ISR_ASSERT((intflag & (TC_INTFLAG_OVF | TC_INTFLAG_ERR)) == TC_INTFLAG_OVF);
+
 
 	switch (lin->timer_type) {
 	case TIMER_TYPE_DATA:
@@ -606,7 +600,7 @@ rxbrk:
 			uint8_t const id = sllin_pid_to_id(rx_byte);
 			uint8_t const pid = sllin_id_to_pid(id);
 
-			sam_timer_cleanup_begin(lin->timer);
+			sam_timer_cleanup_begin(lin);
 
 			// LOG("|");
 
@@ -627,9 +621,9 @@ rxbrk:
 			intflag &= ~SERCOM_USART_INTFLAG_RXC;
 
 			// setup data timer
-			lin->timer->COUNT16.CC[0].reg = sl->data_timeout_us;
+			sam_timer_cleanup_end(lin);
 			lin->timer_type = TIMER_TYPE_DATA;
-			sam_timer_cleanup_end(lin->timer);
+			lin->timer->COUNT16.CC[0].reg = sl->data_timeout_us;
 
 			// here we know the timer is stopped
 			lin->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
@@ -677,7 +671,7 @@ rx:
 			// reset data timer TC_INTFLAG_OVF can happen if we debug log
 			SLLIN_DEBUG_ISR_ASSERT(!(lin->timer->COUNT16.INTFLAG.reg & (TC_INTFLAG_ERR)));
 
-			sam_timer_start_or_restart_begin(lin->timer);
+			sam_timer_start_or_restart_begin(lin);
 
 			// LOG("ch%u RX=%x\n", index, rx_byte);
 			if (sl->slave_rx_offset < 8) {
@@ -690,7 +684,7 @@ rx:
 
 			++sl->slave_rx_offset;
 
-			sam_timer_start_or_restart_end(lin->timer);
+			sam_timer_start_or_restart_end(lin);
 		}
 		break;
 	}
