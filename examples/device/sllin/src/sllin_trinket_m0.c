@@ -144,7 +144,11 @@ extern void sllin_board_led_set(uint8_t index, bool on)
 {
 	switch (index) {
 	case SLLIN_BOARD_DEBUG_DEFAULT:
-		PORT->Group[0].OUT.reg = ((uint32_t)on) << 10;
+		if (on) {
+			PORT->Group[0].OUTSET.reg = UINT32_C(1) << 10;
+		} else {
+			PORT->Group[0].OUTCLR.reg = UINT32_C(1) << 10;
+		}
 		break;
 	case SLLIN_BOARD_DOTSTAR_RED:
 		dotstar.r = on * DOTSTAR_NORMAL_LED_INTENSITY;
