@@ -445,11 +445,6 @@ extern void sllin_board_init_begin(void)
 
 	LOG("LIN init once\n");
 	lin_init_once();
-
-
-
-	PORT->Group[0].DIRSET.reg = PORT_PA08;
-	PORT->Group[0].OUTCLR.reg = PORT_PA08;
 }
 
 extern void sllin_board_init_end(void)

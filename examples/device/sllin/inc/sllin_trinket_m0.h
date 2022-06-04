@@ -26,5 +26,6 @@ enum {
 #define SAM_CONF_LIN_UART_FREQUENCY 16000000
 #define sam_timer_sync_wait(tc) while ((tc)->COUNT16.STATUS.bit.SYNCBUSY)
 #define sam_usart_clear_pending() NVIC_ClearPendingIRQ(SERCOM2_IRQn)
+#define SAM_UART_TX_PORT_PIN_MUX 7u
 
 #include "sllin_sam.h"

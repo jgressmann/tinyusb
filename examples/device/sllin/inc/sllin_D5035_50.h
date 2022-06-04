@@ -47,6 +47,8 @@ enum {
 		NVIC_ClearPendingIRQ(SERCOM1_3_IRQn); \
 	} while (0)
 
+#define SAM_UART_TX_PORT_PIN_MUX 9u
+
 
 #include "sllin_sam.h"
 
