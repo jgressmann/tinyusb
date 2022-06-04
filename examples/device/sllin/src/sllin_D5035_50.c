@@ -29,7 +29,7 @@
 #define BOARD_SERCOM SERCOM2
 #define USART_BAURATE      115200
 #define CONF_CPU_FREQUENCY 48000000
-
+#define UART_RX_PORT_PIN_MUX 8
 
 
 /* The board runs off of the 48 MHz internal RC oscillator
@@ -199,6 +199,46 @@ extern void sllin_board_leds_on_unsafe(void)
 	}
 }
 
+static inline void clock_init(void)
+{
+	// /* AUTOWS is enabled by default in REG_NVMCTRL_CTRLA - no need to change the number of wait states when changing the core clock */
+
+	// /* We assume we are running the chip in default settings.
+	//  * This means we are running off of the 48 MHz FLL.
+	//  */
+
+	// /* configure XOSC0 for a 16MHz crystal  / oscillator connected to XIN0/XOUT0 */
+	// OSCCTRL->XOSCCTRL[0].reg =
+	// 	OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
+	// 	OSCCTRL_XOSCCTRL_RUNSTDBY |
+	// 	OSCCTRL_XOSCCTRL_ENALC |
+	// 	OSCCTRL_XOSCCTRL_IMULT(4) |
+	// 	OSCCTRL_XOSCCTRL_IPTAT(3) |
+	// 	OSCCTRL_XOSCCTRL_XTALEN |
+	// 	OSCCTRL_XOSCCTRL_ENABLE;
+	// while(0 == OSCCTRL->STATUS.bit.XOSCRDY0);
+
+	// /* pre-scaler = 8, input = XOSC0, output 2 MHz, output = 96 MHz (>= 96 MHz DS60001507E, page 763) */
+	// OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC0_Val);
+	// OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(47);
+	// OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
+	// while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
+
+	// /* 48 MHz core clock */
+	// GCLK->GENCTRL[0].reg =
+	// 	GCLK_GENCTRL_DIV(2) |
+	// 	GCLK_GENCTRL_RUNSTDBY |
+	// 	GCLK_GENCTRL_GENEN |
+	// 	GCLK_GENCTRL_SRC_DPLL0 |  /* DPLL0 */
+	// 	GCLK_GENCTRL_IDC;
+	// while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
+
+	// /* Here we are running from the 48 MHz oscillator clock */
+
+
+	SystemCoreClock = CONF_CPU_FREQUENCY;
+}
+
 static inline void uart_init(void)
 {
 	PORT->Group[0].WRCONFIG.reg =
@@ -229,6 +269,9 @@ static inline void uart_init(void)
 		SERCOM_USART_CTRLA_TXPO(0);   /* SERCOM PAD[0] is used for data transmission */
 
 	while(BOARD_SERCOM->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
+
+	// free RX PIN
+	PORT->Group[0].PINCFG[8].reg = 0;
 }
 
 
@@ -249,14 +292,14 @@ static inline void lin_init_once(void)
 	GCLK->PCHCTRL[SERCOM1_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
 
 	NVIC_SetPriority(SERCOM1_0_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(SERCOM1_1_IRQn, SLLIN_ISR_PRIORITY);
+	// NVIC_SetPriority(SERCOM1_1_IRQn, SLLIN_ISR_PRIORITY);
 	NVIC_SetPriority(SERCOM1_2_IRQn, SLLIN_ISR_PRIORITY);
 	NVIC_SetPriority(SERCOM1_3_IRQn, SLLIN_ISR_PRIORITY);
 
-	NVIC_EnableIRQ(SERCOM1_0_IRQn);
-	NVIC_EnableIRQ(SERCOM1_1_IRQn);
-	NVIC_EnableIRQ(SERCOM1_2_IRQn);
-	NVIC_EnableIRQ(SERCOM1_3_IRQn);
+	NVIC_EnableIRQ(SERCOM1_0_IRQn); // DRE
+	// NVIC_EnableIRQ(SERCOM1_1_IRQn); // TXC
+	NVIC_EnableIRQ(SERCOM1_2_IRQn); // RXC
+	NVIC_EnableIRQ(SERCOM1_3_IRQn); // RXS, CTSIC, RXBRK, ERROR
 
 	// lin1
 	// gpio_set_pin_function(PIN_PA04, PINMUX_PA04D_SERCOM0_PAD0);
@@ -273,12 +316,12 @@ static inline void lin_init_once(void)
 	GCLK->PCHCTRL[SERCOM0_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
 
 	NVIC_SetPriority(SERCOM0_0_IRQn, SLLIN_ISR_PRIORITY);
-	NVIC_SetPriority(SERCOM0_1_IRQn, SLLIN_ISR_PRIORITY);
+	// NVIC_SetPriority(SERCOM0_1_IRQn, SLLIN_ISR_PRIORITY);
 	NVIC_SetPriority(SERCOM0_2_IRQn, SLLIN_ISR_PRIORITY);
 	NVIC_SetPriority(SERCOM0_3_IRQn, SLLIN_ISR_PRIORITY);
 
 	NVIC_EnableIRQ(SERCOM0_0_IRQn);
-	NVIC_EnableIRQ(SERCOM0_1_IRQn);
+	// NVIC_EnableIRQ(SERCOM0_1_IRQn);
 	NVIC_EnableIRQ(SERCOM0_2_IRQn);
 	NVIC_EnableIRQ(SERCOM0_3_IRQn);
 
@@ -366,10 +409,7 @@ static inline void usb_init(void)
 
 extern void sllin_board_init_begin(void)
 {
-	// clock_init();
-
-	SystemCoreClock = CONF_CPU_FREQUENCY;
-
+	clock_init();
 	uart_init();
 	LOG("CONF_CPU_FREQUENCY=%lu\n", (unsigned long)CONF_CPU_FREQUENCY);
 
@@ -405,6 +445,11 @@ extern void sllin_board_init_begin(void)
 
 	LOG("LIN init once\n");
 	lin_init_once();
+
+
+
+	PORT->Group[0].DIRSET.reg = PORT_PA08;
+	PORT->Group[0].OUTCLR.reg = PORT_PA08;
 }
 
 extern void sllin_board_init_end(void)
@@ -418,42 +463,49 @@ extern void sllin_board_init_end(void)
 }
 
 
-
+// DRE
 SLLIN_RAMFUNC void SERCOM1_0_Handler(void)
 {
 	sam_lin_usart_int(0);
 }
 
-SLLIN_RAMFUNC void SERCOM1_1_Handler(void)
-{
-	sam_lin_usart_int(0);
-}
+// // TXC
+// SLLIN_RAMFUNC void SERCOM1_1_Handler(void)
+// {
+// 	sam_lin_usart_int(0);
+// }
 
+// RXC
 SLLIN_RAMFUNC void SERCOM1_2_Handler(void)
 {
 	sam_lin_usart_int(0);
 }
 
+// everyhting else
 SLLIN_RAMFUNC void SERCOM1_3_Handler(void)
 {
 	sam_lin_usart_int(0);
 }
 
+// DRE
 SLLIN_RAMFUNC void SERCOM0_0_Handler(void)
 {
 	sam_lin_usart_int(1);
 }
 
-SLLIN_RAMFUNC void SERCOM0_1_Handler(void)
-{
-	sam_lin_usart_int(1);
-}
+// // TXC
+// SLLIN_RAMFUNC void SERCOM0_1_Handler(void)
+// {
+// 	sam_lin_usart_int(1);
+// }
 
+// RXC
 SLLIN_RAMFUNC void SERCOM0_2_Handler(void)
 {
 	sam_lin_usart_int(1);
 }
 
+// everyhting else
 SLLIN_RAMFUNC void SERCOM0_3_Handler(void)
 {
 	sam_lin_usart_int(1);

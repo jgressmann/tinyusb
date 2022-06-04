@@ -40,6 +40,12 @@ enum {
 #define SAM_CONF_AUTOBAUD 1
 #define SAM_CONF_LIN_UART_FREQUENCY 48000000
 #define sam_timer_sync_wait(tc) while ((tc)->COUNT16.SYNCBUSY.bit.CTRLB)
+#define sam_usart_clear_pending() \
+	do { \
+		NVIC_ClearPendingIRQ(SERCOM1_0_IRQn); \
+		NVIC_ClearPendingIRQ(SERCOM1_2_IRQn); \
+		NVIC_ClearPendingIRQ(SERCOM1_3_IRQn); \
+	} while (0)
 
 
 #include "sllin_sam.h"
