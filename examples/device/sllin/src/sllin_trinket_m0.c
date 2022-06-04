@@ -144,7 +144,11 @@ extern void sllin_board_led_set(uint8_t index, bool on)
 {
 	switch (index) {
 	case SLLIN_BOARD_DEBUG_DEFAULT:
-		PORT->Group[0].OUT.reg = ((uint32_t)on) << 10;
+		if (on) {
+			PORT->Group[0].OUTSET.reg = UINT32_C(1) << 10;
+		} else {
+			PORT->Group[0].OUTCLR.reg = UINT32_C(1) << 10;
+		}
 		break;
 	case SLLIN_BOARD_DOTSTAR_RED:
 		dotstar.r = on * DOTSTAR_NORMAL_LED_INTENSITY;
@@ -178,7 +182,7 @@ static inline void uart_init(void)
 		PORT_WRCONFIG_WRPMUX |
 		PORT_WRCONFIG_PMUX(3) |    /* function D */
 		PORT_WRCONFIG_DRVSTR |
-		PORT_WRCONFIG_PINMASK(0x00c0) | /* PA06, PA7 */
+		PORT_WRCONFIG_PINMASK(0x0040) | /* PA06 */
 		PORT_WRCONFIG_PMUXEN;
 
 	PM->APBCMASK.bit.SERCOM0_ = 1;
@@ -190,19 +194,19 @@ static inline void uart_init(void)
 	BOARD_SERCOM->USART.CTRLA.reg = SERCOM_USART_CTRLA_SWRST; /* disable SERCOM -> enable config */
 	while(BOARD_SERCOM->USART.SYNCBUSY.bit.SWRST); /* wait for SERCOM to be ready */
 
-	BOARD_SERCOM->USART.CTRLA.reg =
-		SERCOM_USART_CTRLA_SAMPR(1) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
-		SERCOM_USART_CTRLA_DORD |     /* LSB first */
-		SERCOM_USART_CTRLA_MODE(1) |  /* 0x0 USART with external clock, 0x1 USART with internal clock */
-		SERCOM_USART_CTRLA_RXPO(3) |  /* SERCOM PAD[3] is used for data reception */
-		SERCOM_USART_CTRLA_TXPO(1);   /* SERCOM PAD[2] is used for data transmission */
-
 	BOARD_SERCOM->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN; /* transmitter enabled */
 	uint16_t baud = CONF_CPU_FREQUENCY / (16 * USART_BAURATE);
 	uint16_t frac = CONF_CPU_FREQUENCY / (2 * USART_BAURATE) - 8 * baud;
 	BOARD_SERCOM->USART.BAUD.reg = SERCOM_USART_BAUD_FRAC_FP(frac) | SERCOM_USART_BAUD_FRAC_BAUD(baud);
 
-	BOARD_SERCOM->USART.CTRLA.bit.ENABLE = 1; /* activate SERCOM */
+	BOARD_SERCOM->USART.CTRLA.reg =
+		SERCOM_USART_CTRLA_SAMPR(1) | /* 0 = 16x / arithmetic baud rate, 1 = 16x / fractional baud rate */
+		SERCOM_USART_CTRLA_DORD |     /* LSB first */
+		SERCOM_USART_CTRLA_MODE(1) |  /* 0x0 USART with external clock, 0x1 USART with internal clock */
+		SERCOM_USART_CTRLA_RXPO(3) |  /* SERCOM PAD[3] is used for data reception */
+		SERCOM_USART_CTRLA_TXPO(1) |   /* SERCOM PAD[2] is used for data transmission */
+		SERCOM_USART_CTRLA_ENABLE;
+
 	while(BOARD_SERCOM->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
 }
 

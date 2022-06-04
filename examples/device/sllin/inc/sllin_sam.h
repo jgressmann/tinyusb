@@ -31,6 +31,7 @@ enum {
 	TIMER_TYPE_HIGH,
 	TIMER_TYPE_SOF,
 	TIMER_TYPE_DATA,
+	TIMER_TYPE_BREAK_REM,
 };
 
 
@@ -76,6 +77,9 @@ struct sam_lin {
 	uint8_t bus_state;
 	uint8_t bus_error;
 	uint8_t timer_type;
+#if !SAM_CONF_AUTOBAUD
+	uint8_t break_rem_timeout_us;
+#endif
 };
 
 extern struct sam_lin sam_lins[SLLIN_BOARD_LIN_COUNT];
