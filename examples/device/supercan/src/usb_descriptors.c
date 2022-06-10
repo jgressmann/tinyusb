@@ -148,18 +148,17 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 #	define DFU_MS_OS_20_DESC_LEN 0
 #endif
 
-#define MS_OS_20_DESC_LEN (0x0A+0x08 + (SC_BOARD_CAN_COUNT) * (0x08+MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN+0x84) + DFU_MS_OS_20_DESC_LEN)
+#define MS_OS_20_DESC_LEN (0x0A+0x08+4 + (SC_BOARD_CAN_COUNT) * (0x08+MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN+0x84) + DFU_MS_OS_20_DESC_LEN)
 
 uint8_t const desc_ms_os_20[] =
 {
 	// Set header: length, type, windows version, total length
 	U16_TO_U8S_LE(0x000A), U16_TO_U8S_LE(MS_OS_20_SET_HEADER_DESCRIPTOR), U32_TO_U8S_LE(0x06030000), U16_TO_U8S_LE(MS_OS_20_DESC_LEN),
-
-	// U16_TO_U8S_LE(MS_OS_20_FEATURE_MODEL_ID_DESC_LEN), U16_TO_U8S_LE(MS_OS_20_FEATURE_MODEL_ID), 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-
+	// always treat as composite (for non-DFU, single CAN devices such as Adafruit's Feather M4 CAN Express)
+	U16_TO_U8S_LE(0x0004), U16_TO_U8S_LE(MS_OS_20_FEATURE_CCGP_DEVICE),
 
 	// Configuration subset header: length, type, configuration index, reserved, configuration total length
-	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_CONFIGURATION), 0, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A),
+	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_CONFIGURATION), 0, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0E),
 
 	// Function Subset header: length, type, first interface, reserved, subset length
 	U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 0, 0, U16_TO_U8S_LE(0x08 + MS_OS_20_FEATURE_COMPATBLE_ID_DESC_LEN + 0x84),
