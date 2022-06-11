@@ -107,16 +107,9 @@ extern void sllin_dump_mem(void const * _ptr, size_t count)
 	uint8_t const *ptr = (uint8_t const *)_ptr;
 
 	for (size_t i = 0; i < count; i += 16) {
-		// usnprintf doesn't support width or fill
-		chars = usnprintf(buf, sizeof(buf), "%X", (unsigned)i);
-
-		for (int k = chars; k < 3; ++k) {
-			write_chars("0", 1);
-		}
+		chars = usnprintf(buf, sizeof(buf), "%03X  ", (unsigned)i);
 
 		write_chars(buf, chars);
-		write_chars(" ", 1);
-		write_chars(" ", 1);
 
 		size_t end = i + 16;
 		if (end > count) {
@@ -124,14 +117,9 @@ extern void sllin_dump_mem(void const * _ptr, size_t count)
 		}
 
 		for (size_t j = i; j < end; ++j) {
-			chars = usnprintf(buf, sizeof(buf), "%X", ptr[j]);
-
-			for (int k = chars; k < 2; ++k) {
-				write_chars("0", 1);
-			}
+			chars = usnprintf(buf, sizeof(buf), "%02X ", ptr[j]);
 
 			write_chars(buf, chars);
-			write_chars(" ", 1);
 		}
 
 		write_chars("\n", 1);

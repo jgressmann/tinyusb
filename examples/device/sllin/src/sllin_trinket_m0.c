@@ -289,13 +289,13 @@ static inline void lin_init_once(void)
 		PORT_WRCONFIG_WRPINCFG |
 		PORT_WRCONFIG_WRPMUX |
 		PORT_WRCONFIG_PMUX(3) |    /* function D */
-		PORT_WRCONFIG_DRVSTR |
+		// PORT_WRCONFIG_DRVSTR |
 		PORT_WRCONFIG_PINMASK(0x0300) | /* PA08, PA9 */
 		PORT_WRCONFIG_PMUXEN;
 
 	PM->APBCMASK.bit.SERCOM2_ = 1;
 	GCLK->CLKCTRL.reg =
-		GCLK_CLKCTRL_GEN_GCLK2 |
+		GCLK_CLKCTRL_GEN_GCLK0 |
 		GCLK_CLKCTRL_CLKEN |
 		GCLK_CLKCTRL_ID_SERCOM2_CORE;
 
@@ -307,9 +307,6 @@ static inline void lin_init_once(void)
 	// master / slave pin
 	// PA02 lin0
 	PORT->Group[0].DIRSET.reg = (UINT32_C(1) << 2);
-
-	// set tx pin as out to low
-	PORT->Group[0].DIRSET.reg = (1ul << 8);
 
 	sam_lin_init_once();
 }

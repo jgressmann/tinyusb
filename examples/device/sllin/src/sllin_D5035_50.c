@@ -269,9 +269,6 @@ static inline void uart_init(void)
 		SERCOM_USART_CTRLA_TXPO(0);   /* SERCOM PAD[0] is used for data transmission */
 
 	while(BOARD_SERCOM->USART.SYNCBUSY.bit.ENABLE); /* wait for SERCOM to be ready */
-
-	// free RX PIN
-	PORT->Group[0].PINCFG[8].reg = 0;
 }
 
 
@@ -331,9 +328,7 @@ static inline void lin_init_once(void)
 	PORT->Group[MASTER_SLAVE_PIN_GROUP].DIRSET.reg = (1ul << 4) | (1ul << 9);
 	PORT->Group[MASTER_SLAVE_PIN_GROUP].OUTCLR.reg = (1ul << 4) | (1ul << 9);
 
-	// set tx pins as out to low
-	PORT->Group[LIN_SERCOM_PORT_GROUP].DIRSET.reg = (1ul << 0) | (1ul << 4);
-	PORT->Group[LIN_SERCOM_PORT_GROUP].OUTCLR.reg = (1ul << 0) | (1ul << 4);
+
 
 	sam_lin_init_once();
 }
