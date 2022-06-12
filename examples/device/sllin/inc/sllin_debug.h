@@ -31,6 +31,7 @@
 
 #if SLLIN_DEBUG
 #	define SLLIN_DEBUG_LOG_BUFFER_SIZE 128
+#	define CFG_TUSB_DEBUG_PRINTF sllin_tusb_debug_printf
 
 extern char sllin_log_buffer[SLLIN_DEBUG_LOG_BUFFER_SIZE];
 

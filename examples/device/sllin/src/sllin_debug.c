@@ -16,6 +16,18 @@
 
 #if SLLIN_DEBUG
 char sllin_log_buffer[SLLIN_DEBUG_LOG_BUFFER_SIZE];
+SLLIN_RAMFUNC extern int sllin_tusb_debug_printf(const char *format, ...)
+{
+	int chars = 0;
+	va_list vl;
+
+  	va_start(vl, format);
+	chars = uvsnprintf(sllin_log_buffer, sizeof(sllin_log_buffer), format, vl);
+	board_uart_write(sllin_log_buffer, chars);
+	va_end(vl);
+
+	return chars;
+}
 #endif
 
 // https://www.segger.com/products/debug-probes/j-link/tools/j-link-swo-viewer/
