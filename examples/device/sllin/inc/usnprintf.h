@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include <stdarg.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -41,7 +43,7 @@ extern "C" {
 
 
 
-/* micro snprintf replacement
+/* micro vsnprintf replacement
  *
  * This implementation supports these specifiers: cdipsuxX.
  * These are the supported _length_ specifers (integers only): (none), h, hh, j, l, ll('), z, t
@@ -51,11 +53,29 @@ extern "C" {
  *
  * (') Define USNPRINTF_WITH_LONGLONG to support (unsigned) long long's.
  **/
-USNPRINTF_SECTION int usnprintf(
+USNPRINTF_SECTION int uvsnprintf(
 	char * restrict buffer,
 	size_t size,
 	char const * restrict fmt,
-	...);
+	va_list arg);
+
+USNPRINTF_SECTION static inline int usnprintf(
+	char * restrict buffer,
+	size_t size,
+	char const * restrict fmt,
+	...)
+{
+	int chars;
+	va_list vl;
+
+	va_start(vl, fmt);
+	chars = uvsnprintf(buffer, size, fmt, vl);
+	va_end(vl);
+
+	return chars;
+}
+
+
 
 #ifdef __cplusplus
 } // extern "C"

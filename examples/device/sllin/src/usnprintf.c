@@ -128,11 +128,11 @@ uprint_uint_raw(
 }
 
 USNPRINTF_SECTION
-int usnprintf(
+int uvsnprintf(
 	char * restrict buffer,
 	size_t size,
 	char const * restrict fmt,
-	...)
+	va_list vl)
 {
 	if (!size) {
 		return -1;
@@ -149,9 +149,6 @@ int usnprintf(
 	unsigned char print_hex_prefix = 0;
 	char fill = ' ';
 
-
-	va_list vl;
-	va_start(vl, fmt);
 
 	while (offset < end) {
 		char c = *fmt++;
@@ -353,7 +350,5 @@ start:
 	error = (int)offset;
 
 out:
-	va_end(vl);
-
 	return error;
 }
