@@ -57,9 +57,12 @@ static void led_task(void);
 #define BOOTLOADER_STATUS_NO 0
 #define BOOTLOADER_STATUS_YES 1
 
+extern uint32_t _end; /* start of heap */
+uint32_t *heap = (uint32_t *)&_end;
+
 int crc32(uint32_t addr, uint32_t bytes, uint32_t *result);
 
-static struct dfu {
+struct dfu {
 	int bootloader_status;
 	int bootloader_swap_banks_on_reset;
 	uint32_t rom_size;
@@ -71,7 +74,7 @@ static struct dfu {
 	uint32_t bootloader_crc;
 	uint32_t bootloader_vector_table_crc;
 	uint8_t block_buffer[MCU_NVM_BLOCK_SIZE];
-} dfu;
+} *dfu;
 
 struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_HDR_SECTION_NAME)));
 
@@ -239,7 +242,7 @@ static void start_app_prepare(void)
 #endif
 }
 
-__attribute__((noreturn)) static void start_app_jump(uint32_t addr)
+__attribute__((noreturn)) static inline void start_app_jump(uint32_t addr)
 {
 	// Load the vector table address of the user application into SCB->VTOR register. Make sure the address meets the alignment requirements.
 
@@ -281,9 +284,9 @@ static inline void watchdog_timeout(uint8_t seconds_in, uint8_t* wdt_reg, uint8_
 	}
 }
 
-static inline void reset_device(void)
+__attribute__((noreturn)) static inline void reset_device(void)
 {
-	if (dfu.bootloader_swap_banks_on_reset) {
+	if (dfu->bootloader_swap_banks_on_reset) {
 		LOG("> Swapping banks and resetting!\n");
 		NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CMD_BKSWRST | NVMCTRL_CTRLB_CMDEX_KEY;
 		LOG("> ERROR: should never be reached\n");
@@ -291,18 +294,20 @@ static inline void reset_device(void)
 
 	LOG("> reset\n");
 	NVIC_SystemReset();
+
+	__unreachable();
 }
 
 static inline void reset_download(void)
 {
-	dfu.bootloader_status = BOOTLOADER_STATUS_MAYBE;
-	dfu.prog_offset = MCU_BOOTLOADER_SIZE;
-	dfu.download_size = 0;
-	dfu.block_offset = 0;
-	dfu.bootloader_size = 0;
-	dfu.bootloader_crc = 0;
-	dfu.bootloader_vector_table_crc = 0;
-	dfu.bootloader_swap_banks_on_reset = 0;
+	dfu->bootloader_status = BOOTLOADER_STATUS_MAYBE;
+	dfu->prog_offset = MCU_BOOTLOADER_SIZE;
+	dfu->download_size = 0;
+	dfu->block_offset = 0;
+	dfu->bootloader_size = 0;
+	dfu->bootloader_crc = 0;
+	dfu->bootloader_vector_table_crc = 0;
+	dfu->bootloader_swap_banks_on_reset = 0;
 }
 
 __attribute__((noreturn)) static void run_bootloader(void)
@@ -349,10 +354,15 @@ int main(void)
 {
 	board_init();
 
-	dfu.rom_size = MCU_NVM_PAGE_SIZE * NVMCTRL->PARAM.bit.NVMP;
-	dfu.app_size = dfu.rom_size / 2 - MCU_BOOTLOADER_SIZE;
-	LOG("ROM size: %x\n", dfu.rom_size);
-	LOG("Max app size: %x\n", dfu.app_size);
+	dfu = (struct dfu *)heap;
+	heap += (sizeof(*dfu) + sizeof(*heap)-1) / sizeof(*heap);
+
+	memset(dfu, 0, sizeof(*dfu));
+
+	dfu->rom_size = MCU_NVM_PAGE_SIZE * NVMCTRL->PARAM.bit.NVMP;
+	dfu->app_size = dfu->rom_size / 2 - MCU_BOOTLOADER_SIZE;
+	LOG("ROM size: %x\n", dfu->rom_size);
+	LOG("Max app size: %x\n", dfu->app_size);
 
 	if (NVMCTRL->STATUS.bit.AFIRST) {
 		LOG("Bank A mapped at 0x0000000.\n");
@@ -386,8 +396,8 @@ int main(void)
 		LOG(NAME " checking app header @ %p\n", app_hdr);
 		int error = dfu_app_hdr_validate_app(app_hdr);
 		if (error) {
-			// dfu.status.bState = DFU_STATE_DFU_ERROR;
-			// dfu.status.bStatus = DFU_ERROR_FIRMWARE;
+			// dfu->status.bState = DFU_STATE_DFU_ERROR;
+			// dfu->status.bStatus = DFU_ERROR_FIRMWARE;
 			should_start_app = false;
 
 			switch (error) {
@@ -450,19 +460,21 @@ int main(void)
 
 		// go go go
 		start_app_jump(MCU_BOOTLOADER_SIZE + MCU_VECTOR_TABLE_ALIGNMENT);
-		return 0; // never reached
+	} else {
+		board_uart_write(NAME " v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " running\n", -1);
+
+		// set app stable counter
+		dfu_hdr_ptr()->counter = 0;
+
+		run_bootloader();
 	}
 
-	board_uart_write(NAME " v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " running\n", -1);
-
-	// set app stable counter
-	dfu_hdr_ptr()->counter = 0;
-
-	run_bootloader();
+	__unreachable();
 
 	return 0; // never reached
 }
 
+#if SUPERDFU_DEBUG
 //--------------------------------------------------------------------+
 // Device callbacks
 //--------------------------------------------------------------------+
@@ -493,6 +505,7 @@ void tud_resume_cb(void)
 {
 	LOG("resume\n");
 }
+#endif
 
 
 // Invoked right before tud_dfu_download_cb() (state=DFU_DNBUSY) or tud_dfu_manifest_cb() (state=DFU_MANIFEST)
@@ -529,25 +542,25 @@ void tud_dfu_download_cb(uint8_t alt, uint16_t block_num, uint8_t const* data, u
 
 	LOG("tud_dfu_download_cb alt=%u block_num=%u\n", alt, block_num);
 
-	if (unlikely(dfu.block_offset + length > sizeof(dfu.block_buffer))) {
+	if (unlikely(dfu->block_offset + length > sizeof(dfu->block_buffer))) {
 		LOG("> download would exceed configured block buffer size\n");
 		tud_dfu_finish_flashing(DFU_STATUS_ERR_UNKNOWN);
 		return;
 	}
 
-	memcpy(&dfu.block_buffer[dfu.block_offset], data, length);
-	dfu.block_offset += length;
-	dfu.download_size += length;
+	memcpy(&dfu->block_buffer[dfu->block_offset], data, length);
+	dfu->block_offset += length;
+	dfu->download_size += length;
 
 	// check for bootloader upload
 	_Static_assert(MCU_NVM_BLOCK_SIZE >= 2 * MCU_VECTOR_TABLE_ALIGNMENT, "block size must fit the vector table at least 2 times");
 
 
-	if (BOOTLOADER_STATUS_MAYBE == dfu.bootloader_status &&
-		dfu.block_offset >= 2 * MCU_VECTOR_TABLE_ALIGNMENT)  {
-		// TU_ASSERT(!dfu.bootloader_size);
+	if (BOOTLOADER_STATUS_MAYBE == dfu->bootloader_status &&
+		dfu->block_offset >= 2 * MCU_VECTOR_TABLE_ALIGNMENT)  {
+		// TU_ASSERT(!dfu->bootloader_size);
 
-		struct dfu_app_hdr *hdr = (struct dfu_app_hdr *)dfu.block_buffer;
+		struct dfu_app_hdr *hdr = (struct dfu_app_hdr *)dfu->block_buffer;
 		int error = dfu_app_hdr_validate_hdr(hdr);
 		if (unlikely(error)) {
 			LOG("> invalid dfu app header\n");
@@ -557,57 +570,57 @@ void tud_dfu_download_cb(uint8_t alt, uint16_t block_num, uint8_t const* data, u
 
 		if (hdr->hdr_version >= 2 && (hdr->hdr_flags & DFU_APP_HDR_FLAG_BOOTLOADER)) {
 			LOG("> bootloader upload detected\n");
-			dfu.bootloader_status = BOOTLOADER_STATUS_YES;
-			dfu.prog_offset = dfu.rom_size / 2;
-			dfu.bootloader_size = hdr->app_size;
-			dfu.bootloader_crc = hdr->app_crc;
-			error = crc32((uint32_t)&dfu.block_buffer[MCU_VECTOR_TABLE_ALIGNMENT], MCU_VECTOR_TABLE_ALIGNMENT, &dfu.bootloader_vector_table_crc);
+			dfu->bootloader_status = BOOTLOADER_STATUS_YES;
+			dfu->prog_offset = dfu->rom_size / 2;
+			dfu->bootloader_size = hdr->app_size;
+			dfu->bootloader_crc = hdr->app_crc;
+			error = crc32((uint32_t)&dfu->block_buffer[MCU_VECTOR_TABLE_ALIGNMENT], MCU_VECTOR_TABLE_ALIGNMENT, &dfu->bootloader_vector_table_crc);
 			if (unlikely(error)) {
 				tud_dfu_finish_flashing(DFU_STATUS_ERR_VERIFY);
 				return;
 			}
 
 			// move vector table up to 0x0
-			memcpy(&dfu.block_buffer[0], &dfu.block_buffer[MCU_VECTOR_TABLE_ALIGNMENT], MCU_VECTOR_TABLE_ALIGNMENT);
+			memcpy(&dfu->block_buffer[0], &dfu->block_buffer[MCU_VECTOR_TABLE_ALIGNMENT], MCU_VECTOR_TABLE_ALIGNMENT);
 		} else {
-			dfu.bootloader_status = BOOTLOADER_STATUS_NO;
+			dfu->bootloader_status = BOOTLOADER_STATUS_NO;
 		}
 	}
 
-	if (length < MCU_NVM_PAGE_SIZE || dfu.block_offset == sizeof(dfu.block_buffer)) {
-		LOG("> clearing block @ %#08lx\n", dfu.prog_offset);
-		if (!nvm_erase_block((void*)dfu.prog_offset)) {
-			LOG("\tclearing failed for block @ %#08lx\n", dfu.prog_offset);
+	if (length < MCU_NVM_PAGE_SIZE || dfu->block_offset == sizeof(dfu->block_buffer)) {
+		LOG("> clearing block @ %#08lx\n", dfu->prog_offset);
+		if (!nvm_erase_block((void*)dfu->prog_offset)) {
+			LOG("\tclearing failed for block @ %#08lx\n", dfu->prog_offset);
 			tud_dfu_finish_flashing(DFU_STATUS_ERR_ERASE);
 			return;
 		}
 
-		uint8_t* sptr = dfu.block_buffer;
-		uint8_t* eptr = sptr + sizeof(dfu.block_buffer);
+		uint8_t* sptr = dfu->block_buffer;
+		uint8_t* eptr = sptr + sizeof(dfu->block_buffer);
 
 		for (uint8_t* ptr = sptr; ptr < eptr; ptr += MCU_NVM_PAGE_SIZE) {
-			LOG("> write page @ %p\n", (void*)dfu.prog_offset);
-			if (nvm_write_main_page((void*)dfu.prog_offset, ptr)) {
-				if (0 == memcmp(ptr, (void*)dfu.prog_offset, MCU_NVM_PAGE_SIZE)) {
-					LOG("> verify page @ %p\n", (void*)dfu.prog_offset);
-					dfu.prog_offset += MCU_NVM_PAGE_SIZE;
+			LOG("> write page @ %p\n", (void*)dfu->prog_offset);
+			if (nvm_write_main_page((void*)dfu->prog_offset, ptr)) {
+				if (0 == memcmp(ptr, (void*)dfu->prog_offset, MCU_NVM_PAGE_SIZE)) {
+					LOG("> verify page @ %p\n", (void*)dfu->prog_offset);
+					dfu->prog_offset += MCU_NVM_PAGE_SIZE;
 				} else {
 					LOG("> target content\n");
 					TU_LOG1_MEM(ptr, MCU_NVM_PAGE_SIZE, 2);
 					LOG("> actual content\n");
-					TU_LOG1_MEM((void*)dfu.prog_offset, MCU_NVM_PAGE_SIZE, 2);
-					LOG("> verification failed for page @ %p\n", (void*)dfu.prog_offset);
+					TU_LOG1_MEM((void*)dfu->prog_offset, MCU_NVM_PAGE_SIZE, 2);
+					LOG("> verification failed for page @ %p\n", (void*)dfu->prog_offset);
 					tud_dfu_finish_flashing(DFU_STATUS_ERR_VERIFY);
 					return;
 				}
 			} else {
-				LOG("> write failed for page @ %p\n", (void*)dfu.prog_offset);
+				LOG("> write failed for page @ %p\n", (void*)dfu->prog_offset);
 				tud_dfu_finish_flashing(DFU_STATUS_ERR_WRITE);
 				return;
 			}
 		}
 
-		dfu.block_offset = 0;
+		dfu->block_offset = 0;
 	}
 
 	tud_dfu_finish_flashing(DFU_STATUS_OK);
@@ -621,33 +634,33 @@ void tud_dfu_manifest_cb(uint8_t alt)
 	(void) alt;
 	LOG("tud_dfu_manifest_cb alt=%u\n", alt);
 
-	if (BOOTLOADER_STATUS_YES == dfu.bootloader_status) {
-		uint32_t bytes_written = dfu.prog_offset - dfu.rom_size / 2;
+	if (BOOTLOADER_STATUS_YES == dfu->bootloader_status) {
+		uint32_t bytes_written = dfu->prog_offset - dfu->rom_size / 2;
 
-		if (bytes_written < dfu.bootloader_size) {
+		if (bytes_written < dfu->bootloader_size) {
 			LOG("> incomplete bootloader write, NOT swapping banks\n");
 		} else {
-			uint32_t crc = ~dfu.bootloader_crc;
+			uint32_t crc = ~dfu->bootloader_crc;
 			// bootloader payload is offset by dfu app header
-			int error = crc32(dfu.rom_size / 2 + MCU_VECTOR_TABLE_ALIGNMENT, dfu.bootloader_size, &crc);
+			int error = crc32(dfu->rom_size / 2 + MCU_VECTOR_TABLE_ALIGNMENT, dfu->bootloader_size, &crc);
 			if (error) {
 				LOG("> bootloader verification (1) failed with %d\n", error);
-			} else if (crc != dfu.bootloader_crc) {
+			} else if (crc != dfu->bootloader_crc) {
 				LOG("> bootloader checksum (1) mismatch\n");
 			} else {
-				error = crc32(dfu.rom_size / 2, MCU_VECTOR_TABLE_ALIGNMENT, &crc);
+				error = crc32(dfu->rom_size / 2, MCU_VECTOR_TABLE_ALIGNMENT, &crc);
 				if (error) {
 					LOG("> bootloader verification (2) failed with %d\n", error);
-				} else if (crc != dfu.bootloader_vector_table_crc) {
+				} else if (crc != dfu->bootloader_vector_table_crc) {
 					LOG("> bootloader checksum (2) mismatch\n");
 				} else {
 					LOG("> bootloader checksums verified\n");
-					dfu.bootloader_swap_banks_on_reset = 1;
+					dfu->bootloader_swap_banks_on_reset = 1;
 				}
 			}
 		}
 
-		if (dfu.bootloader_swap_banks_on_reset) {
+		if (dfu->bootloader_swap_banks_on_reset) {
 			tud_dfu_finish_flashing(DFU_STATUS_OK);
 		} else {
 			tud_dfu_finish_flashing(DFU_STATUS_ERR_VERIFY);
