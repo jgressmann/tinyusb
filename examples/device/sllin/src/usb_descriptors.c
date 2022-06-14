@@ -170,7 +170,6 @@ static char const* string_desc_arr [] =
 void usb_get_desc_string(uint8_t index, char *ptr, size_t* in_out_capa_len)
 {
 	char serial_buffer[9]; // 0-pad serial in case it has leading zeros
-	int serial_chars = 0;
 	size_t capacity;
 
 	SLLIN_DEBUG_ASSERT(ptr);
@@ -178,8 +177,7 @@ void usb_get_desc_string(uint8_t index, char *ptr, size_t* in_out_capa_len)
 
 	capacity = *in_out_capa_len;
 
-	serial_chars = usnprintf(serial_buffer, TU_ARRAY_SIZE(serial_buffer), "%08x", sllin_board_identifier());
-	SLLIN_DEBUG_ASSERT(serial_chars == 8);
+	usnprintf(serial_buffer, TU_ARRAY_SIZE(serial_buffer), "%08x", sllin_board_identifier());
 
 	*in_out_capa_len = usnprintf(ptr, capacity, string_desc_arr[index], serial_buffer);
 }
