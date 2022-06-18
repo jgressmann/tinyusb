@@ -570,6 +570,13 @@ void tud_dfu_download_cb(uint8_t alt, uint16_t block_num, uint8_t const* data, u
 
 		if (hdr->hdr_version >= 2 && (hdr->hdr_flags & DFU_APP_HDR_FLAG_BOOTLOADER)) {
 			LOG("> bootloader upload detected\n");
+
+			// deny flashing older versions of this bootloader
+			if (hdr->app_version_major < SUPERDFU_VERSION_MAJOR || hdr->app_version_minor < SUPERDFU_VERSION_MINOR || hdr->app_version_patch < SUPERDFU_VERSION_PATCH) {
+				tud_dfu_finish_flashing(DFU_STATUS_ERR_FILE);
+				return;
+			}
+
 			dfu->bootloader_status = BOOTLOADER_STATUS_YES;
 			dfu->prog_offset = dfu->rom_size / 2;
 			dfu->bootloader_size = hdr->app_size;
