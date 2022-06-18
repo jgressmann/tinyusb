@@ -20,6 +20,12 @@ else
   $(error PID is not set)
 endif
 
+ifdef DEVID
+  CFLAGS += -DSUPERDFU_DEVID=$(DEVID)
+else
+  $(error DEVID is not set)
+endif
+
 PRODUCT_NAME ?= SuperDFU
 INTERFACE_NAME ?= USB DFU 1.1
 

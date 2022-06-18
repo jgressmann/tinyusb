@@ -10,8 +10,10 @@ DFU_FILE=$(OUT_BASE_NAME).dfu
 
 $(BUILD)/$(DFUED_ELF_FILE): $(BUILD)/$(ELF_FILE)
 	@echo CREATE $@
-	@$(CP) $^ $@
-	python3 $(TOP)/examples/device/atsame51_dfu/src/superdfu-patch.py --strict 1 -e little $@
+	@$(CP) $^ $@.tmp
+	python3 $(TOP)/examples/device/atsame51_dfu/src/superdfu-patch.py --strict 1 $@.tmp
+	@$(CP) $@.tmp $@
+	@$(RM) -f $@.tmp
 
 $(BUILD)/$(DFUED_HEX_FILE): $(BUILD)/$(DFUED_ELF_FILE)
 	@echo CREATE $@

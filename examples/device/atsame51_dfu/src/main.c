@@ -1,27 +1,9 @@
-/*
- * The MIT License (MIT)
+/* SPDX-License-Identifier: MIT
  *
  * Copyright (c) 2020-2022 Jean Gressmann <jean@0x42.de>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- *
  */
+
 
 #include <string.h>
 #include <inttypes.h>
@@ -338,6 +320,8 @@ static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SE
 	.hdr_magic = DFU_APP_HDR_MAGIC_STRING,
 	.hdr_version = DFU_APP_HDR_VERSION,
 	.hdr_flags = DFU_APP_HDR_FLAG_BOOTLOADER,
+	.hdr_bom = DFU_APP_HDR_BOM,
+	.hdr_dev_id = SUPERDFU_DEVID,
 	.app_version_major = SUPERDFU_VERSION_MAJOR,
 	.app_version_minor = SUPERDFU_VERSION_MINOR,
 	.app_version_patch = SUPERDFU_VERSION_PATCH,
@@ -372,6 +356,7 @@ int main(void)
 
 	LOG("mcu_nvm_boot_bank_index: %d\n", mcu_nvm_boot_bank_index());
 
+	LOG("device ID: %08x\n", SUPERDFU_DEVID);
 	LOG(NAME " v" SUPERDFU_VERSION_STR " starting...\n");
 
 	bool should_start_app = true;
@@ -570,12 +555,14 @@ void tud_dfu_download_cb(uint8_t alt, uint16_t block_num, uint8_t const* data, u
 
 		if (hdr->hdr_version >= 2 && (hdr->hdr_flags & DFU_APP_HDR_FLAG_BOOTLOADER)) {
 			LOG("> bootloader upload detected\n");
-
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtype-limits"
 			// deny flashing older versions of this bootloader
 			if (hdr->app_version_major < SUPERDFU_VERSION_MAJOR || hdr->app_version_minor < SUPERDFU_VERSION_MINOR || hdr->app_version_patch < SUPERDFU_VERSION_PATCH) {
 				tud_dfu_finish_flashing(DFU_STATUS_ERR_FILE);
 				return;
 			}
+#pragma GCC diagnostic pop
 
 			dfu->bootloader_status = BOOTLOADER_STATUS_YES;
 			dfu->prog_offset = dfu->rom_size / 2;

@@ -33,9 +33,10 @@
 #define DFU_APP_FTR_SECTION_NAME ".dfuappftr"
 #define DFU_APP_HDR_MAGIC_STRING "SuperDFU AH\0\0\0\0\0"
 #define DFU_APP_FTR_MAGIC_STRING "SuperDFU AF\0\0\0\0\0"
-#define DFU_APP_HDR_VERSION 2
+#define DFU_APP_HDR_VERSION 3
 #define DFU_APP_HDR_SIZE 0x40
 #define DFU_APP_HDR_FLAG_BOOTLOADER 1
+#define DFU_APP_HDR_BOM 0x1234
 
 #define DFU_APP_ERROR_NONE                      0x00
 #define DFU_APP_ERROR_MAGIC_MISMATCH            0x01
@@ -44,11 +45,15 @@
 #define DFU_APP_ERROR_CRC_CALC_FAILED           0x04
 #define DFU_APP_ERROR_CRC_APP_HEADER_MISMATCH   0x05
 #define DFU_APP_ERROR_CRC_APP_DATA_MISMATCH     0x06
+#define DFU_APP_ERROR_DEV_ID_MISMATCH           0x07
 
 /**
  * struct dfu_app_hdr - SuperDFU bootloader application header
  * @hdr_magic: must contain DFU_APP_HDR_MAGIC_STRING, initialized by the application
  * @hdr_version: must contain DFU_APP_HDR_VERSION, initialized by the application
+ * @hdr_flags: typically 0.
+ * @hdr_dev_id: Unique 32 bit value that must be the for bootloader and application.
+ *               This field aims to prevent flashing an application built for another device.
  * @hdr_crc: CRC32 of header, filled by superdfu-patch.py.
  * @app_size: size in bytes of the app. Filled in by superdfu-patch.py.
  * @app_crc: CRC32 of the application code (excluding struct dfu_app_hdr and struct dfu_app_ftr).
@@ -68,6 +73,7 @@
  *   .hdr_magic = DFU_APP_HDR_MAGIC_STRING,
  *   .hdr_version = DFU_APP_HDR_VERSION,
  *   .hdr_flags = 0,
+ *   .hdr_dev_id = 0xdeadbeef,
  *   .app_version_major = 0,
  *   .app_version_minor = 1,
  *   .app_version_patch = 0,
@@ -84,7 +90,8 @@ struct dfu_app_hdr {
 	uint8_t hdr_magic[16];
 	uint8_t hdr_version;
 	uint8_t hdr_flags;
-	uint8_t hdr_reserved[2];
+	uint16_t hdr_bom;
+	uint32_t hdr_dev_id;
 	uint32_t hdr_crc;
 	uint32_t app_size;
 	uint32_t app_crc;
@@ -92,7 +99,7 @@ struct dfu_app_hdr {
 	uint8_t app_version_minor;
 	uint8_t app_version_patch;
 	uint8_t app_watchdog_timeout_s;
-	uint8_t app_name[28];
+	uint8_t app_name[24];
 } __packed;
 
 _Static_assert((sizeof(struct dfu_app_hdr) & 3) == 0, "structure size must be a multiple of 4");
