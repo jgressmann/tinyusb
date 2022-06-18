@@ -1,25 +1,6 @@
-/*
- * The MIT License (MIT)
+/* SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
+ * Copyright (c) 2020-2022 Jean Gressmann <jean@0x42.de>
  *
  */
 
@@ -28,10 +9,6 @@
 #include <string.h>
 #include <sam.h>
 #include <mcu.h>
-
-#ifndef MCU_NVM_SIZE
-#error Define MCU_NVM_SIZE
-#endif
 
 
 
@@ -75,61 +52,64 @@ int crc32(uint32_t addr, uint32_t bytes, uint32_t *result)
 	return DFU_APP_ERROR_NONE;
 }
 
-int dfu_app_hdr_validate_hdr(struct dfu_app_hdr const *hdr)
+int dfu_app_tag_validate_tag(struct dfu_app_tag const *tag)
 {
 	int error;
 	uint32_t crc;
 
-	if (memcmp(DFU_APP_HDR_MAGIC_STRING, hdr->hdr_magic, sizeof(hdr->hdr_magic))) {
+	if (memcmp(DFU_APP_TAG_MAGIC_STRING, tag->tag_magic, sizeof(tag->tag_magic))) {
 		// magic mismatch
 		return DFU_APP_ERROR_MAGIC_MISMATCH;
 	}
 
-	if (!hdr->hdr_version || hdr->hdr_version > DFU_APP_HDR_VERSION) {
+	if (!tag->tag_version || tag->tag_version > DFU_APP_TAG_VERSION) {
 		return DFU_APP_ERROR_CRC_APP_HEADER_MISMATCH;
 	}
 
-	// check header checksum
-	struct dfu_app_hdr check_hdr;
-	memcpy(&check_hdr, hdr, sizeof(check_hdr));
-	check_hdr.hdr_crc = 0;
+	if (tag->tag_dev_id != SUPERDFU_DEVID) {
+		return DFU_APP_ERROR_DEV_ID_MISMATCH;
+	}
 
-	error = crc32((uint32_t)&check_hdr, sizeof(check_hdr), &crc);
+	// check header checksum
+	struct dfu_app_tag check_tag;
+	memcpy(&check_tag, tag, sizeof(check_tag));
+	check_tag.tag_crc = 0;
+
+	error = crc32((uint32_t)&check_tag, sizeof(check_tag), &crc);
 	if (error) {
 		return error;
 	}
 
-	if (crc != hdr->hdr_crc) {
+	if (crc != tag->tag_crc) {
 		return DFU_APP_ERROR_CRC_APP_HEADER_MISMATCH;
 	}
 
 	return DFU_APP_ERROR_NONE;
 }
 
-int dfu_app_hdr_validate_app(struct dfu_app_hdr const *hdr)
+int dfu_app_tag_validate_app(struct dfu_app_tag const *tag)
 {
 	int error;
 	uint32_t crc;
 
-	error = dfu_app_hdr_validate_hdr(hdr);
+	error = dfu_app_tag_validate_tag(tag);
 	if (error) {
 		return error;
 	}
 
 	// app size within reasonably limits
-	uint32_t app_start = (uint32_t)(((uintptr_t)hdr) + MCU_VECTOR_TABLE_ALIGNMENT);
-	if (0 == (hdr->app_size / 4) ||
-		0 != (hdr->app_size % 4) ||
-		app_start + hdr->app_size >= MCU_NVM_SIZE) {
+	if (0 == (tag->app_size / 4) ||
+		0 != (tag->app_size % 4) ||
+		MCU_BOOTLOADER_SIZE + tag->app_size >= MCU_NVM_SIZE) {
 		return DFU_APP_ERROR_INVALID_SIZE;
 	}
 
-	error = crc32(app_start, hdr->app_size, &crc);
+	error = crc32(MCU_BOOTLOADER_SIZE, tag->app_size, &crc);
 	if (error) {
 		return error;
 	}
 
-	if (crc != hdr->app_crc) {
+	if (crc != tag->app_crc) {
 		return DFU_APP_ERROR_CRC_APP_DATA_MISMATCH;
 	}
 

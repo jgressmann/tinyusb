@@ -1,5 +1,7 @@
 DEPS_SUBMODULES += hw/mcu/microchip
 
+DEVID = 0xD503550
+
 CHIP ?= SAME51J18A
 ifdef CHIP
   ifeq ($(CHIP),SAME51J18A)
@@ -41,7 +43,8 @@ CFLAGS += \
   -mfpu=fpv4-sp-d16 \
   -nostdlib -nostartfiles \
   -DCFG_TUSB_MCU=OPT_MCU_SAME5X \
-  -DBOARD_NAME="\"D5035-02\"" \
+  -DSUPERDFU_APP_TAG_PTR_OFFSET=0x3FC \
+  -DSUPERDFU_BOOTLOADER_SIZE=0x4000 \
   -DRAMFUNC_SECTION_NAME="\".ramfunc\"" \
   -DSVC_Handler=SVCall_Handler
 

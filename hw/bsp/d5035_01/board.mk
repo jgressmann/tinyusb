@@ -1,6 +1,7 @@
 DEPS_SUBMODULES += hw/mcu/microchip
 
 D5035_01 = 1
+DEVID = 0xD503501
 
 CHIP ?= SAME51J18A
 ifdef CHIP

@@ -20,6 +20,10 @@
 #include <dfu_debug.h>
 #include <version.h>
 
+#ifndef SUPERDFU_APP_TAG_PTR_OFFSET
+	#error Define SUPERDFU_APP_TAG_PTR_OFFSET
+#endif
+
 static void led_task(void);
 
 #ifndef likely
@@ -31,13 +35,18 @@ static void led_task(void);
 #endif
 
 
+#ifndef PRODUCT_NAME
+#	error Define PRODUCT_NAME
+#endif
+
+
+#define STR2(x) #x
+#define STR(x) STR2(x)
+#define NAME PRODUCT_NAME
+
 
 #define NVM_BOOTLOADER_BLOCKS (MCU_BOOTLOADER_SIZE / MCU_NVM_BLOCK_SIZE)
 
-
-#define BOOTLOADER_STATUS_MAYBE -1
-#define BOOTLOADER_STATUS_NO 0
-#define BOOTLOADER_STATUS_YES 1
 
 extern uint32_t _end; /* start of heap */
 uint32_t *heap = (uint32_t *)&_end;
@@ -45,8 +54,9 @@ uint32_t *heap = (uint32_t *)&_end;
 int crc32(uint32_t addr, uint32_t bytes, uint32_t *result);
 
 struct dfu {
-	int bootloader_status;
+	int is_bootloader;
 	int bootloader_swap_banks_on_reset;
+	int tag_stripped;
 	uint32_t rom_size;
 	uint32_t app_size;
 	uint32_t download_size;
@@ -54,7 +64,7 @@ struct dfu {
 	uint32_t prog_offset;
 	uint32_t bootloader_size;
 	uint32_t bootloader_crc;
-	uint32_t bootloader_vector_table_crc;
+	// uint32_t bootloader_vector_table_crc;
 	uint8_t block_buffer[MCU_NVM_BLOCK_SIZE];
 } *dfu;
 
@@ -282,60 +292,55 @@ __attribute__((noreturn)) static inline void reset_device(void)
 
 static inline void reset_download(void)
 {
-	dfu->bootloader_status = BOOTLOADER_STATUS_MAYBE;
+	dfu->is_bootloader = 0;
 	dfu->prog_offset = MCU_BOOTLOADER_SIZE;
 	dfu->download_size = 0;
 	dfu->block_offset = 0;
 	dfu->bootloader_size = 0;
 	dfu->bootloader_crc = 0;
-	dfu->bootloader_vector_table_crc = 0;
+	// dfu->bootloader_vector_table_crc = 0;
 	dfu->bootloader_swap_banks_on_reset = 0;
+	dfu->tag_stripped = 0;
 }
 
 __attribute__((noreturn)) static void run_bootloader(void)
 {
 	reset_download();
+	LOG(NAME " reset_download\n");
 
 	tusb_init();
+	LOG(NAME " tusb_init\n");
 
 	while (1) {
 		led_task();
+		LOG(NAME " led_task\n");
 		tud_task();
+		LOG(NAME " tud_task\n");
 	}
 
 	__unreachable();
 }
 
-#ifndef PRODUCT_NAME
-#	error Define PRODUCT_NAME
-#endif
-
-
-#define STR2(x) #x
-#define STR(x) STR2(x)
-#define NAME PRODUCT_NAME
-
 #if SUPERDFU_APP
-static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SECTION_NAME))) = {
-	.hdr_magic = DFU_APP_HDR_MAGIC_STRING,
-	.hdr_version = DFU_APP_HDR_VERSION,
-	.hdr_flags = DFU_APP_HDR_FLAG_BOOTLOADER,
-	.hdr_bom = DFU_APP_HDR_BOM,
-	.hdr_dev_id = SUPERDFU_DEVID,
+static const struct dfu_app_tag dfu_app_tag __attribute__((section(DFU_APP_TAG_SECTION_NAME))) = {
+	.tag_magic = DFU_APP_TAG_MAGIC_STRING,
+	.tag_version = DFU_APP_TAG_VERSION,
+	.tag_flags = DFU_APP_TAG_FLAG_BOOTLOADER,
+	.tag_bom = DFU_APP_TAG_BOM,
+	.tag_dev_id = SUPERDFU_DEVID,
 	.app_version_major = SUPERDFU_VERSION_MAJOR,
 	.app_version_minor = SUPERDFU_VERSION_MINOR,
 	.app_version_patch = SUPERDFU_VERSION_PATCH,
 	.app_watchdog_timeout_s = 0,
 	.app_name = NAME,
 };
-
-static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(DFU_APP_FTR_SECTION_NAME))) = {
-	.magic = DFU_APP_FTR_MAGIC_STRING
-};
 #endif // #if SUPERDFU_APP
 
 int main(void)
 {
+	struct dfu_app_tag const ** const dfu_app_tag_ptr_ptr = (struct dfu_app_tag const **)SUPERDFU_APP_TAG_PTR_OFFSET;
+	struct dfu_app_tag const * dfu_app_tag_ptr = NULL;
+
 	board_init();
 
 	dfu = (struct dfu *)heap;
@@ -360,7 +365,6 @@ int main(void)
 	LOG(NAME " v" SUPERDFU_VERSION_STR " starting...\n");
 
 	bool should_start_app = true;
-	struct dfu_app_hdr const *app_hdr = (struct dfu_app_hdr const *)(uintptr_t)MCU_BOOTLOADER_SIZE;
 
 	LOG(NAME " checking for bootloader signature @ %p ... ", dfu_hdr_ptr());
 	if (0 == memcmp(DFU_RAM_HDR_MAGIC_STRING, dfu_hdr_ptr()->magic, sizeof(dfu_hdr_ptr()->magic))) {
@@ -377,54 +381,70 @@ int main(void)
 		dfu_hdr_ptr()->version = DFU_RAM_HDR_VERSION;
 	}
 
-	if (should_start_app) {
-		LOG(NAME " checking app header @ %p\n", app_hdr);
-		int error = dfu_app_hdr_validate_app(app_hdr);
-		if (error) {
-			// dfu->status.bState = DFU_STATE_DFU_ERROR;
-			// dfu->status.bStatus = DFU_ERROR_FIRMWARE;
-			should_start_app = false;
+	if (likely(should_start_app)) {
+		// ptr to ptr to tag must lie within bootloader section
+		if (likely((uintptr_t)dfu_app_tag_ptr_ptr + sizeof(void*) < MCU_BOOTLOADER_SIZE)) {
+			dfu_app_tag_ptr = (struct dfu_app_tag const *)*dfu_app_tag_ptr_ptr;
 
-			switch (error) {
-			case DFU_APP_ERROR_MAGIC_MISMATCH:
-				LOG(NAME " magic mismatch\n");
-				break;
-			case DFU_APP_ERROR_UNSUPPORED_HDR_VERSION:
-				LOG(NAME " unsupported version %u\n", app_hdr->hdr_version);
-				break;
-			case DFU_APP_ERROR_INVALID_SIZE:
-				LOG(NAME " invalid size %lu [bytes]\n", app_hdr->app_size);
-				break;
-			case DFU_APP_ERROR_CRC_CALC_FAILED:
-				LOG(NAME " crc calc failed\n");
-				break;
-			case DFU_APP_ERROR_CRC_APP_HEADER_MISMATCH:
-				LOG(NAME " app header crc verification failed %08lx\n", app_hdr->hdr_crc);
-				break;
-			case DFU_APP_ERROR_CRC_APP_DATA_MISMATCH:
-				LOG(NAME " app data crc verification failed %08lx\n", app_hdr->app_crc);
-				break;
-			default:
-				LOG(NAME " unknown error %d\n", error);
-				break;
+			// tag must lie within app section
+			if (likely((uintptr_t)dfu_app_tag_ptr >= MCU_BOOTLOADER_SIZE && (uintptr_t)dfu_app_tag_ptr + DFU_APP_TAG_SIZE <= dfu->app_size)) {
+				int error = 0;
+
+				LOG(NAME " checking app header @ %p\n", dfu_app_tag_ptr);
+				error = dfu_app_tag_validate_app(dfu_app_tag_ptr);
+				if (error) {
+					// dfu->status.bState = DFU_STATE_DFU_ERROR;
+					// dfu->status.bStatus = DFU_ERROR_FIRMWARE;
+					should_start_app = false;
+
+					switch (error) {
+					case DFU_APP_ERROR_MAGIC_MISMATCH:
+						LOG(NAME " magic mismatch\n");
+						break;
+					case DFU_APP_ERROR_UNSUPPORED_TAG_VERSION:
+						LOG(NAME " unsupported version %u\n", dfu_app_tag_ptr->tag_version);
+						break;
+					case DFU_APP_ERROR_INVALID_SIZE:
+						LOG(NAME " invalid size %lu [bytes]\n", dfu_app_tag_ptr->app_size);
+						break;
+					case DFU_APP_ERROR_CRC_CALC_FAILED:
+						LOG(NAME " crc calc failed\n");
+						break;
+					case DFU_APP_ERROR_CRC_APP_HEADER_MISMATCH:
+						LOG(NAME " app header crc verification failed %08lx\n", dfu_app_tag_ptr->tag_crc);
+						break;
+					case DFU_APP_ERROR_CRC_APP_DATA_MISMATCH:
+						LOG(NAME " app data crc verification failed %08lx\n", dfu_app_tag_ptr->app_crc);
+						break;
+					default:
+						LOG(NAME " unknown error %d\n", error);
+						break;
+					}
+				} else {
+					LOG(
+						NAME " found %s v%u.%u.%u\n",
+						dfu_app_tag_ptr->app_name,
+						dfu_app_tag_ptr->app_version_major,
+						dfu_app_tag_ptr->app_version_minor,
+						dfu_app_tag_ptr->app_version_patch);
+				}
+			} else {
+				LOG(NAME " app tag ptr invalid @ %p\n", dfu_app_tag_ptr);
+				should_start_app = false;
 			}
 		} else {
-			LOG(
-				NAME " found %s v%u.%u.%u\n",
-				app_hdr->app_name,
-				app_hdr->app_version_major,
-				app_hdr->app_version_minor,
-				app_hdr->app_version_patch);
+			LOG(NAME " ptr to app tag ptr invalid @ %p\n", dfu_app_tag_ptr_ptr);
+			should_start_app = false;
 		}
 	}
 
-	if (should_start_app) {
+	if (likely(should_start_app)) {
 		// check if stable
 		should_start_app = dfu_hdr_ptr()->counter < 3;
 		LOG(NAME " stable counter %lu\n", dfu_hdr_ptr()->counter);
 	}
 
-	if (should_start_app) {
+	if (likely(should_start_app)) {
 		// increment counter in case the app crashes and resets the device
 		LOG(NAME " incrementing stable counter\n");
 		++dfu_hdr_ptr()->counter;
@@ -434,17 +454,17 @@ int main(void)
 		// setup watchdog timer in case app hangs, we'll know
 		// by the counter value.
 		uint8_t per, timeout;
-		watchdog_timeout(app_hdr->app_watchdog_timeout_s, &per, &timeout);
+		watchdog_timeout(dfu_app_tag_ptr->app_watchdog_timeout_s, &per, &timeout);
 		LOG(NAME " setting %u [s] watchdog timer\n", timeout);
 		WDT->CONFIG.bit.PER = per;
 		WDT->CTRLA.bit.ENABLE = 1;
 
 		board_uart_write(NAME " gl hf, starting ", -1);
-		board_uart_write(app_hdr->app_name, -1);
+		board_uart_write(dfu_app_tag_ptr->app_name, -1);
 		board_uart_write("...\n", -1);
 
 		// go go go
-		start_app_jump(MCU_BOOTLOADER_SIZE + MCU_VECTOR_TABLE_ALIGNMENT);
+		start_app_jump(MCU_BOOTLOADER_SIZE);
 	} else {
 		board_uart_write(NAME " v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " running\n", -1);
 
@@ -537,48 +557,37 @@ void tud_dfu_download_cb(uint8_t alt, uint16_t block_num, uint8_t const* data, u
 	dfu->block_offset += length;
 	dfu->download_size += length;
 
-	// check for bootloader upload
-	_Static_assert(MCU_NVM_BLOCK_SIZE >= 2 * MCU_VECTOR_TABLE_ALIGNMENT, "block size must fit the vector table at least 2 times");
+	if (!dfu->tag_stripped && dfu->block_offset >= DFU_APP_TAG_SIZE) {
+		struct dfu_app_tag *tag = (struct dfu_app_tag *)dfu->block_buffer;
+		int error = dfu_app_tag_validate_tag(tag);
 
-
-	if (BOOTLOADER_STATUS_MAYBE == dfu->bootloader_status &&
-		dfu->block_offset >= 2 * MCU_VECTOR_TABLE_ALIGNMENT)  {
-		// TU_ASSERT(!dfu->bootloader_size);
-
-		struct dfu_app_hdr *hdr = (struct dfu_app_hdr *)dfu->block_buffer;
-		int error = dfu_app_hdr_validate_hdr(hdr);
 		if (unlikely(error)) {
 			LOG("> invalid dfu app header\n");
 			tud_dfu_finish_flashing(DFU_STATUS_ERR_FILE);
 			return;
 		}
 
-		if (hdr->hdr_version >= 2 && (hdr->hdr_flags & DFU_APP_HDR_FLAG_BOOTLOADER)) {
+		if (tag->tag_flags & DFU_APP_TAG_FLAG_BOOTLOADER) {
 			LOG("> bootloader upload detected\n");
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wtype-limits"
 			// deny flashing older versions of this bootloader
-			if (hdr->app_version_major < SUPERDFU_VERSION_MAJOR || hdr->app_version_minor < SUPERDFU_VERSION_MINOR || hdr->app_version_patch < SUPERDFU_VERSION_PATCH) {
+			if (tag->app_version_major < SUPERDFU_VERSION_MAJOR || tag->app_version_minor < SUPERDFU_VERSION_MINOR || tag->app_version_patch < SUPERDFU_VERSION_PATCH) {
 				tud_dfu_finish_flashing(DFU_STATUS_ERR_FILE);
 				return;
 			}
 #pragma GCC diagnostic pop
 
-			dfu->bootloader_status = BOOTLOADER_STATUS_YES;
+			dfu->is_bootloader = 1;
 			dfu->prog_offset = dfu->rom_size / 2;
-			dfu->bootloader_size = hdr->app_size;
-			dfu->bootloader_crc = hdr->app_crc;
-			error = crc32((uint32_t)&dfu->block_buffer[MCU_VECTOR_TABLE_ALIGNMENT], MCU_VECTOR_TABLE_ALIGNMENT, &dfu->bootloader_vector_table_crc);
-			if (unlikely(error)) {
-				tud_dfu_finish_flashing(DFU_STATUS_ERR_VERIFY);
-				return;
-			}
-
-			// move vector table up to 0x0
-			memcpy(&dfu->block_buffer[0], &dfu->block_buffer[MCU_VECTOR_TABLE_ALIGNMENT], MCU_VECTOR_TABLE_ALIGNMENT);
-		} else {
-			dfu->bootloader_status = BOOTLOADER_STATUS_NO;
+			dfu->bootloader_size = tag->app_size;
+			dfu->bootloader_crc = tag->app_crc;
 		}
+
+		// strip the tag
+		memmove(dfu->block_buffer, dfu->block_buffer + DFU_APP_TAG_SIZE, dfu->block_offset - DFU_APP_TAG_SIZE);
+		dfu->block_offset -= DFU_APP_TAG_SIZE;
+		dfu->tag_stripped = 1;
 	}
 
 	if (length < MCU_NVM_PAGE_SIZE || dfu->block_offset == sizeof(dfu->block_buffer)) {
@@ -628,30 +637,32 @@ void tud_dfu_manifest_cb(uint8_t alt)
 	(void) alt;
 	LOG("tud_dfu_manifest_cb alt=%u\n", alt);
 
-	if (BOOTLOADER_STATUS_YES == dfu->bootloader_status) {
+	if (dfu->is_bootloader) {
 		uint32_t bytes_written = dfu->prog_offset - dfu->rom_size / 2;
 
 		if (bytes_written < dfu->bootloader_size) {
 			LOG("> incomplete bootloader write, NOT swapping banks\n");
 		} else {
-			uint32_t crc = ~dfu->bootloader_crc;
-			// bootloader payload is offset by dfu app header
-			int error = crc32(dfu->rom_size / 2 + MCU_VECTOR_TABLE_ALIGNMENT, dfu->bootloader_size, &crc);
-			if (error) {
-				LOG("> bootloader verification (1) failed with %d\n", error);
-			} else if (crc != dfu->bootloader_crc) {
-				LOG("> bootloader checksum (1) mismatch\n");
-			} else {
-				error = crc32(dfu->rom_size / 2, MCU_VECTOR_TABLE_ALIGNMENT, &crc);
-				if (error) {
-					LOG("> bootloader verification (2) failed with %d\n", error);
-				} else if (crc != dfu->bootloader_vector_table_crc) {
-					LOG("> bootloader checksum (2) mismatch\n");
-				} else {
-					LOG("> bootloader checksums verified\n");
-					dfu->bootloader_swap_banks_on_reset = 1;
-				}
-			}
+			// uint32_t crc = ~dfu->bootloader_crc;
+			// // bootloader payload is offset by dfu app header
+			// int error = crc32(dfu->rom_size / 2 + MCU_VECTOR_TABLE_ALIGNMENT, dfu->bootloader_size, &crc);
+			// if (error) {
+			// 	LOG("> bootloader verification (1) failed with %d\n", error);
+			// } else if (crc != dfu->bootloader_crc) {
+			// 	LOG("> bootloader checksum (1) mismatch\n");
+			// } else {
+			// 	error = crc32(dfu->rom_size / 2, MCU_VECTOR_TABLE_ALIGNMENT, &crc);
+			// 	if (error) {
+			// 		LOG("> bootloader verification (2) failed with %d\n", error);
+			// 	} else if (crc != dfu->bootloader_vector_table_crc) {
+			// 		LOG("> bootloader checksum (2) mismatch\n");
+			// 	} else {
+			// 		LOG("> bootloader checksums verified\n");
+			// 		dfu->bootloader_swap_banks_on_reset = 1;
+			// 	}
+			// }
+
+			dfu->bootloader_swap_banks_on_reset = 1;
 		}
 
 		if (dfu->bootloader_swap_banks_on_reset) {

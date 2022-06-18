@@ -6,14 +6,15 @@ ELF_FILE=$(OUT_BASE_NAME).elf
 DFUED_ELF_FILE=$(OUT_BASE_NAME).superdfu.elf
 DFUED_HEX_FILE=$(OUT_BASE_NAME).superdfu.hex
 DFUED_BIN_FILE=$(OUT_BASE_NAME).superdfu.bin
-DFU_FILE=$(OUT_BASE_NAME).dfu
+DFU_TAG_FILE=$(OUT_BASE_NAME).tag
+DFU_BIN_FILE=$(OUT_BASE_NAME).bin
+DFU_DFU_FILE=$(OUT_BASE_NAME).dfu
 
 $(BUILD)/$(DFUED_ELF_FILE): $(BUILD)/$(ELF_FILE)
 	@echo CREATE $@
 	@$(CP) $^ $@.tmp
-	python3 $(TOP)/examples/device/atsame51_dfu/src/superdfu-patch.py --strict 1 $@.tmp
-	@$(CP) $@.tmp $@
-	@$(RM) -f $@.tmp
+	python3 $(TOP)/examples/device/atsame51_dfu/src/superdfu-patch.py --strict 1 --tag $(BUILD)/$(DFU_TAG_FILE) $@.tmp
+	@mv $@.tmp $@
 
 $(BUILD)/$(DFUED_HEX_FILE): $(BUILD)/$(DFUED_ELF_FILE)
 	@echo CREATE $@
@@ -33,17 +34,16 @@ flash-dfu: $(BUILD)/$(DFUED_HEX_FILE)
 	$(JLINKEXE) -device $(JLINK_DEVICE) -if $(JLINK_IF) -JTAGConf -1,-1 -speed auto -CommandFile $(BUILD)/$(BOARD).superdfu.jlink
 
 
-$(BUILD)/$(DFU_FILE): $(BUILD)/$(DFUED_BIN_FILE)
+$(BUILD)/$(DFU_DFU_FILE): $(BUILD)/$(DFUED_ELF_FILE)
 	@echo CREATE $@
-	#dfu-tool convert dfu $^ $@
-	cp $^ $@
+	@$(OBJCOPY) -O binary $^ $(BUILD)/$(DFU_BIN_FILE)
+	cat $(BUILD)/$(DFU_TAG_FILE) $(BUILD)/$(DFU_BIN_FILE) >$@
 	dfu-suffix -v $(VID) -p $(PID) -a $@
 
 # depend on dfu and hex so we can have both in one build
-dfu: $(BUILD)/$(DFU_FILE) $(BUILD)/$(DFUED_HEX_FILE)
+dfu: $(BUILD)/$(DFU_DFU_FILE) $(BUILD)/$(DFUED_BIN_FILE)
 
-dfu-upload: $(BUILD)/$(DFU_FILE)
-	#sudo dfu-tool write $(DFU_FILE)
+dfu-upload: $(BUILD)/$(DFU_DFU_FILE)
 	sudo dfu-util -d $(VID):$(PID) -R -D $^
 
 # flash using edbg from https://github.com/ataradov/edbg

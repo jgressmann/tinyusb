@@ -11,96 +11,95 @@ import struct
 import sys
 
 
-SUPER_DFU_HEADER_MARKER = b'SuperDFU AH\0\0\0\0\0'
-SUPER_DFU_HEADER_LEN = 0x40
-SUPER_DFU_HEADER_BOM = 0x1234
-SUPER_DFU_APP_OFFSET = 1024
-SUPER_DFU_FOOTER_MARKER = b'SuperDFU AF\0\0\0\0\0'
-SUPER_DFU_FOOTER_LEN = 16
+DFU_APP_TAG_MAGIC_STRING = b'SuperDFU AT\0\0\0\0\0'
+DFU_APP_TAG_SIZE = 0x40
+DFU_APP_TAG_BOM = 0x1234
 
+
+def patch_file(file: str) -> bool:
+	header_struct_format = "<16sBBBBLLLL"
+
+	with open(file, "rb") as f:
+		content = bytearray(f.read())
+
+		tag_index = content.rfind(DFU_APP_TAG_MAGIC_STRING)
+		if -1 == tag_index:
+			print(f"WARN: SuperDFU tag not found")
+			return False, content, None
+
+		tag = list(struct.unpack(header_struct_format, content[tag_index:tag_index + struct.calcsize(header_struct_format)]))
+		if tag[0] != DFU_APP_TAG_MAGIC_STRING:
+			print(f"WARN: SuperDFU tag magic string mismatch {tag[0].hex()}")
+			return False, content, None
+
+		if (tag[1] != 1):
+			print(f"WARN: SuperDFU tag version {tag[1]} not supported")
+			return False, content, None
+
+		bad_endian = True
+
+		if tag[3] == 0x34:
+			if tag[4] == 0x12:
+				bad_endian = False # little endian
+		elif tag[3] == 0x12:
+			if tag[4] == 0x34:
+				bad_endian = False # big endian
+				header_struct_format = ">" + header_struct_format[1:]
+
+		if bad_endian:
+			print(f"WARN: Unrecognized BOM {tag[3]:02x}{tag[4]:02x}h")
+			return False, content, None
+
+		# compute app len & crc and repack
+		app_len = tag_index
+		app_crc = binascii.crc32(content[:tag_index])
+		tag[6] = 0 # tag crc
+		tag[7] = app_len
+		tag[8] = app_crc
+		struct.pack_into(header_struct_format, content, tag_index, *tag)
+		print(f"SuperDFU application tag found @ {tag_index:08x}, app len {app_len:08x}, app crc {app_crc:08x}")
+
+
+		# compute tag crc and repack
+		tag_crc = binascii.crc32(content[tag_index:tag_index+DFU_APP_TAG_SIZE])
+		tag = list(struct.unpack(header_struct_format, content[tag_index:tag_index + struct.calcsize(header_struct_format)]))
+		tag[6] = tag_crc
+		struct.pack_into(header_struct_format, content, tag_index, *tag)
+		print(f"SuperDFU application tag crc {tag_crc:08x}")
+
+		# extract full tag
+		tag = bytes(content[tag_index:tag_index+DFU_APP_TAG_SIZE])
+
+		return True, content, tag
 
 
 try:
-	parser = argparse.ArgumentParser(description='patch firmware bin file SuperDFU header')
-	parser.add_argument('files', nargs=argparse.REMAINDER)
+	parser = argparse.ArgumentParser(description='patch firmware bin file SuperDFU tag')
+	parser.add_argument('file', metavar='FILE', help="file to patch")
+	parser.add_argument('--tag', metavar='TAG', required=False, help="file to save tag")
 	parser.add_argument('--strict', type=bool, default=False)
 	args = parser.parse_args()
 
+	file = args.file
+	changed, content, tag = patch_file(file)
 
-	header_struct_format = "<16sBBBBLLLL"
-	footer_struct_format = "16s"
+	if changed:
+		print(f"Saving changed file to {file}...", end='')
+		with open(file, "wb") as f:
+			f.write(content)
 
-	for file in args.files:
-		changed = False
-		with open(file, "rb") as f:
-			headers_found = 0
-			start_index = 0
-			content = bytearray(f.read())
+		print(f"done")
 
-			while start_index < len(content):
-				start_index = content.find(SUPER_DFU_HEADER_MARKER, start_index)
-				if start_index == -1:
-					if 0 == headers_found:
-						print(f"WARN: No SuperDFU header found in {file}")
-					break
+		if args.tag:
+			print(f"Saving tag to {args.tag}...", end='')
+			with open(args.tag, "wb") as f:
+				f.write(tag)
 
-				header = list(struct.unpack(header_struct_format, content[start_index:start_index + struct.calcsize(header_struct_format)]))
-				if (header[1] != 3):
-					print(f"WARN: SuperDFU header version {header[1]} found in {file} not supported")
-					break
+			print(f"done")
 
-				bad_endian = True
-
-				if header[3] == 0x34:
-					if header[4] == 0x12:
-						bad_endian = False # little endian
-				elif header[3] == 0x12:
-					if header[4] == 0x34:
-						bad_endian = False # big endian
-						header_struct_format = ">" + header_struct_format[1:]
-
-				if bad_endian:
-					print(f"WARN: Unrecognized BOM {header[3]:02x}{header[4]:02x}h in {file}")
-					break
-
-				end_index = content.find(SUPER_DFU_FOOTER_MARKER, start_index + SUPER_DFU_APP_OFFSET)
-				if end_index == -1:
-					print(f"WARN: No SuperDFU footer found in {file}")
-					break
-
-				# compute app len & crc and repack
-				app_len = end_index - start_index - SUPER_DFU_APP_OFFSET
-				app_crc = binascii.crc32(content[start_index+SUPER_DFU_APP_OFFSET:end_index])
-				header[6] = 0 # header crc
-				header[7] = app_len
-				header[8] = app_crc
-				struct.pack_into(header_struct_format, content, start_index, *header)
-				print(f"SuperDFU application header found @ {start_index:08x}, footer @ {end_index:08x}, app len {app_len:08x}, app crc {app_crc:08x}")
-
-
-				# compute header crc and repack
-				header_crc = binascii.crc32(content[start_index:start_index+SUPER_DFU_HEADER_LEN])
-				header = list(struct.unpack(header_struct_format, content[start_index:start_index + struct.calcsize(header_struct_format)]))
-				header[6] = header_crc
-				struct.pack_into(header_struct_format, content, start_index, *header)
-				print(f"SuperDFU application header crc {header_crc:08x}")
-
-				changed = True
-				headers_found += 1
-
-				start_index = end_index + SUPER_DFU_FOOTER_LEN
-
-
-
-		if changed:
-			print(f"Saving changed file to {file}...")
-			with open(file, "wb") as f:
-				f.write(content)
-
-			print(f"Saved")
-		elif args.strict and not changed:
-			print(f"ERROR: {file} unchanged")
-			sys.exit(2)
+	elif args.strict and not changed:
+		print(f"ERROR: {file} unchanged")
+		sys.exit(2)
 
 
 except Exception as e:
