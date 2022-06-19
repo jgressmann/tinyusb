@@ -33,13 +33,12 @@ else
   CHIP_RAM_SIZE = 0x00020000
 endif
 
-BOOTLOADER_SIZE = 0x4000
+BOOTLOADER_SIZE = 0x2000
 SUPERDFU_APP_TAG_PTR_OFFSET = 0x3FC
 
 CFLAGS += \
-  -mthumb \
+  -flto \
   -mabi=aapcs \
-  -mlong-calls \
   -mcpu=cortex-m4 \
   -mfloat-abi=hard \
   -mfpu=fpv4-sp-d16 \
