@@ -181,16 +181,6 @@ static char const* string_desc_arr [] =
 static uint16_t _desc_str[33];
 static const char hex_map[16] = "0123456789abcdef";
 
-// replace fast std lib strlen with small ustrlen
-static size_t ustrlen(char const * str)
-{
-	size_t len = 0;
-
-	while (*str++) ++len;
-
-	return len;
-}
-
 // Invoked when received GET STRING DESCRIPTOR request
 // Application return pointer to descriptor, whose contents must exist long enough for transfer to complete
 uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
@@ -230,7 +220,7 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 		uint8_t i = 0;
 		const char* str = string_desc_arr[index];
 
-		chr_count = tu_min8(ustrlen(str), TU_ARRAY_SIZE(_desc_str) - 1 - BANK_LEN);
+		chr_count = tu_min8(strlen(str), TU_ARRAY_SIZE(_desc_str) - 1 - BANK_LEN);
 
 		for (; i < chr_count; ++i) {
 			_desc_str[1+i] = str[i];

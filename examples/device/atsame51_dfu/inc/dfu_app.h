@@ -10,6 +10,10 @@
 #include <assert.h>
 #include <mcu.h>
 
+#ifndef DFU_APP_FUNC
+	#define DFU_APP_FUNC
+#endif
+
 #define DFU_APP_TAG_SECTION_NAME ".dfutag"
 #define DFU_APP_TAG_PTR_SECTION_NAME ".dfutagptr"
 #define DFU_APP_TAG_MAGIC_STRING "SuperDFU AT\0\0\0\0\0"
@@ -88,7 +92,7 @@ _Static_assert(DFU_APP_TAG_SIZE == sizeof(struct dfu_app_tag), "structure size m
 /**
  * Validate the dfu app tag
  */
-int dfu_app_tag_validate_tag(struct dfu_app_tag const *tag);
+DFU_APP_FUNC int dfu_app_tag_validate_tag(struct dfu_app_tag const *tag);
 
 /**
  * Validate the dfu app tag and the application

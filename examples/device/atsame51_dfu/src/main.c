@@ -42,20 +42,71 @@ static void led_task(void);
 #	error Define PRODUCT_NAME
 #endif
 
+#ifndef SUPERDFU_RAMFUNC_SECTION_NAME
+#	error Define SUPERDFU_RAMFUNC_SECTION_NAME
+#endif
+
+_Static_assert(SUPERDFU_BOOTLOADER_SIZE % MCU_NVM_BLOCK_SIZE == 0, "bootloader size must be a multiple of erase granularity");
 
 #define STR2(x) #x
 #define STR(x) STR2(x)
 #define NAME PRODUCT_NAME
 
+size_t ustrlen(char const * str)
+{
+	size_t len = 0;
 
-int crc32(uint32_t addr, uint32_t bytes, uint32_t *result);
+	while (*str++) ++len;
+
+	return len;
+}
+
+extern void* umemcpy(void *_dst, void const  *_src, size_t count)
+{
+	uint8_t *dst = _dst;
+	uint8_t const *src = _src;
+
+	while (count--) *dst++ = *src++;
+
+	return _dst;
+}
+
+SUPERDFU_RAMFUNC static inline void umemcpy4(void *_dst, void const  *_src, size_t count)
+{
+	uint32_t *dst = _dst;
+	uint32_t const *src = _src;
+
+	while (count--) *dst++ = *src++;
+}
+
+extern void* umemset(void *_dst, int byte, size_t count)
+{
+	uint8_t *dst = _dst;
+
+	while (count--) *dst++ = (uint8_t)byte;
+
+	return _dst;
+}
+
+extern int umemcmp(void const *_dst, void const  *_src, size_t count)
+{
+	uint8_t const *dst = _dst;
+	uint8_t const *src = _src;
+
+	while (count--) {
+		if (*dst++ != *src++) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
 
 static struct dfu {
 	int is_bootloader;
-	int bootloader_swap_banks_on_reset;
+	int app_verified;
 	int tag_stripped;
 	uint32_t rom_size; // total ROM size
-	uint32_t app_size_rom; // size for application in ROM
 	uint32_t app_size_tag; // size of the application from tag
 	uint32_t app_crc_tag;
 	uint32_t app_crc_computed;
@@ -64,7 +115,7 @@ static struct dfu {
 	uint32_t crc_offset;
 	uint32_t prog_offset;
 	uint8_t block_buffer[MCU_NVM_BLOCK_SIZE] __attribute__ ((aligned (4)));
-} dfu  __attribute__((section(".noinit")));
+} dfu;
 
 struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_HDR_SECTION_NAME)));
 
@@ -112,10 +163,8 @@ static inline const char* dir_str(tusb_dir_t value)
 	}
 }
 
-static inline bool nvm_erase_block(void *addr)
+SUPERDFU_RAMFUNC static bool nvm_erase_block_ex(void *addr)
 {
-	LOG("erase block %p\n", addr);
-
 	// while (!NVMCTRL->STATUS.bit.READY); // wait for nvmctrl to be ready
 
 	NVMCTRL->ADDR.reg = NVMCTRL_ADDR_ADDR((uintptr_t)addr);
@@ -137,10 +186,15 @@ static inline bool nvm_erase_block(void *addr)
 	return true;
 }
 
-static inline bool nvm_write_main_page(void *addr, void const *ptr)
+static inline bool nvm_erase_block(void *addr)
 {
-	LOG("write main page @ %p\n", addr);
+	LOG("erase block %p\n", addr);
 
+	return nvm_erase_block_ex(addr);
+}
+
+SUPERDFU_RAMFUNC static bool nvm_write_main_page_ex(void *addr, void const *ptr)
+{
 	// while (!NVMCTRL->STATUS.bit.READY); // wait for nvmctrl to be ready
 
 	// // clear flags
@@ -164,7 +218,7 @@ static inline bool nvm_write_main_page(void *addr, void const *ptr)
 	// 	return false;
 	// }
 
-	memcpy(addr, ptr, MCU_NVM_PAGE_SIZE);
+	umemcpy4(addr, ptr, MCU_NVM_PAGE_SIZE / 4);
 
 	NVMCTRL->ADDR.reg = NVMCTRL_ADDR_ADDR((uintptr_t)addr);
 
@@ -183,6 +237,14 @@ static inline bool nvm_write_main_page(void *addr, void const *ptr)
 	}
 
 	return true;
+}
+
+
+static inline bool nvm_write_main_page(void *addr, void const *ptr)
+{
+	LOG("write main page @ %p\n", addr);
+
+	return nvm_write_main_page_ex(addr, ptr);
 }
 
 static void start_app_prepare(void);
@@ -274,30 +336,61 @@ static inline void watchdog_timeout(uint8_t seconds_in, uint8_t* wdt_reg, uint8_
 	}
 }
 
-__attribute__((noreturn)) static inline void reset_device(void)
+__attribute__((noreturn,noinline,section(SUPERDFU_RAMFUNC_SECTION_NAME))) static void move_bootloader_to_start_of_flash(void)
 {
-	if (dfu.bootloader_swap_banks_on_reset) {
-		LOG("> Swapping banks and resetting!\n");
-		NVMCTRL->CTRLB.reg = NVMCTRL_CTRLB_CMD_BKSWRST | NVMCTRL_CTRLB_CMDEX_KEY;
-		LOG("> ERROR: should never be reached\n");
+	/*
+	 *
+	 * NOTE: under _NO_ circumstances access anthing residing in flash!
+	 *
+	 */
+
+
+	__disable_irq();
+
+	for (uint32_t i = 0, o = 0, e = SUPERDFU_BOOTLOADER_SIZE / MCU_NVM_BLOCK_SIZE;
+		i < e;
+		++i, o += MCU_NVM_BLOCK_SIZE) {
+		nvm_erase_block_ex((void*)o);
+		// LOG("erase @ %p\n", (void*)o);
 	}
 
-	LOG("> reset\n");
+	for (uint32_t i = 0, dst = 0, src = SUPERDFU_BOOTLOADER_SIZE, e = SUPERDFU_BOOTLOADER_SIZE / MCU_NVM_PAGE_SIZE;
+		i < e;
+		++i, dst += MCU_NVM_PAGE_SIZE, src += MCU_NVM_PAGE_SIZE) {
+		umemcpy4(dfu.block_buffer, (void*)src, MCU_NVM_PAGE_SIZE / 4);
+		nvm_write_main_page_ex((void*)dst, dfu.block_buffer);
+		// LOG("write @ %p\n", (void*)dst);
+	}
+
 	NVIC_SystemReset();
+
+	__unreachable();
+}
+
+__attribute__((noreturn)) static inline void reset_device(void)
+{
+	if (dfu.is_bootloader && dfu.app_verified) {
+		// This function and everything it touches must be in RAM
+		move_bootloader_to_start_of_flash();
+	} else {
+		LOG("> reset\n");
+		NVIC_SystemReset();
+	}
 
 	__unreachable();
 }
 
 static inline void reset_download(void)
 {
+	dfu.app_verified = 0;
 	dfu.is_bootloader = 0;
+	dfu.app_verified = 0;
 	dfu.prog_offset = SUPERDFU_BOOTLOADER_SIZE;
 	dfu.download_size = 0;
 	dfu.block_offset = 0;
 	dfu.app_crc_tag = 0;
 	dfu.app_size_tag = 0;
 	dfu.app_crc_computed = sam_crc32_init();
-	dfu.bootloader_swap_banks_on_reset = 0;
 	dfu.tag_stripped = 0;
 	dfu.crc_offset = 0;
 }
@@ -310,9 +403,7 @@ __attribute__((noreturn)) static void run_bootloader(void)
 
 	while (1) {
 		led_task();
-		// LOG(NAME " led_task\n");
 		tud_task();
-		// LOG(NAME " tud_task\n");
 	}
 
 	__unreachable();
@@ -341,21 +432,11 @@ int main(void)
 
 	board_init();
 
-	memset(&dfu, 0, sizeof(dfu));
-
 	dfu.rom_size = MCU_NVM_PAGE_SIZE * NVMCTRL->PARAM.bit.NVMP;
-	dfu.app_size_rom = dfu.rom_size / 2 - SUPERDFU_BOOTLOADER_SIZE;
-	LOG("ROM size: %x\n", dfu.rom_size);
-	LOG("Max app size: %x\n", dfu.app_size_rom);
-	LOG("App tag ptr @ 0x%x\n", (uint32_t)dfu_app_tag_ptr_ptr);
-
-	if (NVMCTRL->STATUS.bit.AFIRST) {
-		LOG("Bank A mapped at 0x0000000.\n");
-	} else {
-		LOG("Bank B mapped at 0x0000000.\n");
-	}
-
-	LOG("mcu_nvm_boot_bank_index: %d\n", mcu_nvm_boot_bank_index());
+	LOG("ROM size: %lx\n", dfu.rom_size);
+	LOG("Max app size: %lx\n", dfu.rom_size - SUPERDFU_BOOTLOADER_SIZE);
+	LOG("App tag ptr @ 0x%lx\n", (uint32_t)dfu_app_tag_ptr_ptr);
+	LOG("RAM function section: " SUPERDFU_RAMFUNC_SECTION_NAME "\n");
 
 	LOG("device ID: %08x\n", SUPERDFU_DEV_ID);
 	LOG(NAME " v" SUPERDFU_VERSION_STR " starting...\n");
@@ -389,8 +470,8 @@ int main(void)
 		// tag must lie within app section
 		if (likely(
 			((uintptr_t)dfu_app_tag_ptr) >= SUPERDFU_BOOTLOADER_SIZE &&
-			((uintptr_t)dfu_app_tag_ptr) < dfu.app_size_rom &&
-			((uintptr_t)dfu_app_tag_ptr) + DFU_APP_TAG_SIZE <= dfu.app_size_rom
+			((uintptr_t)dfu_app_tag_ptr) < dfu.rom_size &&
+			((uintptr_t)dfu_app_tag_ptr) + DFU_APP_TAG_SIZE <= dfu.rom_size
 			)) {
 			LOG(NAME " checking app tag @ %p\n", dfu_app_tag_ptr);
 			error = dfu_app_tag_validate_app(dfu_app_tag_ptr);
@@ -551,11 +632,13 @@ static bool flash_block_buffer(void)
 				LOG("> verify page @ %p\n", (void*)dfu.prog_offset);
 				dfu.prog_offset += MCU_NVM_PAGE_SIZE;
 			} else {
+#if SUPERDFU_DEBUG
 				LOG("> target content\n");
-				TU_LOG1_MEM(ptr, MCU_NVM_PAGE_SIZE, 2);
+				dfu_dump_mem(ptr, MCU_NVM_PAGE_SIZE);
 				LOG("> actual content\n");
-				TU_LOG1_MEM((void*)dfu.prog_offset, MCU_NVM_PAGE_SIZE, 2);
+				dfu_dump_mem((void*)dfu.prog_offset, MCU_NVM_PAGE_SIZE);
 				LOG("> verification failed for page @ %p\n", (void*)dfu.prog_offset);
+#endif
 				tud_dfu_finish_flashing(DFU_STATUS_ERR_VERIFY);
 				return false;
 			}
@@ -601,7 +684,6 @@ void tud_dfu_download_cb(uint8_t alt, uint16_t block_num, uint8_t const* data, u
 #pragma GCC diagnostic pop
 
 			dfu.is_bootloader = 1;
-			dfu.prog_offset = dfu.rom_size / 2;
 		}
 
 		dfu.app_size_tag = tag->app_size;
@@ -613,7 +695,7 @@ void tud_dfu_download_cb(uint8_t alt, uint16_t block_num, uint8_t const* data, u
 
 		dfu.tag_stripped = 1;
 
-		LOG("> app size %xh bytes\n", dfu.app_size_tag);
+		LOG("> app size %lxh bytes\n", dfu.app_size_tag);
 	}
 
 	if (length + dfu.block_offset >= TU_ARRAY_SIZE(dfu.block_buffer)) {
@@ -632,7 +714,7 @@ void tud_dfu_download_cb(uint8_t alt, uint16_t block_num, uint8_t const* data, u
 		if (likely(crc_bytes)) {
 			(void)sam_crc32_update((uint32_t)&dfu.block_buffer, crc_bytes, &dfu.app_crc_computed);
 			dfu.crc_offset += crc_bytes;
-			LOG("> crc update of %xh bytes: %08x\n", crc_bytes, dfu.app_crc_computed);
+			LOG("> crc update of %xh bytes: %08lx\n", crc_bytes, dfu.app_crc_computed);
 		}
 
 		if (!flash_block_buffer()) {
@@ -665,7 +747,7 @@ void tud_dfu_manifest_cb(uint8_t alt)
 		if (crc_bytes) {
 			(void)sam_crc32_update((uint32_t)&dfu.block_buffer, crc_bytes, &dfu.app_crc_computed);
 			dfu.crc_offset += crc_bytes;
-			LOG("> crc update of %xh bytes: %08x\n", crc_bytes, dfu.app_crc_computed);
+			LOG("> crc update of %xh bytes: %08lx\n", crc_bytes, dfu.app_crc_computed);
 		}
 
 		if (!flash_block_buffer()) {
@@ -677,20 +759,15 @@ void tud_dfu_manifest_cb(uint8_t alt)
 
 	if (likely(dfu.download_size - DFU_APP_TAG_SIZE >= dfu.app_size_tag)) {
 		if (likely(dfu.app_crc_computed == dfu.app_crc_tag)) {
-			if (dfu.is_bootloader) {
-				dfu.bootloader_swap_banks_on_reset = 1;
-			} else {
-
-			}
-
+			dfu.app_verified = 1;
 			LOG("> app crc verified\n");
 			tud_dfu_finish_flashing(DFU_STATUS_OK);
 		} else {
-			LOG("> tag crc mismatches computed %08xh/%08xh\n", dfu.app_crc_tag, dfu.app_crc_computed);
+			LOG("> tag crc mismatches computed %08lxh/%08lxh\n", dfu.app_crc_tag, dfu.app_crc_computed);
 			tud_dfu_finish_flashing(DFU_STATUS_ERR_VERIFY);
 		}
 	} else {
-		LOG("> downloaded less than app size %xh/%xh\n", dfu.download_size, dfu.app_size_tag);
+		LOG("> downloaded less than app size %lxh/%lxh\n", dfu.download_size, dfu.app_size_tag);
 		tud_dfu_finish_flashing(DFU_STATUS_ERR_VERIFY);
 	}
 }

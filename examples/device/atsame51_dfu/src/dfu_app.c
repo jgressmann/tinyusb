@@ -16,7 +16,7 @@
 
 
 
-int dfu_app_tag_validate_tag(struct dfu_app_tag const *tag)
+DFU_APP_FUNC int dfu_app_tag_validate_tag(struct dfu_app_tag const *tag)
 {
 	int error;
 	uint32_t crc;
