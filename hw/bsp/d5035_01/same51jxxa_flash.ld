@@ -53,7 +53,6 @@ SECTIONS
 {
     .text :
     {
-        . = ALIGN(VECTOR_TABLE_ALIGNMENT);
         _sfixed = .;
         KEEP(*(.vectors .vectors.*))
         *(.text .text.* .gnu.linkonce.t.*)
@@ -158,6 +157,13 @@ SECTIONS
         . = ALIGN(4);
         _ebss = . ;
         _ezero = .;
+    } > ram
+
+    /* uninitialized data */
+    .uninit (NOLOAD):
+    {
+        . = ALIGN(4);
+        *(.uninit .uninit.*)
     } > ram
 
     /* stack section */

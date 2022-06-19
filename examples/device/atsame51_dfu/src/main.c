@@ -387,12 +387,14 @@ int main(void)
 
 	if (likely(should_start_app)) {
 		// tag must lie within app section
-		if (likely(((uintptr_t)dfu_app_tag_ptr) >= SUPERDFU_BOOTLOADER_SIZE && ((uintptr_t)dfu_app_tag_ptr) < dfu.app_size_rom && ((uintptr_t)dfu_app_tag_ptr) + DFU_APP_TAG_SIZE <= dfu.app_size_rom)) {
+		if (likely(
+			((uintptr_t)dfu_app_tag_ptr) >= SUPERDFU_BOOTLOADER_SIZE &&
+			((uintptr_t)dfu_app_tag_ptr) < dfu.app_size_rom &&
+			((uintptr_t)dfu_app_tag_ptr) + DFU_APP_TAG_SIZE <= dfu.app_size_rom
+			)) {
 			LOG(NAME " checking app tag @ %p\n", dfu_app_tag_ptr);
 			error = dfu_app_tag_validate_app(dfu_app_tag_ptr);
 			if (error) {
-				// dfu.status.bState = DFU_STATE_DFU_ERROR;
-				// dfu.status.bStatus = DFU_ERROR_FIRMWARE;
 				should_start_app = false;
 
 				switch (error) {

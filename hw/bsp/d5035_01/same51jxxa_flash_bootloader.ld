@@ -1,42 +1,46 @@
-/*
- * The MIT License (MIT)
+/**
+ * \file
  *
- * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
+ * \brief Linker script for running in internal FLASH on the SAME51J19A
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Copyright (c) 2019 Microchip Technology Inc.
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
+ * \asf_license_start
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
+ * \page License
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License.
+ * You may obtain a copy of the Licence at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an AS IS BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * \asf_license_stop
  *
  */
+
 
 
 OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
 OUTPUT_ARCH(arm)
 SEARCH_DIR(.)
 
-BOOTLOADER_SIZE = 0x4000;
-STACK_SIZE = 0x0200;
+STACK_SIZE = 0x0200; /* 0x100 doesn't seem to work reliably, device hangs after a few seconds after reset */
 ROM_SIZE = CHIP_ROM_SIZE;
 RAM_SIZE = CHIP_RAM_SIZE;
 
 /* Memory Spaces Definitions */
 MEMORY
 {
-  rom         (rw) : ORIGIN = 0x00000000, LENGTH = BOOTLOADER_SIZE
+  rom         (rw) : ORIGIN = 0x00000000, LENGTH = SUPERDFU_BOOTLOADER_SIZE
   ram        (rwx) : ORIGIN = 0x20000000, LENGTH = RAM_SIZE
 }
 
@@ -48,15 +52,8 @@ SECTIONS
         KEEP (*(.dfuram))
     } > ram
 
-    .dfuapphdr : {
-        . = ALIGN(4);
-        KEEP (*(.dfuapphdr))
-    } > rom
-
     .text :
     {
-        /* Vector table must at least be 1024-byte aligned */
-        . = ALIGN(1024);
         _sfixed = .;
         KEEP(*(.vectors .vectors.*))
         *(.text .text.* .gnu.linkonce.t.*)
@@ -111,10 +108,14 @@ SECTIONS
     } > rom
     PROVIDE_HIDDEN (__exidx_end = .);
 
-    .dfuappftr :
-    {
-        . = ALIGN(4);
-        KEEP (*(.dfuappftr));
+    /* Must align properly so
+     * - CRC computation reads full words
+     * - that the app tag starts at the beginning of the section (for simple processing)
+     */
+    . = ALIGN(4);
+
+    .dfutag : {
+        KEEP (*(.dfutag));
     } > rom
 
     . = ALIGN(4);
@@ -131,7 +132,7 @@ SECTIONS
     } > ram
 
     /* .bss section which is used for uninitialized data */
-    .bss  (NOLOAD) :
+    .bss (NOLOAD):
     {
         . = ALIGN(4);
         _sbss = . ;
@@ -143,7 +144,12 @@ SECTIONS
         _ezero = .;
     } > ram
 
-
+    /* uninitialized data */
+    .uninit (NOLOAD):
+    {
+        . = ALIGN(4);
+        *(.uninit .uninit.*)
+    } > ram
 
     /* stack section */
     .stack (NOLOAD):
