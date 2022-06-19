@@ -536,14 +536,14 @@ int main(void)
 		WDT->CONFIG.bit.PER = per;
 		WDT->CTRLA.bit.ENABLE = 1;
 
-		// board_uart_write(NAME " gl hf, starting ", -1);
-		// board_uart_write(dfu_app_tag_ptr->app_name, -1);
-		// board_uart_write("...\n", -1);
+		board_uart_write(NAME " gl hf, starting ", -1);
+		board_uart_write(dfu_app_tag_ptr->app_name, -1);
+		board_uart_write("...\n", -1);
 
 		// go go go
 		start_app_jump(SUPERDFU_BOOTLOADER_SIZE);
 	} else {
-		// board_uart_write(NAME " v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " running\n", -1);
+		board_uart_write(NAME " v" STR(SUPERDFU_VERSION_MAJOR) "." STR(SUPERDFU_VERSION_MINOR) "." STR(SUPERDFU_VERSION_PATCH) " running\n", -1);
 
 		// set app stable counter
 		dfu_hdr_ptr()->counter = 0;
