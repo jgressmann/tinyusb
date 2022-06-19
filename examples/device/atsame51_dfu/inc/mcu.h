@@ -33,12 +33,10 @@
 
 #include <sam.h>
 
-#define MCU_BOOTLOADER_SIZE 0x4000
 #define MCU_NVM_PAGE_SIZE NVMCTRL_PAGE_SIZE // Atmel
 #define MCU_NVM_BLOCK_SIZE NVMCTRL_BLOCK_SIZE // Atmel
 // 138 interrupts, DS60001507E-page 62
 // https://interrupt.memfault.com/blog/how-to-write-a-bootloader-from-scratch
-#define MCU_VECTOR_TABLE_ALIGNMENT 1024
 
 static inline void same51_get_serial_number(uint32_t serial[4])
 {

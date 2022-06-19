@@ -30,7 +30,7 @@ INC += \
 	$(TOP)/hw/mcu/microchip/samd21/hal/utils/include \
 	$(TOP)/hw/mcu/microchip/samd21/hpl/pm/ \
 	$(TOP)/hw/mcu/microchip/samd21/hpl/port \
-	$(TOP)/hw/mcu/microchip/samd21/hri \
+$(TOP)/hw/mcu/microchip/samd21/hri \
 	$(TOP)/hw/mcu/microchip/samd21/CMSIS/Include
 
 # For freeRTOS port source

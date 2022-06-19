@@ -24,7 +24,7 @@
 #define DFU_APP_ERROR_UNSUPPORED_TAG_VERSION    0x02
 #define DFU_APP_ERROR_INVALID_SIZE              0x03
 #define DFU_APP_ERROR_CRC_CALC_FAILED           0x04
-#define DFU_APP_ERROR_CRC_APP_HEADER_MISMATCH   0x05
+#define DFU_APP_ERROR_CRC_APP_TAG_MISMATCH      0x05
 #define DFU_APP_ERROR_CRC_APP_DATA_MISMATCH     0x06
 #define DFU_APP_ERROR_DEV_ID_MISMATCH           0x07
 
@@ -38,7 +38,7 @@
  *               Initialized by the application.
  * @tag_crc: CRC32 of header, filled by superdfu-patch.py.
  * @app_size: size in bytes of the app. Filled in by superdfu-patch.py.
- * @app_crc: CRC32 of the application code (excluding struct dfu_app_tag and struct dfu_app_ftr).
+ * @app_crc: CRC32 of the application code (excluding struct dfu_app_tag).
  *            Filled in by superdfu-patch.py.
  * @app_version_major: app major version, filled by app
  * @app_version_minor: app minor version, filled by app
@@ -63,7 +63,7 @@
  *   .app_name = "my app",
  * };
  *
- *
+ * static struct dfu_app_tag* dfu_app_tag_ptr __attribute__((used,section(DFU_APP_TAG_PTR_SECTION_NAME))) = &dfu_app_tag;
  */
 struct dfu_app_tag {
 	uint8_t tag_magic[16];
@@ -82,7 +82,7 @@ struct dfu_app_tag {
 } __packed;
 
 _Static_assert((sizeof(struct dfu_app_tag) & 3) == 0, "structure size must be a multiple of 4");
-_Static_assert(DFU_APP_TAG_SIZE  == sizeof(struct dfu_app_tag), "structure size mismatches define");
+_Static_assert(DFU_APP_TAG_SIZE == sizeof(struct dfu_app_tag), "structure size mismatches define");
 
 
 /**

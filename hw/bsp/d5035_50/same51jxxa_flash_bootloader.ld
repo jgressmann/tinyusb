@@ -33,7 +33,7 @@ OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
 OUTPUT_ARCH(arm)
 SEARCH_DIR(.)
 
-STACK_SIZE = 0x0100;
+STACK_SIZE = 0x0200; /* 0x100 doesn't seem to work reliably, device hangs after a few seconds after reset */
 ROM_SIZE = CHIP_ROM_SIZE;
 RAM_SIZE = CHIP_RAM_SIZE;
 
@@ -108,14 +108,19 @@ SECTIONS
     } > rom
     PROVIDE_HIDDEN (__exidx_end = .);
 
-    .dfutag :
-    {
-        . = ALIGN(4);
+    /* Must align properly so
+     * - CRC computation reads full words
+     * - that the app tag starts at the beginning of the section (for simple processing)
+     */
+    . = ALIGN(4);
+
+    .dfutag : {
         KEEP (*(.dfutag));
     } > rom
 
     . = ALIGN(4);
     _etext = .;
+
     .relocate : AT (_etext)
     {
         . = ALIGN(4);
@@ -127,7 +132,7 @@ SECTIONS
     } > ram
 
     /* .bss section which is used for uninitialized data */
-    .bss  (NOLOAD) :
+    .bss (NOLOAD):
     {
         . = ALIGN(4);
         _sbss = . ;
@@ -139,7 +144,12 @@ SECTIONS
         _ezero = .;
     } > ram
 
-
+    /* uninitialized data */
+    .uninit (NOLOAD):
+    {
+        . = ALIGN(4);
+        *(.uninit .uninit.*)
+    } > ram
 
     /* stack section */
     .stack (NOLOAD):

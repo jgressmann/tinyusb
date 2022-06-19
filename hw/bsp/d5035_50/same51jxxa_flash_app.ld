@@ -61,7 +61,7 @@ SECTIONS
     {
         _sfixed = .;
         KEEP(*(.vectors .vectors.*))
-        . = ALIGN(SUPERDFU_APP_TAG_PTR_OFFSET);
+        . = SUPERDFU_APP_TAG_PTR_OFFSET;
         KEEP(*(.dfutagptr))
         *(.text .text.* .gnu.linkonce.t.*)
         *(.glue_7t) *(.glue_7)
@@ -117,9 +117,13 @@ SECTIONS
     } > rom
     PROVIDE_HIDDEN (__exidx_end = .);
 
-    .dfutag :
-    {
-        . = ALIGN(4);
+    /* Must align properly so
+     * - CRC computation reads full words
+     * - that the app tag starts at the beginning of the section (for simple processing)
+     */
+    . = ALIGN(4);
+
+    .dfutag : {
         KEEP (*(.dfutag));
     } > rom
 
@@ -173,6 +177,14 @@ SECTIONS
         . = ALIGN(4);
         _ebss = . ;
         _ezero = .;
+    } > ram
+
+    /* uninitialized data */
+    .uninit  (NOLOAD) :
+    {
+        . = ALIGN(4);
+        *(.uninit .uninit.*)
+        . = ALIGN(4);
     } > ram
 
     /* stack section */

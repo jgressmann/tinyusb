@@ -16,7 +16,7 @@ DFU_APP_TAG_SIZE = 0x40
 DFU_APP_TAG_BOM = 0x1234
 
 
-def patch_file(file: str) -> bool:
+def patch_file(file: str, length: int) -> bool:
 	header_struct_format = "<16sBBBBLLLL"
 
 	with open(file, "rb") as f:
@@ -50,14 +50,17 @@ def patch_file(file: str) -> bool:
 			print(f"WARN: Unrecognized BOM {tag[3]:02x}{tag[4]:02x}h")
 			return False, content, None
 
-		# compute app len & crc and repack
-		app_len = tag_index
-		app_crc = binascii.crc32(content[:tag_index])
+		print(f"SuperDFU app tag found @ {tag_index:08x}")
+		# compute crc and repack
+		app_start = tag_index - length
+
+		print(f"Compute app crc from @ {app_start:08x}, len {length:x}h")
+		app_crc = binascii.crc32(content[app_start:tag_index])
 		tag[6] = 0 # tag crc
-		tag[7] = app_len
+		tag[7] = length
 		tag[8] = app_crc
 		struct.pack_into(header_struct_format, content, tag_index, *tag)
-		print(f"SuperDFU application tag found @ {tag_index:08x}, app len {app_len:08x}, app crc {app_crc:08x}")
+		print(f"App crc {app_crc:08x}")
 
 
 		# compute tag crc and repack
@@ -65,7 +68,7 @@ def patch_file(file: str) -> bool:
 		tag = list(struct.unpack(header_struct_format, content[tag_index:tag_index + struct.calcsize(header_struct_format)]))
 		tag[6] = tag_crc
 		struct.pack_into(header_struct_format, content, tag_index, *tag)
-		print(f"SuperDFU application tag crc {tag_crc:08x}")
+		print(f"Tag crc {tag_crc:08x}")
 
 		# extract full tag
 		tag = bytes(content[tag_index:tag_index+DFU_APP_TAG_SIZE])
@@ -76,12 +79,30 @@ def patch_file(file: str) -> bool:
 try:
 	parser = argparse.ArgumentParser(description='patch firmware bin file SuperDFU tag')
 	parser.add_argument('file', metavar='FILE', help="file to patch")
+	parser.add_argument('saddr', metavar='SADDR', help="start address of app section (hex)")
+	parser.add_argument('eaddr', metavar='EADDR', help="end address of app section (hex)")
 	parser.add_argument('--tag', metavar='TAG', required=False, help="file to save tag")
 	parser.add_argument('--strict', type=bool, default=False)
 	args = parser.parse_args()
 
+
+	saddr = int(args.saddr, 16)
+	eaddr = int(args.eaddr, 16)
 	file = args.file
-	changed, content, tag = patch_file(file)
+
+	if saddr < 0:
+		print("ERROR: invalid start address")
+		sys.exit(1)
+
+	if eaddr <= 0:
+		print("ERROR: invalid end address")
+		sys.exit(1)
+
+	if eaddr <= saddr:
+		print("ERROR: start address must be smaller than end address")
+		sys.exit(1)
+
+	changed, content, tag = patch_file(file, eaddr-saddr)
 
 	if changed:
 		print(f"Saving changed file to {file}...", end='')
