@@ -211,6 +211,22 @@
   #define CFG_TUSB_OS             OPT_OS_NONE
 #endif
 
+#ifndef CFG_TUSB_RAMFUNC_SECTION
+  #define CFG_TUSB_RAMFUNC_SECTION
+#endif
+
+#ifndef CFG_TUSB_NOINIT_SECTION
+  #define CFG_TUSB_NOINIT_SECTION
+#endif
+
+#ifndef CFG_TUSB_SOF_CALLBACK
+  #define CFG_TUSB_SOF_CALLBACK 1
+#endif
+
+#ifndef CFG_TUSB_LEAN_AND_MEAN
+  #define CFG_TUSB_LEAN_AND_MEAN 0
+#endif
+
 //--------------------------------------------------------------------
 // DEVICE OPTIONS
 //--------------------------------------------------------------------

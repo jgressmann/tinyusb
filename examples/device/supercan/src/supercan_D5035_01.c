@@ -426,10 +426,10 @@ extern void sc_board_init_begin(void)
 #if SUPERDFU_APP
 	LOG(
 		"%s v%u.%u.%u starting...\n",
-		dfu_app_hdr.app_name,
-		dfu_app_hdr.app_version_major,
-		dfu_app_hdr.app_version_minor,
-		dfu_app_hdr.app_version_patch);
+		dfu_app_tag.app_name,
+		dfu_app_tag.app_version_major,
+		dfu_app_tag.app_version_minor,
+		dfu_app_tag.app_version_patch);
 
 	dfu_request_dfu(0); // no bootloader request
 

@@ -37,7 +37,7 @@
 /*------------------------------------------------------------------*/
 /* MACRO TYPEDEF CONSTANT ENUM
  *------------------------------------------------------------------*/
-static TU_ATTR_ALIGNED(4) UsbDeviceDescBank sram_registers[8][2];
+static TU_ATTR_ALIGNED(4) UsbDeviceDescBank sram_registers[8][2] CFG_TUSB_NOINIT_SECTION;
 
 // Setup packet is only 8 bytes in length. However under certain scenario,
 // USB DMA controller may decide to overwrite/overflow the buffer  with
@@ -47,7 +47,7 @@ static TU_ATTR_ALIGNED(4) UsbDeviceDescBank sram_registers[8][2];
 //    If the number of received data is equal or less than the data payload specified
 //    by PCKSIZE.SIZE minus two, both CRC data bytes are written to the data buffer.
 // Therefore we will need to increase it to 10 bytes here.
-static TU_ATTR_ALIGNED(4) uint8_t _setup_packet[8+2];
+static TU_ATTR_ALIGNED(4) uint8_t _setup_packet[8+2] CFG_TUSB_NOINIT_SECTION;
 
 // ready for receiving SETUP packet
 static inline void prepare_setup(void)
@@ -101,7 +101,11 @@ void dcd_init (uint8_t rhport)
   while (USB->DEVICE.SYNCBUSY.bit.ENABLE == 1) {}
 
   USB->DEVICE.INTFLAG.reg |= USB->DEVICE.INTFLAG.reg; // clear pending
+#if CFG_TUSB_SOF_CALLBACK
   USB->DEVICE.INTENSET.reg = /* USB_DEVICE_INTENSET_SOF | */ USB_DEVICE_INTENSET_EORST;
+#else
+  USB->DEVICE.INTENSET.reg = USB_DEVICE_INTENSET_EORST;
+#endif
 }
 
 #if CFG_TUSB_MCU == OPT_MCU_SAMD51 || CFG_TUSB_MCU == OPT_MCU_SAME5X
@@ -354,13 +358,14 @@ void dcd_int_handler (uint8_t rhport)
   (void) rhport;
 
   uint32_t int_status = USB->DEVICE.INTFLAG.reg & USB->DEVICE.INTENSET.reg;
-
+#if CFG_TUSB_SOF_CALLBACK
   // Start of Frame
   if ( int_status & USB_DEVICE_INTFLAG_SOF )
   {
     USB->DEVICE.INTFLAG.reg = USB_DEVICE_INTFLAG_SOF;
     dcd_event_bus_signal(0, DCD_EVENT_SOF, true);
   }
+#endif
 
   // SAMD doesn't distinguish between Suspend and Disconnect state.
   // Both condition will cause SUSPEND interrupt triggered.
