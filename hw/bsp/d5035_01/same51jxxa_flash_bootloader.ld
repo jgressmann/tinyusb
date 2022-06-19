@@ -144,13 +144,6 @@ SECTIONS
         _ezero = .;
     } > ram
 
-    /* uninitialized data */
-    .uninit (NOLOAD):
-    {
-        . = ALIGN(4);
-        *(.uninit .uninit.*)
-    } > ram
-
     /* stack section */
     .stack (NOLOAD):
     {
