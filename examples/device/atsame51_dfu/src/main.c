@@ -410,18 +410,54 @@ __attribute__((noreturn)) static void run_bootloader(void)
 }
 
 #if SUPERDFU_APP
-static const struct dfu_app_tag dfu_app_tag __attribute__((used, section(DFU_APP_TAG_SECTION_NAME))) = {
-	.tag_magic = DFU_APP_TAG_MAGIC_STRING,
-	.tag_version = DFU_APP_TAG_VERSION,
-	.tag_flags = DFU_APP_TAG_FLAG_BOOTLOADER,
-	.tag_bom = DFU_APP_TAG_BOM,
-	.tag_dev_id = SUPERDFU_DEV_ID,
+struct dfu_app_hdr {
+	uint8_t hdr_magic[16];
+	uint8_t hdr_version;
+	uint8_t hdr_flags;
+	uint8_t hdr_reserved[2];
+	uint32_t hdr_crc;
+	uint32_t app_size;
+	uint32_t app_crc;
+	uint8_t app_version_major;
+	uint8_t app_version_minor;
+	uint8_t app_version_patch;
+	uint8_t app_watchdog_timeout_s;
+	uint8_t app_name[28];
+} __packed;
+
+struct dfu_app_ftr {
+	uint8_t magic[16];
+};
+
+static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(".dfuapphdr"))) = {
+	.hdr_magic = "SuperDFU AH\0\0\0\0\0",
+	.hdr_version = 2,
+	.hdr_flags = DFU_APP_TAG_FLAG_BOOTLOADER,
 	.app_version_major = SUPERDFU_VERSION_MAJOR,
 	.app_version_minor = SUPERDFU_VERSION_MINOR,
 	.app_version_patch = SUPERDFU_VERSION_PATCH,
 	.app_watchdog_timeout_s = 0,
 	.app_name = NAME,
 };
+
+static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(".dfuappftr"))) = {
+	.magic = "SuperDFU AF\0\0\0\0\0"
+};
+
+
+
+// static const struct dfu_app_tag dfu_app_tag __attribute__((used, section(DFU_APP_TAG_SECTION_NAME))) = {
+// 	.tag_magic = DFU_APP_TAG_MAGIC_STRING,
+// 	.tag_version = DFU_APP_TAG_VERSION,
+// 	.tag_flags = DFU_APP_TAG_FLAG_BOOTLOADER,
+// 	.tag_bom = DFU_APP_TAG_BOM,
+// 	.tag_dev_id = SUPERDFU_DEV_ID,
+// 	.app_version_major = SUPERDFU_VERSION_MAJOR,
+// 	.app_version_minor = SUPERDFU_VERSION_MINOR,
+// 	.app_version_patch = SUPERDFU_VERSION_PATCH,
+// 	.app_watchdog_timeout_s = 0,
+// 	.app_name = NAME,
+// };
 #endif // #if SUPERDFU_APP
 
 int main(void)

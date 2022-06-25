@@ -40,7 +40,7 @@ RAM_SIZE = CHIP_RAM_SIZE;
 /* Memory Spaces Definitions */
 MEMORY
 {
-  rom         (rw) : ORIGIN = 0x00000000, LENGTH = SUPERDFU_BOOTLOADER_SIZE
+  rom         (rw) : ORIGIN = 0x00000000, LENGTH = ROM_SIZE
   ram        (rwx) : ORIGIN = 0x20000000, LENGTH = RAM_SIZE
 }
 
@@ -52,8 +52,15 @@ SECTIONS
         KEEP (*(.dfuram))
     } > ram
 
+    .dfuapphdr : {
+        . = ALIGN(4);
+        KEEP (*(.dfuapphdr))
+    } > rom
+
     .text :
     {
+        /* Vector table must at least be 1024-byte aligned */
+        . = ALIGN(1024);
         _sfixed = .;
         KEEP(*(.vectors .vectors.*))
         *(.text .text.* .gnu.linkonce.t.*)
@@ -108,14 +115,10 @@ SECTIONS
     } > rom
     PROVIDE_HIDDEN (__exidx_end = .);
 
-    /* Must align properly so
-     * - CRC computation reads full words
-     * - that the app tag starts at the beginning of the section (for simple processing)
-     */
-    . = ALIGN(4);
-
-    .dfutag : {
-        KEEP (*(.dfutag));
+    .dfuappftr :
+    {
+        . = ALIGN(4);
+        KEEP (*(.dfuappftr));
     } > rom
 
     . = ALIGN(4);

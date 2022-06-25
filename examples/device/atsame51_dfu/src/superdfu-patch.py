@@ -1,126 +1,88 @@
 #!/usr/bin/env python3
 
-# SPDX-License-Identifier: MIT
-#
-# Copyright (c) 2020-2022 Jean Gressmann <jean@0x42.de>
-#
-
 import argparse
 import binascii
 import struct
 import sys
 
 
-DFU_APP_TAG_MAGIC_STRING = b'SuperDFU AT\0\0\0\0\0'
-DFU_APP_TAG_SIZE = 0x40
-DFU_APP_TAG_BOM = 0x1234
-
-
-def patch_file(file: str, length: int) -> bool:
-	header_struct_format = "<16sBBBBLLLL"
-
-	with open(file, "rb") as f:
-		content = bytearray(f.read())
-
-		tag_index = content.rfind(DFU_APP_TAG_MAGIC_STRING)
-		if -1 == tag_index:
-			print(f"WARN: SuperDFU tag not found")
-			return False, content, None
-
-		tag = list(struct.unpack(header_struct_format, content[tag_index:tag_index + struct.calcsize(header_struct_format)]))
-		if tag[0] != DFU_APP_TAG_MAGIC_STRING:
-			print(f"WARN: SuperDFU tag magic string mismatch {tag[0].hex()}")
-			return False, content, None
-
-		if (tag[1] != 1):
-			print(f"WARN: SuperDFU tag version {tag[1]} not supported")
-			return False, content, None
-
-		bad_endian = True
-
-		if tag[3] == 0x34:
-			if tag[4] == 0x12:
-				bad_endian = False # little endian
-		elif tag[3] == 0x12:
-			if tag[4] == 0x34:
-				bad_endian = False # big endian
-				header_struct_format = ">" + header_struct_format[1:]
-
-		if bad_endian:
-			print(f"WARN: Unrecognized BOM {tag[3]:02x}{tag[4]:02x}h")
-			return False, content, None
-
-		print(f"SuperDFU app tag found @ {tag_index:08x}")
-		# compute crc and repack
-		app_start = tag_index - length
-
-		print(f"Compute app crc from @ {app_start:08x}, len {length:x}h")
-		app_crc = binascii.crc32(content[app_start:tag_index])
-		tag[6] = 0 # tag crc
-		tag[7] = length
-		tag[8] = app_crc
-		struct.pack_into(header_struct_format, content, tag_index, *tag)
-		print(f"App crc {app_crc:08x}")
-
-
-		# compute tag crc and repack
-		tag_crc = binascii.crc32(content[tag_index:tag_index+DFU_APP_TAG_SIZE])
-		tag = list(struct.unpack(header_struct_format, content[tag_index:tag_index + struct.calcsize(header_struct_format)]))
-		tag[6] = tag_crc
-		struct.pack_into(header_struct_format, content, tag_index, *tag)
-		print(f"Tag crc {tag_crc:08x}")
-
-		# extract full tag
-		tag = bytes(content[tag_index:tag_index+DFU_APP_TAG_SIZE])
-
-		return True, content, tag
+LITTLE_ENDIAN = 'little'
+BIG_ENDIAN = 'big'
+SUPER_DFU_HEADER_MARKER = b'SuperDFU AH\0\0\0\0\0'
+SUPER_DFU_HEADER_LEN = 0x40
+SUPER_DFU_APP_OFFSET = 1024
+SUPER_DFU_FOOTER_MARKER = b'SuperDFU AF\0\0\0\0\0'
+SUPER_DFU_FOOTER_LEN = 16
 
 
 try:
-	parser = argparse.ArgumentParser(description='patch firmware bin file SuperDFU tag')
-	parser.add_argument('file', metavar='FILE', help="file to patch")
-	parser.add_argument('saddr', metavar='SADDR', help="start address of app section (hex)")
-	parser.add_argument('eaddr', metavar='EADDR', help="end address of app section (hex)")
-	parser.add_argument('--tag', metavar='TAG', required=False, help="file to save tag")
+	parser = argparse.ArgumentParser(description='patch firmware bin file SuperDFU header')
+	parser.add_argument('files', nargs=argparse.REMAINDER)
+	parser.add_argument('-e', '--endian', choices=['little','big'], required=True)
 	parser.add_argument('--strict', type=bool, default=False)
 	args = parser.parse_args()
 
+	header_struct_format = "20sLLL"
+	footer_struct_format = "16s"
+	if args.endian == LITTLE_ENDIAN:
+		header_struct_format = "<" + header_struct_format
+	else:
+		header_struct_format = ">" + header_struct_format
 
-	saddr = int(args.saddr, 16)
-	eaddr = int(args.eaddr, 16)
-	file = args.file
+	for file in args.files:
+		changed = False
+		with open(file, "rb") as f:
+			headers_found = 0
+			start_index = 0
+			content = bytearray(f.read())
 
-	if saddr < 0:
-		print("ERROR: invalid start address")
-		sys.exit(1)
+			while start_index < len(content):
+				start_index = content.find(SUPER_DFU_HEADER_MARKER, start_index)
+				if start_index == -1:
+					if 0 == headers_found:
+						print(f"WARN: No SuperDFU header found in {file}")
+					break
 
-	if eaddr <= 0:
-		print("ERROR: invalid end address")
-		sys.exit(1)
+				header = list(struct.unpack(header_struct_format, content[start_index:start_index + struct.calcsize(header_struct_format)]))
 
-	if eaddr <= saddr:
-		print("ERROR: start address must be smaller than end address")
-		sys.exit(1)
+				end_index = content.find(SUPER_DFU_FOOTER_MARKER, start_index + SUPER_DFU_APP_OFFSET)
+				if end_index == -1:
+					print(f"WARN: No SuperDFU footer found in {file}")
+					break
 
-	changed, content, tag = patch_file(file, eaddr-saddr)
+				# compute app len & crc and repack
+				app_len = end_index - start_index - SUPER_DFU_APP_OFFSET
+				app_crc = binascii.crc32(content[start_index+SUPER_DFU_APP_OFFSET:end_index])
+				header[1] = 0 # header crc
+				header[2] = app_len
+				header[3] = app_crc
+				struct.pack_into(header_struct_format, content, start_index, *header)
+				print(f"SuperDFU application header found @ {start_index:08x}, footer @ {end_index:08x}, app len {app_len:08x}, app crc {app_crc:08x}")
 
-	if changed:
-		print(f"Saving changed file to {file}...", end='')
-		with open(file, "wb") as f:
-			f.write(content)
 
-		print(f"done")
+				# compute header crc and repack
+				header_crc = binascii.crc32(content[start_index:start_index+SUPER_DFU_HEADER_LEN])
+				header = list(struct.unpack(header_struct_format, content[start_index:start_index + struct.calcsize(header_struct_format)]))
+				header[1] = header_crc
+				struct.pack_into(header_struct_format, content, start_index, *header)
+				print(f"SuperDFU application header crc {header_crc:08x}")
 
-		if args.tag:
-			print(f"Saving tag to {args.tag}...", end='')
-			with open(args.tag, "wb") as f:
-				f.write(tag)
+				changed = True
+				headers_found += 1
 
-			print(f"done")
+				start_index = end_index + SUPER_DFU_FOOTER_LEN
 
-	elif args.strict and not changed:
-		print(f"ERROR: {file} unchanged")
-		sys.exit(2)
+
+
+		if changed:
+			print(f"Saving changed file to {file}...")
+			with open(file, "wb") as f:
+				f.write(content)
+
+			print(f"Saved")
+		elif args.strict and not changed:
+			print(f"ERROR: {file} unchanged")
+			sys.exit(2)
 
 
 except Exception as e:
