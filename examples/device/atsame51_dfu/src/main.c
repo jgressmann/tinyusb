@@ -710,14 +710,15 @@ void tud_dfu_download_cb(uint8_t alt, uint16_t block_num, uint8_t const* data, u
 
 		if (tag->tag_flags & DFU_APP_TAG_FLAG_BOOTLOADER) {
 			LOG("> bootloader upload detected\n");
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wtype-limits"
+
 			// deny flashing older versions of this bootloader
-			if (tag->app_version_major < SUPERDFU_VERSION_MAJOR || tag->app_version_minor < SUPERDFU_VERSION_MINOR || tag->app_version_patch < SUPERDFU_VERSION_PATCH) {
+			uint32_t current = (((uint32_t)SUPERDFU_VERSION_MAJOR) << 16) | (((uint32_t)SUPERDFU_VERSION_MINOR) << 8) | (((uint32_t)SUPERDFU_VERSION_PATCH) << 0);
+			uint32_t target = (((uint32_t)tag->app_version_major) << 16) | (((uint32_t)tag->app_version_minor) << 8) | (((uint32_t)tag->app_version_patch) << 0);
+			if (target < current) {
+				LOG("> target version %lx is less than current version %lx\n", target, current);
 				tud_dfu_finish_flashing(DFU_STATUS_ERR_FILE);
 				return;
 			}
-#pragma GCC diagnostic pop
 
 			dfu.is_bootloader = 1;
 		}
