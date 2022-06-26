@@ -117,7 +117,7 @@ Bit 0: download capable
 		U16_TO_U8S_LE(0x0101)/*bcdVersion*/
 #endif
 	// Interface number, Alternate count, starting string index, attributes, detach timeout, transfer size
-	TUD_DFU_DESCRIPTOR(0, ALT_COUNT, 4, (DFU_ATTR_CAN_DOWNLOAD | DFU_ATTR_MANIFESTATION_TOLERANT), DFU_USB_TIMEOUT_MS, CFG_TUD_DFU_XFER_BUFSIZE),
+	TUD_DFU_DESCRIPTOR(0, ALT_COUNT, 4, (DFU_ATTR_CAN_DOWNLOAD), DFU_USB_TIMEOUT_MS, CFG_TUD_DFU_XFER_BUFSIZE),
 };
 
 
