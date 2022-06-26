@@ -448,21 +448,6 @@ static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(".dfuapphdr"))
 static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(".dfuappftr"))) = {
 	.magic = "SuperDFU AF\0\0\0\0\0"
 };
-
-
-
-// static const struct dfu_app_tag dfu_app_tag __attribute__((used, section(DFU_APP_TAG_SECTION_NAME))) = {
-// 	.tag_magic = DFU_APP_TAG_MAGIC_STRING,
-// 	.tag_version = DFU_APP_TAG_VERSION,
-// 	.tag_flags = DFU_APP_TAG_FLAG_BOOTLOADER,
-// 	.tag_bom = DFU_APP_TAG_BOM,
-// 	.tag_dev_id = SUPERDFU_DEV_ID,
-// 	.app_version_major = SUPERDFU_VERSION_MAJOR,
-// 	.app_version_minor = SUPERDFU_VERSION_MINOR,
-// 	.app_version_patch = SUPERDFU_VERSION_PATCH,
-// 	.app_watchdog_timeout_s = 0,
-// 	.app_name = NAME,
-// };
 #endif // #if SUPERDFU_APP
 
 int main(void)
@@ -561,6 +546,8 @@ int main(void)
 		should_start_app = dfu_hdr_ptr()->counter < 3;
 		LOG(NAME " stable counter %lu\n", dfu_hdr_ptr()->counter);
 	}
+
+	should_start_app = false;
 
 	if (likely(should_start_app)) {
 		// increment counter in case the app crashes and resets the device
@@ -726,6 +713,9 @@ void tud_dfu_download_cb(uint8_t alt, uint16_t block_num, uint8_t const* data, u
 			}
 
 			dfu.is_bootloader = 1;
+		} else {
+			tud_dfu_finish_flashing(DFU_STATUS_ERR_FILE);
+			return;
 		}
 
 		dfu.app_size_tag = tag->app_size;
