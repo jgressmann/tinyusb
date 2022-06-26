@@ -53,6 +53,13 @@ static inline int mcu_nvm_boot_bank_index(void)
 	return NVMCTRL->STATUS.bit.AFIRST ? 0 : 1;
 }
 
+/* _MUST_ be a macro or a function in RAM */
+#define mcu_wdt_set(per) \
+	do { \
+		WDT->CONFIG.bit.PER = per; \
+		WDT->CTRLA.bit.ENABLE = 1; \
+	} while (0)
+
 #if defined(__SAME51J18A__)
 	#define MCU_NVM_SIZE (1ul<<18)
 #elif defined(__SAME51J19A__)

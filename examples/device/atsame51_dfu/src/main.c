@@ -362,7 +362,12 @@ __attribute__((noreturn,noinline,section(SUPERDFU_RAMFUNC_SECTION_NAME))) static
 		// LOG("write @ %p\n", (void*)dst);
 	}
 
-	NVIC_SystemReset();
+	// ensure stores have completed
+	__DSB();
+
+	mcu_wdt_set(0);
+
+	while (1);
 
 	__unreachable();
 }
