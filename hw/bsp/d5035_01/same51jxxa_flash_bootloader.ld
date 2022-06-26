@@ -40,7 +40,7 @@ RAM_SIZE = CHIP_RAM_SIZE;
 /* Memory Spaces Definitions */
 MEMORY
 {
-  rom         (rw) : ORIGIN = 0x00000000, LENGTH = ROM_SIZE
+  rom         (rw) : ORIGIN = 0x00000000, LENGTH = SUPERDFU_BOOTLOADER_SIZE
   ram        (rwx) : ORIGIN = 0x20000000, LENGTH = RAM_SIZE
 }
 
