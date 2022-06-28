@@ -154,7 +154,7 @@ JLinkExe -device ATSAME51J18 -if swd -JTAGConf -1,-1 -speed auto -CommandFile su
 
 | from | to |
 |:----|:----|
-| 0.5.0 or before| 0.6.0 |
+| 0.5.x or before| 0.6.0 |
 | 0.6.0 | 6.0.1 or newer |
 
 ##### Steps to determine the current bootloader version on the device
