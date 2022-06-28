@@ -295,24 +295,9 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 	uint8_t lec = current_psr.bit.LEC;
 	uint8_t dlec = current_psr.bit.DLEC;
 
-	if (likely(CAN_PSR_LEC_NC_Val == lec)) {
-		lec = can->int_prev_lec_no_nc;
-	}
-
-	if (likely(CAN_PSR_DLEC_NC_Val == dlec)) {
-		dlec = can->int_prev_dlec_no_nc;
-	}
-
-
-
-	const bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
-	const bool report_error = (tsc - can->int_prev_error_ts) >= 1000; // once per millisecond, USB poll interval
-	// bool is_rx_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_RX_Val || is_tx_error;
-
-
-	if ((lec != CAN_PSR_LEC_NONE_Val) &&
-		((lec != can->int_prev_lec_no_nc) || report_error)) {
-		// LOG("CAN%u lec %x\n", index, current_psr.bit.LEC);
+	if (unlikely(lec >= CAN_PSR_LEC_STUFF_Val && lec <= CAN_PSR_LEC_CRC_Val)) {
+		const bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
+		LOG("CAN%u PSR=%08lx prev lec=%x dlec=%x\n", index, current_psr.reg, lec, dlec);
 
 		can->int_prev_error_ts = tsc;
 
@@ -326,9 +311,9 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 		++*events;
 	}
 
-	if ((dlec != CAN_PSR_DLEC_NONE_Val) &&
-		((dlec != can->int_prev_dlec_no_nc) || report_error)) {
-		// LOG("CAN%u dlec %x\n", index, current_psr.bit.DLEC);
+	if (unlikely(dlec >= CAN_PSR_DLEC_STUFF_Val && dlec <= CAN_PSR_DLEC_CRC_Val)) {
+		const bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
+		LOG("CAN%u PSR=%08lx prev lec=%x dlec=%x\n", index, current_psr.reg, lec, dlec);
 
 		can->int_prev_error_ts = tsc;
 
@@ -341,10 +326,6 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 		sc_can_status_queue(index, &status);
 		++*events;
 	}
-
-	// store updated lec, dlec
-	can->int_prev_lec_no_nc = lec;
-	can->int_prev_dlec_no_nc = dlec;
 }
 
 #if SUPERCAN_DEBUG
@@ -473,8 +454,6 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 	can->int_init_rx_errors = 0;
 	can->int_init_tx_errors = 0;
 	can->int_prev_error_ts = 0;
-	can->int_prev_lec_no_nc = CAN_PSR_LEC_NONE_Val;
-	can->int_prev_dlec_no_nc = CAN_PSR_DLEC_NONE_Val;
 
 	// call this here to timestamp / last rx/tx values
 	// since we won't get any further interrupts

@@ -98,8 +98,6 @@ struct same5x_can {
 	uint8_t rx_put_index; // NOT an index, uses full range of type
 	uint8_t tx_get_index; // NOT an index, uses full range of type
 	uint8_t tx_put_index; // NOT an index, uses full range of type
-	uint8_t int_prev_lec_no_nc;
-	uint8_t int_prev_dlec_no_nc;
 #if SUPERCAN_DEBUG && SAME5X_DEBUG_TXR
 	uint32_t txr;
 #endif
