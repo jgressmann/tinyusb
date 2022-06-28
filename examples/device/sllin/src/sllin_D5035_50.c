@@ -20,7 +20,6 @@
 #include <bsp/board.h>
 
 
-
 #include <tusb.h>
 #include <class/dfu/dfu_rt_device.h>
 
@@ -40,9 +39,11 @@
 
 #if SUPERDFU_APP
 struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_HDR_SECTION_NAME)));
-static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SECTION_NAME))) = {
-	.hdr_magic = DFU_APP_HDR_MAGIC_STRING,
-	.hdr_version = DFU_APP_HDR_VERSION,
+static struct dfu_app_tag dfu_app_tag __attribute__((used,section(DFU_APP_TAG_SECTION_NAME))) = {
+	.tag_magic = DFU_APP_TAG_MAGIC_STRING,
+	.tag_version = DFU_APP_TAG_VERSION,
+	.tag_bom = DFU_APP_TAG_BOM,
+	.tag_dev_id = SUPERDFU_DEV_ID,
 	.app_version_major = SLLIN_VERSION_MAJOR,
 	.app_version_minor = SLLIN_VERSION_MINOR,
 	.app_version_patch = SLLIN_VERSION_PATCH,
@@ -50,9 +51,7 @@ static struct dfu_app_hdr dfu_app_hdr __attribute__((used,section(DFU_APP_HDR_SE
 	.app_name = SLLIN_NAME,
 };
 
-static struct dfu_app_ftr dfu_app_ftr __attribute__((used,section(DFU_APP_FTR_SECTION_NAME))) = {
-	.magic = DFU_APP_FTR_MAGIC_STRING,
-};
+static struct dfu_app_tag const * const dfu_app_tag_ptr __attribute__((used,section(DFU_APP_TAG_PTR_SECTION_NAME))) = &dfu_app_tag;
 
 static struct dfu {
 	StaticTimer_t timer_mem;
@@ -149,14 +148,12 @@ extern uint32_t _evectors;
 
 static void move_vector_table_to_ram(void)
 {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstringop-overflow"
-#pragma GCC diagnostic ignored "-Warray-bounds"
-	void* vectors_ram = (void*)(uint32_t)&_svectors;
+	uint8_t* svectors = (void*)&_svectors;
+	uint8_t* evectors = (void*)&_evectors;
 
-	memcpy(vectors_ram, (void*)SCB->VTOR, MCU_VECTOR_TABLE_ALIGNMENT);
-	SCB->VTOR = (uint32_t)vectors_ram;
-#pragma GCC diagnostic pop
+	memcpy(svectors, (void*)SCB->VTOR, evectors - svectors);
+
+	SCB->VTOR = (uint32_t)svectors;
 }
 
 
@@ -322,13 +319,6 @@ static inline void lin_init_once(void)
 	NVIC_EnableIRQ(SERCOM0_2_IRQn);
 	NVIC_EnableIRQ(SERCOM0_3_IRQn);
 
-	// master / slave pin
-	// PB04 lin0
-	// PB09 lin1
-	PORT->Group[MASTER_SLAVE_PIN_GROUP].DIRSET.reg = (1ul << 4) | (1ul << 9);
-	PORT->Group[MASTER_SLAVE_PIN_GROUP].OUTCLR.reg = (1ul << 4) | (1ul << 9);
-
-
 
 	sam_lin_init_once();
 }
@@ -421,10 +411,10 @@ extern void sllin_board_init_begin(void)
 #if SUPERDFU_APP
 	LOG(
 		"%s v%u.%u.%u starting...\n",
-		dfu_app_hdr.app_name,
-		dfu_app_hdr.app_version_major,
-		dfu_app_hdr.app_version_minor,
-		dfu_app_hdr.app_version_patch);
+		dfu_app_tag.app_name,
+		dfu_app_tag.app_version_major,
+		dfu_app_tag.app_version_minor,
+		dfu_app_tag.app_version_patch);
 
 	dfu_request_dfu(0); // no bootloader request
 

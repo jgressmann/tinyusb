@@ -1,25 +1,6 @@
-/*
- * The MIT License (MIT)
+/* SPDX-License-Identifier: MIT
  *
  * Copyright (c) 2020-2022 Jean Gressmann <jean@0x42.de>
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
  *
  */
 
@@ -117,7 +98,7 @@ Bit 0: download capable
 		U16_TO_U8S_LE(0x0101)/*bcdVersion*/
 #endif
 	// Interface number, Alternate count, starting string index, attributes, detach timeout, transfer size
-	TUD_DFU_DESCRIPTOR(0, ALT_COUNT, 4, (DFU_ATTR_CAN_DOWNLOAD | DFU_ATTR_MANIFESTATION_TOLERANT), DFU_USB_TIMEOUT_MS, CFG_TUD_DFU_XFER_BUFSIZE),
+	TUD_DFU_DESCRIPTOR(0, ALT_COUNT, 4, (DFU_ATTR_CAN_DOWNLOAD), DFU_USB_TIMEOUT_MS, CFG_TUD_DFU_XFER_BUFSIZE),
 };
 
 
@@ -181,16 +162,6 @@ static char const* string_desc_arr [] =
 static uint16_t _desc_str[33];
 static const char hex_map[16] = "0123456789abcdef";
 
-// replace fast std lib strlen with small ustrlen
-static size_t ustrlen(char const * str)
-{
-	size_t len = 0;
-
-	while (*str++) ++len;
-
-	return len;
-}
-
 // Invoked when received GET STRING DESCRIPTOR request
 // Application return pointer to descriptor, whose contents must exist long enough for transfer to complete
 uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
@@ -207,13 +178,9 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 		// Section 9.6, p. 60
 		chr_count = 32;
 		uint32_t serial_number[4];
-		same51_get_serial_number(serial_number);
-		TU_LOG2(
-			"chip serial number %08lx%08lx%08lx%08lx\n",
-			serial_number[0],
-			serial_number[1],
-			serial_number[2],
-			serial_number[3]);
+
+		sam_get_serial_number(serial_number);
+
 		for (unsigned i = 0, k = 1; i < 4; ++i) {
 			uint32_t x = serial_number[i];
 			for (unsigned j = 0, shift = 24; j < 4; ++j, shift -= 8, k += 2) {
@@ -224,27 +191,6 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 				_desc_str[k+1] = hex_map[lo];
 			}
 		}
-	} break;
-	case 4: {
-		const uint8_t BANK_LEN = 7;
-		uint8_t i = 0;
-		const char* str = string_desc_arr[index];
-
-		chr_count = tu_min8(ustrlen(str), TU_ARRAY_SIZE(_desc_str) - 1 - BANK_LEN);
-
-		for (; i < chr_count; ++i) {
-			_desc_str[1+i] = str[i];
-		}
-
-		_desc_str[1+i++] = ' ';
-		_desc_str[1+i++] = 'B';
-		_desc_str[1+i++] = 'a';
-		_desc_str[1+i++] = 'n';
-		_desc_str[1+i++] = 'k';
-		_desc_str[1+i++] = ' ';
-		_desc_str[1+i++] = '0' + mcu_nvm_boot_bank_index();
-
-		chr_count += BANK_LEN;
 	} break;
 	default: {
 		// Convert ASCII string into UTF-16

@@ -32,6 +32,9 @@
 #include "device/usbd_pvt.h"
 #include "dcd.h"
 
+#undef TU_ASSERT
+#define TU_ASSERT(call, ...) do { (void)(call); } while (0)
+
 #if CFG_TUSB_DEBUG >= 2
 extern void usbd_driver_print_control_complete_name(usbd_control_xfer_cb_t callback);
 #endif

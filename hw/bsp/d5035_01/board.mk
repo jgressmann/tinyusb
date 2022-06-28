@@ -1,6 +1,7 @@
 DEPS_SUBMODULES += hw/mcu/microchip
 
 D5035_01 = 1
+DEVID = 0xD503501
 
 CHIP ?= SAME51J18A
 ifdef CHIP
@@ -33,16 +34,21 @@ else
   CHIP_RAM_SIZE = 0x00020000
 endif
 
+BOOTLOADER_SIZE = 0x2000
+SUPERDFU_APP_TAG_PTR_OFFSET = 0x3FC
 
 CFLAGS += \
+  -flto \
   -mthumb \
   -mabi=aapcs \
-  -mlong-calls \
   -mcpu=cortex-m4 \
   -mfloat-abi=hard \
   -mfpu=fpv4-sp-d16 \
   -nostdlib -nostartfiles \
   -DCFG_TUSB_MCU=OPT_MCU_SAME5X \
+  -DSUPERDFU_APP_TAG_PTR_OFFSET=$(SUPERDFU_APP_TAG_PTR_OFFSET) \
+  -DSUPERDFU_BOOTLOADER_SIZE=$(BOOTLOADER_SIZE) \
+  -DSUPERDFU_DEV_ID=$(DEVID) \
   -DD5035_01=1 \
   -DBOARD_NAME="\"D5035-01\"" \
   -DRAMFUNC_SECTION_NAME="\".ramfunc\"" \
@@ -74,8 +80,8 @@ endif
 endif
 
 
-$(LINKER_SCRIPT): $(OBJ_DIRS)
-	@cat "$(LD_FILE_IN)" | $(SED) 's/CHIP_ROM_SIZE/$(CHIP_ROM_SIZE)/g; s/CHIP_RAM_SIZE/$(CHIP_RAM_SIZE)/g;' >$@
+$(LINKER_SCRIPT): $(OBJ_DIRS) $(LD_FILE_IN)
+	@cat "$(LD_FILE_IN)" | $(SED) 's/CHIP_ROM_SIZE/$(CHIP_ROM_SIZE)/g; s/CHIP_RAM_SIZE/$(CHIP_RAM_SIZE)/g; s/SUPERDFU_BOOTLOADER_SIZE/$(BOOTLOADER_SIZE)/g; s/SUPERDFU_APP_TAG_PTR_OFFSET/$(SUPERDFU_APP_TAG_PTR_OFFSET)/g;' >$@
 
 LINKER_SCRIPT_TARGET = $(LINKER_SCRIPT)
 
@@ -83,18 +89,6 @@ SRC_C += \
   src/portable/microchip/samd/dcd_samd.c \
   hw/mcu/microchip/same51/gcc/gcc/startup_same51.c \
   hw/mcu/microchip/same51/gcc/system_same51.c
-
-ifdef SYSCALLS
-ifneq ($(SYSCALLS),0)
-  SRC_C += hw/mcu/microchip/same51/hal/utils/src/utils_syscalls.c
-endif
-endif
-
-ifdef LOG
-ifneq ($(LOG),0)
-  SRC_C += hw/mcu/microchip/same51/hal/utils/src/utils_syscalls.c
-endif
-endif
 
 INC += \
 	$(TOP)/hw/mcu/microchip/same51/ \

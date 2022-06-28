@@ -8,7 +8,7 @@
 
 #include <supercan_debug.h>
 #include <supercan_board.h>
-
+#include <sam_crc32.h>
 
 #include <hal/include/hal_gpio.h>
 
@@ -240,6 +240,7 @@ static inline void usb_init(void)
 
 void board_init_app(void)
 {
+	sam_crc32_unlock();
 	clock_init();
 
 	SystemCoreClock = CONF_CPU_FREQUENCY;

@@ -30,8 +30,8 @@ enum {
 	TIMER_TYPE_DATA,
 };
 struct slave {
+	volatile uint64_t slave_frame_enabled;
 	sllin_queue_element elem;
-	uint8_t slave_frame_enabled[64];
 	uint32_t sleep_timeout_us;
 	uint32_t sleep_elapsed_us;
 	uint16_t data_timeout_us;

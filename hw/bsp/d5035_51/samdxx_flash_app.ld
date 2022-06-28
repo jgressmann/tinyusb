@@ -1,25 +1,24 @@
 /**
  * \file
  *
- * \brief Linker script for running in internal FLASH on the SAME51J19A
+ * \brief Linker script for running in internal FLASH on the SAMDA1G16B
  *
- * Copyright (c) 2019 Microchip Technology Inc.
+ * Copyright (c) 2016 Atmel Corporation,
+ *                    a wholly owned subsidiary of Microchip Technology Inc.
  *
  * \asf_license_start
  *
  * \page License
  *
- * SPDX-License-Identifier: Apache-2.0
- *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the Licence at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an AS IS BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
@@ -28,13 +27,15 @@
  */
 
 
+
 OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
 OUTPUT_ARCH(arm)
 SEARCH_DIR(.)
 
-VECTOR_TABLE_ALIGNMENT = 0x400; /* vector table must at least be 1024-byte aligned */
+VECTOR_TABLE_ALIGNMENT = 0x100; /* vector table must at least be 256-byte aligned */
 ROM_SIZE = CHIP_ROM_SIZE;
 RAM_SIZE = CHIP_RAM_SIZE;
+STACK_SIZE = 0x200; /* 0x100 seems to be to little */
 
 /* Memory Spaces Definitions */
 MEMORY
@@ -42,12 +43,7 @@ MEMORY
   rom        (rx) : ORIGIN = SUPERDFU_BOOTLOADER_SIZE, LENGTH = ROM_SIZE - SUPERDFU_BOOTLOADER_SIZE
   dfuram     (rw) : ORIGIN = 0x20000000, LENGTH = 0x00000080
   ram       (rwx) : ORIGIN = 0x20000000 + LENGTH(dfuram), LENGTH = RAM_SIZE - LENGTH(dfuram)
-  bkupram   (rwx) : ORIGIN = 0x47000000, LENGTH = 0x00002000
-  qspi      (rwx) : ORIGIN = 0x04000000, LENGTH = 0x01000000
 }
-
-/* The stack size used by the application. NOTE: you need to adjust according to your application. */
-STACK_SIZE = DEFINED(STACK_SIZE) ? STACK_SIZE : DEFINED(__stack_size__) ? __stack_size__ : 0x1000;
 
 /* Section Definitions */
 SECTIONS
@@ -140,6 +136,7 @@ SECTIONS
         _erelocate = .;
     } > ram
 
+    /*
     .vectors (NOLOAD):
     {
         . = ALIGN(VECTOR_TABLE_ALIGNMENT);
@@ -147,24 +144,7 @@ SECTIONS
         . = . + VECTOR_TABLE_ALIGNMENT;
         _evectors = .;
     } > ram
-
-    .bkupram (NOLOAD):
-    {
-        . = ALIGN(8);
-        _sbkupram = .;
-        *(.bkupram .bkupram.*);
-        . = ALIGN(8);
-        _ebkupram = .;
-    } > bkupram
-
-    .qspi (NOLOAD):
-    {
-        . = ALIGN(8);
-        _sqspi = .;
-        *(.qspi .qspi.*);
-        . = ALIGN(8);
-        _eqspi = .;
-    } > qspi
+    */
 
     /* .bss section which is used for uninitialized data */
     .bss (NOLOAD) :
@@ -192,3 +172,4 @@ SECTIONS
     . = ALIGN(4);
     _end = . ;
 }
+

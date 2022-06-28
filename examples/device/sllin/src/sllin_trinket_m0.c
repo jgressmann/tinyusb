@@ -380,11 +380,6 @@ extern void sllin_board_init_begin(void)
 		*(uint32_t const *)0x0080A048
 	};
 
-	// Atmel-42181G–SAM-D21_Datasheet–09/2015, p. 367
-	// setup deterministic wait states
-	NVMCTRL->CTRLB.bit.READMODE = NVMCTRL_CTRLB_READMODE_DETERMINISTIC_Val;
-
-
 	clock_init();
 	uart_init();
 

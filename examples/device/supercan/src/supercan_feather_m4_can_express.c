@@ -11,6 +11,7 @@
 #include <supercan_debug.h>
 #include <supercan_board.h>
 #include <leds.h>
+#include <sam_crc32.h>
 
 #include <hal/include/hal_gpio.h>
 
@@ -328,6 +329,7 @@ static inline void init_usb(void)
 
 extern void sc_board_init_begin(void)
 {
+	sam_crc32_unlock();
 	init_clock();
 	uart_init();
 

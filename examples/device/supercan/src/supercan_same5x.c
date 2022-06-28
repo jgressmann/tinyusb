@@ -10,7 +10,7 @@
 #include <supercan_debug.h>
 #include <supercan_board.h>
 #include <m_can.h>
-#include <crc32.h>
+#include <sam_crc32.h>
 #include <mcu.h>
 #include <leds.h>
 
@@ -624,22 +624,10 @@ void same5x_init_device_identifier(void)
 	uint32_t serial_number[4];
 	int error = CRC32E_NONE;
 
-	same51_get_serial_number(serial_number);
+	sam_get_serial_number(serial_number);
 
 #if SUPERCAN_DEBUG
-	char serial_buffer[64];
-	memset(serial_buffer, '0', 32);
-	char hex_buffer[16];
-	int chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[0]);
-	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
-	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[1]);
-	memcpy(&serial_buffer[16-chars], hex_buffer, chars);
-	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[2]);
-	memcpy(&serial_buffer[24-chars], hex_buffer, chars);
-	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[3]);
-	memcpy(&serial_buffer[32-chars], hex_buffer, chars);
-	serial_buffer[32] = 0;
-	LOG("SAM serial number %s\n", serial_buffer);
+	LOG("SAM serial number %08x%08x%08x%08x\n", serial_number[0], serial_number[1], serial_number[2], serial_number[3]);
 #endif
 
 #if TU_LITTLE_ENDIAN == TU_BYTE_ORDER
@@ -650,18 +638,14 @@ void same5x_init_device_identifier(void)
 	serial_number[3] = __builtin_bswap32(serial_number[3]);
 #endif
 
-	error = crc32f((uint32_t)serial_number, 16, CRC32E_FLAG_UNLOCK, &device_identifier);
+	error = sam_crc32((uint32_t)serial_number, 16, &device_identifier);
 	if (unlikely(error)) {
 		device_identifier = serial_number[0];
 		LOG("ERROR: failed to compute CRC32: %d. Using fallback device identifier\n", error);
 	}
 
 #if SUPERCAN_DEBUG
-	memset(serial_buffer, '0', 8);
-	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", device_identifier);
-	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
-	serial_buffer[8] = 0;
-	LOG("device identifier %s\n", serial_buffer);
+	LOG("device identifier %08x\n", device_identifier);
 #endif
 }
 

@@ -33,6 +33,9 @@
 #include "device/usbd_pvt.h"
 #include "device/dcd.h"
 
+#undef TU_ASSERT
+#define TU_ASSERT(call, ...) do { (void)(call); } while (0)
+
 //--------------------------------------------------------------------+
 // USBD Configuration
 //--------------------------------------------------------------------+
@@ -103,7 +106,9 @@ static usbd_class_driver_t const _usbd_driver[] =
     .open             = cdcd_open,
     .control_xfer_cb  = cdcd_control_xfer_cb,
     .xfer_cb          = cdcd_xfer_cb,
+#if CFG_TUSB_SOF_CALLBACK
     .sof              = NULL
+#endif
   },
   #endif
 
@@ -115,7 +120,9 @@ static usbd_class_driver_t const _usbd_driver[] =
     .open             = mscd_open,
     .control_xfer_cb  = mscd_control_xfer_cb,
     .xfer_cb          = mscd_xfer_cb,
+#if CFG_TUSB_SOF_CALLBACK
     .sof              = NULL
+#endif
   },
   #endif
 
@@ -127,7 +134,9 @@ static usbd_class_driver_t const _usbd_driver[] =
     .open             = hidd_open,
     .control_xfer_cb  = hidd_control_xfer_cb,
     .xfer_cb          = hidd_xfer_cb,
+#if CFG_TUSB_SOF_CALLBACK
     .sof              = NULL
+#endif
   },
   #endif
 
@@ -139,7 +148,9 @@ static usbd_class_driver_t const _usbd_driver[] =
     .open             = audiod_open,
     .control_xfer_cb  = audiod_control_xfer_cb,
     .xfer_cb          = audiod_xfer_cb,
+#if CFG_TUSB_SOF_CALLBACK
     .sof              = NULL
+#endif
   },
   #endif
 
@@ -151,7 +162,9 @@ static usbd_class_driver_t const _usbd_driver[] =
     .reset            = midid_reset,
     .control_xfer_cb  = midid_control_xfer_cb,
     .xfer_cb          = midid_xfer_cb,
+#if CFG_TUSB_SOF_CALLBACK
     .sof              = NULL
+#endif
   },
   #endif
 
@@ -163,7 +176,9 @@ static usbd_class_driver_t const _usbd_driver[] =
     .open             = vendord_open,
     .control_xfer_cb  = tud_vendor_control_xfer_cb,
     .xfer_cb          = vendord_xfer_cb,
+#if CFG_TUSB_SOF_CALLBACK
     .sof              = NULL
+#endif
   },
   #endif
 
@@ -175,7 +190,9 @@ static usbd_class_driver_t const _usbd_driver[] =
     .open             = usbtmcd_open_cb,
     .control_xfer_cb  = usbtmcd_control_xfer_cb,
     .xfer_cb          = usbtmcd_xfer_cb,
+#if CFG_TUSB_SOF_CALLBACK
     .sof              = NULL
+#endif
   },
   #endif
 
@@ -187,7 +204,9 @@ static usbd_class_driver_t const _usbd_driver[] =
     .open             = dfu_rtd_open,
     .control_xfer_cb  = dfu_rtd_control_xfer_cb,
     .xfer_cb          = NULL,
+#if CFG_TUSB_SOF_CALLBACK
     .sof              = NULL
+#endif
   },
   #endif
 
@@ -199,7 +218,9 @@ static usbd_class_driver_t const _usbd_driver[] =
     .open             = dfu_moded_open,
     .control_xfer_cb  = dfu_moded_control_xfer_cb,
     .xfer_cb          = NULL,
+#if CFG_TUSB_SOF_CALLBACK
     .sof              = NULL
+#endif
   },
   #endif
 
@@ -211,7 +232,9 @@ static usbd_class_driver_t const _usbd_driver[] =
     .open             = netd_open,
     .control_xfer_cb  = netd_control_xfer_cb,
     .xfer_cb          = netd_xfer_cb,
+#if CFG_TUSB_SOF_CALLBACK
     .sof              = NULL,
+#endif
   },
   #endif
 
@@ -223,7 +246,9 @@ static usbd_class_driver_t const _usbd_driver[] =
     .open             = btd_open,
     .control_xfer_cb  = btd_control_xfer_cb,
     .xfer_cb          = btd_xfer_cb,
+#if CFG_TUSB_SOF_CALLBACK
     .sof              = NULL
+#endif
   },
   #endif
 };
@@ -504,9 +529,10 @@ void tud_task (void)
       case DCD_EVENT_UNPLUGGED:
         TU_LOG2("\r\n");
         usbd_reset(event.rhport);
-
+#if !CFG_TUSB_LEAN_AND_MEAN
         // invoke callback
         if (tud_umount_cb) tud_umount_cb();
+#endif
       break;
 
       case DCD_EVENT_SETUP_RECEIVED:
@@ -561,6 +587,7 @@ void tud_task (void)
       break;
 
       case DCD_EVENT_SUSPEND:
+#if !CFG_TUSB_LEAN_AND_MEAN
         // NOTE: When plugging/unplugging device, the D+/D- state are unstable and
         // can accidentally meet the SUSPEND condition ( Bus Idle for 3ms ), which result in a series of event
         // e.g suspend -> resume -> unplug/plug. Skip suspend/resume if not connected
@@ -572,9 +599,11 @@ void tud_task (void)
         {
           TU_LOG2(" Skipped\r\n");
         }
+#endif
       break;
 
       case DCD_EVENT_RESUME:
+#if !CFG_TUSB_LEAN_AND_MEAN
         if ( _usbd_dev.connected )
         {
           TU_LOG2("\r\n");
@@ -583,8 +612,9 @@ void tud_task (void)
         {
           TU_LOG2(" Skipped\r\n");
         }
+#endif
       break;
-
+#if CFG_TUSB_SOF_CALLBACK
       case DCD_EVENT_SOF:
         TU_LOG2("\r\n");
         for ( uint8_t i = 0; i < TOTAL_DRIVER_COUNT; i++ )
@@ -593,7 +623,7 @@ void tud_task (void)
           if ( driver->sof ) driver->sof(event.rhport);
         }
       break;
-
+#endif
       case USBD_EVENT_FUNC_CALL:
         TU_LOG2("\r\n");
         if ( event.func_call.func ) event.func_call.func(event.func_call.param);
@@ -951,9 +981,10 @@ static bool process_set_config(uint8_t rhport, uint8_t cfg_num)
     TU_ASSERT(drv_id < TOTAL_DRIVER_COUNT);
   }
 
+#if !CFG_TUSB_LEAN_AND_MEAN
   // invoke callback
   if (tud_mount_cb) tud_mount_cb();
-
+#endif
   return true;
 }
 
@@ -1171,6 +1202,7 @@ bool usbd_open_edpt_pair(uint8_t rhport, uint8_t const* p_desc, uint8_t ep_count
   return true;
 }
 
+#if !CFG_TUD_DFU
 // Helper to defer an isr function
 void usbd_defer_func(osal_task_func_t func, void* param, bool in_isr)
 {
@@ -1185,6 +1217,7 @@ void usbd_defer_func(osal_task_func_t func, void* param, bool in_isr)
 
   dcd_event_handler(&event, in_isr);
 }
+#endif
 
 //--------------------------------------------------------------------+
 // USBD Endpoint API

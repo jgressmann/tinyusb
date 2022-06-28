@@ -37,7 +37,10 @@
 /*------------------------------------------------------------------*/
 /* MACRO TYPEDEF CONSTANT ENUM
  *------------------------------------------------------------------*/
-static TU_ATTR_ALIGNED(4) UsbDeviceDescBank sram_registers[8][2];
+
+#define EPS ((CFG_TUSB_ENDPOINT_LIMIT) < 0 ? 8 : (CFG_TUSB_ENDPOINT_LIMIT))
+
+static TU_ATTR_ALIGNED(4) UsbDeviceDescBank sram_registers[EPS][2];
 
 // Setup packet is only 8 bytes in length. However under certain scenario,
 // USB DMA controller may decide to overwrite/overflow the buffer  with
@@ -101,7 +104,11 @@ void dcd_init (uint8_t rhport)
   while (USB->DEVICE.SYNCBUSY.bit.ENABLE == 1) {}
 
   USB->DEVICE.INTFLAG.reg |= USB->DEVICE.INTFLAG.reg; // clear pending
+#if CFG_TUSB_SOF_CALLBACK
   USB->DEVICE.INTENSET.reg = /* USB_DEVICE_INTENSET_SOF | */ USB_DEVICE_INTENSET_EORST;
+#else
+  USB->DEVICE.INTENSET.reg = USB_DEVICE_INTENSET_EORST;
+#endif
 }
 
 #if CFG_TUSB_MCU == OPT_MCU_SAMD51 || CFG_TUSB_MCU == OPT_MCU_SAME5X
@@ -354,13 +361,14 @@ void dcd_int_handler (uint8_t rhport)
   (void) rhport;
 
   uint32_t int_status = USB->DEVICE.INTFLAG.reg & USB->DEVICE.INTENSET.reg;
-
+#if CFG_TUSB_SOF_CALLBACK
   // Start of Frame
   if ( int_status & USB_DEVICE_INTFLAG_SOF )
   {
     USB->DEVICE.INTFLAG.reg = USB_DEVICE_INTFLAG_SOF;
     dcd_event_bus_signal(0, DCD_EVENT_SOF, true);
   }
+#endif
 
   // SAMD doesn't distinguish between Suspend and Disconnect state.
   // Both condition will cause SUSPEND interrupt triggered.

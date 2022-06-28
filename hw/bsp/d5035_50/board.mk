@@ -1,5 +1,7 @@
 DEPS_SUBMODULES += hw/mcu/microchip
 
+DEVID = 0xD503550
+
 CHIP ?= SAME51J18A
 ifdef CHIP
   ifeq ($(CHIP),SAME51J18A)
@@ -31,21 +33,26 @@ else
   CHIP_RAM_SIZE = 0x00020000
 endif
 
+BOOTLOADER_SIZE = 0x2000
+SUPERDFU_APP_TAG_PTR_OFFSET = 0x3FC
 
 CFLAGS += \
-  -mthumb \
+  -flto \
   -mabi=aapcs \
-  -mlong-calls \
   -mcpu=cortex-m4 \
   -mfloat-abi=hard \
   -mfpu=fpv4-sp-d16 \
   -nostdlib -nostartfiles \
   -DCFG_TUSB_MCU=OPT_MCU_SAME5X \
-  -DBOARD_NAME="\"D5035-02\"" \
+  -DSUPERDFU_APP_TAG_PTR_OFFSET=$(SUPERDFU_APP_TAG_PTR_OFFSET) \
+  -DSUPERDFU_BOOTLOADER_SIZE=$(BOOTLOADER_SIZE) \
+  -DSUPERDFU_DEV_ID=$(DEVID) \
   -DRAMFUNC_SECTION_NAME="\".ramfunc\"" \
   -DSVC_Handler=SVCall_Handler
 
 CFLAGS += -Wno-error=undef -Wno-error=type-limits
+
+
 
 HWREV ?= 1
 CFLAGS += -DHWREV=$(HWREV)
@@ -71,8 +78,8 @@ endif
 endif
 
 
-$(LINKER_SCRIPT): $(OBJ_DIRS)
-	@cat "$(LD_FILE_IN)" | $(SED) 's/CHIP_ROM_SIZE/$(CHIP_ROM_SIZE)/g; s/CHIP_RAM_SIZE/$(CHIP_RAM_SIZE)/g;' >$@
+$(LINKER_SCRIPT): $(OBJ_DIRS) $(LD_FILE_IN)
+	@cat "$(LD_FILE_IN)" | $(SED) 's/CHIP_ROM_SIZE/$(CHIP_ROM_SIZE)/g; s/CHIP_RAM_SIZE/$(CHIP_RAM_SIZE)/g; s/SUPERDFU_BOOTLOADER_SIZE/$(BOOTLOADER_SIZE)/g; s/SUPERDFU_APP_TAG_PTR_OFFSET/$(SUPERDFU_APP_TAG_PTR_OFFSET)/g;' >$@
 
 LINKER_SCRIPT_TARGET = $(LINKER_SCRIPT)
 

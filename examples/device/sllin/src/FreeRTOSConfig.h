@@ -55,7 +55,8 @@ __attribute__((noreturn)) extern void sllin_assert_failed(char const *msg);
 #define configENABLE_MPU								        0
 #define configENABLE_FPU								        0
 #define configENABLE_TRUSTZONE					        0
-#define configMINIMAL_SECURE_STACK_SIZE					( 1024 )
+#define configMINIMAL_SECURE_STACK_SIZE					( 128 )
+// #define configMINIMAL_SECURE_STACK_SIZE					( 256 )
 
 #define configUSE_PREEMPTION                    1
 /* NOTE: disable this to debug FreeRTOS crashes */
@@ -67,7 +68,8 @@ __attribute__((noreturn)) extern void sllin_assert_failed(char const *msg);
 #define configCPU_CLOCK_HZ                      SystemCoreClock
 #define configTICK_RATE_HZ                      ( 1000 )   // change here likely requires change in 1s timer code
 #define configMAX_PRIORITIES                    ( 5 )
-#define configMINIMAL_STACK_SIZE                ( 128 )
+#define configMINIMAL_STACK_SIZE                ( 64 )
+// #define configMINIMAL_STACK_SIZE                ( 128 )
 #define configTOTAL_HEAP_SIZE                   ( 0*1024 ) // dynamic is not used
 #define configMAX_TASK_NAME_LEN                 8
 #define configUSE_16_BIT_TICKS                  0
@@ -101,7 +103,7 @@ __attribute__((noreturn)) extern void sllin_assert_failed(char const *msg);
 #define configMAX_CO_ROUTINE_PRIORITIES        2
 
 /* Software timer related definitions. */
-#define configUSE_TIMERS                       1
+#define configUSE_TIMERS                       0
 #define configTIMER_TASK_PRIORITY              (configMAX_PRIORITIES-1)
 #define configTIMER_QUEUE_LENGTH               32
 #define configTIMER_TASK_STACK_DEPTH           configMINIMAL_STACK_SIZE

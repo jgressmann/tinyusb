@@ -53,7 +53,6 @@ SECTIONS
 {
     .text :
     {
-        . = ALIGN(VECTOR_TABLE_ALIGNMENT);
         _sfixed = .;
         KEEP(*(.vectors .vectors.*))
         *(.text .text.* .gnu.linkonce.t.*)

@@ -6,11 +6,11 @@
 
 #include <sllin_board.h>
 
-#if TRINKET_M0 || D5035_50
+#if TRINKET_M0 || D5035_50 || D5035_51
 
 
 #include <leds.h>
-#include <crc32.h>
+#include <sam_crc32.h>
 #include <bsp/board.h>
 
 
@@ -121,6 +121,8 @@ void sam_lin_init_once(void)
 		uint8_t const lin_rx_pin_group = lin->rx_port_pin_mux >> 5;
 		uint8_t const lin_rx_pin = lin->rx_port_pin_mux & 0x1f;
 		uint8_t const lin_tx_pin = lin_rx_pin - 1;
+		uint8_t const ms_pin_group = lin->master_slave_port_pin_mux >> 5;
+		uint8_t const ms_pin = lin->master_slave_port_pin_mux & 0x1f;
 
 		// set queue element type
 		sl->elem.type = SLLIN_QUEUE_ELEMENT_TYPE_FRAME;
@@ -128,6 +130,10 @@ void sam_lin_init_once(void)
 		// set LIN tx pins as out to low (when not driven by USART)
 		PORT->Group[lin_rx_pin_group].DIRSET.reg = UINT32_C(1) << lin_tx_pin;
 		PORT->Group[lin_rx_pin_group].OUTCLR.reg = UINT32_C(1) << lin_tx_pin;
+
+		// master / slave  select pin
+		PORT->Group[ms_pin_group].DIRSET.reg = UINT32_C(1) << ms_pin;
+		PORT->Group[ms_pin_group].OUTCLR.reg = UINT32_C(1) << ms_pin;
 	}
 
 	// free debug UART rx pin
@@ -144,19 +150,7 @@ uint32_t sam_init_device_identifier(uint32_t const serial_number[4])
 	int error = CRC32E_NONE;
 
 #if SLLIN_DEBUG
-	char serial_buffer[64];
-	memset(serial_buffer, '0', 32);
-	char hex_buffer[16];
-	int chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[0]);
-	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
-	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[1]);
-	memcpy(&serial_buffer[16-chars], hex_buffer, chars);
-	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[2]);
-	memcpy(&serial_buffer[24-chars], hex_buffer, chars);
-	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", serial_number[3]);
-	memcpy(&serial_buffer[32-chars], hex_buffer, chars);
-	serial_buffer[32] = 0;
-	LOG("SAM serial number %s\n", serial_buffer);
+	LOG("SAM serial number %08x%08x%08x%08x\n", serial_number[0], serial_number[1], serial_number[2], serial_number[3]);
 #endif
 
 #if TU_LITTLE_ENDIAN == TU_BYTE_ORDER
@@ -172,18 +166,14 @@ uint32_t sam_init_device_identifier(uint32_t const serial_number[4])
 	big_endian_serial[3] = serial_number[3];
 #endif
 
-	error = crc32f((uint32_t)big_endian_serial, 16, CRC32E_FLAG_UNLOCK, &device_identifier);
+	error = sam_crc32((uint32_t)big_endian_serial, 16, &device_identifier);
 	if (unlikely(error)) {
 		device_identifier = big_endian_serial[0];
 		LOG("ERROR: failed to compute CRC32: %d. Using fallback device identifier\n", error);
 	}
 
 #if SLLIN_DEBUG
-	memset(serial_buffer, '0', 8);
-	chars = usnprintf(hex_buffer, sizeof(hex_buffer), "%x", device_identifier);
-	memcpy(&serial_buffer[8-chars], hex_buffer, chars);
-	serial_buffer[8] = 0;
-	LOG("device identifier %s\n", serial_buffer);
+	LOG("device identifier %08x\n", device_identifier);
 #endif
 
 	return device_identifier;
@@ -212,13 +202,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	struct slave *sl = &lin->slave;
 	Sercom *sercom = lin->sercom;
 
-
-
-	for (size_t i = 0; i < TU_ARRAY_SIZE(sl->slave_frame_enabled); ++i) {
-		sl->slave_frame_enabled[i] = 0;
-	}
-
-
+	sl->slave_frame_enabled = 0;
 	lin->master.pid = MASTER_PROTO_TX_BREAK_ONLY_PID;
 
 	__atomic_store_n(&lin->bus_state, SLLIN_ID_FLAG_BUS_STATE_AWAKE, __ATOMIC_RELAXED);
@@ -346,11 +330,18 @@ SLLIN_RAMFUNC extern void sllin_board_lin_slave_respond(
 {
 	struct sam_lin *lin = &sam_lins[index];
 	struct slave *sl = &lin->slave;
+	uint64_t bit = UINT64_C(1) << id;
 
 	SLLIN_DEBUG_ASSERT(index < TU_ARRAY_SIZE(sam_lins));
 	SLLIN_DEBUG_ASSERT(id < 64);
 
-	__atomic_store_n(&sl->slave_frame_enabled[id], respond, __ATOMIC_RELEASE);
+	taskENTER_CRITICAL();
+	if (respond) {
+		sl->slave_frame_enabled |= bit;
+	} else {
+		sl->slave_frame_enabled &= ~bit;
+	}
+	taskEXIT_CRITICAL();
 }
 
 SLLIN_RAMFUNC extern void sllin_board_led_lin_status_set(uint8_t index, int status)
@@ -418,8 +409,11 @@ SLLIN_RAMFUNC static inline bool lin_int_update_bus_status(uint8_t index, uint8_
 	return false;
 }
 
-SLLIN_RAMFUNC static inline void usart_clear(Sercom *s)
+SLLIN_RAMFUNC static inline void usart_clear(uint8_t index)
 {
+	struct sam_lin *lin = &sam_lins[index];
+	Sercom *s = lin->sercom;
+
 	// clear interupt and status
 	s->USART.INTFLAG.reg = ~0;
 	s->USART.STATUS.reg = ~0;
@@ -427,14 +421,13 @@ SLLIN_RAMFUNC static inline void usart_clear(Sercom *s)
 	// read data to prevent buffer overflow
 	(void)s->USART.DATA.reg;
 
-	sam_usart_clear_pending();
+	sam_usart_clear_pending(index);
 }
 
 SLLIN_RAMFUNC static void on_data_timeout(uint8_t index)
 {
 	struct sam_lin *lin = &sam_lins[index];
 	struct slave *sl = &lin->slave;
-	Sercom *s = lin->sercom;
 	uint8_t const sercom_rx_pin_group = lin->rx_port_pin_mux >> 5;
 	uint8_t const sercom_rx_pin = lin->rx_port_pin_mux & 0x1f;
 
@@ -442,7 +435,7 @@ SLLIN_RAMFUNC static void on_data_timeout(uint8_t index)
 
 
 	// LOG("ch%u frame data timeout\n", index);
-	usart_clear(s);
+	usart_clear(index);
 
 
 	switch (sl->slave_proto_step) {
@@ -542,6 +535,9 @@ SLLIN_RAMFUNC void sam_lin_timer_int(uint8_t index)
 	case TIMER_TYPE_SOF: {
 		bool rx_pin = (PORT->Group[sercom_rx_pin_group].IN.reg & (UINT32_C(1) << sercom_rx_pin)) != 0;
 
+		sam_uart_rx_toggle();
+		LOG("*");
+
 		// clean up master part
 		ma->proto_step = MASTER_PROTO_STEP_FINISHED;
 		s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
@@ -552,7 +548,7 @@ SLLIN_RAMFUNC void sam_lin_timer_int(uint8_t index)
 
 		// allow next header
 		__atomic_store_n(&lin->master.busy, 0, __ATOMIC_RELEASE);
-		// LOG("*");
+
 	} break;
 	case TIMER_TYPE_BREAK: {
 		// drive pin through UART
@@ -649,17 +645,12 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 				// we don't have to reconfigure the timer.
 				sof_start_or_restart_begin(lin);
 				lin_cleanup_full(lin, SLAVE_PROTO_STEP_RX_SYNC);
+				LOG(".");
+				sof_start_or_restart_end(lin);
 			} else {
 				// wait for pull down timer to expire before pulling up
 				lin_cleanup_master_tx(lin, SLAVE_PROTO_STEP_RX_SYNC);
-			}
-
-			LOG(".");
-
-			if (ma->proto_step == MASTER_PROTO_STEP_FINISHED) {
-				sof_start_or_restart_end(lin);
-			} else {
-
+				LOG(".");
 			}
 		}
 	}
@@ -672,6 +663,7 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 			if (unlikely(0x55 != rx_byte)) {
 				sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_SYNC;
 				LOG("X");
+				LOG("%02x", rx_byte);
 			} else {
 				LOG("S");
 			}
@@ -683,6 +675,8 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
 			uint8_t const id = sllin_pid_to_id(rx_byte);
 			uint8_t const pid = sllin_id_to_pid(id);
+			uint64_t const bit = UINT64_C(1) << id;
+			bool respond = false;
 
 			sam_timer_cleanup_begin(lin);
 
@@ -705,6 +699,9 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 			// clear out flag for PID
 			intflag &= ~SERCOM_USART_INTFLAG_RXC;
 
+			// resonse enabled?
+			respond = (sl->slave_frame_enabled & bit) == bit;
+
 			// setup data timer
 			sam_timer_cleanup_end(lin);
 			lin->timer_type = TIMER_TYPE_DATA;
@@ -713,7 +710,7 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 			// here we know the timer is stopped
 			lin->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 
-			if (sl->slave_frame_enabled[id]) {
+			if (respond) {
 				SLLIN_DEBUG_ISR_ASSERT(fd->len[id] >= 0 && fd->len[id] <= 8);
 
 				s->USART.INTENSET.reg = SERCOM_USART_INTENSET_DRE;

@@ -31,7 +31,6 @@ static struct usb {
 	StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_device_stack_mem;
 	uint8_t port;
-	// bool mounted;
 } usb;
 
 static struct lin {

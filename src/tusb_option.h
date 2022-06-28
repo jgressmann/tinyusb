@@ -211,6 +211,18 @@
   #define CFG_TUSB_OS             OPT_OS_NONE
 #endif
 
+#ifndef CFG_TUSB_SOF_CALLBACK
+  #define CFG_TUSB_SOF_CALLBACK 1
+#endif
+
+#ifndef CFG_TUSB_LEAN_AND_MEAN
+  #define CFG_TUSB_LEAN_AND_MEAN 0
+#endif
+
+#ifndef CFG_TUSB_ENDPOINT_LIMIT
+  #define CFG_TUSB_ENDPOINT_LIMIT -1
+#endif
+
 //--------------------------------------------------------------------
 // DEVICE OPTIONS
 //--------------------------------------------------------------------

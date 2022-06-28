@@ -33,6 +33,9 @@
 
 #include "dfu_device.h"
 
+#undef TU_ASSERT
+#define TU_ASSERT(call, ...) do { (void)(call); } while (0)
+
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF
 //--------------------------------------------------------------------+
