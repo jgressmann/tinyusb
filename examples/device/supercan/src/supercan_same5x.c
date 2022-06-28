@@ -197,7 +197,7 @@ SC_RAMFUNC static inline uint8_t can_map_m_can_ec(uint8_t value)
 	return can_map_m_can_ec_table[value & 7];
 }
 
-SC_RAMFUNC static bool can_poll(uint8_t index, uint32_t * const events, uint32_t tsc);
+SC_RAMFUNC static void can_poll(uint8_t index, uint32_t * const events, uint32_t tsc);
 
 
 
@@ -1082,7 +1082,7 @@ static volatile uint32_t rx_lost_reported[TU_ARRAY_SIZE(same5x_cans)];
 // static volatile uint32_t rx_ts_last[TU_ARRAY_SIZE(same5x_cans)];
 #endif
 
-SC_RAMFUNC static bool can_poll(
+SC_RAMFUNC static void can_poll(
 	uint8_t index,
 	uint32_t* const events,
 	uint32_t tsc)
@@ -1092,13 +1092,11 @@ SC_RAMFUNC static bool can_poll(
 	uint32_t tsv[SC_BOARD_CAN_RX_FIFO_SIZE];
 	uint8_t count = 0;
 	unsigned rx_lost = 0;
-	bool more = false;
 	uint8_t pi = 0;
 
 	count = can->m_can->RXF0S.bit.F0FL;
 
 	if (count) {
-		more = true;
 // #ifdef SUPERCAN_DEBUG
 // 		uint32_t us = tsc - rx_ts_last[index];
 // 		rx_ts_last[index] = tsc;
@@ -1195,8 +1193,6 @@ SC_RAMFUNC static bool can_poll(
 
 	count = can->m_can->TXEFS.bit.EFFL;
 	if (count) {
-		more = true;
-
 		// reverse loop reconstructs timestamps
 		uint32_t ts = tsc;
 		uint8_t get_index;
@@ -1265,8 +1261,6 @@ SC_RAMFUNC static bool can_poll(
 		sc_can_status_queue(index, &status);
 		++*events;
 	}
-
-	return more;
 }
 
 extern sc_can_bit_timing_range const* sc_board_can_nm_bit_timing_range(uint8_t index)
