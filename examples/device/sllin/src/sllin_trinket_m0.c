@@ -12,7 +12,6 @@
 #include <leds.h>
 
 #include <hal/include/hal_gpio.h>
-#include <crc32.h>
 #include <bsp/board.h>
 #include <tusb.h>
 

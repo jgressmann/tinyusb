@@ -14,8 +14,6 @@
 #include <sllin_version.h>
 #include <sllin.h>
 
-#include <FreeRTOSConfig.h>
-
 #define SLLIN_TASK_PRIORITY (configLIBRARY_LOWEST_INTERRUPT_PRIORITY-1)
 #define SLLIN_ISR_PRIORITY (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY+1)
 
@@ -127,3 +125,7 @@ struct sllin_frame_data {
 };
 
 extern struct sllin_frame_data sllin_frame_data[SLLIN_BOARD_LIN_COUNT];
+
+
+#include <FreeRTOSConfig.h>
+
