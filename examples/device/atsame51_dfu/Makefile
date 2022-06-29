@@ -45,8 +45,6 @@ CFLAGS += \
 
 
 
-# -DCFG_TUSB_NOINIT_SECTION="__attribute__((section(\".noinit\")))"
-
 
 ifdef SUPERDFU_DEBUG
   CFLAGS += -DSUPERDFU_DEBUG=$(SUPERDFU_DEBUG)
