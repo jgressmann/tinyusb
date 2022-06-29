@@ -14,11 +14,10 @@
 #include <hal/include/hal_gpio.h>
 #include <mcu.h>
 #include <sam_crc32.h>
-#include <bsp/board.h>
 
 
 #include <tusb.h>
-// #include <class/dfu/dfu_rt_device.h>
+
 
 #define BOARD_SERCOM SERCOM2
 #define USART_BAURATE      115200

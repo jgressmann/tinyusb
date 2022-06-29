@@ -9,19 +9,14 @@
 
 #if D5035_50
 
-#include <FreeRTOS.h>
-#include <timers.h>
-
 #include <leds.h>
 
 #include <hal/include/hal_gpio.h>
-#include <crc32.h>
 #include <mcu.h>
-#include <bsp/board.h>
+#include <sam_crc32.h>
 
 
 #include <tusb.h>
-#include <class/dfu/dfu_rt_device.h>
 
 #define LIN_SERCOM_PORT_GROUP 0
 #define MASTER_SLAVE_PIN_GROUP 1
@@ -35,61 +30,6 @@
  *
  * @115200 debug prints KILL LIN timing assumptions!
 */
-
-
-#if SUPERDFU_APP
-struct dfu_hdr dfu_hdr __attribute__((section(DFU_RAM_HDR_SECTION_NAME)));
-static struct dfu_app_tag dfu_app_tag __attribute__((used,section(DFU_APP_TAG_SECTION_NAME))) = {
-	.tag_magic = DFU_APP_TAG_MAGIC_STRING,
-	.tag_version = DFU_APP_TAG_VERSION,
-	.tag_bom = DFU_APP_TAG_BOM,
-	.tag_dev_id = SUPERDFU_DEV_ID,
-	.app_version_major = SLLIN_VERSION_MAJOR,
-	.app_version_minor = SLLIN_VERSION_MINOR,
-	.app_version_patch = SLLIN_VERSION_PATCH,
-	.app_watchdog_timeout_s = 1,
-	.app_name = SLLIN_NAME,
-};
-
-static struct dfu_app_tag const * const dfu_app_tag_ptr __attribute__((used,section(DFU_APP_TAG_PTR_SECTION_NAME))) = &dfu_app_tag;
-
-static struct dfu {
-	StaticTimer_t timer_mem;
-	TimerHandle_t timer_handle;
-} dfu;
-
-static void dfu_timer_expired(TimerHandle_t t);
-static void dfu_timer_expired(TimerHandle_t t)
-{
-	(void)t;
-
-	LOG("DFU detach timer expired\n");
-
-	/*
-	 * This is wrong. DFU 1.1. specification wants us to wait for USB reset.
-	 * However, without these lines, the device can't be updated on Windows using
-	 * dfu-util. Updating from Linux works either way. All hail compatibility (sigh).
-	 */
-	dfu_request_dfu(1);
-	NVIC_SystemReset();
-}
-
-#if CFG_TUD_DFU_RUNTIME
-void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
-{
-	LOG("tud_dfu_runtime_reboot_to_dfu_cb\n");
-	/* The timer seems to be necessary, else dfu-util
-	 * will fail spurriously with EX_IOERR (74).
-	 */
-	xTimerStart(dfu.timer_handle, pdMS_TO_TICKS(ms));
-
-	// dfu_request_dfu(1);
-	// NVIC_SystemReset();
-}
-#endif // #if CFG_TUD_DFU_RT
-#endif
-
-
 
 struct sam_lin sam_lins[SLLIN_BOARD_LIN_COUNT] = {
 	{
@@ -177,7 +117,7 @@ static inline void same5x_init_device_identifier(void)
 {
 	uint32_t serial_number[4];
 
-	same51_get_serial_number(serial_number);
+	sam_get_serial_number(serial_number);
 
 	device_identifier = sam_init_device_identifier(serial_number);
 }
@@ -370,6 +310,24 @@ static void timer_init(void)
 		// reset to zero
 		timer->COUNT16.COUNT.reg = 0;
 	}
+
+#if SUPERDFU_APP
+	// // DFU timer
+	// Tc* timer = TC3;
+
+	// PM->APBCMASK.bit.TCC2_ = 1;
+	// PM->APBCMASK.bit.TC3_ = 1;
+	// GCLK->CLKCTRL.reg =
+	// 	GCLK_CLKCTRL_GEN_GCLK2 |
+	// 	GCLK_CLKCTRL_CLKEN |
+	// 	GCLK_CLKCTRL_ID_TCC2_TC3;
+
+	// NVIC_SetPriority(TC3_IRQn, SLLIN_ISR_PRIORITY);
+	// NVIC_EnableIRQ(TC3_IRQn);
+
+	// timer->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
+	// while (timer->COUNT16.STATUS.bit.SYNCBUSY);
+#endif // SUPERDFU_APP
 }
 
 static inline void usb_init(void)
@@ -394,6 +352,10 @@ static inline void usb_init(void)
 
 extern void sllin_board_init_begin(void)
 {
+#if !SUPERDFU_APP
+	sam_crc32_unlock();
+#endif
+
 	clock_init();
 	uart_init();
 	LOG("CONF_CPU_FREQUENCY=%lu\n", (unsigned long)CONF_CPU_FREQUENCY);
@@ -407,19 +369,10 @@ extern void sllin_board_init_begin(void)
 
 	same5x_init_device_identifier();
 
-
 #if SUPERDFU_APP
-	LOG(
-		"%s v%u.%u.%u starting...\n",
-		dfu_app_tag.app_name,
-		dfu_app_tag.app_version_major,
-		dfu_app_tag.app_version_minor,
-		dfu_app_tag.app_version_patch);
-
-	dfu_request_dfu(0); // no bootloader request
-
-	dfu.timer_handle = xTimerCreateStatic("dfu", pdMS_TO_TICKS(DFU_USB_RESET_TIMEOUT_MS), pdFALSE, NULL, &dfu_timer_expired, &dfu.timer_mem);
+	dfu_init_begin();
 #endif
+
 	leds_init();
 
 	LOG("USB init\n");
@@ -438,7 +391,7 @@ extern void sllin_board_init_end(void)
 	led_set(POWER_LED, 1);
 
 #if SUPERDFU_APP
-	dfu_app_watchdog_disable();
+	dfu_init_end();
 #endif
 }
 
@@ -448,6 +401,26 @@ SLLIN_RAMFUNC void SERCOM1_0_Handler(void)
 {
 	sam_lin_usart_int(0);
 }
+
+
+#if SUPERDFU_APP
+extern void dfu_timer_start(uint16_t ms)
+{
+	// Tc* timer = TC3;
+
+	// // timer overflow interrupt
+	// timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF;
+
+	// // period
+	// timer->COUNT16.CC[0].reg = ms;
+
+	// // oneshot
+	// timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT;
+
+	// // enable
+	// timer->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER_DIV1 | TC_CTRLA_WAVEGEN_MFRQ;
+}
+#endif
 
 // // TXC
 // SLLIN_RAMFUNC void SERCOM1_1_Handler(void)
