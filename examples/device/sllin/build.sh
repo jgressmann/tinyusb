@@ -188,37 +188,40 @@ EOF
 
 }
 
-# d5035_50_hw_revs="1"
-# for rev in $d5035_50_hw_revs; do
-# 	superdfu_build d5035_50 "D5035-50" $rev
-# done
+d5035_50_hw_revs="1"
+for rev in $d5035_50_hw_revs; do
+	superdfu_build d5035_50 "D5035-50" $rev
+done
 
 d5035_51_hw_revs="1"
 for rev in $d5035_51_hw_revs; do
 	superdfu_build d5035_51 "D5035-51" $rev
 done
 
-exit 0
 
 
-# ######################
-# # Other Boards (uf2) #
-# ######################
 
-# boards="trinket_m0"
-# for board in $boards; do
-# 	export BOARD=$board
+######################
+# Other Boards (uf2) #
+######################
 
-# 	mkdir -p $target_dir/sllin/$BOARD
+project=sllin
+project_dir=$projects_dir/$project
+cd $project_dir
 
-# 	make $MAKE_ARGS uf2
+boards="trinket_m0"
+for board in $boards; do
+	export BOARD=$board
 
-# 	cp _build/$BOARD/${project}.uf2 $target_dir/sllin/$BOARD/
-# 	rm -rf _build
-# done
+	mkdir -p $target_dir/sllin/$BOARD
+
+	rm -rf _build
+	make $MAKE_ARGS uf2
+	cp _build/$BOARD/${project}.uf2 $target_dir/sllin/$BOARD/
+done
 
 
-# # archive
-# cd $target_dir && (tar c sllin | pixz -9 >sllin-firmware.tar.xz)
+# archive
+cd $target_dir && (tar c sllin | pixz -9 >sllin-firmware.tar.xz)
 
-# echo A-OK
+echo A-OK
