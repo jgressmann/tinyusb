@@ -11,7 +11,7 @@
 	#include <dfu_app.h>
 	#include <dfu_usb_descriptors.h>
 	#include <mcu.h>
-	#define DFU_USB_RESET_TIMEOUT_MS 100
+	#define DFU_USB_RESET_TIMEOUT_MS 1000
 
 extern void dfu_init_begin(void);
 #define dfu_init_end(void) dfu_app_watchdog_disable()
