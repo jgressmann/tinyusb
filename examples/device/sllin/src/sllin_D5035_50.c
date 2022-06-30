@@ -18,12 +18,9 @@
 
 #include <tusb.h>
 
-#define LIN_SERCOM_PORT_GROUP 0
-#define MASTER_SLAVE_PIN_GROUP 1
 #define BOARD_SERCOM SERCOM2
 #define USART_BAURATE      115200
 #define CONF_CPU_FREQUENCY 48000000
-#define UART_RX_PORT_PIN_MUX 8
 
 
 /* The board runs off of the 48 MHz internal RC oscillator
@@ -37,7 +34,7 @@ struct sam_lin sam_lins[SLLIN_BOARD_LIN_COUNT] = {
 		.timer = TC0, // NOTE: TC0/TC1 don't seem to support different clock speeds, setting one will affect the other.
 		.timer_irq = TC0_IRQn,
 		.rx_port_pin_mux = 1,
-		.master_slave_port_pin_mux = (MASTER_SLAVE_PIN_GROUP << 5) | 4,
+		.master_slave_port_pin_mux = (1ul << 5) | 4, // PB04
 		.led_status_green = 5,
 		.led_status_red = 6,
 	},
@@ -46,7 +43,7 @@ struct sam_lin sam_lins[SLLIN_BOARD_LIN_COUNT] = {
 		.timer = TC1,
 		.timer_irq = TC1_IRQn,
 		.rx_port_pin_mux = 5,
-		.master_slave_port_pin_mux = (MASTER_SLAVE_PIN_GROUP << 5) | 9,
+		.master_slave_port_pin_mux = (1ul << 5) | 9, // PB09
 		.led_status_green = 7,
 		.led_status_red = 8,
 	},
@@ -174,6 +171,24 @@ static inline void clock_init(void)
 
 
 	SystemCoreClock = CONF_CPU_FREQUENCY;
+
+	// 16MHz on GCLK2
+	GCLK->GENCTRL[2].reg =
+		GCLK_GENCTRL_DIV(3) |	/* 48Mhz -> 16MHz */
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_DFLL |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
+
+	// 1kHz on GCLK3
+	GCLK->GENCTRL[3].reg =
+		GCLK_GENCTRL_DIV(32) |	/* 32.768Hz -> ~1kHz */
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_OSCULP32K |
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL3); /* wait for the synchronization between clock domains to be complete */
 }
 
 static inline void uart_init(void)
@@ -265,20 +280,11 @@ static inline void lin_init_once(void)
 
 static void timer_init(void)
 {
-	GCLK->GENCTRL[4].reg =
-		GCLK_GENCTRL_DIV(3) |	/* 48Mhz -> 16MHz */
-		GCLK_GENCTRL_RUNSTDBY |
-		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DFLL |
-		GCLK_GENCTRL_IDC;
-	while(1 == GCLK->SYNCBUSY.bit.GENCTRL4); /* wait for the synchronization between clock domains to be complete */
-
-
 	MCLK->APBAMASK.bit.TC0_ = 1;
 	MCLK->APBAMASK.bit.TC1_ = 1;
 	// TC0/1 are connected to the SAME peripheral clock
-	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
-	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK4 | GCLK_PCHCTRL_CHEN;
+	GCLK->PCHCTRL[TC0_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN;
+	GCLK->PCHCTRL[TC1_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK2 | GCLK_PCHCTRL_CHEN;
 
 	NVIC_SetPriority(TC0_IRQn, SLLIN_ISR_PRIORITY);
 	NVIC_SetPriority(TC1_IRQn, SLLIN_ISR_PRIORITY);
@@ -312,21 +318,17 @@ static void timer_init(void)
 	}
 
 #if SUPERDFU_APP
-	// // DFU timer
-	// Tc* timer = TC3;
+	// DFU timer
+	Tc* timer = TC2;
 
-	// PM->APBCMASK.bit.TCC2_ = 1;
-	// PM->APBCMASK.bit.TC3_ = 1;
-	// GCLK->CLKCTRL.reg =
-	// 	GCLK_CLKCTRL_GEN_GCLK2 |
-	// 	GCLK_CLKCTRL_CLKEN |
-	// 	GCLK_CLKCTRL_ID_TCC2_TC3;
+	MCLK->APBBMASK.bit.TC2_ = 1;
+	GCLK->PCHCTRL[TC2_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK3 | GCLK_PCHCTRL_CHEN;
 
-	// NVIC_SetPriority(TC3_IRQn, SLLIN_ISR_PRIORITY);
-	// NVIC_EnableIRQ(TC3_IRQn);
+	NVIC_SetPriority(TC2_IRQn, SLLIN_ISR_PRIORITY);
+	NVIC_EnableIRQ(TC2_IRQn);
 
-	// timer->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
-	// while (timer->COUNT16.STATUS.bit.SYNCBUSY);
+	timer->COUNT16.CTRLA.reg = TC_CTRLA_SWRST;
+	while (timer->COUNT16.SYNCBUSY.bit.SWRST);
 #endif // SUPERDFU_APP
 }
 
@@ -357,7 +359,10 @@ extern void sllin_board_init_begin(void)
 #endif
 
 	clock_init();
+
+#if !SUPERDFU_APP
 	uart_init();
+#endif
 	LOG("CONF_CPU_FREQUENCY=%lu\n", (unsigned long)CONF_CPU_FREQUENCY);
 
 	LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
@@ -406,19 +411,21 @@ SLLIN_RAMFUNC void SERCOM1_0_Handler(void)
 #if SUPERDFU_APP
 extern void dfu_timer_start(uint16_t ms)
 {
-	// Tc* timer = TC3;
+	Tc* timer = TC2;
 
-	// // timer overflow interrupt
-	// timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF;
+	timer->COUNT16.WAVE.reg = TC_WAVE_WAVEGEN_MFRQ;
 
-	// // period
-	// timer->COUNT16.CC[0].reg = ms;
+	// timer overflow interrupt
+	timer->COUNT16.INTENSET.reg = TC_INTENSET_OVF;
 
-	// // oneshot
-	// timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT;
+	// period
+	timer->COUNT16.CC[0].reg = ms;
 
-	// // enable
-	// timer->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_MODE_COUNT16 | TC_CTRLA_PRESCALER_DIV1 | TC_CTRLA_WAVEGEN_MFRQ;
+	// oneshot
+	timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_ONESHOT;
+
+	// enable
+	timer->COUNT16.CTRLA.reg = TC_CTRLA_ENABLE | TC_CTRLA_PRESCALER_DIV1;
 }
 #endif
 
@@ -474,5 +481,11 @@ SLLIN_RAMFUNC void TC1_Handler(void)
 	sam_lin_timer_int(1);
 }
 
+#if SUPERDFU_APP
+void TC2_Handler(void)
+{
+	dfu_timer_expired();
+}
+#endif
 
 #endif // #if D5035_50
