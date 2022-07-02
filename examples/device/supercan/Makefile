@@ -12,22 +12,23 @@ INC += \
 	inc \
 	src \
 	$(TOP)/hw \
+	$(TOP)/lib/misc/inc \
 	$(TOP)/$(FREERTOS_SRC)/include \
 	$(TOP)/$(FREERTOS_SRC)/portable/GCC/$(FREERTOS_PORT)
 
-DFU_SRC_C = \
-	$(TOP)/examples/device/atsame51_dfu/src/sam_crc32.c
+SRC_C += $(TOP)/lib/misc/src/usnprintf.c
+SAM_SRC_C += $(TOP)/lib/misc/src/sam_crc32.c
 
 ifeq ($(D5035_01),1)
 INC += $(TOP)/examples/device/atsame51_dfu/inc
-SRC_C += $(DFU_SRC_C)
+SRC_C += $(SAM_SRC_C)
 endif
 
 
 ifeq ($(SAME54XPLAINEDPRO),1)
 INC += $(TOP)/examples/device/atsame51_dfu/inc
 CONF_CPU_FREQUENCY = 120000000
-SRC_C += $(DFU_SRC_C)
+SRC_C += $(SAM_SRC_C)
 endif
 
 
@@ -39,7 +40,7 @@ SECTION_CFLAGS = -DUSNPRINTF_SECTION_NAME=RAMFUNC_SECTION_NAME -DSC_RAMFUNC_SECT
 ifeq ($(BOARD),feather_m4_can_express)
 CFLAGS += $(SECTION_CFLAGS) -DFEATHER_M4_CAN_EXPRESS=1
 INC += $(TOP)/examples/device/atsame51_dfu/inc
-SRC_C += $(DFU_SRC_C)
+SRC_C += $(SAM_SRC_C)
 endif
 
 

@@ -6,7 +6,8 @@ INC += \
 	inc \
 	src \
 	$(TOP)/hw \
-	$(TOP)/src/device
+	$(TOP)/src/device \
+  $(TOP)/lib/misc/inc
 
 ifdef VID
   CFLAGS += -DVID=$(VID)
@@ -55,6 +56,9 @@ endif
 # Example source
 EXAMPLE_SOURCE += $(wildcard src/*.c)
 SRC_C += $(addprefix $(CURRENT_PATH)/, $(EXAMPLE_SOURCE))
+SRC_C += \
+  $(TOP)/lib/misc/src/sam_crc32.c \
+  $(TOP)/lib/misc/src/usnprintf.c
 
 include ../../rules.mk
 include src/dfu.mk

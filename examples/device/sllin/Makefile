@@ -12,32 +12,32 @@ INC += \
 	inc \
 	src \
 	$(TOP)/hw \
+	$(TOP)/lib/misc/inc \
 	$(TOP)/$(FREERTOS_SRC)/include \
 	$(TOP)/$(FREERTOS_SRC)/portable/GCC/$(FREERTOS_PORT)
 
+
+SRC_C += $(TOP)/lib/misc/src/usnprintf.c
+SAM_SRC_C += $(TOP)/lib/misc/src/sam_crc32.c
 
 SECTION_CFLAGS = -DUSNPRINTF_SECTION_NAME=RAMFUNC_SECTION_NAME -DSLLIN_RAMFUNC_SECTION_NAME=RAMFUNC_SECTION_NAME
 
 
 ifeq ($(BOARD),trinket_m0)
 CFLAGS += -DRAMFUNC_SECTION_NAME="\".ramfunc\"" -DTRINKET_M0=1 $(SECTION_CFLAGS)
-SRC_C += $(DFU_SRC_C)
+SRC_C += $(SAM_SRC_C)
 endif
-
-DFU_SRC_C = \
-	$(TOP)/examples/device/atsame51_dfu/src/sam_crc32.c
-
 
 ifeq ($(BOARD),d5035_50)
 INC += $(TOP)/examples/device/atsame51_dfu/inc
 CFLAGS += -DD5035_50=1 -DHAVE_ATOMIC_COMPARE_EXCHANGE $(SECTION_CFLAGS)
-SRC_C += $(DFU_SRC_C)
+SRC_C += $(SAM_SRC_C)
 endif
 
 ifeq ($(BOARD),d5035_51)
 INC += $(TOP)/examples/device/atsame51_dfu/inc
 CFLAGS += -DD5035_51=1
-SRC_C += $(DFU_SRC_C)
+SRC_C += $(SAM_SRC_C)
 endif
 
 
