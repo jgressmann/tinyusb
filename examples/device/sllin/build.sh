@@ -54,18 +54,18 @@ superdfu_build()
 
 
 	# SuperDFU
-	local project=atsame51_dfu
+	local project=superdfu
 	local project_dir=$projects_dir/$project
 	cd $project_dir
 
 
 	rm -rf _build
 	make $MAKE_ARGS BOARD=$BOARD BOOTLOADER=1 VID=$VID PID=$PID_DFU PRODUCT_NAME="$bootloader_name" INTERFACE_NAME="$bootloader_name" HWREV=$hw_rev
-	cp _build/$BOARD/${project}.hex $target_dir/sllin/$BOARD/$hw_rev_02/superdfu.hex
-	cp _build/$BOARD/${project}.bin $target_dir/sllin/$BOARD/$hw_rev_02/superdfu.bin
+	cp _build/$BOARD/${project}.hex $target_dir/sllin/$BOARD/$hw_rev_02/
+	cp _build/$BOARD/${project}.bin $target_dir/sllin/$BOARD/$hw_rev_02/
 	rm -rf _build
 	make $MAKE_ARGS BOARD=$BOARD BOOTLOADER=1 VID=$VID PID=$PID_DFU PRODUCT_NAME="$bootloader_name" INTERFACE_NAME="$bootloader_name" HWREV=$hw_rev APP=1 dfu
-	cp _build/$BOARD/${project}.dfu $target_dir/sllin/$BOARD/$hw_rev_02/superdfu.dfu
+	cp _build/$BOARD/${project}.dfu $target_dir/sllin/$BOARD/$hw_rev_02/
 
 	# generate J-Link flash script
 	cat <<EOF >$target_dir/sllin/$BOARD/$hw_rev_02/superdfu.jlink

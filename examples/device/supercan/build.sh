@@ -46,7 +46,7 @@ done
 
 
 # SuperDFU
-project=atsame51_dfu
+project=superdfu
 project_dir=$projects_dir/$project
 cd $project_dir
 
@@ -54,11 +54,11 @@ cd $project_dir
 for i in $hw_revs; do
 	rm -rf _build
 	make $MAKE_ARGS BOARD=$BOARD BOOTLOADER=1 VID=$VID PID=$PID_DFU PRODUCT_NAME="$BOOTLOADER_NAME" INTERFACE_NAME="$BOOTLOADER_NAME" HWREV=$i
-	cp _build/$BOARD/${project}.hex $target_dir/supercan/$BOARD/0$i/superdfu.hex
-	cp _build/$BOARD/${project}.bin $target_dir/supercan/$BOARD/0$i/superdfu.bin
+	cp _build/$BOARD/${project}.hex $target_dir/supercan/$BOARD/0$i/
+	cp _build/$BOARD/${project}.bin $target_dir/supercan/$BOARD/0$i/
 	rm -rf _build
 	make $MAKE_ARGS BOARD=$BOARD BOOTLOADER=1 VID=$VID PID=$PID_DFU PRODUCT_NAME="$BOOTLOADER_NAME" INTERFACE_NAME="$BOOTLOADER_NAME" HWREV=$i APP=1 dfu
-	cp _build/$BOARD/${project}.dfu $target_dir/supercan/$BOARD/0$i/superdfu.dfu
+	cp _build/$BOARD/${project}.dfu $target_dir/supercan/$BOARD/0$i/
 
 	# generate J-Link flash script
 	cat <<EOF >$target_dir/supercan/$BOARD/0$i/superdfu.jlink

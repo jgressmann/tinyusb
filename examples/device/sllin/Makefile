@@ -29,20 +29,20 @@ SRC_C += $(SAM_SRC_C)
 endif
 
 ifeq ($(BOARD),d5035_50)
-INC += $(TOP)/examples/device/atsame51_dfu/inc
+INC += $(TOP)/examples/device/superdfu/inc
 CFLAGS += -DD5035_50=1 -DHAVE_ATOMIC_COMPARE_EXCHANGE $(SECTION_CFLAGS)
 SRC_C += $(SAM_SRC_C)
 endif
 
 ifeq ($(BOARD),d5035_51)
-INC += $(TOP)/examples/device/atsame51_dfu/inc
+INC += $(TOP)/examples/device/superdfu/inc
 CFLAGS += -DD5035_51=1
 SRC_C += $(SAM_SRC_C)
 endif
 
 
 # ifeq ($(SAME54XPLAINEDPRO),1)
-# INC += $(TOP)/examples/device/atsame51_dfu/inc
+# INC += $(TOP)/examples/device/superdfu/inc
 # CONF_CPU_FREQUENCY = 120000000
 # endif
 
@@ -84,5 +84,5 @@ SRC_C += \
 LDFLAGS += -Wl,--undefined=vTaskSwitchContext
 
 include ../../rules.mk
-include $(TOP)/examples/device/atsame51_dfu/src/dfu.mk
+include $(TOP)/examples/device/superdfu/src/dfu.mk
 
