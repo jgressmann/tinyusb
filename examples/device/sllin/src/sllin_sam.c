@@ -204,6 +204,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 
 	sl->slave_frame_enabled = 0;
 	lin->master.pid = MASTER_PROTO_TX_BREAK_ONLY_PID;
+	lin->master.proto_step = MASTER_PROTO_STEP_FINISHED;
 
 	__atomic_store_n(&lin->bus_state, SLLIN_ID_FLAG_BUS_STATE_AWAKE, __ATOMIC_RELAXED);
 	__atomic_store_n(&lin->bus_error, SLLIN_ID_FLAG_BUS_ERROR_NONE, __ATOMIC_RELAXED);
@@ -297,13 +298,16 @@ SLLIN_RAMFUNC static bool master_tx(uint8_t index, uint8_t pid)
 		return false;
 	}
 
+	// race for timer with interrupt handler
+	__atomic_store_n(&lin->master.proto_step, MASTER_PROTO_STEP_TX_BREAK, __ATOMIC_RELEASE);
+
 	break_start_or_restart_begin(lin);
 
 	PORT->Group[lin_rx_pin_group].PINCFG[lin_tx_pin].reg = 0;
 
 	__atomic_store_n(&lin->master.busy, 1, __ATOMIC_RELAXED);
 	lin->master.pid = pid;
-	lin->master.proto_step = MASTER_PROTO_STEP_TX_BREAK;
+
 
 	break_start_or_restart_end(lin);
 
@@ -424,6 +428,19 @@ SLLIN_RAMFUNC static inline void usart_clear(uint8_t index)
 	sam_usart_clear_pending(index);
 }
 
+SLLIN_RAMFUNC static inline void queue_frame(uint8_t index)
+{
+	struct sam_lin *lin = &sam_lins[index];
+	struct slave *sl = &lin->slave;
+
+	sl->elem.time_stamp_ms = sllin_time_stamp_ms();
+
+	SLLIN_DEBUG_ISR_ASSERT(sl->elem.frame.len <= 8);
+
+	sllin_lin_task_queue(index, &sl->elem);
+	sllin_lin_task_notify_isr(index, 1);
+}
+
 SLLIN_RAMFUNC static void on_data_timeout(uint8_t index)
 {
 	struct sam_lin *lin = &sam_lins[index];
@@ -471,12 +488,7 @@ SLLIN_RAMFUNC static void on_data_timeout(uint8_t index)
 		}
 
 		if (rx_pin) {
-			sl->elem.time_stamp_ms = sllin_time_stamp_ms();
-
-			SLLIN_DEBUG_ISR_ASSERT(sl->elem.frame.len <= 8);
-
-			sllin_lin_task_queue(index, &sl->elem);
-			sllin_lin_task_notify_isr(index, 1);
+			queue_frame(index);
 
 			sleep_start(lin);
 		} else {
@@ -539,7 +551,7 @@ SLLIN_RAMFUNC void sam_lin_timer_int(uint8_t index)
 		LOG("*");
 
 		// clean up master part
-		ma->proto_step = MASTER_PROTO_STEP_FINISHED;
+		__atomic_store_n(&ma->proto_step, MASTER_PROTO_STEP_FINISHED, __ATOMIC_RELAXED);
 		s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 
 		LOG("ch%u sof timeout rx=%u\n", index, rx_pin);
@@ -553,10 +565,11 @@ SLLIN_RAMFUNC void sam_lin_timer_int(uint8_t index)
 	case TIMER_TYPE_BREAK: {
 		// drive pin through UART
 		PORT->Group[sercom_rx_pin_group].PINCFG[sercom_rx_pin-1].reg = PORT_PINCFG_PMUXEN;
+		LOG("/");
 
 
 		if (unlikely(ma->pid == MASTER_PROTO_TX_BREAK_ONLY_PID)) {
-			ma->proto_step = MASTER_PROTO_STEP_FINISHED;
+			__atomic_store_n(&ma->proto_step, MASTER_PROTO_STEP_FINISHED, __ATOMIC_RELAXED);
 			// start sof timer
 			lin->timer->COUNT16.CC[0].reg = lin->sof_timeout_us;
 			lin->timer_type = TIMER_TYPE_SOF;
@@ -569,7 +582,7 @@ SLLIN_RAMFUNC void sam_lin_timer_int(uint8_t index)
 		}
 	} break;
 	case TIMER_TYPE_HIGH: {
-		ma->proto_step = MASTER_PROTO_STEP_TX_SYNC;
+		__atomic_store_n(&ma->proto_step, MASTER_PROTO_STEP_TX_SYNC, __ATOMIC_RELAXED);
 		s->USART.INTENSET.reg = SERCOM_USART_INTENSET_DRE;
 		s->USART.DATA.reg = 0x55;
 
@@ -594,6 +607,7 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 	uint8_t intflag = s->USART.INTFLAG.reg;
 	uint8_t status = s->USART.STATUS.reg;
 	const uint8_t BREAK_INT_FLAGS = SERCOM_USART_INTFLAG_RXC | SERCOM_USART_INTFLAG_ERROR;
+	uint_least8_t master_proto_step = __atomic_load_n(&ma->proto_step, __ATOMIC_ACQUIRE);
 
 	// LOG("ch%u INTFLAG=%x\n", index, intflag);
 
@@ -613,14 +627,16 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 	// }
 
 
-	switch (ma->proto_step) {
+	switch (master_proto_step) {
 	case MASTER_PROTO_STEP_TX_SYNC:
 		if (intflag & SERCOM_USART_INTFLAG_DRE) {
 			intflag &= ~SERCOM_USART_INTFLAG_DRE;
 
 			s->USART.INTENCLR.reg = SERCOM_USART_INTENCLR_DRE;
 			s->USART.DATA.reg = ma->pid;
-			ma->proto_step = MASTER_PROTO_STEP_FINISHED;
+
+			master_proto_step = MASTER_PROTO_STEP_FINISHED;
+			__atomic_store_n(&ma->proto_step, master_proto_step, __ATOMIC_RELAXED);
 
 			// LOG("tx pid=%x\n", ma->pid);
 		}
@@ -639,7 +655,7 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 			status &= ~SERCOM_USART_STATUS_FERR;
 
 
-			if (ma->proto_step == MASTER_PROTO_STEP_FINISHED) {
+			if (master_proto_step == MASTER_PROTO_STEP_FINISHED) {
 				// Restart the timer in case the BREAK wasn't sent by this device.
 				// Technically the SOF timeout is too long but if we are lenient here,
 				// we don't have to reconfigure the timer.
@@ -650,7 +666,7 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 			} else {
 				// wait for pull down timer to expire before pulling up
 				lin_cleanup_master_tx(lin, SLAVE_PROTO_STEP_RX_SYNC);
-				LOG(".");
+				LOG("_");
 			}
 		}
 	}
@@ -675,20 +691,8 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
 			uint8_t const id = sllin_pid_to_id(rx_byte);
 			uint8_t const pid = sllin_id_to_pid(id);
-			uint64_t const bit = UINT64_C(1) << id;
-			bool respond = false;
-
-			sam_timer_cleanup_begin(lin);
 
 			sam_uart_rx_toggle(lin);
-			LOG("I");
-
-
-			if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_AWAKE, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
-				LOG("ch%u awake\n", index);
-			}
-
-			// LOG("ch%u PID=%x baud=%x frac=%x\n", index, rx_byte, s->USART.BAUD.reg & 0x1fff, s->USART.BAUD.reg >> 13);
 
 			sl->elem.frame.id |= id;
 
@@ -699,27 +703,49 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 			// clear out flag for PID
 			intflag &= ~SERCOM_USART_INTFLAG_RXC;
 
-			// resonse enabled?
-			respond = (sl->slave_frame_enabled & bit) == bit;
+			if (likely(master_proto_step == MASTER_PROTO_STEP_FINISHED)) {
+				uint64_t const bit = UINT64_C(1) << id;
+				bool respond = false;
 
-			// setup data timer
-			sam_timer_cleanup_end(lin);
-			lin->timer_type = TIMER_TYPE_DATA;
-			lin->timer->COUNT16.CC[0].reg = sl->data_timeout_us;
+				sam_timer_cleanup_begin(lin);
+				LOG("I");
 
-			// here we know the timer is stopped
-			lin->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
 
-			if (respond) {
-				SLLIN_DEBUG_ISR_ASSERT(fd->len[id] >= 0 && fd->len[id] <= 8);
+				if (lin_int_update_bus_status(index, SLLIN_ID_FLAG_BUS_STATE_AWAKE, SLLIN_ID_FLAG_BUS_ERROR_NONE)) {
+					LOG("ch%u awake\n", index);
+				}
 
-				s->USART.INTENSET.reg = SERCOM_USART_INTENSET_DRE;
-				sl->slave_proto_step = SLAVE_PROTO_STEP_TX_DATA;
+				// LOG("ch%u PID=%x baud=%x frac=%x\n", index, rx_byte, s->USART.BAUD.reg & 0x1fff, s->USART.BAUD.reg >> 13);
 
-				goto tx;
+				// resonse enabled?
+				respond = (sl->slave_frame_enabled & bit) == bit;
+
+				// setup data timer
+				sam_timer_cleanup_end(lin);
+				lin->timer_type = TIMER_TYPE_DATA;
+				lin->timer->COUNT16.CC[0].reg = sl->data_timeout_us;
+
+				// here we know the timer is stopped
+				lin->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+
+				if (respond) {
+					SLLIN_DEBUG_ISR_ASSERT(fd->len[id] >= 0 && fd->len[id] <= 8);
+
+					s->USART.INTENSET.reg = SERCOM_USART_INTENSET_DRE;
+					sl->slave_proto_step = SLAVE_PROTO_STEP_TX_DATA;
+
+					goto tx;
+				} else {
+					sl->slave_proto_step = SLAVE_PROTO_STEP_RX_DATA;
+					sl->elem.frame.id |= SLLIN_ID_FLAG_FRAME_FOREIGN;
+				}
 			} else {
-				sl->slave_proto_step = SLAVE_PROTO_STEP_RX_DATA;
-				sl->elem.frame.id |= SLLIN_ID_FLAG_FRAME_FOREIGN;
+				// Our master process is running while we are receiving a PID,
+				// This happens when multiple masters are on the bus.
+				// Report a short frame.
+				LOG("i");
+				queue_frame(index);
+				lin_cleanup_master_tx(lin, SLAVE_PROTO_STEP_RX_BREAK);
 			}
 		}
 		break;
@@ -750,29 +776,38 @@ tx:
 	case SLAVE_PROTO_STEP_RX_DATA:
 rx:
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
-			SLLIN_DEBUG_ISR_ASSERT(TIMER_TYPE_DATA == lin->timer_type);
-			SLLIN_DEBUG_ISR_ASSERT(lin->timer->COUNT16.CC[0].reg == lin->slave.data_timeout_us);
-			// reset data timer TC_INTFLAG_OVF can happen if we debug log
-			SLLIN_DEBUG_ISR_ASSERT(!(lin->timer->COUNT16.INTFLAG.reg & (TC_INTFLAG_ERR)));
+			if (likely(master_proto_step == MASTER_PROTO_STEP_FINISHED)) {
+				SLLIN_DEBUG_ISR_ASSERT(TIMER_TYPE_DATA == lin->timer_type);
+				SLLIN_DEBUG_ISR_ASSERT(lin->timer->COUNT16.CC[0].reg == lin->slave.data_timeout_us);
+				// reset data timer TC_INTFLAG_OVF can happen if we debug log
+				SLLIN_DEBUG_ISR_ASSERT(!(lin->timer->COUNT16.INTFLAG.reg & (TC_INTFLAG_ERR)));
 
-			sam_timer_start_or_restart_begin(lin);
+				sam_timer_start_or_restart_begin(lin);
 
-			sam_uart_rx_toggle(lin);
-			LOG("R");
+				sam_uart_rx_toggle(lin);
+				LOG("R");
 
 
-			// LOG("ch%u RX=%x\n", index, rx_byte);
-			if (sl->slave_rx_offset < 8) {
-				sl->elem.frame.data[sl->elem.frame.len++] = rx_byte;
-			} else if (sl->slave_rx_offset == 8) {
-				sl->elem.frame.crc = rx_byte;
+				// LOG("ch%u RX=%x\n", index, rx_byte);
+				if (sl->slave_rx_offset < 8) {
+					sl->elem.frame.data[sl->elem.frame.len++] = rx_byte;
+				} else if (sl->slave_rx_offset == 8) {
+					sl->elem.frame.crc = rx_byte;
+				} else {
+					// too much data
+				}
+
+				++sl->slave_rx_offset;
+
+				sam_timer_start_or_restart_end(lin);
 			} else {
-				// too much data
+				// Our master process is running while we are receiving data.
+				// This happens when multiple masters are on the bus.
+				// Report what we've got so far.
+				LOG("r");
+				queue_frame(index);
+				lin_cleanup_master_tx(lin, SLAVE_PROTO_STEP_RX_BREAK);
 			}
-
-			++sl->slave_rx_offset;
-
-			sam_timer_start_or_restart_end(lin);
 		}
 		break;
 	}
