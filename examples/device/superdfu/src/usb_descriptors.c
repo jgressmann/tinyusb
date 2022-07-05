@@ -9,7 +9,7 @@
 #include <usb_descriptors.h>
 #include <sam.h>
 #include <mcu.h>
-#include <version.h>
+#include <superdfu_version.h>
 
 #ifndef VID
 #	error Define VID

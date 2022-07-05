@@ -18,7 +18,7 @@
 #include <dfu_ram.h>
 #include <dfu_app.h>
 #include <dfu_debug.h>
-#include <version.h>
+#include <superdfu_version.h>
 #include <sam_crc32.h>
 
 #ifndef SUPERDFU_APP_TAG_PTR_OFFSET
