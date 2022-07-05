@@ -13,8 +13,6 @@
 #define CRC32E_FAILED       -2
 #define CRC32E_UNLOCKED     -3
 
-#define CRC32E_FLAG_UNLOCK 0x1
-
 #ifndef CRC32_FUNC
 	#define CRC32_FUNC
 #endif
