@@ -103,6 +103,7 @@ SLLIN_RAMFUNC static inline void lin_cleanup_master_tx(struct sam_lin *lin, uint
 	sl->slave_rx_offset = 0;
 	sl->elem.frame.id = 0;
 	sl->elem.frame.len = 0;
+	sl->elem.frame.crc = 0;
 }
 
 #define lin_cleanup_full(lin, slave_proto_step) \
@@ -474,20 +475,30 @@ SLLIN_RAMFUNC static void on_data_timeout(uint8_t index)
 	default: {
 		bool rx_pin = true;
 
-		if (sl->slave_rx_offset) {
-			if (sl->slave_rx_offset < 9) {
-				// attempt to reconstruct crc
-				sl->elem.frame.crc = sl->elem.frame.data[--sl->elem.frame.len];
-			} else if (sl->slave_rx_offset > 9) {
-				sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_TRAILING;
-			}
-
-			sl->elem.frame.id |= sl->elem.frame.crc << SLLIN_ID_FLAG_CRC_SHIFT;
-		} else {
+		switch (sl->slave_rx_offset) {
+		case 0:
 			rx_pin = (PORT->Group[sercom_rx_pin_group].IN.reg & (UINT32_C(1) << sercom_rx_pin)) != 0;
+			break;
+		case 1:
+		case 2:
+		case 3:
+		case 4:
+		case 5:
+		case 6:
+		case 7:
+		case 8:
+			sl->elem.frame.crc = sl->elem.frame.data[--sl->elem.frame.len];
+			break;
+		case 9:
+			break;
+		default:
+			sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_TRAILING;
+			break;
 		}
 
-		if (rx_pin) {
+		sl->elem.frame.id |= sl->elem.frame.crc << SLLIN_ID_FLAG_CRC_SHIFT;
+
+		if (likely(rx_pin)) {
 			queue_frame(index);
 
 			sleep_start(lin);
@@ -675,6 +686,8 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 	case SLAVE_PROTO_STEP_RX_SYNC: {
 		if (intflag & SERCOM_USART_INTFLAG_RXC) {
 			sam_uart_rx_toggle(lin);
+
+			intflag &= ~SERCOM_USART_INTFLAG_RXC;
 
 			if (unlikely(0x55 != rx_byte)) {
 				sl->elem.frame.id |= SLLIN_ID_FLAG_LIN_ERROR_SYNC;
