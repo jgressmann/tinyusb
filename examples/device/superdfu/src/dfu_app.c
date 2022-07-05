@@ -16,10 +16,9 @@
 
 
 
-DFU_APP_FUNC int dfu_app_tag_validate_tag(struct dfu_app_tag const *tag)
+DFU_APP_FUNC int dfu_app_tag_validate_tag(struct dfu_app_tag const *tag, uint32_t *tag_crc)
 {
 	int error;
-	uint32_t crc;
 
 	if (memcmp(DFU_APP_TAG_MAGIC_STRING, tag->tag_magic, sizeof(tag->tag_magic))) {
 		// magic mismatch
@@ -39,24 +38,23 @@ DFU_APP_FUNC int dfu_app_tag_validate_tag(struct dfu_app_tag const *tag)
 	memcpy(&check_tag, tag, sizeof(check_tag));
 	check_tag.tag_crc = 0;
 
-	error = sam_crc32((uint32_t)&check_tag, sizeof(check_tag), &crc);
+	error = sam_crc32((uint32_t)&check_tag, sizeof(check_tag), tag_crc);
 	if (error) {
-		return error;
+		return DFU_APP_ERROR_CRC_CALC_FAILED;
 	}
 
-	if (crc != tag->tag_crc) {
+	if (*tag_crc != tag->tag_crc) {
 		return DFU_APP_ERROR_CRC_APP_TAG_MISMATCH;
 	}
 
 	return DFU_APP_ERROR_NONE;
 }
 
-int dfu_app_tag_validate_app(struct dfu_app_tag const *tag)
+int dfu_app_tag_validate_app(struct dfu_app_tag const *tag, uint32_t *tag_crc, uint32_t *app_crc)
 {
 	int error;
-	uint32_t crc;
 
-	error = dfu_app_tag_validate_tag(tag);
+	error = dfu_app_tag_validate_tag(tag, tag_crc);
 	if (error) {
 		return error;
 	}
@@ -68,12 +66,12 @@ int dfu_app_tag_validate_app(struct dfu_app_tag const *tag)
 		return DFU_APP_ERROR_INVALID_SIZE;
 	}
 
-	error = sam_crc32(SUPERDFU_BOOTLOADER_SIZE, tag->app_size, &crc);
+	error = sam_crc32(SUPERDFU_BOOTLOADER_SIZE, tag->app_size, app_crc);
 	if (error) {
-		return error;
+		return DFU_APP_ERROR_CRC_CALC_FAILED;
 	}
 
-	if (crc != tag->app_crc) {
+	if (*app_crc != tag->app_crc) {
 		return DFU_APP_ERROR_CRC_APP_DATA_MISMATCH;
 	}
 

@@ -92,12 +92,12 @@ _Static_assert(DFU_APP_TAG_SIZE == sizeof(struct dfu_app_tag), "structure size m
 /**
  * Validate the dfu app tag
  */
-DFU_APP_FUNC int dfu_app_tag_validate_tag(struct dfu_app_tag const *tag);
+DFU_APP_FUNC int dfu_app_tag_validate_tag(struct dfu_app_tag const *tag, uint32_t *tag_crc);
 
 /**
  * Validate the dfu app tag and the application
  */
-int dfu_app_tag_validate_app(struct dfu_app_tag const *tag);
+int dfu_app_tag_validate_app(struct dfu_app_tag const *tag, uint32_t *tag_crc, uint32_t *app_crc);
 
 /**
  * Disables the bootloader watchdog

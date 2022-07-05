@@ -519,8 +519,9 @@ int main(void)
 			((uintptr_t)dfu_app_tag_ptr) < dfu.rom_size &&
 			((uintptr_t)dfu_app_tag_ptr) + DFU_APP_TAG_SIZE <= dfu.rom_size
 			)) {
+			uint32_t tag_crc, app_crc;
 			LOG(NAME " checking app tag @ %p\n", dfu_app_tag_ptr);
-			error = dfu_app_tag_validate_app(dfu_app_tag_ptr);
+			error = dfu_app_tag_validate_app(dfu_app_tag_ptr, &tag_crc, &app_crc);
 			if (error) {
 				should_start_app = false;
 
@@ -538,10 +539,10 @@ int main(void)
 					LOG(NAME " crc calc failed\n");
 					break;
 				case DFU_APP_ERROR_CRC_APP_TAG_MISMATCH:
-					LOG(NAME " app tag crc verification failed %08lx\n", dfu_app_tag_ptr->tag_crc);
+					LOG(NAME " app tag crc verification failed: stored=%08lx computed=%08lx\n", dfu_app_tag_ptr->tag_crc, tag_crc);
 					break;
 				case DFU_APP_ERROR_CRC_APP_DATA_MISMATCH:
-					LOG(NAME " app data crc verification failed %08lx\n", dfu_app_tag_ptr->app_crc);
+					LOG(NAME " app data crc verification failed: stored=%08lx computed=%08lx\n", dfu_app_tag_ptr->app_crc, app_crc);
 					break;
 				default:
 					LOG(NAME " unknown error %d\n", error);
@@ -708,8 +709,9 @@ void tud_dfu_download_cb(uint8_t alt, uint16_t block_num, uint8_t const* data, u
 	(void) block_num;
 
 	if (!dfu.tag_stripped && dfu.block_offset >= DFU_APP_TAG_SIZE) {
+		uint32_t tag_crc;
 		struct dfu_app_tag *tag = (struct dfu_app_tag *)dfu.block_buffer;
-		int error = dfu_app_tag_validate_tag(tag);
+		int error = dfu_app_tag_validate_tag(tag, &tag_crc);
 
 		if (unlikely(error)) {
 			LOG("> invalid dfu app header error %d\n", error);
