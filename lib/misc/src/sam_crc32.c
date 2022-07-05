@@ -50,12 +50,27 @@ CRC32_FUNC int sam_crc32_update(uint32_t addr, uint32_t bytes,  uint32_t *inout_
 
 	// LOG("DSU->ADDR.bit.ADDR %#08lx\n", DSU->ADDR.bit.ADDR);
 
+#if defined(__SAMD21G16A__)
+	// Revision A-D can´t compute from RAM without workaround,
+	// see DS80000760D-page 15
+	if (DSU->DID.bit.REVISION < 4) {
+		*((volatile unsigned int*) 0x41007058) &= ~0x30000UL;
+	}
+#endif
 
 	// start computation
 	DSU->CTRL.bit.CRC = 1;
 
 	while (!DSU->STATUSA.bit.DONE);
 	DSU->STATUSA.bit.DONE = 1;
+
+#if defined(__SAMD21G16A__)
+	// Revision A-D can´t compute from RAM without workaround,
+	// see DS80000760D-page 15
+	if (DSU->DID.bit.REVISION < 4) {
+		*((volatile unsigned int*) 0x41007058) |= 0x20000UL;
+	}
+#endif
 
 	if (DSU->STATUSA.bit.BERR) {
 		DSU->STATUSA.bit.BERR = DSU->STATUSA.bit.BERR;
