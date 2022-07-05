@@ -185,7 +185,8 @@ static inline void lin_init_once(void)
 	PORT->Group[0].WRCONFIG.reg =
 		PORT_WRCONFIG_WRPINCFG |
 		PORT_WRCONFIG_WRPMUX |
-		PORT_WRCONFIG_PMUX(3) |    /* function D */
+		PORT_WRCONFIG_PMUX(2) |    /* function C */
+		PORT_WRCONFIG_INEN |
 		PORT_WRCONFIG_PINMASK(0x0300) | /* PA08, PA9 */
 		PORT_WRCONFIG_PMUXEN;
 
