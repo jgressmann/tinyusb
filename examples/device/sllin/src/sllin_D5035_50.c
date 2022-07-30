@@ -181,6 +181,7 @@ static inline void clock_init(void)
 		GCLK_GENCTRL_IDC;
 	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
 
+#if SUPERDFU_APP
 	// 1kHz on GCLK3
 	GCLK->GENCTRL[3].reg =
 		GCLK_GENCTRL_DIV(32) |	/* 32.768Hz -> ~1kHz */
@@ -189,6 +190,7 @@ static inline void clock_init(void)
 		GCLK_GENCTRL_SRC_OSCULP32K |
 		GCLK_GENCTRL_IDC;
 	while(1 == GCLK->SYNCBUSY.bit.GENCTRL3); /* wait for the synchronization between clock domains to be complete */
+#endif
 }
 
 static inline void uart_init(void)
