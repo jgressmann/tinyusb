@@ -135,49 +135,51 @@ extern void sllin_board_leds_on_unsafe(void)
 
 static inline void clock_init(void)
 {
-	// /* AUTOWS is enabled by default in REG_NVMCTRL_CTRLA - no need to change the number of wait states when changing the core clock */
+	/* NOTE: cyrstal or oscillator don't seem to be necessary to run the device */
 
-	// /* We assume we are running the chip in default settings.
-	//  * This means we are running off of the 48 MHz FLL.
-	//  */
+	/* AUTOWS is enabled by default in REG_NVMCTRL_CTRLA - no need to change the number of wait states when changing the core clock */
 
-	// /* configure XOSC0 for a 16MHz crystal  / oscillator connected to XIN0/XOUT0 */
-	// OSCCTRL->XOSCCTRL[0].reg =
-	// 	OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
-	// 	OSCCTRL_XOSCCTRL_RUNSTDBY |
-	// 	OSCCTRL_XOSCCTRL_ENALC |
-	// 	OSCCTRL_XOSCCTRL_IMULT(4) |
-	// 	OSCCTRL_XOSCCTRL_IPTAT(3) |
-	// 	OSCCTRL_XOSCCTRL_XTALEN |
-	// 	OSCCTRL_XOSCCTRL_ENABLE;
-	// while(0 == OSCCTRL->STATUS.bit.XOSCRDY0);
+	/* We assume we are running the chip in default settings.
+	 * This means we are running off of the 48 MHz FLL.
+	 */
 
-	// /* pre-scaler = 8, input = XOSC0, output 2 MHz, output = 96 MHz (>= 96 MHz DS60001507E, page 763) */
-	// OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC0_Val);
-	// OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(47);
-	// OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
-	// while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
+	/* configure XOSC0 for a 16MHz crystal  / oscillator connected to XIN0/XOUT0 */
+	OSCCTRL->XOSCCTRL[0].reg =
+		OSCCTRL_XOSCCTRL_STARTUP(6) |    // 1,953 ms
+		OSCCTRL_XOSCCTRL_RUNSTDBY |
+		OSCCTRL_XOSCCTRL_ENALC |
+		OSCCTRL_XOSCCTRL_IMULT(4) |
+		OSCCTRL_XOSCCTRL_IPTAT(3) |
+		OSCCTRL_XOSCCTRL_XTALEN |
+		OSCCTRL_XOSCCTRL_ENABLE;
+	while(0 == OSCCTRL->STATUS.bit.XOSCRDY0);
 
-	// /* 48 MHz core clock */
-	// GCLK->GENCTRL[0].reg =
-	// 	GCLK_GENCTRL_DIV(2) |
-	// 	GCLK_GENCTRL_RUNSTDBY |
-	// 	GCLK_GENCTRL_GENEN |
-	// 	GCLK_GENCTRL_SRC_DPLL0 |  /* DPLL0 */
-	// 	GCLK_GENCTRL_IDC;
-	// while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
+	/* pre-scaler = 8, input = XOSC0, output 2 MHz, output = 96 MHz (>= 96 MHz DS60001507E, page 763) */
+	OSCCTRL->Dpll[0].DPLLCTRLB.reg = OSCCTRL_DPLLCTRLB_DIV(3) | OSCCTRL_DPLLCTRLB_REFCLK(OSCCTRL_DPLLCTRLB_REFCLK_XOSC0_Val);
+	OSCCTRL->Dpll[0].DPLLRATIO.reg = OSCCTRL_DPLLRATIO_LDRFRAC(0x0) | OSCCTRL_DPLLRATIO_LDR(47);
+	OSCCTRL->Dpll[0].DPLLCTRLA.reg = OSCCTRL_DPLLCTRLA_RUNSTDBY | OSCCTRL_DPLLCTRLA_ENABLE;
+	while(0 == OSCCTRL->Dpll[0].DPLLSTATUS.bit.CLKRDY); /* wait for the PLL0 to be ready */
 
-	// /* Here we are running from the 48 MHz oscillator clock */
+	/* 48 MHz core clock */
+	GCLK->GENCTRL[0].reg =
+		GCLK_GENCTRL_DIV(2) |
+		GCLK_GENCTRL_RUNSTDBY |
+		GCLK_GENCTRL_GENEN |
+		GCLK_GENCTRL_SRC_DPLL0 |  /* DPLL0 */
+		GCLK_GENCTRL_IDC;
+	while(1 == GCLK->SYNCBUSY.bit.GENCTRL0); /* wait for the synchronization between clock domains to be complete */
+
+	/* Here we are running from the 48 MHz oscillator clock */
 
 
 	SystemCoreClock = CONF_CPU_FREQUENCY;
 
 	// 16MHz on GCLK2
 	GCLK->GENCTRL[2].reg =
-		GCLK_GENCTRL_DIV(3) |	/* 48Mhz -> 16MHz */
+		GCLK_GENCTRL_DIV(6) |	/* 96Mhz -> 16MHz */
 		GCLK_GENCTRL_RUNSTDBY |
 		GCLK_GENCTRL_GENEN |
-		GCLK_GENCTRL_SRC_DFLL |
+		GCLK_GENCTRL_SRC_DPLL0 |
 		GCLK_GENCTRL_IDC;
 	while(1 == GCLK->SYNCBUSY.bit.GENCTRL2); /* wait for the synchronization between clock domains to be complete */
 
