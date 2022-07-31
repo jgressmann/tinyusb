@@ -7,12 +7,12 @@
 #include "drv_usb_hw.h"
 #include "drv_usb_dev.h"
 
-#include "bsp/board.h"
+#include <bsp/board.h>
+#include <gd32c10x.h>
 
 #if !defined(HWREV)
 # error Define "HWREV"
 #endif
-
 
 //--------------------------------------------------------------------+
 // Forward USB interrupt events to TinyUSB IRQ Handler
@@ -24,12 +24,57 @@ void USBFS_IRQHandler(void) { tud_int_handler(0); }
 // MACRO TYPEDEF CONSTANT ENUM
 //--------------------------------------------------------------------+
 
-#define USB_NO_VBUS_PIN
 
-// According to GD32VF103 user manual clock tree:
-// Systick clock = AHB clock / 4.
-#define TIMER_TICKS         ((SystemCoreClock / 4) / 1000)
+/* The board has a 16MHz external crystal
+ * Configure for 120 MHz core clock, 48 MHz USB clock.
+ */
+void board_init_xtal(void)
+{
+	/* CFG0:
+	 * - AHB div by 1 => 120 MHz
+	 * - APB1 div by 2 => 60 MHz (whch is max allowd for bus)
+	 * - APB2 div by 1 => 120 MHz (whch is max allowd for bus)
+	 * - USB prediv to 2,5 (120->48)
+	 * - PLL multiplcation factor to 15 (8->120)
+	 * - PLL from XTAL or IRC48M
+	 * - PREDV0 to 2 to get 8 MHz out of 16 MHz xtal
+	 */
+	RCU_CFG0 =
+		(RCU_CFG0 & ~(RCU_CFG0_AHBPSC | RCU_CFG0_APB1PSC | RCU_CFG0_APB2PSC | RCU_CFG0_USBFSPSC_2 | RCU_CFG0_USBFSPSC | RCU_CFG0_PLLMF | RCU_CFG0_PLLMF_4 | RCU_CFG0_PLLSEL)) |
+		(RCU_AHB_CKSYS_DIV1 | RCU_APB1_CKAHB_DIV2 | RCU_APB2_CKAHB_DIV1 | RCU_CKUSB_CKPLL_DIV2_5 | RCU_PLL_MUL8 | RCU_PLLSRC_HXTAL_IRC48M);
 
+
+	/* CFG1:
+	 * - PREDV0 to 2 to get 8 MHz out of 16 MHz xtal
+	 * - select XTAL as PLL input
+	 */
+	RCU_CFG1 =
+		(RCU_CFG1 & ~(RCU_CFG1_PREDV0 | RCU_CFG1_PREDV0SEL | RCU_CFG1_PLLPRESEL)) |
+		(RCU_PREDV0_DIV2 | RCU_PREDV0SRC_HXTAL_IRC48M | RCU_PLLPRESRC_HXTAL);
+
+	/* enable crystal, PLL */
+	RCU_CTL |= RCU_CTL_HXTALEN | RCU_CTL_PLLEN;
+
+	/* wait for crystal, PLL */
+	while ((RCU_CTL_HXTALSTB | RCU_CTL_PLLSTB) != (RCU_CTL & (RCU_CTL_HXTALSTB | RCU_CTL_PLLSTB)));
+
+	/* set wait state for flash to 3 (for 120 MHz), section 2.3.2. Read operations , GD32C10x User Manual */
+	FMC_WS = (FMC_WS & ~(FMC_WS_WSCNT)) | (WS_WSCNT(3));
+
+	/* switch to PLL */
+	RCU_CFG0 =
+		(RCU_CFG0 & ~(RCU_CFG0_SCS)) |
+		(RCU_CKSYSSRC_PLL);
+
+
+	/* wait for clock switch */
+	while (RCU_SCSS_PLL != (RCU_CFG0 & RCU_CFG0_SCSS));
+}
+
+void board_init_uart(void)
+{
+
+}
 
 void uart_send_buffer(uint8_t const *text, size_t len)
 {
@@ -49,12 +94,54 @@ void uart_send_str(const char* text)
 
 void board_init(void)
 {
-  /* Disable interrupts during init */
-  __disable_irq();
+
+
+	/* enable GPIO ports A-E */
+	RCU_APB2EN |=
+		RCU_APB2EN_PAEN |
+		RCU_APB2EN_PBEN |
+		RCU_APB2EN_PCEN |
+		RCU_APB2EN_PDEN |
+		RCU_APB2EN_PEEN;
+
+	/* debug LED on PB14, set push-pull output */
+	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(6)) | GPIO_MODE_SET(6, GPIO_MODE_OUT_PP | GPIO_OSPEED_2MHZ);
+
+	GPIO_BOP(GPIOB) = GPIO_BOP_BOP14;
+
+	board_init_xtal();
+
+
 
 #if CFG_TUSB_OS == OPT_OS_NONE
-  SysTick_Config(TIMER_TICKS);
+	/* GD32C10x User Manual, p. 120:
+	 *
+	 * The SysTick calibration value is 15000 and SysTick clock frequency is fixed to HCLK*0.125.
+	 * 1ms SysTick interrupt will be generated when HCLK is configured to 120MHz.
+	 */
+	SysTick_Config(120000);
 #endif
+
+	GPIO_BOP(GPIOB) = GPIO_BOP_CR14;
+
+
+	// /* configure USB pins */
+	// GPIO_CTL1)GPIOA) = )GPIO_CTL1)GPIOA) & ~(GPIO_MODE_MASK(2) | GPIO_MODE_MASK(3))) | GPIO_MODE_SET(6, GPIO_MODE_AF_PP | GPIO_OSPEED_50MHZ);
+
+	/* reset USB */
+	RCU_AHBRST |= RCU_AHBRST_USBFSRST;
+
+	/* enable USB clock */
+	RCU_AHBEN |= RCU_AHBEN_USBFSEN;
+
+
+
+
+
+//   /* Disable interrupts during init */
+//   __disable_irq();
+
+
 
 //   rcu_periph_clock_enable(RCU_GPIOA);
 //   rcu_periph_clock_enable(RCU_GPIOB);
@@ -104,7 +191,7 @@ void board_init(void)
 // #endif
 
   /* Enable interrupts globaly */
-  __enable_irq();
+//   __enable_irq();
 }
 
 
@@ -115,7 +202,7 @@ void board_init(void)
 
 void board_led_write(bool state)
 {
-	// gpio_set_pin_level(LED_PIN, state);
+	GPIO_BOP(GPIOB) = BIT(14 + state * 16);
 }
 
 uint32_t board_button_read(void)

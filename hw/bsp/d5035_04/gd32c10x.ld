@@ -9,12 +9,14 @@ OUTPUT_ARCH(arm)
 SEARCH_DIR(.)
 
 VECTOR_TABLE_ALIGNMENT = 0x200; /* vector table must at least be 512-byte aligned */
-STACK_SIZE = 0x200; /* 0x100 seems to be to little */
+STACK_SIZE = 0x400; /* 0x100 seems to be to little */
 
 /* Memory Spaces Definitions */
 MEMORY
 {
-	bootloader (rx) : ORIGIN = 0x1FFFB000, LENGTH = 18K
+	/* bootloader (rx) : ORIGIN = 0x1FFFB000, LENGTH = 18K */
+	/* ROM @ 0x08000000 mapped to 0x00000000 when selected as boot source */
+	/* rom        (rx) : ORIGIN = 0x00000000, LENGTH = 128K */
 	rom        (rx) : ORIGIN = 0x08000000, LENGTH = 128K
 	ram       (rwx) : ORIGIN = 0x20000000, LENGTH = 32K
 }
@@ -71,7 +73,6 @@ SECTIONS
 	} > rom
 
 
-
 	/* .ARM.exidx is sorted, so has to go in its own output section.  */
 	PROVIDE_HIDDEN (__exidx_start = .);
 	.ARM.exidx :
@@ -79,16 +80,6 @@ SECTIONS
 	  *(.ARM.exidx* .gnu.linkonce.armexidx.*)
 	} > rom
 	PROVIDE_HIDDEN (__exidx_end = .);
-
-	/* Must align properly so
-	 * - CRC computation reads full words
-	 * - that the app tag starts at the beginning of the section (for simple processing)
-	 */
-	. = ALIGN(4);
-
-	.dfutag : {
-		KEEP (*(.dfutag));
-	} > rom
 
 	. = ALIGN(4);
 	_etext = .;

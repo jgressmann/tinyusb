@@ -19,8 +19,73 @@ extern uint32_t _ezero;
 extern uint32_t _sstack;
 extern uint32_t _estack;
 
+#define RCU_MODIFY(__delay)     do{                                     \
+                                    volatile uint32_t i;                \
+                                    if(0 != __delay){                   \
+                                        RCU_CFG0 |= RCU_AHB_CKSYS_DIV2; \
+                                        for(i=0; i<__delay; i++){       \
+                                        }                               \
+                                        RCU_CFG0 |= RCU_AHB_CKSYS_DIV4; \
+                                        for(i=0; i<__delay; i++){       \
+                                        }                               \
+                                    }                                   \
+                                }while(0)
+
 int main(void);
 
+#if 0
+
+#define HARDFAULT_HANDLING_ASM(_x)               \
+  __asm volatile(                                \
+      "tst lr, #4 \n"                            \
+      "ite eq \n"                                \
+      "mrseq r0, msp \n"                         \
+      "mrsne r0, psp \n"                         \
+      "b my_fault_handler_c \n"                  \
+                                                 )
+
+// NOTE: If you are using CMSIS, the registers can also be
+// accessed through CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk
+#define HALT_IF_DEBUGGING()                              \
+  do {                                                   \
+    if ((*(volatile uint32_t *)0xE000EDF0) & (1 << 0)) { \
+      __asm("bkpt 1");                                   \
+    }                                                    \
+} while (0)
+
+typedef struct __attribute__((packed)) ContextStateFrame {
+  uint32_t r0;
+  uint32_t r1;
+  uint32_t r2;
+  uint32_t r3;
+  uint32_t r12;
+  uint32_t lr;
+  uint32_t return_address;
+  uint32_t xpsr;
+} sContextStateFrame;
+
+
+
+// Disable optimizations for this function so "frame" argument
+// does not get optimized away
+__attribute__((optimize("O0")))
+void my_fault_handler_c(sContextStateFrame *frame) {
+  // If and only if a debugger is attached, execute a breakpoint
+  // instruction so we can take a look at what triggered the fault
+  HALT_IF_DEBUGGING();
+
+  // Logic for dealing with the exception. Typically:
+  //  - log the fault which occurred for postmortem analysis
+  //  - If the fault is recoverable,
+  //    - clear errors and return back to Thread Mode
+  //  - else
+  //    - reboot system
+
+  while (1);
+}
+#endif
+
+// __attribute__((optimize("O0")))
 static void Reset_Handler(void)
 {
 	uint32_t *pSrc, *pDest;
@@ -40,16 +105,34 @@ static void Reset_Handler(void)
 		*pDest++ = 0;
 	}
 
+#if (__FPU_PRESENT == 1) && (__FPU_USED == 1)
+    SCB->CPACR |= ((3UL << 10*2)|(3UL << 11*2));  /* set CP10 and CP11 Full Access */
+#endif
+    /* reset the RCU clock configuration to the default reset state */
+    /* Set IRC8MEN bit */
+    RCU_CTL |= RCU_CTL_IRC8MEN;
+
+	RCU_MODIFY(0x50);
+
+    RCU_CFG0 &= ~RCU_CFG0_SCS;
+
+    /* Reset HXTALEN, CKMEN, PLLEN, PLL1EN and PLL2EN bits */
+    RCU_CTL &= ~(RCU_CTL_PLLEN |RCU_CTL_PLL1EN | RCU_CTL_PLL2EN | RCU_CTL_CKMEN | RCU_CTL_HXTALEN);
+    /* disable all interrupts */
+    RCU_INT = 0x00ff0000U;
+
+    /* Reset CFG0 and CFG1 registers */
+    RCU_CFG0 = 0x00000000U;
+    RCU_CFG1 = 0x00000000U;
+
+    /* reset HXTALBPS bit */
+    RCU_CTL &= ~(RCU_CTL_HXTALBPS);
+
+
 	/* Set the vector table base address */
 	pSrc      = (uint32_t *)&_sfixed;
 	SCB->VTOR = ((uint32_t)pSrc & SCB_VTOR_TBLOFF_Msk);
-
-#if __FPU_USED
-	/* Enable FPU */
-	SCB->CPACR |= (0xFu << 20);
 	__DSB();
-	__ISB();
-#endif
 
 	/* Branch to main function */
 	main();
