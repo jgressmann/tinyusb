@@ -24,8 +24,9 @@ void USBFS_IRQHandler(void) { tud_int_handler(0); }
 // MACRO TYPEDEF CONSTANT ENUM
 //--------------------------------------------------------------------+
 //#define CONF_CPU_FREQUENCY 120000000
-//#define CONF_CPU_FREQUENCY 120000000
-#define CONF_CPU_FREQUENCY 8000000
+#define CONF_CPU_FREQUENCY 120000000
+// #define CONF_CPU_FREQUENCY 8000000
+#define CONF_APB2_FREQUENCY 120000000
 #define USART_BAUDRATE 115200
 
 /* The board has a 16MHz external crystal
@@ -33,26 +34,28 @@ void USBFS_IRQHandler(void) { tud_int_handler(0); }
  */
 void board_init_xtal(void)
 {
-	/* CFG0:
-	 * - AHB div by 1 => 120 MHz
-	 * - APB1 div by 2 => 60 MHz (whch is max allowd for bus)
-	 * - APB2 div by 1 => 120 MHz (whch is max allowd for bus)
-	 * - USB prediv to 2,5 (120->48)
-	 * - PLL multiplcation factor to 30 (4->120)
-	 * - PLL from XTAL or IRC48M
-	 */
-	RCU_CFG0 =
-		(RCU_CFG0 & ~(RCU_CFG0_AHBPSC | RCU_CFG0_APB1PSC | RCU_CFG0_APB2PSC | RCU_CFG0_USBFSPSC_2 | RCU_CFG0_USBFSPSC | RCU_CFG0_PLLMF | RCU_CFG0_PLLMF_4 | RCU_CFG0_PLLSEL)) |
-		(RCU_AHB_CKSYS_DIV1 | RCU_APB1_CKAHB_DIV2 | RCU_APB2_CKAHB_DIV1 | RCU_CKUSB_CKPLL_DIV2_5 | RCU_PLL_MUL30 | RCU_PLLSRC_HXTAL_IRC48M);
-
-
 	/* CFG1:
 	 * - PREDV0 to 4 to get 4 MHz out of 16 MHz xtal
 	 * - select XTAL / IRC48M as PLL input
 	 */
 	RCU_CFG1 =
 		(RCU_CFG1 & ~(RCU_CFG1_PREDV0 | RCU_CFG1_PREDV0SEL | RCU_CFG1_PLLPRESEL)) |
-		(RCU_PREDV0_DIV4 | RCU_PREDV0SRC_HXTAL_IRC48M | RCU_PLLPRESRC_HXTAL);
+		(RCU_PREDV0_DIV2 | RCU_PREDV0SRC_HXTAL_IRC48M | RCU_PLLPRESRC_HXTAL);
+
+	/* CFG0:
+	 * - AHB div by 1 => 120 MHz
+	 * - APB1 div by 2 => 60 MHz (which is max allowd for bus)
+	 * - APB2 div by 1 => 120 MHz (which is max allowd for bus)
+	 * - USB prediv to 2,5 (120->48)
+	 * - PLL multiplcation factor to 30 (4->120)
+	 * - PLL from XTAL or IRC48M
+	 */
+	RCU_CFG0 =
+		(RCU_CFG0 & ~(RCU_CFG0_AHBPSC | RCU_CFG0_APB1PSC | RCU_CFG0_APB2PSC | RCU_CFG0_USBFSPSC_2 | RCU_CFG0_USBFSPSC | RCU_CFG0_PLLMF | RCU_CFG0_PLLMF_4 | RCU_CFG0_PLLSEL | RCU_CFG0_PREDV0_LSB)) |
+		(RCU_AHB_CKSYS_DIV1 | RCU_APB1_CKAHB_DIV2 | RCU_APB2_CKAHB_DIV1 | RCU_CKUSB_CKPLL_DIV2_5 | RCU_PLL_MUL30 | RCU_PLLSRC_HXTAL_IRC48M | RCU_CFG0_PREDV0_LSB );
+
+
+
 
 	/* select PLL for USB clock */
 	RCU_ADDCTL =
@@ -93,8 +96,6 @@ void board_init_uart(void)
 	/* configure pin PA9 (USART0_TX) */
 	GPIO_CTL1(GPIOA) = (GPIO_CTL1(GPIOA) & ~GPIO_MODE_MASK(1)) | GPIO_MODE_SET(1, GPIO_MODE_AF_PP | GPIO_OSPEED_50MHZ);
 
-
-
 	 /* disable USART */
 	USART_CTL0(USART0) = 0;
 
@@ -108,17 +109,10 @@ void board_init_uart(void)
 	USART_CTL2(USART0) = 0;
 
 	/* default values */
-	// USART_CTL3(USART0) = USART_CTL3_TINV;
-	// USART_CTL3(USART0) = USART_CTL3_DINV;
-	// USART_CTL3(USART0) = 0;
+	USART_CTL3(USART0) = 0;
 
 	/* baud rate */
-	// uint16_t baud = CONF_CPU_FREQUENCY / (16 * USART_BAUDRATE);
-	// uint16_t frac = CONF_CPU_FREQUENCY / (2 * USART_BAUDRATE) - 8 * baud;
-	// USART_BAUD(USART0) = (baud << 4) | frac;
-
-	// USART_BAUD(USART0) = ((UINT32_C(CONF_CPU_FREQUENCY)) / (UINT32_C(USART_BAUDRATE) * 16)) << 4;
-	USART_BAUD(USART0) = ((UINT32_C(CONF_CPU_FREQUENCY) + UINT32_C(USART_BAUDRATE) / 2)) / (UINT32_C(USART_BAUDRATE));
+	USART_BAUD(USART0) = ((UINT32_C(CONF_APB2_FREQUENCY) + UINT32_C(USART_BAUDRATE) / 2)) / (UINT32_C(USART_BAUDRATE));
 
 	USART_CTL0(USART0) =
 		USART_TRANSMIT_ENABLE |
@@ -151,7 +145,7 @@ void board_init(void)
 	/* debug LED on PB14, set push-pull output */
 	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(6)) | GPIO_MODE_SET(6, GPIO_MODE_OUT_PP | GPIO_OSPEED_2MHZ);
 
-	// board_init_xtal();
+	board_init_xtal();
 
 	// GPIO_BOP(GPIOB) = GPIO_BOP_BOP14;
 
