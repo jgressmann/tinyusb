@@ -29,32 +29,31 @@ void USBFS_IRQHandler(void) { tud_int_handler(0); }
 #define CONF_APB2_FREQUENCY 120000000
 #define USART_BAUDRATE 115200
 
-/* The board has a 16MHz external crystal
+/* The board has a 25Hz external crystal
  * Configure for 120 MHz core clock, 48 MHz USB clock.
  */
 void board_init_xtal(void)
 {
-	/* CFG1:
-	 * - PREDV0 to 4 to get 4 MHz out of 16 MHz xtal
-	 * - select XTAL / IRC48M as PLL input
-	 */
-	RCU_CFG1 =
-		(RCU_CFG1 & ~(RCU_CFG1_PREDV0 | RCU_CFG1_PREDV0SEL | RCU_CFG1_PLLPRESEL)) |
-		(RCU_PREDV0_DIV2 | RCU_PREDV0SRC_HXTAL_IRC48M | RCU_PLLPRESRC_HXTAL);
-
 	/* CFG0:
 	 * - AHB div by 1 => 120 MHz
 	 * - APB1 div by 2 => 60 MHz (which is max allowd for bus)
 	 * - APB2 div by 1 => 120 MHz (which is max allowd for bus)
 	 * - USB prediv to 2,5 (120->48)
-	 * - PLL multiplcation factor to 30 (4->120)
+	 * - PLL multiplcation factor to 24 (5->120)
 	 * - PLL from XTAL or IRC48M
 	 */
 	RCU_CFG0 =
 		(RCU_CFG0 & ~(RCU_CFG0_AHBPSC | RCU_CFG0_APB1PSC | RCU_CFG0_APB2PSC | RCU_CFG0_USBFSPSC_2 | RCU_CFG0_USBFSPSC | RCU_CFG0_PLLMF | RCU_CFG0_PLLMF_4 | RCU_CFG0_PLLSEL | RCU_CFG0_PREDV0_LSB)) |
-		(RCU_AHB_CKSYS_DIV1 | RCU_APB1_CKAHB_DIV2 | RCU_APB2_CKAHB_DIV1 | RCU_CKUSB_CKPLL_DIV2_5 | RCU_PLL_MUL30 | RCU_PLLSRC_HXTAL_IRC48M | RCU_CFG0_PREDV0_LSB );
+		(RCU_AHB_CKSYS_DIV1 | RCU_APB1_CKAHB_DIV2 | RCU_APB2_CKAHB_DIV1 | RCU_CKUSB_CKPLL_DIV2_5 | RCU_PLL_MUL24 | RCU_PLLSRC_HXTAL_IRC48M);
 
 
+	/* CFG1:
+	 * - PREDV0 to 5 to get 5 MHz out of xtal
+	 * - select XTAL / IRC48M as PLL input
+	 */
+	RCU_CFG1 =
+		(RCU_CFG1 & ~(RCU_CFG1_PREDV0 | RCU_CFG1_PREDV0SEL | RCU_CFG1_PLLPRESEL)) |
+		(RCU_PREDV0_DIV5 | RCU_PREDV0SRC_HXTAL_IRC48M | RCU_PLLPRESRC_HXTAL);
 
 
 	/* select PLL for USB clock */
