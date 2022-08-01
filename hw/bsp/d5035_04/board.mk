@@ -12,13 +12,13 @@ CFLAGS += \
 	-mcpu=cortex-m4 \
 	-mfloat-abi=hard \
 	-mfpu=fpv4-sp-d16 \
-	-flto \
 	-nostdlib -nostartfiles \
 	-DCFG_TUSB_MCU=OPT_MCU_GD32C10X \
 	-DDOWNLOAD_MODE=DOWNLOAD_MODE_FLASHXIP \
 	-DGD32C10X -DGD32C103R_START \
 	-DRAMFUNC_SECTION_NAME="\".ramfunc\""
 
+#-flto \
 
 CFLAGS += -Wno-error=undef -Wno-error=type-limits -Wno-error=unused-parameter
 
@@ -30,11 +30,10 @@ CFLAGS += -DHWREV=$(HWREV)
 
 
 SRC_C += \
-	hw/bsp/d5035_04/startup_gd32c10x.c \
 	src/portable/st/synopsys/dcd_synopsys.c \
 	$(CMSIS_GD32C10X_PATH)/Source/system_gd32c10x.c
 
-
+#hw/bsp/d5035_04/startup_gd32c10x.c \
 
 INC += \
 	$(TOP)/$(BOARD_PATH) \
@@ -42,8 +41,11 @@ INC += \
 	$(CMSIS_GD32C10X_PATH)/Include \
 	$(PER_GD32C10X_PATH)/Include \
 	$(USB_GD32C10X_PATH)/driver/Include \
-	$(USB_GD32C10X_PATH)/ustd/common \
 	$(TOP)/$(BOARD_PATH)/mcu/Template
+
+	#\
+	# $(USB_GD32C10X_PATH)/ustd/common \
+
 
 
 

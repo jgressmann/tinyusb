@@ -5,8 +5,10 @@
  */
 
 
-#include "gd32c10x.h"
 #include <stdint.h>
+#include <gd32c10x.h>
+#include "startup_gd32c10x.h"
+
 
 /* Initialize segments */
 extern uint32_t _sfixed;
@@ -86,7 +88,7 @@ void my_fault_handler_c(sContextStateFrame *frame) {
 #endif
 
 // __attribute__((optimize("O0")))
-static void Reset_Handler(void)
+void Reset_Handler(void)
 {
 	uint32_t *pSrc, *pDest;
 
@@ -146,81 +148,162 @@ static void Dummy_Handler(void)
 	for (;;);
 }
 
-#define ISR(x) void x(void) __attribute__((weak, alias("Dummy_Handler")))
 
-ISR(NMI_Handler);
-ISR(HardFault_Handler);
-ISR(MemManage_Handler);
-ISR(BusFault_Handler);
-ISR(UsageFault_Handler);
-ISR(SVC_Handler);
-ISR(DebugMon_Handler);
-ISR(PendSV_Handler);
-ISR(SysTick_Handler);
-ISR(WWDGT_IRQHandler);
-ISR(LVD_IRQHandler);
-ISR(TAMPER_IRQHandler);
-ISR(RTC_IRQHandler);
-ISR(FMC_IRQHandler);
-ISR(RCU_CTC_IRQHandler);
-ISR(EXTI0_IRQHandler);
-ISR(EXTI1_IRQHandler);
-ISR(EXTI2_IRQHandler);
-ISR(EXTI3_IRQHandler);
-ISR(EXTI4_IRQHandler);
-ISR(DMA0_Channel0_IRQHandler);
-ISR(DMA0_Channel1_IRQHandler);
-ISR(DMA0_Channel2_IRQHandler);
-ISR(DMA0_Channel3_IRQHandler);
-ISR(DMA0_Channel4_IRQHandler);
-ISR(DMA0_Channel5_IRQHandler);
-ISR(DMA0_Channel6_IRQHandler);
-ISR(ADC0_1_IRQHandler);
-ISR(CAN0_TX_IRQHandler);
-ISR(CAN0_RX0_IRQHandler);
-ISR(CAN0_RX1_IRQHandler);
-ISR(CAN0_EWMC_IRQHandler);
-ISR(EXTI5_9_IRQHandler);
-ISR(TIMER0_BRK_TIMER8_IRQHandler);
-ISR(TIMER0_UP_TIMER9_IRQHandler);
-ISR(TIMER0_TRG_CMT_TIMER10_IRQHandler);
-ISR(TIMER0_Channel_IRQHandler);
-ISR(TIMER1_IRQHandler);
-ISR(TIMER2_IRQHandler);
-ISR(TIMER3_IRQHandler);
-ISR(I2C0_EV_IRQHandler);
-ISR(I2C0_ER_IRQHandler);
-ISR(I2C1_EV_IRQHandler);
-ISR(I2C1_ER_IRQHandler);
-ISR(SPI0_IRQHandler);
-ISR(SPI1_IRQHandler);
-ISR(USART0_IRQHandler);
-ISR(USART1_IRQHandler);
-ISR(USART2_IRQHandler);
-ISR(EXTI10_15_IRQHandler);
-ISR(RTC_Alarm_IRQHandler);
-ISR(USBFS_WKUP_IRQHandler);
-ISR(TIMER7_BRK_TIMER11_IRQHandler);
-ISR(TIMER7_UP_TIMER12_IRQHandler);
-ISR(TIMER7_TRG_CMT_TIMER13_IRQHandler);
-ISR(TIMER7_Channel_IRQHandler);
-ISR(EXMC_IRQHandler);
-ISR(TIMER4_IRQHandler);
-ISR(SPI2_IRQHandler);
-ISR(UART3_IRQHandler);
-ISR(UART4_IRQHandler);
-ISR(TIMER5_IRQHandler);
-ISR(TIMER6_IRQHandler);
-ISR(DMA1_Channel0_IRQHandler);
-ISR(DMA1_Channel1_IRQHandler);
-ISR(DMA1_Channel2_IRQHandler);
-ISR(DMA1_Channel3_IRQHandler);
-ISR(DMA1_Channel4_IRQHandler);
-ISR(CAN1_TX_IRQHandler);
-ISR(CAN1_RX0_IRQHandler);
-ISR(CAN1_RX1_IRQHandler);
-ISR(CAN1_EWMC_IRQHandler);
-ISR(USBFS_IRQHandler);
+
+#define GD32C10X_ISR(handler) void handler(void) __attribute__((weak, alias("Dummy_Handler")))
+
+GD32C10X_ISR(NMI_Handler);
+GD32C10X_ISR(HardFault_Handler);
+GD32C10X_ISR(MemManage_Handler);
+GD32C10X_ISR(BusFault_Handler);
+GD32C10X_ISR(UsageFault_Handler);
+GD32C10X_ISR(SVC_Handler);
+GD32C10X_ISR(DebugMon_Handler);
+GD32C10X_ISR(PendSV_Handler);
+GD32C10X_ISR(SysTick_Handler);
+GD32C10X_ISR(WWDGT_IRQHandler);
+GD32C10X_ISR(LVD_IRQHandler);
+GD32C10X_ISR(TAMPER_IRQHandler);
+GD32C10X_ISR(RTC_IRQHandler);
+GD32C10X_ISR(FMC_IRQHandler);
+GD32C10X_ISR(RCU_CTC_IRQHandler);
+GD32C10X_ISR(EXTI0_IRQHandler);
+GD32C10X_ISR(EXTI1_IRQHandler);
+GD32C10X_ISR(EXTI2_IRQHandler);
+GD32C10X_ISR(EXTI3_IRQHandler);
+GD32C10X_ISR(EXTI4_IRQHandler);
+GD32C10X_ISR(DMA0_Channel0_IRQHandler);
+GD32C10X_ISR(DMA0_Channel1_IRQHandler);
+GD32C10X_ISR(DMA0_Channel2_IRQHandler);
+GD32C10X_ISR(DMA0_Channel3_IRQHandler);
+GD32C10X_ISR(DMA0_Channel4_IRQHandler);
+GD32C10X_ISR(DMA0_Channel5_IRQHandler);
+GD32C10X_ISR(DMA0_Channel6_IRQHandler);
+GD32C10X_ISR(ADC0_1_IRQHandler);
+GD32C10X_ISR(CAN0_TX_IRQHandler);
+GD32C10X_ISR(CAN0_RX0_IRQHandler);
+GD32C10X_ISR(CAN0_RX1_IRQHandler);
+GD32C10X_ISR(CAN0_EWMC_IRQHandler);
+GD32C10X_ISR(EXTI5_9_IRQHandler);
+GD32C10X_ISR(TIMER0_BRK_TIMER8_IRQHandler);
+GD32C10X_ISR(TIMER0_UP_TIMER9_IRQHandler);
+GD32C10X_ISR(TIMER0_TRG_CMT_TIMER10_IRQHandler);
+GD32C10X_ISR(TIMER0_Channel_IRQHandler);
+GD32C10X_ISR(TIMER1_IRQHandler);
+GD32C10X_ISR(TIMER2_IRQHandler);
+GD32C10X_ISR(TIMER3_IRQHandler);
+GD32C10X_ISR(I2C0_EV_IRQHandler);
+GD32C10X_ISR(I2C0_ER_IRQHandler);
+GD32C10X_ISR(I2C1_EV_IRQHandler);
+GD32C10X_ISR(I2C1_ER_IRQHandler);
+GD32C10X_ISR(SPI0_IRQHandler);
+GD32C10X_ISR(SPI1_IRQHandler);
+GD32C10X_ISR(USART0_IRQHandler);
+GD32C10X_ISR(USART1_IRQHandler);
+GD32C10X_ISR(USART2_IRQHandler);
+GD32C10X_ISR(EXTI10_15_IRQHandler);
+GD32C10X_ISR(RTC_Alarm_IRQHandler);
+GD32C10X_ISR(USBFS_WKUP_IRQHandler);
+GD32C10X_ISR(TIMER7_BRK_TIMER11_IRQHandler);
+GD32C10X_ISR(TIMER7_UP_TIMER12_IRQHandler);
+GD32C10X_ISR(TIMER7_TRG_CMT_TIMER13_IRQHandler);
+GD32C10X_ISR(TIMER7_Channel_IRQHandler);
+GD32C10X_ISR(EXMC_IRQHandler);
+GD32C10X_ISR(TIMER4_IRQHandler);
+GD32C10X_ISR(SPI2_IRQHandler);
+GD32C10X_ISR(UART3_IRQHandler);
+GD32C10X_ISR(UART4_IRQHandler);
+GD32C10X_ISR(TIMER5_IRQHandler);
+GD32C10X_ISR(TIMER6_IRQHandler);
+GD32C10X_ISR(DMA1_Channel0_IRQHandler);
+GD32C10X_ISR(DMA1_Channel1_IRQHandler);
+GD32C10X_ISR(DMA1_Channel2_IRQHandler);
+GD32C10X_ISR(DMA1_Channel3_IRQHandler);
+GD32C10X_ISR(DMA1_Channel4_IRQHandler);
+GD32C10X_ISR(CAN1_TX_IRQHandler);
+GD32C10X_ISR(CAN1_RX0_IRQHandler);
+GD32C10X_ISR(CAN1_RX1_IRQHandler);
+GD32C10X_ISR(CAN1_EWMC_IRQHandler);
+GD32C10X_ISR(USBFS_IRQHandler);
+
+#undef GD32C10X_ISR
+
+// #define ISR(x) void x(void) __attribute__((weak, alias("Dummy_Handler")))
+
+// ISR(NMI_Handler);
+// ISR(HardFault_Handler);
+// ISR(MemManage_Handler);
+// ISR(BusFault_Handler);
+// ISR(UsageFault_Handler);
+// ISR(SVC_Handler);
+// ISR(DebugMon_Handler);
+// ISR(PendSV_Handler);
+// ISR(SysTick_Handler);
+// ISR(WWDGT_IRQHandler);
+// ISR(LVD_IRQHandler);
+// ISR(TAMPER_IRQHandler);
+// ISR(RTC_IRQHandler);
+// ISR(FMC_IRQHandler);
+// ISR(RCU_CTC_IRQHandler);
+// ISR(EXTI0_IRQHandler);
+// ISR(EXTI1_IRQHandler);
+// ISR(EXTI2_IRQHandler);
+// ISR(EXTI3_IRQHandler);
+// ISR(EXTI4_IRQHandler);
+// ISR(DMA0_Channel0_IRQHandler);
+// ISR(DMA0_Channel1_IRQHandler);
+// ISR(DMA0_Channel2_IRQHandler);
+// ISR(DMA0_Channel3_IRQHandler);
+// ISR(DMA0_Channel4_IRQHandler);
+// ISR(DMA0_Channel5_IRQHandler);
+// ISR(DMA0_Channel6_IRQHandler);
+// ISR(ADC0_1_IRQHandler);
+// ISR(CAN0_TX_IRQHandler);
+// ISR(CAN0_RX0_IRQHandler);
+// ISR(CAN0_RX1_IRQHandler);
+// ISR(CAN0_EWMC_IRQHandler);
+// ISR(EXTI5_9_IRQHandler);
+// ISR(TIMER0_BRK_TIMER8_IRQHandler);
+// ISR(TIMER0_UP_TIMER9_IRQHandler);
+// ISR(TIMER0_TRG_CMT_TIMER10_IRQHandler);
+// ISR(TIMER0_Channel_IRQHandler);
+// ISR(TIMER1_IRQHandler);
+// ISR(TIMER2_IRQHandler);
+// ISR(TIMER3_IRQHandler);
+// ISR(I2C0_EV_IRQHandler);
+// ISR(I2C0_ER_IRQHandler);
+// ISR(I2C1_EV_IRQHandler);
+// ISR(I2C1_ER_IRQHandler);
+// ISR(SPI0_IRQHandler);
+// ISR(SPI1_IRQHandler);
+// ISR(USART0_IRQHandler);
+// ISR(USART1_IRQHandler);
+// ISR(USART2_IRQHandler);
+// ISR(EXTI10_15_IRQHandler);
+// ISR(RTC_Alarm_IRQHandler);
+// ISR(USBFS_WKUP_IRQHandler);
+// ISR(TIMER7_BRK_TIMER11_IRQHandler);
+// ISR(TIMER7_UP_TIMER12_IRQHandler);
+// ISR(TIMER7_TRG_CMT_TIMER13_IRQHandler);
+// ISR(TIMER7_Channel_IRQHandler);
+// ISR(EXMC_IRQHandler);
+// ISR(TIMER4_IRQHandler);
+// ISR(SPI2_IRQHandler);
+// ISR(UART3_IRQHandler);
+// ISR(UART4_IRQHandler);
+// ISR(TIMER5_IRQHandler);
+// ISR(TIMER6_IRQHandler);
+// ISR(DMA1_Channel0_IRQHandler);
+// ISR(DMA1_Channel1_IRQHandler);
+// ISR(DMA1_Channel2_IRQHandler);
+// ISR(DMA1_Channel3_IRQHandler);
+// ISR(DMA1_Channel4_IRQHandler);
+// ISR(CAN1_TX_IRQHandler);
+// ISR(CAN1_RX0_IRQHandler);
+// ISR(CAN1_RX1_IRQHandler);
+// ISR(CAN1_EWMC_IRQHandler);
+// ISR(USBFS_IRQHandler);
+
 
 
 
@@ -309,12 +392,14 @@ typedef struct {
 	void* pfnCAN1_RX1_IRQHandler;
 	void* pfnCAN1_EWMC_IRQHandler;
 	void* pfnUSBFS_IRQHandler;
-} DeviceVectors;
+} gd32c10x_vectors;
 
-__attribute__((section(".vectors"), used)) static const DeviceVectors exception_table = {
+
+__attribute__((section(".vectors"), used)) static const gd32c10x_vectors vectors = {
 	/* Configure Initial Stack Pointer, using linker-generated symbols */
 	.pvStack                   = (void *)(&_estack),
 
+	/* Cortex-M handlers */
 	.pfnReset_Handler          = (void *)Reset_Handler,
 	.pfnNonMaskableInt_Handler = (void *)NMI_Handler,
 	.pfnHardFault_Handler      = (void *)HardFault_Handler,

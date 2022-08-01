@@ -94,7 +94,7 @@
 #define EP_MAX_FS       6
 #define EP_FIFO_SIZE_FS 1280
 
-#elif CFG_TUSB_MCU == OPT_MCU_GD32VF103 || CFG_TUSB_MCU == OPT_MCU_GD32C10X
+#elif CFG_TUSB_MCU == OPT_MCU_GD32VF103
 #include "synopsys_common.h"
 
 // for remote wakeup delay
@@ -120,6 +120,19 @@ static inline void __eclic_enable_interrupt (uint32_t irq) {
 static inline void __eclic_disable_interrupt (uint32_t irq){
   *(volatile uint8_t*)(ECLIC_INTERRUPT_ENABLE_BASE + (irq * 4)) = 0;
 }
+
+
+#elif CFG_TUSB_MCU == OPT_MCU_GD32C10X
+#include "synopsys_common.h"
+#include "gd32c10x.h"
+// These numbers are the same for the whole GD32C10X family.
+#define OTG_FS_IRQn     USBFS_IRQn
+#define EP_MAX_FS       4
+#define EP_FIFO_SIZE_FS 1280
+// #if defined(USB_HS_PHYC)
+// #error dfasfa
+// #endif
+
 
 #else
 #error "Unsupported MCUs"
@@ -1118,6 +1131,7 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
   }
 }
 
+__attribute__((optimize("O0")))
 void dcd_int_handler(uint8_t rhport)
 {
   USB_OTG_GlobalTypeDef * usb_otg = GLOBAL_BASE(rhport);

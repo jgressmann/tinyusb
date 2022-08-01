@@ -94,16 +94,6 @@ SECTIONS
 		_erelocate = .;
 	} > ram
 
-	/*
-	.vectors (NOLOAD):
-	{
-		. = ALIGN(VECTOR_TABLE_ALIGNMENT);
-		_svectors = .;
-		. = . + VECTOR_TABLE_ALIGNMENT;
-		_evectors = .;
-	} > ram
-	*/
-
 	/* .bss section which is used for uninitialized data */
 	.bss (NOLOAD) :
 	{
