@@ -147,6 +147,8 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #	include "supercan_teensy_4x.h"
 #elif defined(FEATHER_M4_CAN_EXPRESS)
 #	include "supercan_feather_m4_can_express.h"
+#elif defined(D5035_04)
+#	include "supercan_D5035_04.h"
 #else
 #	error "Unsupported board!"
 #endif
@@ -165,6 +167,10 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 
 #ifndef FEATHER_M4_CAN_EXPRESS
 #	define FEATHER_M4_CAN_EXPRESS 0
+#endif
+
+#ifndef D5035_04
+#	define D5035_04 0
 #endif
 
 
