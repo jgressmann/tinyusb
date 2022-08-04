@@ -40,10 +40,11 @@ INC += \
 	$(CMSIS_PATH) \
 	$(CMSIS_GD32C10X_PATH)/Include \
 	$(PER_GD32C10X_PATH)/Include \
-	$(USB_GD32C10X_PATH)/driver/Include \
-	$(TOP)/$(BOARD_PATH)/mcu/Template
+	$(TOP)/$(BOARD_PATH)/mcu/Template \
+	$(TOP)/src/portable/st/synopsys
 
-	#\
+	#$(USB_GD32C10X_PATH)/driver/Include \
+	\
 	# $(USB_GD32C10X_PATH)/ustd/common \
 
 

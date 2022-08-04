@@ -4,12 +4,9 @@
  *
  */
 
-
-
-#ifdef D5035_04
-
-#include <supercan_debug.h>
 #include <supercan_board.h>
+
+#if D5035_04
 
 #include <leds.h>
 #include <tusb.h>
@@ -23,6 +20,93 @@
 #define USART_BAUDRATE     115200L
 #define PORT_STEP 0x00000400U
 
+enum {
+	CAN_FEAT_PERM = SC_FEATURE_FLAG_TXR,
+	CAN_FEAT_CONF = (MSG_BUFFER_SIZE >= 128 ? SC_FEATURE_FLAG_FDF : 0)
+					| SC_FEATURE_FLAG_TXP
+					| SC_FEATURE_FLAG_EHD
+					// not yet implemented
+					// | SC_FEATURE_FLAG_DAR
+					| SC_FEATURE_FLAG_MON_MODE
+					// | SC_FEATURE_FLAG_RES_MODE
+					// | SC_FEATURE_FLAG_EXT_LOOP_MODE,
+};
+
+
+static const sc_can_bit_timing_range nm_range = {
+	.min = {
+		.brp = 1,
+		.tseg1 = 1,
+		.tseg2 = 1,
+		.sjw = 1,
+	},
+	.max = {
+		.brp = 1024,
+		.tseg1 = 32,
+		.tseg2 = 128,
+		.sjw = 32,
+	},
+};
+
+static const sc_can_bit_timing_range dt_range = {
+	.min = {
+		.brp = 1,
+		.tseg1 = 1,
+		.tseg2 = 1,
+		.sjw = 1,
+	},
+	.max = {
+		.brp = 1024,
+		.tseg1 = 16,
+		.tseg2 = 8,
+		.sjw = 8,
+	},
+};
+
+struct can_frame {
+	uint32_t reg0;
+	uint32_t reg1;
+	uint32_t data[16];
+};
+
+struct txr {
+	uint32_t ts;
+	uint8_t track_id;
+	uint8_t flags;
+};
+
+struct can {
+	// CFG_TUSB_MEM_ALIGN struct can_tx_fifo_element tx_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
+	// CFG_TUSB_MEM_ALIGN struct can_tx_event_fifo_element tx_event_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
+	// CFG_TUSB_MEM_ALIGN struct can_rx_fifo_element rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
+	struct can_frame rx_queue[SC_BOARD_CAN_RX_FIFO_SIZE];
+	struct can_frame tx_queue[SC_BOARD_CAN_TX_FIFO_SIZE];
+	struct txr txr_queue[SC_BOARD_CAN_TX_FIFO_SIZE];
+	sc_can_bit_timing nm;
+	sc_can_bit_timing dt;
+	uint32_t const regs;
+	IRQn_Type const interrupt_id;
+	uint8_t track_id_queue[3];
+	uint16_t features;
+	uint8_t const led_status_green;
+	uint8_t const led_status_red;
+	uint8_t led_traffic;
+	uint8_t rx_get_index; // NOT an index, uses full range of type
+	uint8_t rx_put_index; // NOT an index, uses full range of type
+	uint8_t tx_get_index; // NOT an index, uses full range of type
+	uint8_t tx_put_index; // NOT an index, uses full range of type
+	uint8_t tx_mailbox_get_index; // NOT an index, uses full range of type
+	uint8_t tx_mailbox_put_index; // NOT an index, uses full range of type
+	uint8_t txr_get_index; // NOT an index, uses full range of type
+	uint8_t txr_put_index; // NOT an index, uses full range of type
+} cans[SC_BOARD_CAN_COUNT] = {
+	{
+		.led_status_green = LED_CAN0_STATUS_GREEN,
+		.led_status_red = LED_CAN0_STATUS_RED,
+		.led_traffic = LED_DEBUG_1,
+	},
+};
+
 
 struct led {
 	uint8_t port_pin_mux;
@@ -34,11 +118,11 @@ struct led {
 
 
 static const struct led leds[] = {
-	LED_STATIC_INITIALIZER("debug", (1 << 4) | 14),  // PB14
-	LED_STATIC_INITIALIZER("red", 4),                // PA04
-	LED_STATIC_INITIALIZER("orange", 5),             // PA05
-	LED_STATIC_INITIALIZER("green", 6),              // PA06
-	LED_STATIC_INITIALIZER("blue", 7),               // PA07
+	LED_STATIC_INITIALIZER("debug", (1 << 4) | 14),      // PB14
+	LED_STATIC_INITIALIZER("red", 4),                    // PA04
+	LED_STATIC_INITIALIZER("orange", 5),                 // PA05
+	LED_STATIC_INITIALIZER("green", 6),                  // PA06
+	LED_STATIC_INITIALIZER("blue", 7),                   // PA07
 	LED_STATIC_INITIALIZER("can0_green", (2 << 4) | 13), // PC13
 	LED_STATIC_INITIALIZER("can0_red", (2 << 4) | 14),   // PC14
 	LED_STATIC_INITIALIZER("can1_green", (2 << 4) | 15), // PC15
@@ -98,27 +182,72 @@ extern void sc_board_leds_on_unsafe(void)
 // 	SCB->VTOR = (uint32_t)svectors;
 // }
 
+static void gd32_can_init(void)
+{
+	/* CAN0 */
+	/* configure pins PB08 (RX), PB09 (TX) */
+	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(0)) | GPIO_MODE_SET(0, GPIO_MODE_AF_PP | GPIO_OSPEED_10MHZ);
+	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(1)) | GPIO_MODE_SET(1, GPIO_MODE_AF_PP | GPIO_OSPEED_10MHZ);
+
+	/* enable clock */
+	RCU_APB2EN |= RCU_APB2EN_PBEN | RCU_APB2EN_AFEN;
+	RCU_APB1EN |= RCU_APB1EN_CAN0EN;
+
+	/* reset CAN */
+	CAN_CTL(CAN0) |= CAN_CTL_SWRST;
+	/* wait for reset */
+	while (CAN_CTL(CAN0) & CAN_CTL_SWRST);
+
+	/* initial configuration */
+	CAN_CTL(CAN0) =
+	 (CAN_CTL(CAN0) & ~(CAN_CTL_DFZ | CAN_CTL_TTC | CAN_CTL_ABOR | CAN_CTL_AWU | CAN_CTL_RFOD | CAN_CTL_TFO | CAN_CTL_SLPWMOD | CAN_CTL_IWMOD)) |
+	 (CAN_CTL_TFO | CAN_CTL_RFOD | CAN_CTL_IWMOD);
+
+	/* interrupts */
+	CAN_INTEN(CAN0) |=
+		CAN_INTEN_ERRIE | /* error interrupt enable */
+		CAN_INTEN_ERRNIE | /* error numer interrupt enable */
+		CAN_INTEN_BOIE | /* bus-off interrupt enable */
+		CAN_INTEN_PERRIE | /* passive error interrupt enable */
+		CAN_INTEN_WERRIE | /* warning error interrupt enable */
+		CAN_INTEN_RFOIE0 | /* receive FIFO0 overfull interrupt enable */
+		CAN_INTEN_RFOIE0 | /* receive FIFO0 full interrupt enable */
+		CAN_INTEN_RFNEIE0 | /* receive FIFO0 not empty interrupt enable */
+		CAN_INTEN_TMEIE; /* transmit mailbox empty interrupt enable */
+
+
+	/* disable filters */
+	CAN_FCTL(CAN0) =
+		(CAN_FCTL(CAN0) & ~(CAN_FCTL_FLD | CAN_FCTL_HBC1F)) |
+		(FCTL_HBC1F(0) | CAN_FCTL_FLD);
+
+	for (uint8_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
+		// struct can *can = &cans[i];
+
+		sc_board_can_reset(i);
+	}
+
+	NVIC_SetPriority(CAN0_TX_IRQn, SC_ISR_PRIORITY);
+	NVIC_SetPriority(CAN0_RX0_IRQn, SC_ISR_PRIORITY);
+	NVIC_SetPriority(CAN0_EWMC_IRQn, SC_ISR_PRIORITY);
+
+}
 
 extern void sc_board_init_begin(void)
 {
+	__disable_irq();
 	board_init();
+	NVIC_SetPriority(USBFS_IRQn, SC_ISR_PRIORITY);
+	__enable_irq();
+
 	// LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
 	// move_vector_table_to_ram();
 	// LOG("Vectors RAM @ %p\n", (void*)SCB->VTOR);
 
 
-
-
-
-
 	leds_init();
+	gd32_can_init();
 
-	// can_init_pins();
-	// can_init_clock();
-	// can_init_module();
-
-	// init_usb();
-	// rev_read();
 
 	// while (1) {
 	// 	uint32_t c = counter_1MHz_read_sync();
@@ -141,42 +270,42 @@ extern void sc_board_init_end(void)
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
 {
-	// struct same5x_can *can = &same5x_cans[index];
+	struct can *can = &cans[index];
 
-	// switch (status) {
-	// case SC_CAN_LED_STATUS_DISABLED:
-	// 	led_set(can->led_status_green, 0);
-	// 	led_set(can->led_status_red, 0);
-	// 	break;
-	// case SC_CAN_LED_STATUS_ENABLED_OFF_BUS:
-	// 	led_set(can->led_status_green, 1);
-	// 	led_set(can->led_status_red, 0);
-	// 	break;
-	// case SC_CAN_LED_STATUS_ENABLED_ON_BUS_PASSIVE:
-	// 	led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_PASSIVE_MS);
-	// 	led_set(can->led_status_red, 0);
-	// 	break;
-	// case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ACTIVE:
-	// 	led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
-	// 	led_set(can->led_status_red, 0);
-	// 	break;
-	// case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_PASSIVE:
-	// 	led_set(can->led_status_green, 0);
-	// 	led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_PASSIVE_MS);
-	// 	break;
-	// case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_ACTIVE:
-	// 	led_set(can->led_status_green, 0);
-	// 	led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
-	// 	break;
-	// case SC_CAN_LED_STATUS_ENABLED_ON_BUS_BUS_OFF:
-	// 	led_set(can->led_status_green, 0);
-	// 	led_set(can->led_status_red, 1);
-	// 	break;
-	// default:
-	// 	led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS / 2);
-	// 	led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS / 2);
-	// 	break;
-	// }
+	switch (status) {
+	case SC_CAN_LED_STATUS_DISABLED:
+		led_set(can->led_status_green, 0);
+		led_set(can->led_status_red, 0);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_OFF_BUS:
+		led_set(can->led_status_green, 1);
+		led_set(can->led_status_red, 0);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_PASSIVE:
+		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_PASSIVE_MS);
+		led_set(can->led_status_red, 0);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ACTIVE:
+		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
+		led_set(can->led_status_red, 0);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_PASSIVE:
+		led_set(can->led_status_green, 0);
+		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_PASSIVE_MS);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_ERROR_ACTIVE:
+		led_set(can->led_status_green, 0);
+		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS);
+		break;
+	case SC_CAN_LED_STATUS_ENABLED_ON_BUS_BUS_OFF:
+		led_set(can->led_status_green, 0);
+		led_set(can->led_status_red, 1);
+		break;
+	default:
+		led_blink(can->led_status_green, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS / 2);
+		led_blink(can->led_status_red, SC_CAN_LED_BLINK_DELAY_ACTIVE_MS / 2);
+		break;
+	}
 }
 
 
@@ -192,44 +321,112 @@ uint32_t sc_board_identifier(void)
 	return 0xdeadbeef;
 }
 
-uint16_t sc_board_can_feat_perm(uint8_t index)
+extern uint16_t sc_board_can_feat_perm(uint8_t index)
 {
-	return 0;
+	(void)index;
+	return CAN_FEAT_PERM;
 }
 
-uint16_t sc_board_can_feat_conf(uint8_t index)
+extern uint16_t sc_board_can_feat_conf(uint8_t index)
 {
-	return 0;
+	(void)index;
+	return CAN_FEAT_CONF;
 }
 
-void sc_board_can_feat_set(uint8_t index, uint16_t features)
+extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 {
+	struct can *can = &cans[index];
+
+	can->features = features;
+}
+
+extern sc_can_bit_timing_range const* sc_board_can_nm_bit_timing_range(uint8_t index)
+{
+	(void)index;
+
+	return &nm_range;
+}
+
+extern sc_can_bit_timing_range const* sc_board_can_dt_bit_timing_range(uint8_t index)
+{
+	(void)index;
+
+	return &dt_range;
+}
+
+extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing const *bt)
+{
+	struct can *can = &cans[index];
+
+	can->nm = *bt;
+}
+
+extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing const *bt)
+{
+	struct can *can = &cans[index];
+
+	can->dt = *bt;
+}
+
+static void can_configure(uint8_t index)
+{
+	struct can *can = &cans[index];
+
+	CAN_BT(can->regs) =
+		(CAN_BT(can->regs) & ~(CAN_BT_SCMOD | CAN_BT_LCMOD | CAN_BT_BAUDPSC | CAN_BT_SJW | CAN_BT_BS1_6_4 | CAN_BT_BS1_3_0 | CAN_BT_BS2_4_3 | CAN_BT_BS2_2_0)) |
+		(((can->features & SC_FEATURE_FLAG_MON_MODE) ? CAN_BT_SCMOD : 0) | BT_BAUDPSC(can->nm.brp) | BT_SJW(can->nm.sjw) | BT_BS1(can->nm.tseg1) | BT_BS2(can->nm.tseg2));
+
+	if (can->features & SC_FEATURE_FLAG_FDF) {
+		CAN_FDCTL(can->regs) =
+			(CAN_FDCTL(can->regs) & ~(CAN_FDCTL_FDEN | CAN_FDCTL_PRED | CAN_FDCTL_TDCEN | CAN_FDCTL_TDCMOD | CAN_FDCTL_ESIMOD | CAN_FDCTL_NISO)) |
+			(CAN_FDCTL_FDEN | ((can->features & SC_FEATURE_FLAG_EHD) ? 0 : CAN_FDCTL_PRED) | ((sc_bitrate(can->dt.brp, can->dt.tseg1, can->dt.tseg2) >= 1000000) * CAN_FDCTL_TDCEN));
+	} else {
+		CAN_FDCTL(can->regs) &= ~CAN_FDCTL_FDEN;
+	}
+}
+
+static inline void can_clear_queues(uint8_t index)
+{
+	struct can *can = &cans[index];
+
+	can->rx_get_index = 0;
+	can->rx_put_index = 0;
+	can->tx_get_index = 0;
+	can->tx_put_index = 0;
 
 }
 
-sc_can_bit_timing_range const* sc_board_can_nm_bit_timing_range(uint8_t index)
+static inline void can_off(uint8_t index)
 {
-	return NULL;
-}
+	struct can *can = &cans[index];
 
-sc_can_bit_timing_range const* sc_board_can_dt_bit_timing_range(uint8_t index)
-{
-	return NULL;
-}
+	NVIC_DisableIRQ(CAN0_TX_IRQn);
+	NVIC_DisableIRQ(CAN0_RX0_IRQn);
+	NVIC_DisableIRQ(CAN0_EWMC_IRQn);
 
-void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing const *bt)
-{
-
-}
-
-void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing const *bt)
-{
+	/* abort scheduled transmissions */
+	CAN_TSTAT(can->regs) |= CAN_TSTAT_MST0 | CAN_TSTAT_MST1 | CAN_TSTAT_MST2;
+	/* initial working mode */
+	CAN_CTL(can->regs) |= CAN_CTL_IWMOD;
 
 }
 
 void sc_board_can_go_bus(uint8_t index, bool on)
 {
+	struct can *can = &cans[index];
 
+	if (on) {
+		NVIC_EnableIRQ(CAN0_TX_IRQn);
+		NVIC_EnableIRQ(CAN0_RX0_IRQn);
+		NVIC_EnableIRQ(CAN0_EWMC_IRQn);
+
+		can_configure(index);
+
+		CAN_CTL(can->regs) &= ~CAN_CTL_IWMOD;
+	} else {
+		can_off(index);
+		can_clear_queues(index);
+	}
 }
 
 SC_RAMFUNC bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
@@ -240,7 +437,18 @@ SC_RAMFUNC bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const 
 
 void sc_board_can_reset(uint8_t index)
 {
+	struct can *can = &cans[index];
 
+	can_off(index);
+
+	can->features = CAN_FEAT_PERM;
+	can->nm = nm_range.min;
+	can->dt = dt_range.min;
+
+	can->tx_mailbox_get_index = 0;
+	can->tx_mailbox_put_index = 0;
+
+	can_clear_queues(index);
 }
 
 SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
@@ -249,5 +457,105 @@ SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx
 }
 
 
+SC_RAMFUNC static void can_int0(void)
+{
+	uint8_t const index = 0;
+	struct can *can = &cans[index];
+}
 
-#endif // #ifdef D5035_04
+void CAN0_TX_IRQHandler(void)
+{
+	uint8_t const index = 0;
+	struct can *can = &cans[index];
+	uint32_t inten = CAN_INTEN(can->regs);
+	unsigned count = 0;
+	uint16_t ts[3];
+	uint8_t indices[3];
+
+	SC_DEBUG_ASSERT(inten & CAN_INTEN_TMEIE);
+
+	CAN_INTEN(can->regs) &= ~CAN_INTEN_TMEIE;
+
+	/* read out mailboxes */
+	for (bool done = false; !done; ) {
+		uint8_t mailbox_index = can->tx_mailbox_get_index % 4;
+
+		switch (mailbox_index) {
+		case 0:
+			if (CAN_TSTAT(can->regs) & CAN_TSTAT_MTF0) {
+				ts[count] = (CAN_TMP(can->regs, mailbox_index) >> 16);
+				indices[count] = mailbox_index;
+				++count;
+			} else {
+				done = true;
+			}
+			break;
+		case 1:
+			if (CAN_TSTAT(can->regs) & CAN_TSTAT_MTF1) {
+				ts[count] = (CAN_TMP(can->regs, mailbox_index) >> 16);
+				indices[count] = mailbox_index;
+				++count;
+			} else {
+				done = true;
+			}
+			break;
+
+		case 2:
+			if (CAN_TSTAT(can->regs) & CAN_TSTAT_MTF2) {
+				ts[count] = (CAN_TMP(can->regs, mailbox_index) >> 16);
+				indices[count] = mailbox_index;
+				++count;
+			} else {
+				done = true;
+			}
+			break;
+		default:
+			__unreachable();
+			break;
+		}
+
+		++can->tx_mailbox_get_index;
+	}
+
+	if (likely(count)) {
+		// queue TXRs
+		uint8_t gi = __atomic_load_n(&can->txr_get_index, __ATOMIC_ACQUIRE);
+
+		for (unsigned i = 0; i < count; ++i) {
+			uint8_t mailbox_index = indices[i];
+
+			// loss?
+
+			uint8_t pi = can->txr_put_index;
+
+			if (used == TU_ARRAY_SIZE(can->txr_queue)) {
+				// OUTCH
+			} else {
+				uint8_t pxr_index = pi % TU_ARRAY_SIZE(can->txr_queue);
+
+				can->txr_queue[pxr_index].ts = ts[i];
+				can->txr_queue[pxr_index].track_id = can->track_id_queue[mailbox_index];
+			}
+		}
+
+		__atomic_store_n(&can->txr_put_index, pi, __ATOMIC_RELEASE);
+	}
+
+	// place new frames in mailboxes
+
+
+	CAN_INTEN(can->regs) |= CAN_INTEN_TMEIE;
+}
+
+void CAN0_RX0_IRQHandler(void)
+{
+	can_int0();
+}
+
+void CAN0_EWMC_IRQHandler(void)
+{
+	can_int0();
+}
+
+
+#endif // #if D5035_04
