@@ -12,18 +12,15 @@
 #include <tusb.h>
 
 
-#include <usb_descriptors.h> // DFU_USB_RESET_TIMEOUT_MS
+//#include <usb_descriptors.h> // DFU_USB_RESET_TIMEOUT_MS
 
 
-#define CONF_CPU_FREQUENCY 120000000L
-#define CONF_USB_FREQUENCY 48000000L
-#define USART_BAUDRATE     115200L
 #define PORT_STEP 0x00000400U
 
 enum {
 	CAN_FEAT_PERM = SC_FEATURE_FLAG_TXR,
 	CAN_FEAT_CONF = (MSG_BUFFER_SIZE >= 128 ? SC_FEATURE_FLAG_FDF : 0)
-					| SC_FEATURE_FLAG_TXP
+					// | SC_FEATURE_FLAG_TXP
 					| SC_FEATURE_FLAG_EHD
 					// not yet implemented
 					// | SC_FEATURE_FLAG_DAR
@@ -41,9 +38,9 @@ static const sc_can_bit_timing_range nm_range = {
 		.sjw = 1,
 	},
 	.max = {
-		.brp = 1024,
-		.tseg1 = 32,
-		.tseg2 = 128,
+		.brp = 1023,
+		.tseg1 = 128,
+		.tseg2 = 32,
 		.sjw = 32,
 	},
 };
@@ -56,11 +53,19 @@ static const sc_can_bit_timing_range dt_range = {
 		.sjw = 1,
 	},
 	.max = {
-		.brp = 1024,
+		.brp = 255, /* actually 1024 but Linux can't handle that */
 		.tseg1 = 16,
 		.tseg2 = 8,
 		.sjw = 8,
 	},
+};
+
+struct tx_frame {
+	uint32_t tmi;
+	uint32_t tmp;
+	uint8_t track_id;
+	uint8_t words;
+	uint32_t data[16];
 };
 
 struct can_frame {
@@ -80,7 +85,7 @@ struct can {
 	// CFG_TUSB_MEM_ALIGN struct can_tx_event_fifo_element tx_event_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
 	// CFG_TUSB_MEM_ALIGN struct can_rx_fifo_element rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
 	struct can_frame rx_queue[SC_BOARD_CAN_RX_FIFO_SIZE];
-	struct can_frame tx_queue[SC_BOARD_CAN_TX_FIFO_SIZE];
+	struct tx_frame tx_queue[SC_BOARD_CAN_TX_FIFO_SIZE];
 	struct txr txr_queue[SC_BOARD_CAN_TX_FIFO_SIZE];
 	sc_can_bit_timing nm;
 	sc_can_bit_timing dt;
@@ -90,7 +95,7 @@ struct can {
 	uint16_t features;
 	uint8_t const led_status_green;
 	uint8_t const led_status_red;
-	uint8_t led_traffic;
+	uint8_t const led_traffic;
 	uint8_t rx_get_index; // NOT an index, uses full range of type
 	uint8_t rx_put_index; // NOT an index, uses full range of type
 	uint8_t tx_get_index; // NOT an index, uses full range of type
@@ -107,6 +112,7 @@ struct can {
 	},
 };
 
+static uint32_t device_identifier;
 
 struct led {
 	uint8_t port_pin_mux;
@@ -230,6 +236,14 @@ static void gd32_can_init(void)
 	NVIC_SetPriority(CAN0_TX_IRQn, SC_ISR_PRIORITY);
 	NVIC_SetPriority(CAN0_RX0_IRQn, SC_ISR_PRIORITY);
 	NVIC_SetPriority(CAN0_EWMC_IRQn, SC_ISR_PRIORITY);
+}
+
+static inline void device_id_init(void)
+{
+	device_identifier =
+		(*(uint32_t*)0x1FFFF7E8) ^
+		(*(uint32_t*)0x1FFFF7EC) ^
+		(*(uint32_t*)0x1FFFF7F0);
 
 }
 
@@ -244,7 +258,7 @@ extern void sc_board_init_begin(void)
 	// move_vector_table_to_ram();
 	// LOG("Vectors RAM @ %p\n", (void*)SCB->VTOR);
 
-
+	device_id_init();
 	leds_init();
 	gd32_can_init();
 
@@ -318,7 +332,7 @@ __attribute__((noreturn)) extern void sc_board_reset(void)
 
 uint32_t sc_board_identifier(void)
 {
-	return 0xdeadbeef;
+	return device_identifier;
 }
 
 extern uint16_t sc_board_can_feat_perm(uint8_t index)
@@ -377,9 +391,19 @@ static void can_configure(uint8_t index)
 		(((can->features & SC_FEATURE_FLAG_MON_MODE) ? CAN_BT_SCMOD : 0) | BT_BAUDPSC(can->nm.brp) | BT_SJW(can->nm.sjw) | BT_BS1(can->nm.tseg1) | BT_BS2(can->nm.tseg2));
 
 	if (can->features & SC_FEATURE_FLAG_FDF) {
+		uint8_t tdcf = tu_min8((1 + can->dt.tseg1 + can->dt.tseg2 / 2), 128) - 1;
+		uint8_t tdco = tu_min8((1 + can->dt.tseg1 - can->dt.tseg2 / 2), 128) - 1;
+
 		CAN_FDCTL(can->regs) =
 			(CAN_FDCTL(can->regs) & ~(CAN_FDCTL_FDEN | CAN_FDCTL_PRED | CAN_FDCTL_TDCEN | CAN_FDCTL_TDCMOD | CAN_FDCTL_ESIMOD | CAN_FDCTL_NISO)) |
 			(CAN_FDCTL_FDEN | ((can->features & SC_FEATURE_FLAG_EHD) ? 0 : CAN_FDCTL_PRED) | ((sc_bitrate(can->dt.brp, can->dt.tseg1, can->dt.tseg2) >= 1000000) * CAN_FDCTL_TDCEN));
+
+
+		/* transmitter delay compensation */
+		CAN_FDTDC(can->regs) =
+			(CAN_FDTDC(can->regs) & ~(CAN_FDTDC_TDCF | CAN_FDTDC_TDCO)) |
+			(FDTDC_TDCF(tdcf) | FDTDC_TDCO(tdco));
+
 	} else {
 		CAN_FDCTL(can->regs) &= ~CAN_FDCTL_FDEN;
 	}
@@ -393,7 +417,8 @@ static inline void can_clear_queues(uint8_t index)
 	can->rx_put_index = 0;
 	can->tx_get_index = 0;
 	can->tx_put_index = 0;
-
+	can->tx_mailbox_get_index = 0;
+	can->tx_mailbox_put_index = 0;
 }
 
 static inline void can_off(uint8_t index)
@@ -445,15 +470,48 @@ void sc_board_can_reset(uint8_t index)
 	can->nm = nm_range.min;
 	can->dt = dt_range.min;
 
-	can->tx_mailbox_get_index = 0;
-	can->tx_mailbox_put_index = 0;
+
 
 	can_clear_queues(index);
 }
 
 SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
 {
-	return 0;
+	struct can *can = &cans[index];
+	int result = 0;
+	bool have_data_to_place = false;
+
+	for (bool done = false; !done; ) {
+		done = true;
+
+		uint8_t pi = __atomic_load_n(&can->txr_put_index, __ATOMIC_ACQUIRE);
+
+		if (can->txr_get_index != pi) {
+			have_data_to_place = true;
+
+			struct sc_msg_can_txr *msg = NULL;
+			if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
+				uint8_t const get_index = can->txr_get_index % TU_ARRAY_SIZE(can->txr_queue);
+
+				done = false;
+				msg = (struct sc_msg_can_txr *)tx_ptr;
+				tx_ptr += sizeof(*msg);
+				result += sizeof(*msg);
+
+				msg->id = SC_MSG_CAN_TXR;
+				msg->len = sizeof(*msg);
+				msg->track_id = can->txr_queue[get_index].track_id;
+				msg->timestamp_us = can->txr_queue[get_index].ts;
+				msg->flags = 0;
+			}
+		}
+	}
+
+	if (result > 0) {
+		return result;
+	}
+
+	return have_data_to_place - 1;
 }
 
 
@@ -469,16 +527,20 @@ void CAN0_TX_IRQHandler(void)
 	struct can *can = &cans[index];
 	uint32_t inten = CAN_INTEN(can->regs);
 	unsigned count = 0;
+	uint32_t events = 0;
 	uint16_t ts[3];
 	uint8_t indices[3];
+
+	LOG("CAN0_TX_IRQHandler\n");
+	LOG("ch%u INTEN=%08x\n", index, inten);
 
 	SC_DEBUG_ASSERT(inten & CAN_INTEN_TMEIE);
 
 	CAN_INTEN(can->regs) &= ~CAN_INTEN_TMEIE;
 
-	/* read out mailboxes */
+	/* forward scan for finished mailboxes */
 	for (bool done = false; !done; ) {
-		uint8_t mailbox_index = can->tx_mailbox_get_index % 4;
+		uint8_t mailbox_index = can->tx_mailbox_get_index % 3;
 
 		switch (mailbox_index) {
 		case 0:
@@ -499,7 +561,6 @@ void CAN0_TX_IRQHandler(void)
 				done = true;
 			}
 			break;
-
 		case 2:
 			if (CAN_TSTAT(can->regs) & CAN_TSTAT_MTF2) {
 				ts[count] = (CAN_TMP(can->regs, mailbox_index) >> 16);
@@ -520,41 +581,87 @@ void CAN0_TX_IRQHandler(void)
 	if (likely(count)) {
 		// queue TXRs
 		uint8_t gi = __atomic_load_n(&can->txr_get_index, __ATOMIC_ACQUIRE);
+		uint8_t pi = can->txr_put_index;
 
 		for (unsigned i = 0; i < count; ++i) {
 			uint8_t mailbox_index = indices[i];
-
-			// loss?
-
-			uint8_t pi = can->txr_put_index;
+			uint8_t used = pi - gi;
 
 			if (used == TU_ARRAY_SIZE(can->txr_queue)) {
-				// OUTCH
+				LOG("ch%u lost TXR track ID %02x\n", index, can->track_id_queue[mailbox_index]);
 			} else {
-				uint8_t pxr_index = pi % TU_ARRAY_SIZE(can->txr_queue);
+				uint8_t const txr_index = pi++ % TU_ARRAY_SIZE(can->txr_queue);
 
-				can->txr_queue[pxr_index].ts = ts[i];
-				can->txr_queue[pxr_index].track_id = can->track_id_queue[mailbox_index];
+				can->txr_queue[txr_index].ts = ts[i];
+				can->txr_queue[txr_index].track_id = can->track_id_queue[mailbox_index];
+
+				++events;
 			}
 		}
 
 		__atomic_store_n(&can->txr_put_index, pi, __ATOMIC_RELEASE);
 	}
 
-	// place new frames in mailboxes
+	/* move frames from queue into mailboxes */
+	uint8_t pi = __atomic_load_n(&can->tx_put_index, __ATOMIC_ACQUIRE);
+	uint8_t gi = can->tx_get_index;
 
+	while (gi != pi && can->tx_mailbox_put_index - can->tx_mailbox_get_index < 3) {
+		uint8_t tx_index = gi % TU_ARRAY_SIZE(can->tx_queue);
+		uint8_t tx_mailbox_index = can->tx_mailbox_put_index++ % 3;
+		struct tx_frame *tx = &can->tx_queue[tx_index];
+
+		can->track_id_queue[tx_mailbox_index] = tx->track_id;
+
+		/* write properties so that the mailbox knows about FD */
+		CAN_TMP(can->regs, tx_mailbox_index) = can->tx_queue[tx_index].tmp;
+
+		for (unsigned j = 0; j < tx->words; ++j) {
+			REG32((can->regs) + 0x188U + 0x10 * tx_mailbox_index) = tx->data[j];
+		}
+
+		CAN_TMI(can->regs, tx_mailbox_index) = can->tx_queue[tx_index].tmi;
+
+		++gi;
+	}
+
+	__atomic_store_n(&can->tx_get_index, gi, __ATOMIC_RELEASE);
+
+	if (likely(events)) {
+		sc_can_notify_task_isr(index, events);
+	}
 
 	CAN_INTEN(can->regs) |= CAN_INTEN_TMEIE;
 }
 
 void CAN0_RX0_IRQHandler(void)
 {
-	can_int0();
+	uint8_t const index = 0;
+	struct can *can = &cans[index];
+	uint32_t inten = CAN_INTEN(can->regs);
+
+	LOG("CAN0_RX0_IRQHandler\n");
+	LOG("ch%u INTEN=%08x\n", index, inten);
+
+	SC_DEBUG_ASSERT(inten & (CAN_INTEN_RFNEIE0 | CAN_INTEN_RFFIE0 | CAN_INTEN_RFOIE0));
+
+	CAN_INTEN(can->regs) &= ~(CAN_INTEN_RFNEIE0 | CAN_INTEN_RFFIE0 | CAN_INTEN_RFOIE0);
+	CAN_INTEN(can->regs) |= (CAN_INTEN_RFNEIE0 | CAN_INTEN_RFFIE0 | CAN_INTEN_RFOIE0);
 }
 
 void CAN0_EWMC_IRQHandler(void)
 {
-	can_int0();
+	uint8_t const index = 0;
+	struct can *can = &cans[index];
+	uint32_t inten = CAN_INTEN(can->regs);
+	LOG("CAN0_EWMC_IRQHandler\n");
+	LOG("ch%u INTEN=%08x\n", index, inten);
+
+
+	SC_DEBUG_ASSERT(inten & (CAN_INTEN_WERRIE | CAN_INTEN_PERRIE | CAN_INTEN_BOIE | CAN_INTEN_BOIE | CAN_INTEN_ERRNIE | CAN_INTEN_ERRIE));
+
+	CAN_INTEN(can->regs) &= ~(CAN_INTEN_WERRIE | CAN_INTEN_PERRIE | CAN_INTEN_BOIE | CAN_INTEN_BOIE | CAN_INTEN_ERRNIE | CAN_INTEN_ERRIE);
+	CAN_INTEN(can->regs) |= (CAN_INTEN_WERRIE | CAN_INTEN_PERRIE | CAN_INTEN_BOIE | CAN_INTEN_BOIE | CAN_INTEN_ERRNIE | CAN_INTEN_ERRIE);
 }
 
 
