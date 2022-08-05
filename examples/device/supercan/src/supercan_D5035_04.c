@@ -68,9 +68,9 @@ struct tx_frame {
 	uint32_t data[16];
 };
 
-struct can_frame {
-	uint32_t reg0;
-	uint32_t reg1;
+struct rx_frame {
+	uint32_t mi;
+	uint32_t mp;
 	uint32_t data[16];
 };
 
@@ -81,10 +81,7 @@ struct txr {
 };
 
 struct can {
-	// CFG_TUSB_MEM_ALIGN struct can_tx_fifo_element tx_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
-	// CFG_TUSB_MEM_ALIGN struct can_tx_event_fifo_element tx_event_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
-	// CFG_TUSB_MEM_ALIGN struct can_rx_fifo_element rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
-	struct can_frame rx_queue[SC_BOARD_CAN_RX_FIFO_SIZE];
+	struct rx_frame rx_queue[SC_BOARD_CAN_RX_FIFO_SIZE];
 	struct tx_frame tx_queue[SC_BOARD_CAN_TX_FIFO_SIZE];
 	struct txr txr_queue[SC_BOARD_CAN_TX_FIFO_SIZE];
 	sc_can_bit_timing nm;
@@ -146,9 +143,9 @@ static inline void leds_init(void)
 	for (size_t i = 0 ; i < TU_ARRAY_SIZE(leds); ++i) {
 		unsigned port = leds[i].port_pin_mux >> 4;
 		unsigned pin = leds[i].port_pin_mux & 0xf;
-		uint32_t regs = GPIO_BASE + port * PORT_STEP;
+		uint32_t regs = GPIO_BASE + port * PORT_STEP + 4 * (pin >= 8);
 
-		GPIO_CTL1(regs) = (GPIO_CTL1(regs) & ~GPIO_MODE_MASK(pin)) | GPIO_MODE_SET(pin, GPIO_MODE_OUT_PP | GPIO_OSPEED_2MHZ);
+		GPIO_CTL0(regs) = (GPIO_CTL0(regs) & ~GPIO_MODE_MASK(pin & 0x7)) | GPIO_MODE_SET(pin & 0x7, GPIO_MODE_OUT_PP | GPIO_OSPEED_2MHZ);
 	}
 }
 
@@ -260,8 +257,9 @@ extern void sc_board_init_begin(void)
 	LOG("Vectors RAM @ %p\n", (void*)SCB->VTOR);
 
 	device_id_init();
-	leds_init();
 	gd32_can_init();
+	leds_init();
+
 
 
 	// while (1) {
@@ -537,7 +535,7 @@ void CAN0_TX_IRQHandler(void)
 
 	SC_DEBUG_ASSERT(inten & CAN_INTEN_TMEIE);
 
-	CAN_INTEN(can->regs) &= ~CAN_INTEN_TMEIE;
+	// CAN_INTEN(can->regs) &= ~CAN_INTEN_TMEIE;
 
 	/* forward scan for finished mailboxes */
 	for (bool done = false; !done; ) {
@@ -632,7 +630,7 @@ void CAN0_TX_IRQHandler(void)
 		sc_can_notify_task_isr(index, events);
 	}
 
-	CAN_INTEN(can->regs) |= CAN_INTEN_TMEIE;
+	// CAN_INTEN(can->regs) |= CAN_INTEN_TMEIE;
 }
 
 void CAN0_RX0_IRQHandler(void)
@@ -640,14 +638,73 @@ void CAN0_RX0_IRQHandler(void)
 	uint8_t const index = 0;
 	struct can *can = &cans[index];
 	uint32_t inten = CAN_INTEN(can->regs);
+	uint32_t rfifo0 = CAN_RFIFO0(can->regs);
+	uint32_t events = 0;
+	uint32_t tsc = 0;
+	uint16_t rx_lost = 0;
+
 
 	LOG("CAN0_RX0_IRQHandler\n");
 	LOG("ch%u INTEN=%08x\n", index, inten);
 
 	SC_DEBUG_ASSERT(inten & (CAN_INTEN_RFNEIE0 | CAN_INTEN_RFFIE0 | CAN_INTEN_RFOIE0));
 
-	CAN_INTEN(can->regs) &= ~(CAN_INTEN_RFNEIE0 | CAN_INTEN_RFFIE0 | CAN_INTEN_RFOIE0);
-	CAN_INTEN(can->regs) |= (CAN_INTEN_RFNEIE0 | CAN_INTEN_RFFIE0 | CAN_INTEN_RFOIE0);
+	// CAN_INTEN(can->regs) &= ~(CAN_INTEN_RFNEIE0 | CAN_INTEN_RFFIE0 | CAN_INTEN_RFOIE0);
+	uint8_t pi = can->rx_put_index;
+	uint8_t gi = __atomic_load_n(&can->rx_get_index, __ATOMIC_ACQUIRE);
+
+	do {
+		uint8_t used = pi - gi;
+
+		if (likely(used < TU_ARRAY_SIZE(can->rx_queue))) {
+			uint8_t put_index = pi % TU_ARRAY_SIZE(can->rx_queue);
+			struct rx_frame *rx = &can->rx_queue[put_index];
+			uint8_t words;
+
+
+			rx->mi = CAN_RFIFOMI0(can->regs);
+			rx->mp = CAN_RFIFOMP0(can->regs);
+
+			words = (dlc_to_len(rx->mp & 0xf) + 3) / 4;
+
+			for (uint8_t i = 0; i < words; i += 2) {
+				rx->data[i] = CAN_RFIFOMDATA00(can->regs);
+				rx->data[i+1] = CAN_RFIFOMDATA01(can->regs);
+			}
+		} else {
+			++rx_lost;
+		}
+
+		++pi;
+		++events;
+
+		// dequeue done
+		CAN_RFIFO0(can->regs) |= CAN_RFIFO0_RFD0;
+	} while (CAN_RFIFO0(can->regs) & 3);
+
+	__atomic_store_n(&can->rx_put_index, pi, __ATOMIC_RELEASE);
+
+	if (unlikely(rfifo0 & CAN_RFIFO0_RFO0)) {
+		/* RX fifo overflow */
+		++rx_lost;
+	}
+
+	if (unlikely(rx_lost)) {
+		sc_can_status status;
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_RX_LOST;
+		status.timestamp_us = tsc;
+		status.rx_lost = rx_lost;
+
+		sc_can_status_queue(index, &status);
+		++ events;
+	}
+
+	if (likely(events)) {
+		sc_can_notify_task_isr(index, events);
+	}
+
+	// CAN_INTEN(can->regs) |= (CAN_INTEN_RFNEIE0 | CAN_INTEN_RFFIE0 | CAN_INTEN_RFOIE0);
 }
 
 void CAN0_EWMC_IRQHandler(void)
@@ -661,8 +718,10 @@ void CAN0_EWMC_IRQHandler(void)
 
 	SC_DEBUG_ASSERT(inten & (CAN_INTEN_WERRIE | CAN_INTEN_PERRIE | CAN_INTEN_BOIE | CAN_INTEN_BOIE | CAN_INTEN_ERRNIE | CAN_INTEN_ERRIE));
 
-	CAN_INTEN(can->regs) &= ~(CAN_INTEN_WERRIE | CAN_INTEN_PERRIE | CAN_INTEN_BOIE | CAN_INTEN_BOIE | CAN_INTEN_ERRNIE | CAN_INTEN_ERRIE);
-	CAN_INTEN(can->regs) |= (CAN_INTEN_WERRIE | CAN_INTEN_PERRIE | CAN_INTEN_BOIE | CAN_INTEN_BOIE | CAN_INTEN_ERRNIE | CAN_INTEN_ERRIE);
+	// CAN_INTEN(can->regs) &= ~(CAN_INTEN_WERRIE | CAN_INTEN_PERRIE | CAN_INTEN_BOIE | CAN_INTEN_BOIE | CAN_INTEN_ERRNIE | CAN_INTEN_ERRIE);
+	// CAN_INTEN(can->regs) |= (CAN_INTEN_WERRIE | CAN_INTEN_PERRIE | CAN_INTEN_BOIE | CAN_INTEN_BOIE | CAN_INTEN_ERRNIE | CAN_INTEN_ERRIE);
+
+	CAN_STAT(can->regs) |= CAN_STAT_ERRIF;
 }
 
 
