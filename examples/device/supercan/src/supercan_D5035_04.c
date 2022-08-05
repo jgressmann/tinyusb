@@ -175,18 +175,19 @@ extern void sc_board_leds_on_unsafe(void)
 }
 
 
-// extern uint32_t _svectors;
-// extern uint32_t _evectors;
+extern uint32_t _svectors;
+extern uint32_t _evectors;
 
-// static void move_vector_table_to_ram(void)
-// {
-// 	uint8_t* svectors = (void*)&_svectors;
-// 	uint8_t* evectors = (void*)&_evectors;
+static void move_vector_table_to_ram(void)
+{
+	uint8_t* svectors = (void*)&_svectors;
+	uint8_t* evectors = (void*)&_evectors;
 
-// 	memcpy(svectors, (void*)SCB->VTOR, evectors - svectors);
+	memcpy(svectors, (void*)SCB->VTOR, evectors - svectors);
 
-// 	SCB->VTOR = (uint32_t)svectors;
-// }
+	SCB->VTOR = (uint32_t)svectors;
+	__DSB();
+}
 
 static void gd32_can_init(void)
 {
@@ -254,9 +255,9 @@ extern void sc_board_init_begin(void)
 	NVIC_SetPriority(USBFS_IRQn, SC_ISR_PRIORITY);
 	__enable_irq();
 
-	// LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
-	// move_vector_table_to_ram();
-	// LOG("Vectors RAM @ %p\n", (void*)SCB->VTOR);
+	LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
+	move_vector_table_to_ram();
+	LOG("Vectors RAM @ %p\n", (void*)SCB->VTOR);
 
 	device_id_init();
 	leds_init();

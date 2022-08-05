@@ -8,8 +8,8 @@ OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
 OUTPUT_ARCH(arm)
 SEARCH_DIR(.)
 
-VECTOR_TABLE_ALIGNMENT = 0x200; /* vector table must at least be 512-byte aligned */
-STACK_SIZE = 0x400; /* 0x100 seems to be to little */
+VECTOR_TABLE_ALIGNMENT = 0x400; /* vector table must at least be 1024-byte aligned */
+STACK_SIZE = 0x200; /* 0x100 seems to be to little */
 
 /* Memory Spaces Definitions */
 MEMORY
@@ -106,6 +106,14 @@ SECTIONS
 		_ebss = . ;
 		_ezero = .;
 	} > ram
+
+	.vectors (NOLOAD):
+    {
+        . = ALIGN(VECTOR_TABLE_ALIGNMENT);
+        _svectors = .;
+        . = . + VECTOR_TABLE_ALIGNMENT;
+        _evectors = .;
+    } > ram
 
 	/* stack section */
 	.stack (NOLOAD):
