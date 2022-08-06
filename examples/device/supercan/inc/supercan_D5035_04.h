@@ -15,6 +15,8 @@
 #endif
 
 #include <gd32c10x.h>
+#include <sections.h>
+#include <FreeRTOS.h>
 
 
 #define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
@@ -42,8 +44,8 @@ enum {
 #define CAN0_TRAFFIC_LED LED_DEBUG_1
 #define CAN1_TRAFFIC_LED LED_DEBUG_2
 
-#define sc_board_can_ts_request(index) do { } while (0)
-#define sc_board_can_ts_wait(index) (0)
+
+
 
 
 #define sc_board_led_usb_burst() led_burst(LED_DEBUG_3, SC_LED_BURST_DURATION_MS)
@@ -58,8 +60,21 @@ enum {
 
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status);
+SC_RAMFUNC extern uint32_t sc_board_can_ts_fetch_isr(void);
 
 
 
+#define sc_board_can_ts_request(index) do { } while (0)
+static inline uint32_t sc_board_can_ts_wait(uint8_t index)
+{
+	uint32_t ts;
 
+	(void)index;
+
+	taskENTER_CRITICAL();
+	ts = sc_board_can_ts_fetch_isr();
+	taskEXIT_CRITICAL();
+
+	return ts;
+}
 

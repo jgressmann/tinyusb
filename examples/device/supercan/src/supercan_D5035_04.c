@@ -21,7 +21,8 @@ enum {
 	CAN_FEAT_PERM = SC_FEATURE_FLAG_TXR,
 	CAN_FEAT_CONF = (MSG_BUFFER_SIZE >= 128 ? SC_FEATURE_FLAG_FDF : 0)
 					| SC_FEATURE_FLAG_EHD
-					| SC_FEATURE_FLAG_DAR
+					/* not implemented */
+					// | SC_FEATURE_FLAG_DAR
 					| SC_FEATURE_FLAG_MON_MODE,
 };
 
@@ -119,7 +120,7 @@ struct led {
 #define LED_STATIC_INITIALIZER(name, pin) \
 	{ pin }
 
-
+static uint16_t top_1us;
 
 static const struct led leds[] = {
 	LED_STATIC_INITIALIZER("debug", (1 << 4) | 14),      // PB14
@@ -202,18 +203,17 @@ static inline void dump_can_regs(uint8_t index)
 
 static void gd32_can_init(void)
 {
-
-
 	/* enable clock GPIO AF clock */
 	RCU_APB2EN |= RCU_APB2EN_PBEN | RCU_APB2EN_AFEN;
-
+	/* enable CAN clocks */
+	RCU_APB1EN |= RCU_APB1EN_CAN0EN | RCU_APB1EN_CAN1EN;
 
 	/* CAN0 configure pins PB08 (RX), PB09 (TX) */
-	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(0)) | GPIO_MODE_SET(0, GPIO_MODE_IN_FLOATING | GPIO_OSPEED_50MHZ);
+	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(0)) | GPIO_MODE_SET(0, GPIO_MODE_IPU | GPIO_OSPEED_50MHZ);
 	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(1)) | GPIO_MODE_SET(1, GPIO_MODE_AF_PP | GPIO_OSPEED_50MHZ);
 
 	/* CAN1 configure pins PB12 (RX), PB13 (TX) */
-	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(4)) | GPIO_MODE_SET(5, GPIO_MODE_IN_FLOATING | GPIO_OSPEED_50MHZ);
+	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(4)) | GPIO_MODE_SET(5, GPIO_MODE_IPU | GPIO_OSPEED_50MHZ);
 	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(5)) | GPIO_MODE_SET(6, GPIO_MODE_AF_PP | GPIO_OSPEED_50MHZ);
 
 	/* remap CAN0 partially */
@@ -225,24 +225,32 @@ static void gd32_can_init(void)
 	RCU_APB1RST |= RCU_APB1RST_CAN0RST | RCU_APB1RST_CAN1RST;
 	RCU_APB1RST &= ~(RCU_APB1RST_CAN0RST | RCU_APB1RST_CAN1RST);
 
-	/* enable clocks */
-	RCU_APB1EN |= RCU_APB1EN_CAN0EN | RCU_APB1EN_CAN1EN;
+
 
 	for (uint8_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
 		struct can *can = &cans[i];
 
-		/* reset CAN */
-		CAN_CTL(can->regs) |= CAN_CTL_SWRST;
-		/* wait for reset */
-		while (CAN_CTL(can->regs) & CAN_CTL_SWRST);
+		// /* reset CAN */
+		// CAN_CTL(can->regs) |= CAN_CTL_SWRST;
+		// /* wait for reset */
+		// while (CAN_CTL(can->regs) & CAN_CTL_SWRST);
 
-		/* configure the rest */
+			// CAN_CTL(can->regs) &= ~(CAN_CTL_SLPWMOD | CAN_CTL_IWMOD);
+			// while (CAN_STAT(can->regs) & CAN_STAT_IWS);
+
+			// dump_can_regs(i);
+
+		// CAN_CTL(can->regs) &= ~CAN_CTL_SLPWMOD;
+		// CAN_CTL(can->regs) |= CAN_CTL_IWMOD;
+
+		// /* wait for initial working mode */
+		// while (!(CAN_STAT(can->regs) & CAN_STAT_IWS));
+
 		CAN_CTL(can->regs) =
 			(CAN_CTL(can->regs) & ~(CAN_CTL_DFZ | CAN_CTL_TTC | CAN_CTL_ABOR | CAN_CTL_AWU | CAN_CTL_RFOD | CAN_CTL_TFO | CAN_CTL_SLPWMOD | CAN_CTL_IWMOD)) |
 			(CAN_CTL_TFO | CAN_CTL_RFOD | CAN_CTL_IWMOD);
 
-		/* wait for initial working mode */
-		while (!(CAN_STAT(can->regs) & CAN_STAT_IWS));
+		CAN_STAT(can->regs) |= CAN_STAT_WUIF;
 
 		/* interrupts */
 		CAN_INTEN(can->regs) |=
@@ -298,6 +306,19 @@ static inline void device_id_init(void)
 
 }
 
+static inline void timer_1mhz_init(void)
+{
+	RCU_APB1EN |= RCU_APB1EN_TIMER5EN;
+
+	NVIC_SetPriority(TIMER5_IRQn, SC_ISR_PRIORITY);
+	NVIC_EnableIRQ(TIMER5_IRQn);
+
+	TIMER_PSC(TIMER5) = 119;
+	TIMER_DMAINTEN(TIMER5) = TIMER_DMAINTEN_UPIE;
+	TIMER_CAR(TIMER5) = 0xffff;
+	TIMER_CTL0(TIMER5) = TIMER_CTL0_CEN;
+}
+
 extern void sc_board_init_begin(void)
 {
 	__disable_irq();
@@ -313,21 +334,9 @@ extern void sc_board_init_begin(void)
 	__enable_irq();
 
 	device_id_init();
-	gd32_can_init();
 	leds_init();
-
-
-
-	// while (1) {
-	// 	uint32_t c = counter_1MHz_read_sync();
-	// 	counter_1MHz_request_current_value();
-	// 	uint32_t x = 0;
-	// 	while (!counter_1MHz_is_current_value_ready()) {
-	// 		++x;
-	// 	}
-
-	// 	LOG("c=%lx, wait=%lx\n", c, x);
-	// }
+	gd32_can_init();
+	timer_1mhz_init();
 }
 
 extern void sc_board_init_end(void)
@@ -515,12 +524,14 @@ void sc_board_can_go_bus(uint8_t index, bool on)
 			NVIC_EnableIRQ(can->irqs[i]);
 		}
 
+		dump_can_regs(index);
+
 		CAN_CTL(can->regs) &= ~CAN_CTL_IWMOD;
 
 		dump_can_regs(index);
 
 		/* wait for normal working mode */
-		while ((CAN_STAT(can->regs) & CAN_STAT_IWS));
+		while (CAN_STAT(can->regs) & CAN_STAT_IWS);
 	} else {
 		can_off(index);
 		can_clear_queues(index);
@@ -702,6 +713,19 @@ SC_RAMFUNC void CAN0_TX_IRQHandler(void)
 	// CAN_INTEN(can->regs) |= CAN_INTEN_TMEIE;
 }
 
+SC_RAMFUNC extern uint32_t sc_board_can_ts_fetch_isr(void)
+{
+	uint16_t bottom = TIMER_CNT(TIMER5);
+	uint16_t top = __atomic_load_n(&top_1us, __ATOMIC_ACQUIRE);
+	__ISB();
+
+	if (unlikely(TIMER_INTF(TIMER5) & TIMER_INTF_UPIF)) {
+		++top;
+	}
+
+	return  (((uint32_t)top) << 16) | bottom;
+}
+
 SC_RAMFUNC void CAN0_RX0_IRQHandler(void)
 {
 	uint8_t const index = 0;
@@ -709,7 +733,7 @@ SC_RAMFUNC void CAN0_RX0_IRQHandler(void)
 	uint32_t inten = CAN_INTEN(can->regs);
 	uint32_t rfifo0 = CAN_RFIFO0(can->regs);
 	uint32_t events = 0;
-	uint32_t tsc = 0;
+	uint32_t tsc = sc_board_can_ts_fetch_isr();
 	uint16_t rx_lost = 0;
 
 
@@ -793,5 +817,20 @@ SC_RAMFUNC void CAN0_EWMC_IRQHandler(void)
 	CAN_STAT(can->regs) |= CAN_STAT_ERRIF;
 }
 
+SC_RAMFUNC void TIMER5_IRQHandler(void)
+{
+	// LOG("TIMER5_IRQHandler\n");
+
+	TIMER_INTF(TIMER5) &= ~TIMER_INTF_UPIF;
+
+	// static bool on = false;
+
+	// // GPIO_BOP(GPIOB) = UINT32_C(1) << (9 + (!on) * 16);
+	// GPIO_BOP(GPIOA) = (UINT32_C(1) << (5 + (!on) * 16)) | (UINT32_C(1) << (6 + (!on) * 16));
+
+	// on = !on;
+
+	__atomic_store_n(&top_1us, top_1us + 1, __ATOMIC_RELEASE);
+}
 
 #endif // #if D5035_04
