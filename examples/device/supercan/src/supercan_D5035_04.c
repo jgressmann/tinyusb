@@ -20,13 +20,9 @@
 enum {
 	CAN_FEAT_PERM = SC_FEATURE_FLAG_TXR,
 	CAN_FEAT_CONF = (MSG_BUFFER_SIZE >= 128 ? SC_FEATURE_FLAG_FDF : 0)
-					// | SC_FEATURE_FLAG_TXP
 					| SC_FEATURE_FLAG_EHD
-					// not yet implemented
-					// | SC_FEATURE_FLAG_DAR
-					| SC_FEATURE_FLAG_MON_MODE
-					// | SC_FEATURE_FLAG_RES_MODE
-					// | SC_FEATURE_FLAG_EXT_LOOP_MODE,
+					| SC_FEATURE_FLAG_DAR
+					| SC_FEATURE_FLAG_MON_MODE,
 };
 
 
@@ -38,7 +34,7 @@ static const sc_can_bit_timing_range nm_range = {
 		.sjw = 1,
 	},
 	.max = {
-		.brp = 1023,
+		.brp = 1024,
 		.tseg1 = 128,
 		.tseg2 = 32,
 		.sjw = 32,
@@ -80,19 +76,23 @@ struct txr {
 	uint8_t flags;
 };
 
+#define IRQ_SENTINEL 0xff
+
+static const uint8_t can0_irqs[] = { CAN0_TX_IRQn, CAN0_RX0_IRQn, CAN0_EWMC_IRQn, IRQ_SENTINEL };
+static const uint8_t can1_irqs[] = { CAN1_TX_IRQn, CAN1_RX0_IRQn, CAN1_EWMC_IRQn, IRQ_SENTINEL };
+
 struct can {
 	struct rx_frame rx_queue[SC_BOARD_CAN_RX_FIFO_SIZE];
 	struct tx_frame tx_queue[SC_BOARD_CAN_TX_FIFO_SIZE];
 	struct txr txr_queue[SC_BOARD_CAN_TX_FIFO_SIZE];
 	sc_can_bit_timing nm;
 	sc_can_bit_timing dt;
+	const uint8_t *const irqs;
 	uint32_t const regs;
-	IRQn_Type const interrupt_id;
-	uint8_t track_id_queue[3];
 	uint16_t features;
+	uint8_t track_id_queue[3];
 	uint8_t const led_status_green;
 	uint8_t const led_status_red;
-	uint8_t const led_traffic;
 	uint8_t rx_get_index; // NOT an index, uses full range of type
 	uint8_t rx_put_index; // NOT an index, uses full range of type
 	uint8_t tx_get_index; // NOT an index, uses full range of type
@@ -105,7 +105,8 @@ struct can {
 	{
 		.led_status_green = LED_CAN0_STATUS_GREEN,
 		.led_status_red = LED_CAN0_STATUS_RED,
-		.led_traffic = LED_DEBUG_1,
+		.regs = CAN0,
+		.irqs = can0_irqs,
 	},
 };
 
@@ -186,54 +187,106 @@ static void move_vector_table_to_ram(void)
 	__DSB();
 }
 
+static inline void dump_can_regs(uint8_t index)
+{
+	struct can *can = &cans[index];
+
+	(void)can;
+
+	LOG("ch%u:\nCTL=%08x\nSTAT=%08x\nFDCTL=%08x\nFDSTAT=%08x\nBT=%08x\nDBT=%08x\nFDTDC=%08x\n",
+		index, CAN_CTL(can->regs), CAN_STAT(can->regs),
+		CAN_FDCTL(can->regs), CAN_FDSTAT(can->regs),
+		CAN_BT(can->regs), CAN_DBT(can->regs), CAN_FDTDC(can->regs));
+
+}
+
 static void gd32_can_init(void)
 {
-	/* CAN0 */
-	/* configure pins PB08 (RX), PB09 (TX) */
-	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(0)) | GPIO_MODE_SET(0, GPIO_MODE_AF_PP | GPIO_OSPEED_10MHZ);
-	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(1)) | GPIO_MODE_SET(1, GPIO_MODE_AF_PP | GPIO_OSPEED_10MHZ);
 
-	/* enable clock */
+
+	/* enable clock GPIO AF clock */
 	RCU_APB2EN |= RCU_APB2EN_PBEN | RCU_APB2EN_AFEN;
-	RCU_APB1EN |= RCU_APB1EN_CAN0EN;
-
-	/* reset CAN */
-	CAN_CTL(CAN0) |= CAN_CTL_SWRST;
-	/* wait for reset */
-	while (CAN_CTL(CAN0) & CAN_CTL_SWRST);
-
-	/* initial configuration */
-	CAN_CTL(CAN0) =
-	 (CAN_CTL(CAN0) & ~(CAN_CTL_DFZ | CAN_CTL_TTC | CAN_CTL_ABOR | CAN_CTL_AWU | CAN_CTL_RFOD | CAN_CTL_TFO | CAN_CTL_SLPWMOD | CAN_CTL_IWMOD)) |
-	 (CAN_CTL_TFO | CAN_CTL_RFOD | CAN_CTL_IWMOD);
-
-	/* interrupts */
-	CAN_INTEN(CAN0) |=
-		CAN_INTEN_ERRIE | /* error interrupt enable */
-		CAN_INTEN_ERRNIE | /* error numer interrupt enable */
-		CAN_INTEN_BOIE | /* bus-off interrupt enable */
-		CAN_INTEN_PERRIE | /* passive error interrupt enable */
-		CAN_INTEN_WERRIE | /* warning error interrupt enable */
-		CAN_INTEN_RFOIE0 | /* receive FIFO0 overfull interrupt enable */
-		CAN_INTEN_RFOIE0 | /* receive FIFO0 full interrupt enable */
-		CAN_INTEN_RFNEIE0 | /* receive FIFO0 not empty interrupt enable */
-		CAN_INTEN_TMEIE; /* transmit mailbox empty interrupt enable */
 
 
-	/* disable filters */
-	CAN_FCTL(CAN0) =
-		(CAN_FCTL(CAN0) & ~(CAN_FCTL_FLD | CAN_FCTL_HBC1F)) |
-		(FCTL_HBC1F(0) | CAN_FCTL_FLD);
+	/* CAN0 configure pins PB08 (RX), PB09 (TX) */
+	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(0)) | GPIO_MODE_SET(0, GPIO_MODE_IN_FLOATING | GPIO_OSPEED_50MHZ);
+	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(1)) | GPIO_MODE_SET(1, GPIO_MODE_AF_PP | GPIO_OSPEED_50MHZ);
+
+	/* CAN1 configure pins PB12 (RX), PB13 (TX) */
+	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(4)) | GPIO_MODE_SET(5, GPIO_MODE_IN_FLOATING | GPIO_OSPEED_50MHZ);
+	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(5)) | GPIO_MODE_SET(6, GPIO_MODE_AF_PP | GPIO_OSPEED_50MHZ);
+
+	/* remap CAN0 partially */
+	AFIO_PCF0 =
+			(AFIO_PCF0 & ~(AFIO_PCF0_CAN0_REMAP | AFIO_PCF0_CAN1_REMAP)) |
+			(GPIO_CAN0_PARTIAL_REMAP);
+
+	/* reset CANs */
+	RCU_APB1RST |= RCU_APB1RST_CAN0RST | RCU_APB1RST_CAN1RST;
+	RCU_APB1RST &= ~(RCU_APB1RST_CAN0RST | RCU_APB1RST_CAN1RST);
+
+	/* enable clocks */
+	RCU_APB1EN |= RCU_APB1EN_CAN0EN | RCU_APB1EN_CAN1EN;
 
 	for (uint8_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
-		// struct can *can = &cans[i];
+		struct can *can = &cans[i];
+
+		/* reset CAN */
+		CAN_CTL(can->regs) |= CAN_CTL_SWRST;
+		/* wait for reset */
+		while (CAN_CTL(can->regs) & CAN_CTL_SWRST);
+
+		/* configure the rest */
+		CAN_CTL(can->regs) =
+			(CAN_CTL(can->regs) & ~(CAN_CTL_DFZ | CAN_CTL_TTC | CAN_CTL_ABOR | CAN_CTL_AWU | CAN_CTL_RFOD | CAN_CTL_TFO | CAN_CTL_SLPWMOD | CAN_CTL_IWMOD)) |
+			(CAN_CTL_TFO | CAN_CTL_RFOD | CAN_CTL_IWMOD);
+
+		/* wait for initial working mode */
+		while (!(CAN_STAT(can->regs) & CAN_STAT_IWS));
+
+		/* interrupts */
+		CAN_INTEN(can->regs) |=
+			CAN_INTEN_ERRIE | /* error interrupt enable */
+			CAN_INTEN_ERRNIE | /* error numer interrupt enable */
+			CAN_INTEN_BOIE | /* bus-off interrupt enable */
+			CAN_INTEN_PERRIE | /* passive error interrupt enable */
+			CAN_INTEN_WERRIE | /* warning error interrupt enable */
+			CAN_INTEN_RFOIE0 | /* receive FIFO0 overfull interrupt enable */
+			CAN_INTEN_RFOIE0 | /* receive FIFO0 full interrupt enable */
+			CAN_INTEN_RFNEIE0 | /* receive FIFO0 not empty interrupt enable */
+			CAN_INTEN_TMEIE; /* transmit mailbox empty interrupt enable */
+
+
+		/* setup filter for FIFO0 (assign ALL, use 1) */
+		CAN_FCTL(can->regs) =
+			(CAN_FCTL(can->regs) & ~(CAN_FCTL_FLD | CAN_FCTL_HBC1F)) |
+			(FCTL_HBC1F(28) | CAN_FCTL_FLD);
+
+		/* disable filters */
+		CAN_FW(can->regs) = 0;
+
+		/* configure 32 bit filter on index 0 */
+		CAN_FSCFG(can->regs) = BIT(0);
+		/* reset default: mask mode */
+		CAN_FMCFG(can->regs) = 0;
+		/* reset default: all filters assigned to fifo 0 */
+		CAN_FAFIFO(can->regs) = 0;
+		/* set pass everything mask */
+		CAN_F0DATA0(can->regs) = 0;
+		CAN_F1DATA0(can->regs) = 0;
+
+		/* enable filter 0 */
+		CAN_FW(can->regs) = BIT(0);
+
+		CAN_FCTL(can->regs) &= ~CAN_FCTL_FLD;
+
 
 		sc_board_can_reset(i);
-	}
 
-	NVIC_SetPriority(CAN0_TX_IRQn, SC_ISR_PRIORITY);
-	NVIC_SetPriority(CAN0_RX0_IRQn, SC_ISR_PRIORITY);
-	NVIC_SetPriority(CAN0_EWMC_IRQn, SC_ISR_PRIORITY);
+		for (unsigned j = 0; can->irqs[j] != IRQ_SENTINEL; ++j) {
+			NVIC_SetPriority(can->irqs[j], SC_ISR_PRIORITY);
+		}
+	}
 }
 
 static inline void device_id_init(void)
@@ -249,12 +302,15 @@ extern void sc_board_init_begin(void)
 {
 	__disable_irq();
 	board_init();
+
+	/* change interrupt prio */
 	NVIC_SetPriority(USBFS_IRQn, SC_ISR_PRIORITY);
-	__enable_irq();
 
 	LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
 	move_vector_table_to_ram();
 	LOG("Vectors RAM @ %p\n", (void*)SCB->VTOR);
+
+	__enable_irq();
 
 	device_id_init();
 	gd32_can_init();
@@ -279,7 +335,6 @@ extern void sc_board_init_end(void)
 	led_blink(0, 2000);
 	led_set(POWER_LED, 1);
 }
-
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
 {
@@ -320,8 +375,6 @@ SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
 		break;
 	}
 }
-
-
 
 __attribute__((noreturn)) extern void sc_board_reset(void)
 {
@@ -385,23 +438,40 @@ static void can_configure(uint8_t index)
 {
 	struct can *can = &cans[index];
 
+	if (can->features & SC_FEATURE_FLAG_DAR) {
+		CAN_CTL(can->regs) |= CAN_CTL_ARD;
+	} else {
+		CAN_CTL(can->regs) &= ~CAN_CTL_ARD;
+	}
+
+	/* nominal bitrate */
 	CAN_BT(can->regs) =
 		(CAN_BT(can->regs) & ~(CAN_BT_SCMOD | CAN_BT_LCMOD | CAN_BT_BAUDPSC | CAN_BT_SJW | CAN_BT_BS1_6_4 | CAN_BT_BS1_3_0 | CAN_BT_BS2_4_3 | CAN_BT_BS2_2_0)) |
-		(((can->features & SC_FEATURE_FLAG_MON_MODE) ? CAN_BT_SCMOD : 0) | BT_BAUDPSC(can->nm.brp) | BT_SJW(can->nm.sjw) | BT_BS1(can->nm.tseg1) | BT_BS2(can->nm.tseg2));
+		(((can->features & SC_FEATURE_FLAG_MON_MODE) ? CAN_BT_SCMOD : 0) | BT_BAUDPSC(can->nm.brp-1) | BT_SJW(can->nm.sjw-1) | BT_BS1(can->nm.tseg1-1) | BT_BS2(can->nm.tseg2-1));
 
 	if (can->features & SC_FEATURE_FLAG_FDF) {
-		uint8_t tdcf = tu_min8((1 + can->dt.tseg1 + can->dt.tseg2 / 2), 128) - 1;
-		uint8_t tdco = tu_min8((1 + can->dt.tseg1 - can->dt.tseg2 / 2), 128) - 1;
+		uint8_t tdcf = tu_min8((1 + can->dt.tseg1 + can->dt.tseg2 / 2), 128);
+		uint8_t tdco = tu_min8((1 + can->dt.tseg1 - can->dt.tseg2 / 2), 128);
 
 		CAN_FDCTL(can->regs) =
 			(CAN_FDCTL(can->regs) & ~(CAN_FDCTL_FDEN | CAN_FDCTL_PRED | CAN_FDCTL_TDCEN | CAN_FDCTL_TDCMOD | CAN_FDCTL_ESIMOD | CAN_FDCTL_NISO)) |
-			(CAN_FDCTL_FDEN | ((can->features & SC_FEATURE_FLAG_EHD) ? 0 : CAN_FDCTL_PRED) | ((sc_bitrate(can->dt.brp, can->dt.tseg1, can->dt.tseg2) >= 1000000) * CAN_FDCTL_TDCEN));
+			(
+				CAN_FDCTL_FDEN |
+				((can->features & SC_FEATURE_FLAG_EHD) ? 0 : CAN_FDCTL_PRED) |
+				((sc_bitrate(can->dt.brp, can->dt.tseg1, can->dt.tseg2) >= 1000000) * CAN_FDCTL_TDCEN) |
+				CAN_FDCTL_ESIMOD
+			);
 
 
 		/* transmitter delay compensation */
 		CAN_FDTDC(can->regs) =
 			(CAN_FDTDC(can->regs) & ~(CAN_FDTDC_TDCF | CAN_FDTDC_TDCO)) |
 			(FDTDC_TDCF(tdcf) | FDTDC_TDCO(tdco));
+
+		/* data bitrate */
+		CAN_DBT(can->regs) =
+			(CAN_DBT(can->regs) & ~(CAN_DBT_DBAUDPSC | CAN_DBT_DBS1 | CAN_DBT_DBS2 | CAN_DBT_DSJW)) |
+			(BT_BAUDPSC(can->dt.brp-1) | BT_DSJW(can->dt.sjw-1) | BT_DBS1(can->dt.tseg1-1) | BT_DBS2(can->dt.tseg2-1));
 
 	} else {
 		CAN_FDCTL(can->regs) &= ~CAN_FDCTL_FDEN;
@@ -424,15 +494,14 @@ static inline void can_off(uint8_t index)
 {
 	struct can *can = &cans[index];
 
-	NVIC_DisableIRQ(CAN0_TX_IRQn);
-	NVIC_DisableIRQ(CAN0_RX0_IRQn);
-	NVIC_DisableIRQ(CAN0_EWMC_IRQn);
+	for (unsigned i = 0; can->irqs[i] != IRQ_SENTINEL; ++i) {
+		NVIC_DisableIRQ(can->irqs[i]);
+	}
 
 	/* abort scheduled transmissions */
 	CAN_TSTAT(can->regs) |= CAN_TSTAT_MST0 | CAN_TSTAT_MST1 | CAN_TSTAT_MST2;
 	/* initial working mode */
 	CAN_CTL(can->regs) |= CAN_CTL_IWMOD;
-
 }
 
 void sc_board_can_go_bus(uint8_t index, bool on)
@@ -440,13 +509,18 @@ void sc_board_can_go_bus(uint8_t index, bool on)
 	struct can *can = &cans[index];
 
 	if (on) {
-		NVIC_EnableIRQ(CAN0_TX_IRQn);
-		NVIC_EnableIRQ(CAN0_RX0_IRQn);
-		NVIC_EnableIRQ(CAN0_EWMC_IRQn);
-
 		can_configure(index);
 
+		for (unsigned i = 0; can->irqs[i] != IRQ_SENTINEL; ++i) {
+			NVIC_EnableIRQ(can->irqs[i]);
+		}
+
 		CAN_CTL(can->regs) &= ~CAN_CTL_IWMOD;
+
+		dump_can_regs(index);
+
+		/* wait for normal working mode */
+		while ((CAN_STAT(can->regs) & CAN_STAT_IWS));
 	} else {
 		can_off(index);
 		can_clear_queues(index);
@@ -514,13 +588,8 @@ SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx
 }
 
 
-SC_RAMFUNC static void can_int0(void)
-{
-	uint8_t const index = 0;
-	struct can *can = &cans[index];
-}
 
-void CAN0_TX_IRQHandler(void)
+SC_RAMFUNC void CAN0_TX_IRQHandler(void)
 {
 	uint8_t const index = 0;
 	struct can *can = &cans[index];
@@ -633,7 +702,7 @@ void CAN0_TX_IRQHandler(void)
 	// CAN_INTEN(can->regs) |= CAN_INTEN_TMEIE;
 }
 
-void CAN0_RX0_IRQHandler(void)
+SC_RAMFUNC void CAN0_RX0_IRQHandler(void)
 {
 	uint8_t const index = 0;
 	struct can *can = &cans[index];
@@ -707,7 +776,7 @@ void CAN0_RX0_IRQHandler(void)
 	// CAN_INTEN(can->regs) |= (CAN_INTEN_RFNEIE0 | CAN_INTEN_RFFIE0 | CAN_INTEN_RFOIE0);
 }
 
-void CAN0_EWMC_IRQHandler(void)
+SC_RAMFUNC void CAN0_EWMC_IRQHandler(void)
 {
 	uint8_t const index = 0;
 	struct can *can = &cans[index];
