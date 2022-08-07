@@ -238,21 +238,30 @@ static void gd32_can_init(void)
 			// CAN_CTL(can->regs) &= ~(CAN_CTL_SLPWMOD | CAN_CTL_IWMOD);
 			// while (CAN_STAT(can->regs) & CAN_STAT_IWS);
 
-		dump_can_regs(i);
 
-		// CAN_CTL(can->regs) &= ~CAN_CTL_SLPWMOD;
-		// CAN_CTL(can->regs) |= CAN_CTL_IWMOD;
 
-		// /* wait for initial working mode */
-		// while (!(CAN_STAT(can->regs) & CAN_STAT_IWS));
+		CAN_CTL(can->regs) &= ~CAN_CTL_SLPWMOD;
+		CAN_CTL(can->regs) |= CAN_CTL_IWMOD;
 
-		CAN_CTL(can->regs) =
-			(CAN_CTL(can->regs) & ~(CAN_CTL_DFZ | CAN_CTL_TTC | CAN_CTL_ABOR | CAN_CTL_AWU | CAN_CTL_RFOD | CAN_CTL_TFO | CAN_CTL_SLPWMOD | CAN_CTL_IWMOD)) |
-			(CAN_CTL_IWMOD);
-
+		/* wait for initial working mode */
 		while (!(CAN_STAT(can->regs) & CAN_STAT_IWS));
 
+		// CAN_CTL(can->regs) =
+		// 	(CAN_CTL(can->regs) & ~(CAN_CTL_DFZ | CAN_CTL_TTC | CAN_CTL_ABOR | CAN_CTL_AWU | CAN_CTL_RFOD | CAN_CTL_TFO | CAN_CTL_SLPWMOD | CAN_CTL_IWMOD)) |
+		// 	(CAN_CTL_IWMOD);
+
+		// while (!(CAN_STAT(can->regs) & CAN_STAT_IWS));
+		LOG("IWS\n");
+
 		CAN_STAT(can->regs) |= CAN_STAT_WUIF;
+
+		dump_can_regs(i);
+
+		CAN_CTL(can->regs) &= ~CAN_CTL_IWMOD;
+
+		while ((CAN_STAT(can->regs) & CAN_STAT_IWS));
+
+		LOG("WS\n");
 
 		/* interrupts */
 		CAN_INTEN(can->regs) |=
@@ -331,16 +340,17 @@ extern void sc_board_init_begin(void)
 
 	__enable_irq();
 
-	LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
-	move_vector_table_to_ram();
-	LOG("Vectors RAM @ %p\n", (void*)SCB->VTOR);
-
+	// LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
+	// move_vector_table_to_ram();
+	// LOG("Vectors RAM @ %p\n", (void*)SCB->VTOR);
 
 
 	device_id_init();
-	leds_init();
+	// leds_init();
 	gd32_can_init();
-	timer_1mhz_init();
+	// timer_1mhz_init();
+
+	LOG("sc_board_init_begin exit\n");
 }
 
 extern void sc_board_init_end(void)
