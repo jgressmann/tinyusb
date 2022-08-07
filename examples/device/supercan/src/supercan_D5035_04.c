@@ -238,7 +238,7 @@ static void gd32_can_init(void)
 			// CAN_CTL(can->regs) &= ~(CAN_CTL_SLPWMOD | CAN_CTL_IWMOD);
 			// while (CAN_STAT(can->regs) & CAN_STAT_IWS);
 
-			// dump_can_regs(i);
+		dump_can_regs(i);
 
 		// CAN_CTL(can->regs) &= ~CAN_CTL_SLPWMOD;
 		// CAN_CTL(can->regs) |= CAN_CTL_IWMOD;
@@ -248,7 +248,9 @@ static void gd32_can_init(void)
 
 		CAN_CTL(can->regs) =
 			(CAN_CTL(can->regs) & ~(CAN_CTL_DFZ | CAN_CTL_TTC | CAN_CTL_ABOR | CAN_CTL_AWU | CAN_CTL_RFOD | CAN_CTL_TFO | CAN_CTL_SLPWMOD | CAN_CTL_IWMOD)) |
-			(CAN_CTL_TFO | CAN_CTL_RFOD | CAN_CTL_IWMOD);
+			(CAN_CTL_IWMOD);
+
+		while (!(CAN_STAT(can->regs) & CAN_STAT_IWS));
 
 		CAN_STAT(can->regs) |= CAN_STAT_WUIF;
 
@@ -327,11 +329,13 @@ extern void sc_board_init_begin(void)
 	/* change interrupt prio */
 	NVIC_SetPriority(USBFS_IRQn, SC_ISR_PRIORITY);
 
+	__enable_irq();
+
 	LOG("Vectors ROM @ %p\n", (void*)SCB->VTOR);
 	move_vector_table_to_ram();
 	LOG("Vectors RAM @ %p\n", (void*)SCB->VTOR);
 
-	__enable_irq();
+
 
 	device_id_init();
 	leds_init();
