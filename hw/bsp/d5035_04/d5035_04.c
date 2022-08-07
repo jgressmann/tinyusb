@@ -18,12 +18,13 @@
 // Forward USB interrupt events to TinyUSB IRQ Handler
 //--------------------------------------------------------------------+
 
-void USBFS_IRQHandler(void) { tud_int_handler(0); }
+__attribute__((section(".ramfunc"))) void USBFS_IRQHandler(void) { tud_int_handler(0); }
 
 //--------------------------------------------------------------------+
 // MACRO TYPEDEF CONSTANT ENUM
 //--------------------------------------------------------------------+
 #define CONF_CPU_FREQUENCY 120000000
+#define CONF_SYSTICK_FREQUENCY (CONF_CPU_FREQUENCY / 8)
 #define CONF_APB2_FREQUENCY 120000000
 #define USART_BAUDRATE 115200
 #define BOARD_NAME "D5035-04"
@@ -143,7 +144,7 @@ void board_init(void)
 	 * The SysTick calibration value is 15000 and SysTick clock frequency is fixed to HCLK*0.125.
 	 * 1ms SysTick interrupt will be generated when HCLK is configured to 120MHz.
 	 */
-	SysTick_Config(CONF_CPU_FREQUENCY / 1000);
+	SysTick_Config(CONF_SYSTICK_FREQUENCY / 1000);
 #endif
 
 #if CFG_TUSB_OS == OPT_OS_FREERTOS

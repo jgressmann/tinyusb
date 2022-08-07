@@ -199,22 +199,34 @@ static inline void dump_can_regs(uint8_t index)
 		CAN_FDCTL(can->regs), CAN_FDSTAT(can->regs),
 		CAN_BT(can->regs), CAN_DBT(can->regs), CAN_FDTDC(can->regs));
 
+	LOG("RCU_CTL=%08x\nRCU_CFG0=%08x\nRCU_CFG1=%08x\nRCU_AHBEN=%08x\nRCU_APB1EN=%08x\nRCU_APB2EN=%08x\n",
+		RCU_CTL, RCU_CFG0, RCU_CFG1, RCU_AHBEN, RCU_APB1EN, RCU_APB2EN);
+
+	LOG("GPIO_CTL0(A)=%08x\nGPIO_CTL1(A)=%08x\nGPIO_CTL0(B)=%08x\nGPIO_CTL1(B)=%08x\n",
+		GPIO_CTL0(GPIOA), GPIO_CTL1(GPIOA), GPIO_CTL0(GPIOB), GPIO_CTL1(GPIOB));
+	LOG("GPIO_CTL0(C)=%08x\nGPIO_CTL1(C)=%08x\nGPIO_CTL0(D)=%08x\nGPIO_CTL1(D)=%08x\n",
+		GPIO_CTL0(GPIOC), GPIO_CTL1(GPIOC), GPIO_CTL0(GPIOD), GPIO_CTL1(GPIOD));
+
 }
 
 static void gd32_can_init(void)
 {
-	/* enable clock GPIO AF clock */
+	/* enable clock GPIO port and AF clock */
 	RCU_APB2EN |= RCU_APB2EN_PBEN | RCU_APB2EN_AFEN;
 	/* enable CAN clocks */
 	RCU_APB1EN |= RCU_APB1EN_CAN0EN | RCU_APB1EN_CAN1EN;
 
 	/* CAN0 configure pins PB08 (RX), PB09 (TX) */
+	GPIO_BOP(GPIOB) = UINT32_C(1) << 8;
 	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(0)) | GPIO_MODE_SET(0, GPIO_MODE_IPU | GPIO_OSPEED_50MHZ);
 	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(1)) | GPIO_MODE_SET(1, GPIO_MODE_AF_PP | GPIO_OSPEED_50MHZ);
 
+
 	/* CAN1 configure pins PB12 (RX), PB13 (TX) */
-	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(4)) | GPIO_MODE_SET(5, GPIO_MODE_IPU | GPIO_OSPEED_50MHZ);
-	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(5)) | GPIO_MODE_SET(6, GPIO_MODE_AF_PP | GPIO_OSPEED_50MHZ);
+	GPIO_BOP(GPIOB) = UINT32_C(1) << 12;
+	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(4)) | GPIO_MODE_SET(4, GPIO_MODE_IPU | GPIO_OSPEED_50MHZ);
+	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(5)) | GPIO_MODE_SET(5, GPIO_MODE_AF_PP | GPIO_OSPEED_50MHZ);
+
 
 	/* remap CAN0 partially */
 	AFIO_PCF0 =
@@ -246,22 +258,23 @@ static void gd32_can_init(void)
 		/* wait for initial working mode */
 		while (!(CAN_STAT(can->regs) & CAN_STAT_IWS));
 
-		// CAN_CTL(can->regs) =
-		// 	(CAN_CTL(can->regs) & ~(CAN_CTL_DFZ | CAN_CTL_TTC | CAN_CTL_ABOR | CAN_CTL_AWU | CAN_CTL_RFOD | CAN_CTL_TFO | CAN_CTL_SLPWMOD | CAN_CTL_IWMOD)) |
-		// 	(CAN_CTL_IWMOD);
+		CAN_CTL(can->regs) =
+			(CAN_CTL(can->regs) & ~(CAN_CTL_DFZ | CAN_CTL_TTC | CAN_CTL_ABOR | CAN_CTL_ARD | CAN_CTL_AWU | CAN_CTL_RFOD | CAN_CTL_TFO | CAN_CTL_SLPWMOD | CAN_CTL_IWMOD)) |
+			(CAN_CTL_IWMOD | CAN_CTL_RFOD | CAN_CTL_DFZ | CAN_CTL_ARD);
 
 		// while (!(CAN_STAT(can->regs) & CAN_STAT_IWS));
 		LOG("IWS\n");
 
 		CAN_STAT(can->regs) |= CAN_STAT_WUIF;
+		CAN_BT(can->regs) = 0x00000027;
 
-		dump_can_regs(i);
+		// dump_can_regs(i);
 
-		CAN_CTL(can->regs) &= ~CAN_CTL_IWMOD;
+		// CAN_CTL(can->regs) &= ~CAN_CTL_IWMOD;
 
-		while ((CAN_STAT(can->regs) & CAN_STAT_IWS));
+		// while ((CAN_STAT(can->regs) & CAN_STAT_IWS));
 
-		LOG("WS\n");
+		// LOG("WS\n");
 
 		/* interrupts */
 		CAN_INTEN(can->regs) |=
