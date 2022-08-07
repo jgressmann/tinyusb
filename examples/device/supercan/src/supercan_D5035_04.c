@@ -104,10 +104,10 @@ struct can {
 	uint8_t txr_put_index; // NOT an index, uses full range of type
 } cans[SC_BOARD_CAN_COUNT] = {
 	{
-		.led_status_green = LED_CAN0_STATUS_GREEN,
-		.led_status_red = LED_CAN0_STATUS_RED,
-		.regs = CAN0,
-		.irqs = can0_irqs,
+		.led_status_green = LED_CAN1_STATUS_GREEN,
+		.led_status_red = LED_CAN1_STATUS_RED,
+		.regs = CAN1,
+		.irqs = can1_irqs,
 	},
 };
 
@@ -212,7 +212,7 @@ static inline void dump_can_regs(uint8_t index)
 static void gd32_can_init(void)
 {
 	/* enable clock GPIO port and AF clock */
-	RCU_APB2EN |= RCU_APB2EN_PBEN | RCU_APB2EN_AFEN;
+	RCU_APB2EN |= RCU_APB2EN_PBEN | RCU_APB2EN_PDEN | RCU_APB2EN_AFEN;
 	/* enable CAN clocks */
 	RCU_APB1EN |= RCU_APB1EN_CAN0EN | RCU_APB1EN_CAN1EN;
 
@@ -230,8 +230,8 @@ static void gd32_can_init(void)
 
 	/* remap CAN0 partially */
 	AFIO_PCF0 =
-			(AFIO_PCF0 & ~(AFIO_PCF0_CAN0_REMAP | AFIO_PCF0_CAN1_REMAP)) |
-			(GPIO_CAN0_PARTIAL_REMAP);
+		(AFIO_PCF0 & ~(AFIO_PCF0_CAN0_REMAP | AFIO_PCF0_CAN1_REMAP)) |
+		(PCF0_CAN_REMAP(2) | AFIO_PCF0_CAN1_REMAP);
 
 	/* reset CANs */
 	RCU_APB1RST |= RCU_APB1RST_CAN0RST | RCU_APB1RST_CAN1RST;
@@ -266,9 +266,9 @@ static void gd32_can_init(void)
 		LOG("IWS\n");
 
 		CAN_STAT(can->regs) |= CAN_STAT_WUIF;
-		CAN_BT(can->regs) = 0x00000027;
+		// CAN_BT(can->regs) = 0x00000027;
 
-		// dump_can_regs(i);
+		// // dump_can_regs(i);
 
 		// CAN_CTL(can->regs) &= ~CAN_CTL_IWMOD;
 
@@ -359,9 +359,9 @@ extern void sc_board_init_begin(void)
 
 
 	device_id_init();
-	// leds_init();
+	leds_init();
 	gd32_can_init();
-	// timer_1mhz_init();
+	timer_1mhz_init();
 
 	LOG("sc_board_init_begin exit\n");
 }
@@ -559,6 +559,8 @@ void sc_board_can_go_bus(uint8_t index, bool on)
 
 		/* wait for normal working mode */
 		while (CAN_STAT(can->regs) & CAN_STAT_IWS);
+
+		dump_can_regs(index);
 	} else {
 		can_off(index);
 		can_clear_queues(index);

@@ -136,14 +136,7 @@ void board_init(void)
 	uart_send_str(BOARD_NAME " UART initialized\n");
 #endif
 
-
-
 #if CFG_TUSB_OS == OPT_OS_NONE
-	/* GD32C10x User Manual, p. 120:
-	 *
-	 * The SysTick calibration value is 15000 and SysTick clock frequency is fixed to HCLK*0.125.
-	 * 1ms SysTick interrupt will be generated when HCLK is configured to 120MHz.
-	 */
 	SysTick_Config(CONF_SYSTICK_FREQUENCY / 1000);
 #endif
 
