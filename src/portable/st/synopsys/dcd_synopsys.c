@@ -28,8 +28,6 @@
  */
 
 #include "tusb_option.h"
-#include "bsp/board.h"
-#include <supercan_debug.h>
 
 // Since TinyUSB doesn't use SOF for now, and this interrupt too often (1ms interval)
 // We disable SOF for now until needed later on
@@ -475,7 +473,6 @@ static void edpt_schedule_packets(uint8_t rhport, uint8_t const epnum, uint8_t c
 /*------------------------------------------------------------------*/
 /* Controller API
  *------------------------------------------------------------------*/
-__attribute__((optimize("O0")))
 void dcd_init (uint8_t rhport)
 {
   // Programming model begins in the last section of the chapter on the USB
@@ -552,8 +549,6 @@ void dcd_init (uint8_t rhport)
   usb_otg->GAHBCFG |= USB_OTG_GAHBCFG_GINT;
 
   dcd_connect(rhport);
-
-  board_uart_write("dcd_init exit\n", -1);
 }
 
 void dcd_int_enable (uint8_t rhport)
@@ -1138,7 +1133,6 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
 
 void dcd_int_handler(uint8_t rhport)
 {
-
   USB_OTG_GlobalTypeDef * usb_otg = GLOBAL_BASE(rhport);
   USB_OTG_DeviceTypeDef * dev = DEVICE_BASE(rhport);
   USB_OTG_OUTEndpointTypeDef * out_ep = OUT_EP_BASE(rhport);
@@ -1146,13 +1140,8 @@ void dcd_int_handler(uint8_t rhport)
 
   uint32_t const int_status = usb_otg->GINTSTS & usb_otg->GINTMSK;
 
-  // LOG("USBFS_GOTGINTF=%08x\n", usb_otg->GOTGINT);
-  // LOG("USBFS_GINTF=%08x\n", usb_otg->GINTSTS);
-  // LOG("USBFS_DAEPINT=%08x\n", dev->DAINT);
-
   if(int_status & USB_OTG_GINTSTS_USBRST)
   {
-    // board_uart_write("dcd_int_handler 2\n", -1);
     // USBRST is start of reset.
     usb_otg->GINTSTS = USB_OTG_GINTSTS_USBRST;
     bus_reset(rhport);
@@ -1160,7 +1149,6 @@ void dcd_int_handler(uint8_t rhport)
 
   if(int_status & USB_OTG_GINTSTS_ENUMDNE)
   {
-    // board_uart_write("dcd_int_handler 3\n", -1);
     // ENUMDNE is the end of reset where speed of the link is detected
 
     usb_otg->GINTSTS = USB_OTG_GINTSTS_ENUMDNE;
@@ -1173,14 +1161,12 @@ void dcd_int_handler(uint8_t rhport)
 
   if(int_status & USB_OTG_GINTSTS_USBSUSP)
   {
-    // board_uart_write("dcd_int_handler 4\n", -1);
     usb_otg->GINTSTS = USB_OTG_GINTSTS_USBSUSP;
     dcd_event_bus_signal(rhport, DCD_EVENT_SUSPEND, true);
   }
 
   if(int_status & USB_OTG_GINTSTS_WKUINT)
   {
-    // board_uart_write("dcd_int_handler 5\n", -1);
     usb_otg->GINTSTS = USB_OTG_GINTSTS_WKUINT;
     dcd_event_bus_signal(rhport, DCD_EVENT_RESUME, true);
   }
@@ -1190,7 +1176,6 @@ void dcd_int_handler(uint8_t rhport)
 
   if(int_status & USB_OTG_GINTSTS_OTGINT)
   {
-    // board_uart_write("dcd_int_handler 6\n", -1);
     // OTG INT bit is read-only
     uint32_t const otg_int = usb_otg->GOTGINT;
 
@@ -1204,7 +1189,6 @@ void dcd_int_handler(uint8_t rhport)
 
   if(int_status & USB_OTG_GINTSTS_SOF)
   {
-    // board_uart_write("dcd_int_handler 7\n", -1);
     usb_otg->GINTSTS = USB_OTG_GINTSTS_SOF;
 
     // Disable SOF interrupt since currently only used for remote wakeup detection
@@ -1217,7 +1201,6 @@ void dcd_int_handler(uint8_t rhport)
   if(int_status & USB_OTG_GINTSTS_RXFLVL)
   {
     // RXFLVL bit is read-only
-    // board_uart_write("dcd_int_handler 8\n", -1);
 
     // Mask out RXFLVL while reading data from FIFO
     usb_otg->GINTMSK &= ~USB_OTG_GINTMSK_RXFLVLM;
@@ -1243,7 +1226,6 @@ void dcd_int_handler(uint8_t rhport)
   // OUT endpoint interrupt handling.
   if(int_status & USB_OTG_GINTSTS_OEPINT)
   {
-    // board_uart_write("dcd_int_handler 9\n", -1);
     // OEPINT is read-only
     handle_epout_ints(rhport, dev, out_ep);
   }
@@ -1251,7 +1233,6 @@ void dcd_int_handler(uint8_t rhport)
   // IN endpoint interrupt handling.
   if(int_status & USB_OTG_GINTSTS_IEPINT)
   {
-    // board_uart_write("dcd_int_handler 10\n", -1);
     // IEPINT bit read-only
     handle_epin_ints(rhport, dev, in_ep);
   }
@@ -1262,9 +1243,7 @@ void dcd_int_handler(uint8_t rhport)
   ////    TU_LOG2("      IISOIXFR!\r\n");
   //  }
 
-  //  usb_otg->GINTSTS = ~0;
-
-  // board_uart_write("dcd_int_handler exit\n", -1);
+    //  usb_otg->GINTSTS = ~0;
 }
 
 #endif
