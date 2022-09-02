@@ -27,6 +27,15 @@
 
 #define SC_BOARD_CAN_TX_FIFO_SIZE 32
 #define SC_BOARD_CAN_RX_FIFO_SIZE 32
+/* This board is special, greater sizes lead to the USB ports begin disabled during
+ * transfer. The Linux kernel prints this helpful (?) diagnostic message:
+ * usb usb4-port4: disabled by hub (EMI?), re-enabling..
+ */
+
+// works *sometimes*
+// #define MSG_BUFFER_SIZE 256
+// seems to *mostly* work
+#define MSG_BUFFER_SIZE 128
 
 enum {
 	SC_BOARD_DEBUG_DEFAULT,

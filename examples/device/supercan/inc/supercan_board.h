@@ -33,7 +33,7 @@
 
 
 #define CMD_BUFFER_SIZE 64
-#define MSG_BUFFER_SIZE 512
+
 
 enum {
 	SC_LED_BURST_DURATION_MS = 8,
@@ -181,3 +181,6 @@ SC_RAMFUNC static inline uint32_t sc_bitrate(unsigned brp, unsigned tseg1, unsig
 	return SC_BOARD_CAN_CLK_HZ / ((uint32_t)brp * (1 + tseg1 + tseg2));
 }
 
+#ifndef MSG_BUFFER_SIZE
+#	define MSG_BUFFER_SIZE 512
+#endif

@@ -60,6 +60,8 @@
 #define CFG_TUSB_MEM_ALIGN          __attribute__ ((aligned(4)))
 #endif
 
+#define CFG_TUSB_ENDPOINT_LIMIT 3
+
 //--------------------------------------------------------------------
 // DEVICE CONFIGURATION
 //--------------------------------------------------------------------
@@ -67,6 +69,7 @@
 
 //------------- CLASS -------------//
 #define CFG_TUD_DFU_RUNTIME       SUPERDFU_APP
+
 
 
 
