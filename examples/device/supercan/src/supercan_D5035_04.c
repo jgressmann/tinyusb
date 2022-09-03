@@ -67,6 +67,7 @@ struct tx_frame {
 };
 
 struct rx_frame {
+	uint32_t timestamp_us;
 	uint32_t mi;
 	uint32_t mp;
 	uint32_t data[16];
@@ -91,6 +92,7 @@ struct can {
 	sc_can_bit_timing dt;
 	const uint8_t *const irqs;
 	uint32_t const regs;
+	uint32_t nm_us_per_bit;
 #if SUPERCAN_DEBUG
 	uint32_t txr;
 #endif
@@ -334,18 +336,19 @@ static void gd32_can_init(void)
 		/* disable filters */
 		CAN_FW(can->regs) = 0;
 
-		/* configure 32 bit filter on index 0 */
-		CAN_FSCFG(can->regs) = BIT(0);
+		/* configure 32 bit filter 0 */
+		CAN_FSCFG(can->regs) = 1;
 		/* reset default: mask mode */
 		CAN_FMCFG(can->regs) = 0;
 		/* reset default: all filters assigned to fifo 0 */
 		CAN_FAFIFO(can->regs) = 0;
+
 		/* set pass everything mask */
 		CAN_F0DATA0(can->regs) = 0;
-		CAN_F1DATA0(can->regs) = 0;
+		CAN_F0DATA1(can->regs) = 0;
 
 		/* enable filter 0 */
-		CAN_FW(can->regs) = BIT(0);
+		CAN_FW(can->regs) = 1;
 
 		CAN_FCTL(can->regs) &= ~CAN_FCTL_FLD;
 
@@ -560,6 +563,8 @@ static void can_configure(uint8_t index)
 	// We must enable FD mode to get the extra bits for TSEG1, TSEG2, sigh
 	CAN_FDCTL(can->regs) |= CAN_FDCTL_FDEN;
 
+	can->nm_us_per_bit = UINT32_C(1000000) / sc_bitrate(can->nm.brp, can->nm.tseg1, can->nm.tseg2);
+
 	dump_can_regs(index);
 }
 
@@ -706,13 +711,7 @@ void sc_board_can_reset(uint8_t index)
 	can->nm = nm_range.min;
 	can->dt = dt_range.min;
 
-
-
 	can_clear_queues(index);
-
-
-
-	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
 }
 
 SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
@@ -760,26 +759,95 @@ SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx
 // 		}
 
 
-		// generate bogus but easy to validate data
-		size_t left = tx_end - tx_ptr;
+		uint8_t rx_pi = __atomic_load_n(&can->rx_put_index, __ATOMIC_ACQUIRE);
 
-		if (left >= 4) {
-			static uint8_t count = 0;
-			struct sc_msg_header *hdr = tx_ptr;
+		if (can->rx_get_index != rx_pi) {
+			struct rx_frame *rxe = NULL;
+			struct sc_msg_can_rx *msg = NULL;
+			uint8_t bytes = sizeof(*msg);
+			uint8_t dlc;
+			uint8_t len;
 
-			left -= sizeof(*hdr);
+			SC_DEBUG_ASSERT((uint8_t)(rx_pi - can->rx_get_index) <= TU_ARRAY_SIZE(can->rx_queue));
 
-			hdr->id = 0x42;
-			hdr->len = 4;
+			have_data_to_place = true;
+			rxe = &can->rx_queue[can->rx_get_index % TU_ARRAY_SIZE(can->rx_queue)];
 
-			tx_ptr += 2;
-			result += hdr->len;
+			dlc = rxe->mp & 0xf;
+			len = dlc_to_len(dlc);
 
-			*tx_ptr++ = count++;
-			*tx_ptr++ = count++;
+			if (!(rxe->mi & CAN_FT_REMOTE)) {
+				bytes += len;
+			}
 
-			done = false;
+			// align
+			if (bytes & (SC_MSG_CAN_LEN_MULTIPLE-1)) {
+				bytes += SC_MSG_CAN_LEN_MULTIPLE - (bytes & (SC_MSG_CAN_LEN_MULTIPLE-1));
+			}
+
+			if ((size_t)(tx_end - tx_ptr) >= bytes) {
+				done = false;
+				msg = (struct sc_msg_can_rx *)tx_ptr;
+				tx_ptr += bytes;
+				result += bytes;
+
+				msg->id = SC_MSG_CAN_RX;
+				msg->len = bytes;
+				msg->dlc = dlc;
+				msg->timestamp_us = rxe->timestamp_us;
+				msg->flags = 0;
+
+				if (rxe->mi & CAN_RFIFOMI_FF) {
+					msg->can_id = rxe->mi >> 3;
+					msg->flags |= SC_CAN_FRAME_FLAG_EXT;
+				} else {
+					msg->can_id = rxe->mi >> 21;
+				}
+
+				if (rxe->mp & CAN_RFIFOMP_FDF) {
+					msg->flags |= SC_CAN_FRAME_FLAG_FDF;
+					memcpy(msg + 1, rxe->data, len);
+
+					if (rxe->mp & CAN_RFIFOMP_BRS) {
+						msg->flags |= SC_CAN_FRAME_FLAG_BRS;
+					}
+
+					if (rxe->mp & CAN_RFIFOMP_ESI) {
+						msg->flags |= SC_CAN_FRAME_FLAG_ESI;
+					}
+				} else {
+					if (rxe->mi & CAN_FT_REMOTE) {
+						msg->flags |= SC_CAN_FRAME_FLAG_RTR;
+					} else {
+						memcpy(msg + 1, rxe->data, len);
+					}
+				}
+
+				__atomic_store_n(&can->rx_get_index, can->rx_get_index + 1, __ATOMIC_RELEASE);
+			}
 		}
+
+
+		// // generate bogus but easy to validate data
+		// size_t left = tx_end - tx_ptr;
+
+		// if (left >= 4) {
+		// 	static uint8_t count = 0;
+		// 	struct sc_msg_header *hdr = tx_ptr;
+
+		// 	left -= sizeof(*hdr);
+
+		// 	hdr->id = 0x42;
+		// 	hdr->len = 4;
+
+		// 	tx_ptr += 2;
+		// 	result += hdr->len;
+
+		// 	*tx_ptr++ = count++;
+		// 	*tx_ptr++ = count++;
+
+		// 	done = false;
+		// }
 	}
 
 	if (result > 0) {
@@ -930,16 +998,15 @@ SC_RAMFUNC static void can_tx_irq(uint8_t index)
 SC_RAMFUNC static void can_rx_irq(uint8_t index)
 {
 	struct can *can = &cans[index];
-	uint32_t inten = CAN_INTEN(can->regs);
-	uint32_t rfifo0 = CAN_RFIFO0(can->regs);
 	uint32_t events = 0;
 	uint32_t tsc = sc_board_can_ts_fetch_isr();
 	uint16_t rx_lost = 0;
+	int32_t t0 = -1;
 
 	LOG("ch%u rx\n", index);
 
-
-	SC_DEBUG_ASSERT(inten & (CAN_INTEN_RFNEIE0 | CAN_INTEN_RFFIE0 | CAN_INTEN_RFOIE0));
+	SC_DEBUG_ASSERT(CAN_INTEN(can->regs) & (CAN_INTEN_RFNEIE0 | CAN_INTEN_RFFIE0 | CAN_INTEN_RFOIE0));
+	SC_DEBUG_ASSERT(CAN_RFIFO0(can->regs) & 3 /* rx fifo not empty */);
 
 	uint8_t pi = can->rx_put_index;
 	uint8_t gi = __atomic_load_n(&can->rx_get_index, __ATOMIC_ACQUIRE);
@@ -947,26 +1014,37 @@ SC_RAMFUNC static void can_rx_irq(uint8_t index)
 	do {
 		uint8_t used = pi - gi;
 
+		SC_DEBUG_ASSERT(used <= TU_ARRAY_SIZE(can->rx_queue));
+
 		if (likely(used < TU_ARRAY_SIZE(can->rx_queue))) {
-			uint8_t put_index = pi % TU_ARRAY_SIZE(can->rx_queue);
-			struct rx_frame *rx = &can->rx_queue[put_index];
+			struct rx_frame *rxe = &can->rx_queue[pi % TU_ARRAY_SIZE(can->rx_queue)];
 			uint8_t words;
+			uint16_t t_can;
 
+			rxe->mi = CAN_RFIFOMI0(can->regs);
+			rxe->mp = CAN_RFIFOMP0(can->regs);
 
-			rx->mi = CAN_RFIFOMI0(can->regs);
-			rx->mp = CAN_RFIFOMP0(can->regs);
+			words = (dlc_to_len(rxe->mp & 0xf) + 3) / 4;
 
-			words = (dlc_to_len(rx->mp & 0xf) + 3) / 4;
-
-			for (uint8_t i = 0; i < words; i += 2) {
-				rx->data[i] = CAN_RFIFOMDATA00(can->regs);
-				rx->data[i+1] = CAN_RFIFOMDATA01(can->regs);
+			for (uint8_t i = 0; i < words; ++i) {
+				rxe->data[i] = CAN_RFIFOMDATA00(can->regs);
 			}
+
+			t_can = (rxe->mp >> 16) & 0xffff;
+			rxe->timestamp_us = tsc;
+
+			/* convert time stamp */
+			if (-1 == t0) {
+				t0 = t_can;
+			} else {
+				rxe->timestamp_us += (t_can - (uint16_t)t0) * can->nm_us_per_bit;
+			}
+
+			++pi;
 		} else {
 			++rx_lost;
 		}
 
-		++pi;
 		++events;
 
 		// dequeue done
@@ -975,7 +1053,7 @@ SC_RAMFUNC static void can_rx_irq(uint8_t index)
 
 	__atomic_store_n(&can->rx_put_index, pi, __ATOMIC_RELEASE);
 
-	if (unlikely(rfifo0 & CAN_RFIFO0_RFO0)) {
+	if (unlikely(CAN_RFIFO0(can->regs) & CAN_RFIFO0_RFO0)) {
 		/* RX fifo overflow */
 		++rx_lost;
 	}
@@ -988,7 +1066,7 @@ SC_RAMFUNC static void can_rx_irq(uint8_t index)
 		status.rx_lost = rx_lost;
 
 		sc_can_status_queue(index, &status);
-		++ events;
+		++events;
 	}
 
 	if (likely(events)) {
