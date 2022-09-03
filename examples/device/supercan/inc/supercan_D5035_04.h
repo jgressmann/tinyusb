@@ -37,7 +37,7 @@
 // seems to *mostly* work
 // #define MSG_BUFFER_SIZE 128
 
-#define MSG_BUFFER_SIZE 64
+#define MSG_BUFFER_SIZE 128
 
 enum {
 	SC_BOARD_DEBUG_DEFAULT,
