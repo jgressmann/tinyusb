@@ -31,7 +31,14 @@ enum {
 #define SPAM 0
 // #define XFER dcd_edpt_xfer
 // #define OPEN dcd_edpt_open
-#define XFER usbd_edpt_xfer
+#define XFER(...) \
+	do { \
+		bool r = usbd_edpt_xfer(__VA_ARGS__); \
+		SC_DEBUG_ASSERT(r); \
+		(void)r; \
+	} while (0)
+
+
 #define OPEN usbd_edpt_open
 
 
@@ -163,7 +170,7 @@ static inline void sc_cmd_bulk_in_submit(uint8_t index)
 	struct usb_cmd *cmd = &usb.cmd[index];
 	SC_DEBUG_ASSERT(cmd->tx_offsets[cmd->tx_bank] > 0);
 	SC_DEBUG_ASSERT(cmd->tx_offsets[cmd->tx_bank] <= CMD_BUFFER_SIZE);
-	(void)XFER(usb.port, 0x80 | cmd->pipe, cmd->tx_buffers[cmd->tx_bank], cmd->tx_offsets[cmd->tx_bank]);
+	XFER(usb.port, 0x80 | cmd->pipe, cmd->tx_buffers[cmd->tx_bank], cmd->tx_offsets[cmd->tx_bank]);
 	cmd->tx_bank = !cmd->tx_bank;
 }
 
@@ -305,12 +312,14 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 	}
 
 	// LOG("ch%u %s bytes=%u\n", index, func, can->tx_offsets[can->tx_bank]);
-	(void)XFER(usb.port, 0x80 | can->pipe, can->tx_buffers[can->tx_bank], can->tx_offsets[can->tx_bank]);
+	XFER(usb.port, 0x80 | can->pipe, can->tx_buffers[can->tx_bank], can->tx_offsets[can->tx_bank]);
 	can->tx_bank = !can->tx_bank;
 	SC_DEBUG_ASSERT(!can->tx_offsets[can->tx_bank]);
+
 #if SUPERCAN_DEBUG
 	memset(can->tx_buffers[can->tx_bank], 0xff, MSG_BUFFER_SIZE);
 #endif
+
 	// LOG("ch%u %s sent\n", index, func);
 }
 
@@ -336,7 +345,7 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 	// setup next transfer
 	usb_cmd->rx_bank = !usb_cmd->rx_bank;
-	(void)XFER(usb.port, usb_cmd->pipe, usb_cmd->rx_buffers[usb_cmd->rx_bank], CMD_BUFFER_SIZE);
+	XFER(usb.port, usb_cmd->pipe, usb_cmd->rx_buffers[usb_cmd->rx_bank], CMD_BUFFER_SIZE);
 
 	// process messages
 	while (in_ptr + SC_MSG_HEADER_LEN <= in_end) {
@@ -371,7 +380,7 @@ static void sc_cmd_bulk_out(uint8_t index, uint32_t xferred_bytes)
 			xSemaphoreGive(usb_can->mutex_handle);
 
 			// transmit empty buffers (clear whatever was in there before)
-			(void)XFER(usb.port, 0x80 | usb_can->pipe, usb_can->tx_buffers[usb_can->tx_bank], usb_can->tx_offsets[usb_can->tx_bank]);
+			XFER(usb.port, 0x80 | usb_can->pipe, usb_can->tx_buffers[usb_can->tx_bank], usb_can->tx_offsets[usb_can->tx_bank]);
 
 			// reset tx buffer
 			uint8_t len = sizeof(struct sc_msg_hello);
@@ -717,7 +726,7 @@ SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 	// start new transfer right away
 	usb_can->rx_bank = !usb_can->rx_bank;
-	(void)XFER(usb.port, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE);
+	XFER(usb.port, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE);
 
 	if (unlikely(!xferred_bytes)) {
 		return;
@@ -1114,10 +1123,13 @@ static uint16_t sc_usb_open(uint8_t rhport, tusb_desc_interface_t const * desc_i
 		SC_ASSERT(success);
 	}
 
-	bool success_cmd = XFER(rhport, usb_cmd->pipe, usb_cmd->rx_buffers[usb_cmd->rx_bank], CMD_BUFFER_SIZE);
-	bool success_can = XFER(rhport, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE);
-	SC_ASSERT(success_cmd);
-	SC_ASSERT(success_can);
+	// bool success_cmd = XFER(rhport, usb_cmd->pipe, usb_cmd->rx_buffers[usb_cmd->rx_bank], CMD_BUFFER_SIZE);
+	// bool success_can = XFER(rhport, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE);
+	// SC_ASSERT(success_cmd);
+	// SC_ASSERT(success_can);
+
+	XFER(rhport, usb_cmd->pipe, usb_cmd->rx_buffers[usb_cmd->rx_bank], CMD_BUFFER_SIZE);
+	XFER(rhport, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE);
 
 	// // Required to immediately send URBs when buffer size > endpoint size
 	// // and transfers are multiple of enpoint size.
@@ -1651,7 +1663,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 			yield = true;
 		}
 
-		LOG("|");
+		// LOG("|");
 
 		if (yield) {
 			// yield to prevent this task from eating up the CPU

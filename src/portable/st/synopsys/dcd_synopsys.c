@@ -127,12 +127,8 @@ static inline void __eclic_disable_interrupt (uint32_t irq){
 #include "synopsys_common.h"
 // These numbers are the same for the whole GD32C10X family.
 #define OTG_FS_IRQn     USBFS_IRQn
-#define EP_MAX_FS       4
+#define EP_MAX_FS       (CFG_TUSB_ENDPOINT_LIMIT < 0 ? 4 : CFG_TUSB_ENDPOINT_LIMIT)
 #define EP_FIFO_SIZE_FS 1280
-// #if defined(USB_HS_PHYC)
-// #error dfasfa
-// #endif
-
 
 #else
 #error "Unsupported MCUs"
@@ -1242,8 +1238,6 @@ void dcd_int_handler(uint8_t rhport)
   //    printf("      IISOIXFR!\r\n");
   ////    TU_LOG2("      IISOIXFR!\r\n");
   //  }
-
-    //  usb_otg->GINTSTS = ~0;
 }
 
 #endif

@@ -109,16 +109,44 @@ struct can {
 	uint8_t tx_mailbox_put_index; // NOT an index, uses full range of type
 	uint8_t txr_get_index; // NOT an index, uses full range of type
 	uint8_t txr_put_index; // NOT an index, uses full range of type
+#if SUPERCAN_DEBUG
 	uint8_t notify;
+#endif
+	uint8_t int_prev_rx_errors;
+	uint8_t int_prev_tx_errors;
+	uint8_t int_prev_bus_state;
 } cans[SC_BOARD_CAN_COUNT] = {
 	{
-		.led_status_green = LED_CAN1_STATUS_GREEN,
-		.led_status_red = LED_CAN1_STATUS_RED,
-		.regs = CAN1,
-		.irqs = can1_irqs,
-		.tx_irq = CAN1_TX_IRQn,
+		.led_status_green = LED_CAN0_STATUS_GREEN,
+		.led_status_red = LED_CAN0_STATUS_RED,
+		.regs = CAN0,
+		.irqs = can0_irqs,
+		.tx_irq = CAN0_TX_IRQn,
+#if SUPERCAN_DEBUG
 		.notify = 0,
+#endif
 	},
+	// {
+	// 	.led_status_green = LED_CAN1_STATUS_GREEN,
+	// 	.led_status_red = LED_CAN1_STATUS_RED,
+	// 	.regs = CAN1,
+	// 	.irqs = can1_irqs,
+	// 	.tx_irq = CAN1_TX_IRQn,
+// #if SUPERCAN_DEBUG
+	// 	.notify = 0,
+// #endif
+	// },
+};
+
+static const uint8_t sc_can_bus_error_map[8] = {
+	SC_CAN_ERROR_NONE,
+	SC_CAN_ERROR_STUFF,
+	SC_CAN_ERROR_FORM,
+	SC_CAN_ERROR_ACK,
+	SC_CAN_ERROR_BIT1,
+	SC_CAN_ERROR_BIT0,
+	SC_CAN_ERROR_CRC,
+	SC_CAN_ERROR_NONE
 };
 
 static uint32_t device_identifier;
@@ -228,25 +256,24 @@ static void gd32_can_init(void)
 
 	/* CAN0 configure pins PB08 (RX), PB09 (TX) */
 	GPIO_BOP(GPIOB) = UINT32_C(1) << 8;
-	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(0)) | GPIO_MODE_SET(0, GPIO_MODE_IPU | GPIO_OSPEED_50MHZ);
+	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(0)) | GPIO_MODE_SET(0, GPIO_MODE_IPU);
 	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(1)) | GPIO_MODE_SET(1, GPIO_MODE_AF_PP | GPIO_OSPEED_50MHZ);
 
 
 	/* CAN1 configure pins PB12 (RX), PB13 (TX) */
 	GPIO_BOP(GPIOB) = UINT32_C(1) << 12;
-	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(4)) | GPIO_MODE_SET(4, GPIO_MODE_IPU | GPIO_OSPEED_50MHZ);
+	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(4)) | GPIO_MODE_SET(4, GPIO_MODE_AF_PP);
 	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(5)) | GPIO_MODE_SET(5, GPIO_MODE_AF_PP | GPIO_OSPEED_50MHZ);
 
 
 	/* remap CAN0 partially */
 	AFIO_PCF0 =
 		(AFIO_PCF0 & ~(AFIO_PCF0_CAN0_REMAP | AFIO_PCF0_CAN1_REMAP)) |
-		(PCF0_CAN_REMAP(2) | AFIO_PCF0_CAN1_REMAP);
+		(PCF0_CAN_REMAP(2));
 
 	/* reset CANs */
 	RCU_APB1RST |= RCU_APB1RST_CAN0RST | RCU_APB1RST_CAN1RST;
 	RCU_APB1RST &= ~(RCU_APB1RST_CAN0RST | RCU_APB1RST_CAN1RST);
-
 
 
 	for (uint8_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
@@ -529,6 +556,11 @@ static void can_configure(uint8_t index)
 	} else {
 		CAN_FDCTL(can->regs) &= ~CAN_FDCTL_FDEN;
 	}
+
+	// We must enable FD mode to get the extra bits for TSEG1, TSEG2, sigh
+	CAN_FDCTL(can->regs) |= CAN_FDCTL_FDEN;
+
+	dump_can_regs(index);
 }
 
 static inline void can_clear_queues(uint8_t index)
@@ -562,6 +594,12 @@ static inline void can_off(uint8_t index)
 
 
 	__atomic_store_n(&can->notify, 0, __ATOMIC_RELEASE);
+
+	can->int_prev_rx_errors = 0;
+	can->int_prev_tx_errors = 0;
+	can->int_prev_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
+
+	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
 }
 
 void sc_board_can_go_bus(uint8_t index, bool on)
@@ -584,9 +622,10 @@ void sc_board_can_go_bus(uint8_t index, bool on)
 		/* wait for normal working mode */
 		while (CAN_STAT(can->regs) & CAN_STAT_IWS);
 
-		// dump_can_regs(index);
-
+		dump_can_regs(index);
+#if SUPERCAN_DEBUG
 		__atomic_store_n(&can->notify, 1, __ATOMIC_RELEASE);
+#endif
 	} else {
 		can_off(index);
 		can_clear_queues(index);
@@ -670,6 +709,10 @@ void sc_board_can_reset(uint8_t index)
 
 
 	can_clear_queues(index);
+
+
+
+	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
 }
 
 SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
@@ -717,27 +760,27 @@ SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx
 // 		}
 
 
-		// // generate bogus but easy to validate data
-		// size_t left = tx_end - tx_ptr;
+		// generate bogus but easy to validate data
+		size_t left = tx_end - tx_ptr;
 
-		// if (left >= 4) {
-		// 	static uint8_t count = 0;
-		// 	struct sc_msg_header *hdr = tx_ptr;
+		if (left >= 4) {
+			static uint8_t count = 0;
+			struct sc_msg_header *hdr = tx_ptr;
 
-		// 	left -= sizeof(*hdr);
+			left -= sizeof(*hdr);
 
-		// 	hdr->id = 0x42;
-		// 	hdr->len = 4;
+			hdr->id = 0x42;
+			hdr->len = 4;
 
-		// 	tx_ptr += 2;
-		// 	result += hdr->len;
+			tx_ptr += 2;
+			result += hdr->len;
 
-		// 	*tx_ptr++ = count++;
-		// 	*tx_ptr++ = count++;
-		// }
+			*tx_ptr++ = count++;
+			*tx_ptr++ = count++;
+
+			done = false;
+		}
 	}
-
-
 
 	if (result > 0) {
 		return result;
@@ -746,11 +789,26 @@ SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx
 	return have_data_to_place - 1;
 }
 
-
-
-SC_RAMFUNC void CAN1_TX_IRQHandler(void)
+SC_RAMFUNC extern uint32_t sc_board_can_ts_fetch_isr(void)
 {
-	uint8_t const index = 0;
+	uint16_t top, bottom;
+
+	for (;;) {
+		bottom = TIMER_CNT(TIMER5);
+		top = __atomic_load_n(&top_1us, __ATOMIC_ACQUIRE);
+		__ISB();
+
+		if (likely(!(TIMER_INTF(TIMER5) & TIMER_INTF_UPIF))) {
+			break;
+		}
+	}
+
+
+	return  (((uint32_t)top) << 16) | bottom;
+}
+
+SC_RAMFUNC static void can_tx_irq(uint8_t index)
+{
 	struct can *can = &cans[index];
 	uint32_t tsc = sc_board_can_ts_fetch_isr();
 	unsigned count = 0;
@@ -758,7 +816,7 @@ SC_RAMFUNC void CAN1_TX_IRQHandler(void)
 	uint16_t ts[3];
 	uint8_t indices[3];
 
-	// LOG("T");
+
 
 	LOG("ch%u TSTAT=%08x\n", index, CAN_TSTAT(can->regs));
 
@@ -869,22 +927,8 @@ SC_RAMFUNC void CAN1_TX_IRQHandler(void)
 	}
 }
 
-SC_RAMFUNC extern uint32_t sc_board_can_ts_fetch_isr(void)
+SC_RAMFUNC static void can_rx_irq(uint8_t index)
 {
-	uint16_t bottom = TIMER_CNT(TIMER5);
-	uint16_t top = __atomic_load_n(&top_1us, __ATOMIC_ACQUIRE);
-	__ISB();
-
-	if (unlikely(TIMER_INTF(TIMER5) & TIMER_INTF_UPIF)) {
-		++top;
-	}
-
-	return  (((uint32_t)top) << 16) | bottom;
-}
-
-SC_RAMFUNC void CAN1_RX0_IRQHandler(void)
-{
-	uint8_t const index = 0;
 	struct can *can = &cans[index];
 	uint32_t inten = CAN_INTEN(can->regs);
 	uint32_t rfifo0 = CAN_RFIFO0(can->regs);
@@ -892,9 +936,8 @@ SC_RAMFUNC void CAN1_RX0_IRQHandler(void)
 	uint32_t tsc = sc_board_can_ts_fetch_isr();
 	uint16_t rx_lost = 0;
 
+	LOG("ch%u rx\n", index);
 
-	LOG("CAN1_RX0_IRQHandler\n");
-	LOG("R");
 
 	SC_DEBUG_ASSERT(inten & (CAN_INTEN_RFNEIE0 | CAN_INTEN_RFFIE0 | CAN_INTEN_RFOIE0));
 
@@ -953,20 +996,125 @@ SC_RAMFUNC void CAN1_RX0_IRQHandler(void)
 	}
 }
 
-SC_RAMFUNC void CAN1_EWMC_IRQHandler(void)
+static SC_RAMFUNC void can_ewmc_irq(uint8_t index)
 {
-	uint8_t const index = 0;
+	sc_can_status status;
 	struct can *can = &cans[index];
-	uint32_t inten = CAN_INTEN(can->regs);
-	LOG("CAN0_EWMC_IRQHandler\n");
-	LOG("E");
+	uint32_t const can_stat = CAN_STAT(can->regs);
+	uint32_t const can_err = CAN_ERR(can->regs);
+	status.timestamp_us = sc_board_can_ts_fetch_isr();
+	unsigned events = 0;
+	uint8_t rec = (can_err >> 24) & 0xff;
+	uint8_t tec = (can_err >> 16) & 0xff;
+	uint8_t current_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
+	uint8_t const bus_error = sc_can_bus_error_map[(can_err >> 4) & 0x7];
 
-	SC_DEBUG_ASSERT(inten & (CAN_INTEN_WERRIE | CAN_INTEN_PERRIE | CAN_INTEN_BOIE | CAN_INTEN_BOIE | CAN_INTEN_ERRNIE | CAN_INTEN_ERRIE));
 
-	// CAN_INTEN(can->regs) &= ~(CAN_INTEN_WERRIE | CAN_INTEN_PERRIE | CAN_INTEN_BOIE | CAN_INTEN_BOIE | CAN_INTEN_ERRNIE | CAN_INTEN_ERRIE);
-	// CAN_INTEN(can->regs) |= (CAN_INTEN_WERRIE | CAN_INTEN_PERRIE | CAN_INTEN_BOIE | CAN_INTEN_BOIE | CAN_INTEN_ERRNIE | CAN_INTEN_ERRIE);
+	// LOG("ch%u STAT=%08x ERR=%08x\n", index, CAN_STAT(can->regs), CAN_ERR(can->regs));
+
+	if (unlikely(rec != can->int_prev_rx_errors || tec != can->int_prev_tx_errors)) {
+		can->int_prev_tx_errors = tec;
+		can->int_prev_rx_errors = rec;
+
+		LOG("CAN%u REC=%u TEC=%u\n", index, can->int_prev_rx_errors, can->int_prev_tx_errors);
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS;
+		status.counts.rx = rec;
+		status.counts.tx = tec;
+
+		sc_can_status_queue(index, &status);
+		++events;
+	}
+
+
+	if (can_err & CAN_ERR_BOERR) {
+		current_bus_state = SC_CAN_STATUS_BUS_OFF;
+	} else if (can_err & CAN_ERR_PERR) {
+		current_bus_state = SC_CAN_STATUS_ERROR_PASSIVE;
+	} else if (can_err & CAN_ERR_WERR) {
+		current_bus_state = SC_CAN_STATUS_ERROR_WARNING;
+	}
+
+	if (unlikely(can->int_prev_bus_state != current_bus_state)) {
+		can->int_prev_bus_state = current_bus_state;
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS;
+		status.bus_state = current_bus_state;
+
+		sc_can_status_queue(index, &status);
+		++events;
+
+
+		// LOG("ch%u PSR=%x ECR=%x\n", index, current_psr.reg, current_ecr.reg);
+
+		switch (current_bus_state) {
+		case SC_CAN_STATUS_BUS_OFF:
+			LOG("CAN%u bus off\n", index);
+			break;
+		case SC_CAN_STATUS_ERROR_PASSIVE:
+			LOG("CAN%u error passive\n", index);
+			break;
+		case SC_CAN_STATUS_ERROR_WARNING:
+			LOG("CAN%u error warning\n", index);
+			break;
+		case SC_CAN_STATUS_ERROR_ACTIVE:
+			LOG("CAN%u error active\n", index);
+			break;
+		default:
+			LOG("CAN%u unhandled bus state\n", index);
+			break;
+		}
+	}
+
+	if (unlikely(SC_CAN_ERROR_NONE != bus_error)) {
+		bool is_tx_error = (can_stat & CAN_STAT_TS) == CAN_STAT_TS;
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
+		status.bus_error.tx = is_tx_error;
+		status.bus_error.code = bus_error,
+		status.bus_error.data_part = 0;
+
+		sc_can_status_queue(index, &status);
+		++events;
+	}
+
 
 	CAN_STAT(can->regs) |= CAN_STAT_ERRIF;
+
+	if (likely(events)) {
+		// LOG(">");
+		sc_can_notify_task_isr(index, events);
+	}
+}
+
+SC_RAMFUNC void CAN0_TX_IRQHandler(void)
+{
+	can_tx_irq(0);
+}
+
+SC_RAMFUNC void CAN0_RX0_IRQHandler(void)
+{
+	can_rx_irq(0);
+}
+
+SC_RAMFUNC void CAN0_EWMC_IRQHandler(void)
+{
+	can_ewmc_irq(0);
+}
+
+SC_RAMFUNC void CAN1_TX_IRQHandler(void)
+{
+	can_tx_irq(1);
+}
+
+SC_RAMFUNC void CAN1_RX0_IRQHandler(void)
+{
+	can_rx_irq(1);
+}
+
+SC_RAMFUNC void CAN1_EWMC_IRQHandler(void)
+{
+	can_ewmc_irq(1);
 }
 
 SC_RAMFUNC void TIMER5_IRQHandler(void)
@@ -984,12 +1132,12 @@ SC_RAMFUNC void TIMER5_IRQHandler(void)
 
 	__atomic_store_n(&top_1us, top_1us + 1, __ATOMIC_RELEASE);
 
-	uint8_t const index = 0;
-	struct can *can = &cans[index];
+	// uint8_t const index = 0;
+	// struct can *can = &cans[index];
 
-	if (__atomic_load_n(&can->notify, __ATOMIC_ACQUIRE)) {
-		sc_can_notify_task_isr(index, 1);
-	}
+	// if (__atomic_load_n(&can->notify, __ATOMIC_ACQUIRE)) {
+	// 	sc_can_notify_task_isr(index, 1);
+	// }
 }
 
 #endif // #if D5035_04
