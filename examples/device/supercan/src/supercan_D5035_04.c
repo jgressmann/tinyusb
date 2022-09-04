@@ -837,6 +837,31 @@ SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx
 		// }
 	}
 
+	for (bool done = false; !done; ) {
+		done = true;
+
+		// generate bogus but easy to validate data
+		size_t left = tx_end - tx_ptr;
+
+		if (left >= 4) {
+			static uint8_t count = 0;
+			struct sc_msg_header *hdr = tx_ptr;
+
+			left -= sizeof(*hdr);
+
+			hdr->id = 0x42;
+			hdr->len = 4;
+
+			tx_ptr += 2;
+			result += hdr->len;
+
+			*tx_ptr++ = count++;
+			*tx_ptr++ = count++;
+
+			done = false;
+		}
+	}
+
 	if (result > 0) {
 		return result;
 	}
