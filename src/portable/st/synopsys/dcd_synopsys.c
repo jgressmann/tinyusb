@@ -29,6 +29,8 @@
 
 #include "tusb_option.h"
 
+#include "supercan_debug.h"
+
 // Since TinyUSB doesn't use SOF for now, and this interrupt too often (1ms interval)
 // We disable SOF for now until needed later on
 #define USE_SOF     0
@@ -434,6 +436,7 @@ static void edpt_schedule_packets(uint8_t rhport, uint8_t const epnum, uint8_t c
 
   // IN and OUT endpoint xfers are interrupt-driven, we just schedule them here.
   if(dir == TUSB_DIR_IN) {
+    LOG("IN ep=%02x p=%u b=%u\n", epnum, num_packets, total_bytes);
     // A full IN transfer (multiple packets, possibly) triggers XFRC.
     in_ep[epnum].DIEPTSIZ = (num_packets << USB_OTG_DIEPTSIZ_PKTCNT_Pos) |
         ((total_bytes << USB_OTG_DIEPTSIZ_XFRSIZ_Pos) & USB_OTG_DIEPTSIZ_XFRSIZ_Msk);
@@ -952,6 +955,7 @@ static void write_fifo_packet(uint8_t rhport, uint8_t fifo_num, uint8_t * src, u
   // Write the remaining 1-3 bytes into fifo
   uint8_t bytes_rem = len & 0x03;
   if(bytes_rem){
+    LOG("rem\n");
     uint32_t tmp_word = 0;
     tmp_word |= src[0];
     if(bytes_rem > 1){
@@ -1088,7 +1092,11 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
         // - 64 bytes or
         // - Half of TX FIFO size (configured by DIEPTXF)
 
+
         uint16_t remaining_packets = (in_ep[n].DIEPTSIZ & USB_OTG_DIEPTSIZ_PKTCNT_Msk) >> USB_OTG_DIEPTSIZ_PKTCNT_Pos;
+
+
+
 
         // Process every single packet (only whole packets can be written to fifo)
         for(uint16_t i = 0; i < remaining_packets; i++)
@@ -1098,6 +1106,8 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
           // Packet can not be larger than ep max size
           uint16_t const packet_size = tu_min16(remaining_bytes, xfer->max_size);
 
+          LOG("IN rem ep=%02x, p=%u b=%u s=%u\n", n, remaining_packets, remaining_bytes, packet_size);
+
           // It's only possible to write full packets into FIFO. Therefore DTXFSTS register of current
           // EP has to be checked if the buffer can take another WHOLE packet
           if(packet_size > ((in_ep[n].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) << 2)) break;
@@ -1105,11 +1115,13 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
           // Push packet to Tx-FIFO
           if (xfer->ff)
           {
+            LOG("ff\n");
             usb_fifo_t tx_fifo = FIFO_BASE(rhport, n);
             tu_fifo_read_n_const_addr_full_words(xfer->ff, (void *) tx_fifo, packet_size);
           }
           else
           {
+            LOG("buffer\n");
             write_fifo_packet(rhport, n, xfer->buffer, packet_size);
 
             // Increment pointer to xfer data
