@@ -36,8 +36,8 @@ void board_init_xtal(void)
 {
 	/* CFG0:
 	 * - AHB div by 1 => 120 MHz
-	 * - APB1 div by 2 => 60 MHz (which is max allowd for bus)
-	 * - APB2 div by 1 => 120 MHz (which is max allowd for bus)
+	 * - APB1 div by 2 => 60 MHz (which is max allowed for bus)
+	 * - APB2 div by 1 => 120 MHz (which is max allowed for bus)
 	 * - USB prediv to 2,5 (120->48)
 	 * - PLL multiplcation factor to 24 (5->120)
 	 * - PLL from XTAL or IRC48M
@@ -80,8 +80,8 @@ void board_init_xtal(void)
 void board_init_uart(void)
 {
 	// /* reset */
-	RCU_APB2RST |= RCU_USART0RST;
-	RCU_APB2RST &= ~RCU_USART0RST;
+	// RCU_APB2RST |= RCU_USART0RST;
+	// RCU_APB2RST &= ~RCU_USART0RST;
 
 	/* configure clocks  */
 	RCU_APB2EN |=
@@ -128,8 +128,10 @@ void board_init(void)
 
 	/* debug LED on PB14, set push-pull output */
 	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(6)) | GPIO_MODE_SET(6, GPIO_MODE_OUT_PP | GPIO_OSPEED_2MHZ);
+	// board_led_off();
 
 	board_init_xtal();
+
 	board_init_uart();
 
 #if CFG_TUSB_DEBUG >= 2
@@ -153,9 +155,9 @@ void board_init(void)
 	/* enable USB clock */
 	RCU_AHBEN |= RCU_AHBEN_USBFSEN;
 
-	/* reset USB */
-	RCU_AHBRST |= RCU_AHBRST_USBFSRST;
-	RCU_AHBRST &= ~RCU_AHBRST_USBFSRST;
+	// /* reset USB */
+	// RCU_AHBRST |= RCU_AHBRST_USBFSRST;
+	// RCU_AHBRST &= ~RCU_AHBRST_USBFSRST;
 
 
 
@@ -181,7 +183,7 @@ void board_init(void)
 
 void board_led_write(bool state)
 {
-	GPIO_BOP(GPIOB) = BIT(14 + state * 16);
+	GPIO_BOP(GPIOB) = BIT(14 + (!state) * 16);
 }
 
 uint32_t board_button_read(void)
