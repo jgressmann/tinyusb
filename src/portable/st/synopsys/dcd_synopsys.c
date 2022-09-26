@@ -1086,7 +1086,7 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
           // Schedule another packet to be transmitted.
           edpt_schedule_packets(rhport, n, TUSB_DIR_IN, 1, ep0_pending[TUSB_DIR_IN]);
         } else {
-          // LOG("IN %u done %u bytes\n", n | TUSB_DIR_IN_MASK, xfer->total_len);
+          // LOG("IN %02x done %u bytes\n", n | TUSB_DIR_IN_MASK, xfer->total_len);
           dcd_event_xfer_complete(rhport, n | TUSB_DIR_IN_MASK, xfer->total_len, XFER_RESULT_SUCCESS, true);
         }
       }
@@ -1113,7 +1113,7 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
           // Packet can not be larger than ep max size
           uint16_t const packet_size = tu_min16(remaining_bytes, xfer->max_size);
 
-          //LOG("IN rem ep=%02x, p=%u b=%u s=%u\n", n, remaining_packets, remaining_bytes, packet_size);
+          LOG("IN rem ep=%02x, p=%u b=%u s=%u\n", n, remaining_packets, remaining_bytes, packet_size);
 
           // It's only possible to write full packets into FIFO. Therefore DTXFSTS register of current
           // EP has to be checked if the buffer can take another WHOLE packet

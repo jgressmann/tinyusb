@@ -571,6 +571,8 @@ static inline void can_clear_queues(uint8_t index)
 	can->tx_put_index = 0;
 	can->tx_mailbox_queue_get_index = 0;
 	can->tx_mailbox_queue_put_index = 0;
+	can->txr_get_index = 0;
+	can->txr_put_index = 0;
 
 #if SUPERCAN_DEBUG
 	can->txr = 0;
@@ -705,46 +707,50 @@ void sc_board_can_reset(uint8_t index)
 	can_clear_queues(index);
 }
 
-SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
+SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t * const tx_end)
 {
 	struct can *can = &cans[index];
 	int result = 0;
 	bool have_data_to_place = false;
+	// uint8_t * const tx_start = tx_ptr;
 
 	for (bool done = false; !done; ) {
 		done = true;
 
-		uint8_t pi = __atomic_load_n(&can->txr_put_index, __ATOMIC_ACQUIRE);
+		uint8_t const txr_pi = __atomic_load_n(&can->txr_put_index, __ATOMIC_ACQUIRE);
 
-		if (can->txr_get_index != pi) {
+		if (can->txr_get_index != txr_pi) {
 			struct sc_msg_can_txr *msg = NULL;
+
+			_Static_assert(sizeof(*msg) == 8);
 
 			have_data_to_place = true;
 
 			if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
-				uint8_t const get_index = can->txr_get_index % TU_ARRAY_SIZE(can->txr_queue);
-				struct txr *txr = &can->txr_queue[get_index];
+				uint8_t const txr_index = can->txr_get_index % TU_ARRAY_SIZE(can->txr_queue);
+				struct txr const *txre = &can->txr_queue[txr_index];
+
+				// LOG("TXR %02x offset=%u\n", txre->track_id, tx_ptr - tx_start);
 
 				done = false;
 				msg = (struct sc_msg_can_txr *)tx_ptr;
 				tx_ptr += sizeof(*msg);
 				result += sizeof(*msg);
 
-				SC_DEBUG_ASSERT((result & 3) == 0);
-
 				msg->id = SC_MSG_CAN_TXR;
 				msg->len = sizeof(*msg);
-				msg->track_id = txr->track_id;
-				msg->timestamp_us = txr->ts;
-				msg->flags = txr->flags;
+				msg->track_id = txre->track_id;
+				msg->timestamp_us = txre->ts;
+				msg->flags = txre->flags;
+
+				// sc_dump_mem(msg, 8);
 
 				__atomic_store_n(&can->txr_get_index, can->txr_get_index + 1, __ATOMIC_RELEASE);
 
-				// LOG("TXR %02x\n", txr->track_id);
 
 #if SUPERCAN_DEBUG
-				SC_DEBUG_ASSERT(can->txr & (UINT32_C(1) << txr->track_id));
-				can->txr &= ~(UINT32_C(1) << txr->track_id);
+				SC_DEBUG_ASSERT(can->txr & (UINT32_C(1) << txre->track_id));
+				can->txr &= ~(UINT32_C(1) << txre->track_id);
 #endif
 			}
 		}
@@ -848,6 +854,26 @@ SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx
 	return have_data_to_place - 1;
 }
 
+SC_RAMFUNC static inline void timer_1mhz_on_overflow(void)
+{
+	SC_DEBUG_ASSERT(TIMER_INTF(TIMER5) & TIMER_INTF_UPIF);
+
+	TIMER_INTF(TIMER5) &= ~TIMER_INTF_UPIF;
+
+	NVIC_ClearPendingIRQ(TIMER5_IRQn);
+
+	__atomic_store_n(&top_1us, top_1us + 1, __ATOMIC_RELEASE);
+
+	// notify CAN task periodically (status lights)
+	for (uint8_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
+		struct can *can = &cans[i];
+
+		if (__atomic_load_n(&can->notify, __ATOMIC_ACQUIRE)) {
+			sc_can_notify_task_isr(i, 1);
+		}
+	}
+}
+
 SC_RAMFUNC extern uint32_t sc_board_can_ts_fetch_isr(void)
 {
 	uint16_t top, bottom;
@@ -857,7 +883,11 @@ SC_RAMFUNC extern uint32_t sc_board_can_ts_fetch_isr(void)
 		top = __atomic_load_n(&top_1us, __ATOMIC_ACQUIRE);
 		__ISB();
 
-		if (likely(!(TIMER_INTF(TIMER5) & TIMER_INTF_UPIF))) {
+		if (unlikely(TIMER_INTF(TIMER5) & TIMER_INTF_UPIF)) {
+			LOG("o");
+
+			timer_1mhz_on_overflow();
+		} else {
 			break;
 		}
 	}
@@ -874,11 +904,11 @@ SC_RAMFUNC static void can_tx_irq(uint8_t index)
 	uint32_t events = 0;
 	uint16_t ts[3];
 	uint8_t indices[3];
-	const uint32_t mailbox_clear_mask = 0xff;
+	const uint32_t mailbox_clear_mask = 0xf;
 
 
 
-	LOG("ch%u TSTAT=%08x\n", index, CAN_TSTAT(can->regs));
+	// LOG("ch%u TSTAT=%08x\n", index, CAN_TSTAT(can->regs));
 
 	/* forward scan for finished mailboxes */
 	while (can->tx_mailbox_queue_get_index != can->tx_mailbox_queue_put_index) {
@@ -891,7 +921,7 @@ SC_RAMFUNC static void can_tx_irq(uint8_t index)
 			indices[count] = mailbox_index;
 			++count;
 			++can->tx_mailbox_queue_get_index;
-			CAN_TSTAT(can->regs) &= ~(mailbox_clear_mask << (8 * mailbox_index));
+			CAN_TSTAT(can->regs) |= mailbox_clear_mask << (8 * mailbox_index);
 		} else {
 			break;
 		}
@@ -949,7 +979,7 @@ SC_RAMFUNC static void can_tx_irq(uint8_t index)
 		uint8_t const mailbox_index = (CAN_TSTAT(can->regs) >> 24) & 3;
 		struct tx_frame *tx = &can->tx_queue[tx_index];
 
-		LOG("ch0 tx i=%u -> mb=%u\n", index, tx_index, mailbox_index);
+		// LOG("ch%u tx i=%02u -> mb=%u\n", index, tx_index, mailbox_index);
 
 #if SUPERCAN_DEBUG
 		/* verifiy mailbox not in use */
@@ -983,7 +1013,7 @@ SC_RAMFUNC static void can_tx_irq(uint8_t index)
 		sc_can_notify_task_isr(index, events);
 	}
 
-	LOG("ch%u tx exit TSTAT=%08x\n", index, CAN_TSTAT(can->regs));
+	// LOG("ch%u tx exit TSTAT=%08x\n", index, CAN_TSTAT(can->regs));
 }
 
 SC_RAMFUNC static void can_rx_irq(uint8_t index)
@@ -992,7 +1022,7 @@ SC_RAMFUNC static void can_rx_irq(uint8_t index)
 	uint32_t events = 0;
 	uint32_t tsc = sc_board_can_ts_fetch_isr();
 	uint16_t rx_lost = 0;
-	int32_t t0 = -1;
+	int32_t t0_can = -1;
 
 	// LOG("ch%u rx\n", index);
 
@@ -1025,10 +1055,10 @@ SC_RAMFUNC static void can_rx_irq(uint8_t index)
 			rxe->timestamp_us = tsc;
 
 			/* convert time stamp */
-			if (-1 == t0) {
-				t0 = t_can;
+			if (-1 == t0_can) {
+				t0_can = t_can;
 			} else {
-				rxe->timestamp_us += (t_can - (uint16_t)t0) * can->nm_us_per_bit;
+				rxe->timestamp_us += (t_can - (uint16_t)t0_can) * can->nm_us_per_bit;
 			}
 
 			++pi;
@@ -1185,18 +1215,7 @@ SC_RAMFUNC void CAN1_EWMC_IRQHandler(void)
 
 SC_RAMFUNC void TIMER5_IRQHandler(void)
 {
-	TIMER_INTF(TIMER5) &= ~TIMER_INTF_UPIF;
-
-	__atomic_store_n(&top_1us, top_1us + 1, __ATOMIC_RELEASE);
-
-	// notify CAN task periodically (status lights)
-	for (uint8_t i = 0; i < TU_ARRAY_SIZE(cans); ++i) {
-		struct can *can = &cans[i];
-
-		if (__atomic_load_n(&can->notify, __ATOMIC_ACQUIRE)) {
-			sc_can_notify_task_isr(i, 1);
-		}
-	}
+	timer_1mhz_on_overflow();
 }
 
 
