@@ -436,7 +436,7 @@ static void edpt_schedule_packets(uint8_t rhport, uint8_t const epnum, uint8_t c
 
   // IN and OUT endpoint xfers are interrupt-driven, we just schedule them here.
   if(dir == TUSB_DIR_IN) {
-    LOG("IN ep=%02x p=%u b=%u\n", epnum, num_packets, total_bytes);
+    //LOG("IN ep=%02x p=%u b=%u\n", epnum, num_packets, total_bytes);
     // A full IN transfer (multiple packets, possibly) triggers XFRC.
     in_ep[epnum].DIEPTSIZ = (num_packets << USB_OTG_DIEPTSIZ_PKTCNT_Pos) |
         ((total_bytes << USB_OTG_DIEPTSIZ_XFRSIZ_Pos) & USB_OTG_DIEPTSIZ_XFRSIZ_Msk);
@@ -974,11 +974,14 @@ static void handle_rxflvl_ints(uint8_t rhport, USB_OTG_OUTEndpointTypeDef * out_
 
   // Pop control word off FIFO
   uint32_t ctl_word = usb_otg->GRXSTSP;
+  // LOG("ctrl word %08x\n", ctl_word);
   uint8_t pktsts = (ctl_word & USB_OTG_GRXSTSP_PKTSTS_Msk) >> USB_OTG_GRXSTSP_PKTSTS_Pos;
   uint8_t epnum = (ctl_word &  USB_OTG_GRXSTSP_EPNUM_Msk) >>  USB_OTG_GRXSTSP_EPNUM_Pos;
   uint16_t bcnt = (ctl_word & USB_OTG_GRXSTSP_BCNT_Msk) >> USB_OTG_GRXSTSP_BCNT_Pos;
 
   switch(pktsts) {
+    case 0x00: // possibly empty fifo? Happens after dir creation with msc_dual_lun demo
+      break;
     case 0x01: // Global OUT NAK (Interrupt)
       break;
 
@@ -1027,6 +1030,7 @@ static void handle_rxflvl_ints(uint8_t rhport, USB_OTG_OUTEndpointTypeDef * out_
       break;
 
     default: // Invalid
+      LOG("unhandled packet type %02x\n", pktsts);
       TU_BREAKPOINT();
       break;
   }
@@ -1064,12 +1068,14 @@ static void handle_epout_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_O
 static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OTG_INEndpointTypeDef * in_ep) {
   // DAINT for a given EP clears when DIEPINTx is cleared.
   // IEPINT will be cleared when DAINT's out bits are cleared.
+  // /LOG("DAINT %08x\n", dev->DAINT);
   for ( uint8_t n = 0; n < EP_MAX; n++ )
   {
     xfer_ctl_t *xfer = XFER_CTL_BASE(n, TUSB_DIR_IN);
 
     if ( dev->DAINT & (1 << (USB_OTG_DAINT_IEPINT_Pos + n)) )
     {
+      // LOG("DIEPINT %u %08x\n", n, in_ep[n].DIEPINT);
       // IN XFER complete (entire xfer).
       if ( in_ep[n].DIEPINT & USB_OTG_DIEPINT_XFRC )
       {
@@ -1080,6 +1086,7 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
           // Schedule another packet to be transmitted.
           edpt_schedule_packets(rhport, n, TUSB_DIR_IN, 1, ep0_pending[TUSB_DIR_IN]);
         } else {
+          // LOG("IN %u done %u bytes\n", n | TUSB_DIR_IN_MASK, xfer->total_len);
           dcd_event_xfer_complete(rhport, n | TUSB_DIR_IN_MASK, xfer->total_len, XFER_RESULT_SUCCESS, true);
         }
       }
@@ -1106,22 +1113,25 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
           // Packet can not be larger than ep max size
           uint16_t const packet_size = tu_min16(remaining_bytes, xfer->max_size);
 
-          LOG("IN rem ep=%02x, p=%u b=%u s=%u\n", n, remaining_packets, remaining_bytes, packet_size);
+          //LOG("IN rem ep=%02x, p=%u b=%u s=%u\n", n, remaining_packets, remaining_bytes, packet_size);
 
           // It's only possible to write full packets into FIFO. Therefore DTXFSTS register of current
           // EP has to be checked if the buffer can take another WHOLE packet
-          if(packet_size > ((in_ep[n].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) << 2)) break;
+          if(packet_size > ((in_ep[n].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) << 2)) {
+            LOG("no space in USB fifo\n");
+            break;
+          }
 
           // Push packet to Tx-FIFO
           if (xfer->ff)
           {
-            LOG("ff\n");
+            //LOG("ff\n");
             usb_fifo_t tx_fifo = FIFO_BASE(rhport, n);
             tu_fifo_read_n_const_addr_full_words(xfer->ff, (void *) tx_fifo, packet_size);
           }
           else
           {
-            LOG("buffer\n");
+            //LOG("buffer\n");
             write_fifo_packet(rhport, n, xfer->buffer, packet_size);
 
             // Increment pointer to xfer data
@@ -1139,6 +1149,8 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
   }
 }
 
+// static uint32_t enter_count;
+
 void dcd_int_handler(uint8_t rhport)
 {
   USB_OTG_GlobalTypeDef * usb_otg = GLOBAL_BASE(rhport);
@@ -1147,6 +1159,13 @@ void dcd_int_handler(uint8_t rhport)
   USB_OTG_INEndpointTypeDef * in_ep = IN_EP_BASE(rhport);
 
   uint32_t const int_status = usb_otg->GINTSTS & usb_otg->GINTMSK;
+
+  // uint32_t ec = __atomic_fetch_add(&enter_count, 1, __ATOMIC_ACQ_REL);
+  // if (ec > 1) {
+  //   LOG("ec=%u\n", ec);
+  // }
+
+  //LOG("/ %08x\n", int_status);
 
   if(int_status & USB_OTG_GINTSTS_USBRST)
   {
@@ -1250,6 +1269,8 @@ void dcd_int_handler(uint8_t rhport)
   //    printf("      IISOIXFR!\r\n");
   ////    TU_LOG2("      IISOIXFR!\r\n");
   //  }
+
+  // __atomic_fetch_sub(&enter_count, 1, __ATOMIC_ACQ_REL);
 }
 
 #endif
