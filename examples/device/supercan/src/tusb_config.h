@@ -60,7 +60,8 @@
 #define CFG_TUSB_MEM_ALIGN          __attribute__ ((aligned(4)))
 #endif
 
-#define CFG_TUSB_ENDPOINT_LIMIT 3
+// need EP3 which seems to work :/
+// #define CFG_TUSB_ENDPOINT_LIMIT 3
 
 //--------------------------------------------------------------------
 // DEVICE CONFIGURATION

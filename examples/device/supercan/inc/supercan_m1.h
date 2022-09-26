@@ -32,7 +32,7 @@ extern "C" {
 #define SC_M1_EP_SIZE           64
 #define SC_M1_EP_CMD0_BULK_OUT  0x01
 #define SC_M1_EP_CMD0_BULK_IN   (0x80 | SC_M1_EP_CMD0_BULK_OUT)
-#define SC_M1_EP_MSG0_BULK_OUT  0x02
+#define SC_M1_EP_MSG0_BULK_OUT  0x03
 #define SC_M1_EP_MSG0_BULK_IN   (0x80 | SC_M1_EP_MSG0_BULK_OUT)
 #define SC_M1_EP_CMD1_BULK_OUT  0x03
 #define SC_M1_EP_CMD1_BULK_IN   (0x80 | SC_M1_EP_CMD1_BULK_OUT)

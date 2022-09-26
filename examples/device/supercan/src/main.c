@@ -1155,27 +1155,29 @@ SC_RAMFUNC static bool sc_usb_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_resu
 	case SC_M1_EP_CMD0_BULK_OUT:
 		sc_cmd_bulk_out(0, xferred_bytes);
 		break;
-	case SC_M1_EP_CMD1_BULK_OUT:
-		sc_cmd_bulk_out(1, xferred_bytes);
-		break;
 	case SC_M1_EP_CMD0_BULK_IN:
 		sc_cmd_bulk_in(0);
-		break;
-	case SC_M1_EP_CMD1_BULK_IN:
-		sc_cmd_bulk_in(1);
 		break;
 	case SC_M1_EP_MSG0_BULK_OUT:
 		sc_can_bulk_out(0, xferred_bytes);
 		break;
-	case SC_M1_EP_MSG1_BULK_OUT:
-		sc_can_bulk_out(1, xferred_bytes);
-		break;
 	case SC_M1_EP_MSG0_BULK_IN:
 		sc_can_bulk_in(0);
+		break;
+#if SC_BOARD_CAN_COUNT > 1
+	case SC_M1_EP_CMD1_BULK_OUT:
+		sc_cmd_bulk_out(1, xferred_bytes);
+		break;
+	case SC_M1_EP_CMD1_BULK_IN:
+		sc_cmd_bulk_in(1);
+		break;
+	case SC_M1_EP_MSG1_BULK_OUT:
+		sc_can_bulk_out(1, xferred_bytes);
 		break;
 	case SC_M1_EP_MSG1_BULK_IN:
 		sc_can_bulk_in(1);
 		break;
+#endif
 	default:
 		LOG("port %u ep %02x result %d bytes %u\n", rhport, ep_addr, result, (unsigned)xferred_bytes);
 		return false;
