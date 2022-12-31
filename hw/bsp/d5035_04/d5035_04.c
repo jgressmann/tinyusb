@@ -156,10 +156,13 @@ void board_init(void)
 	RCU_AHBEN |= RCU_AHBEN_USBFSEN;
 
 	// /* reset USB */
-	// RCU_AHBRST |= RCU_AHBRST_USBFSRST;
-	// RCU_AHBRST &= ~RCU_AHBRST_USBFSRST;
+	RCU_AHBRST |= RCU_AHBRST_USBFSRST;
+	RCU_AHBRST &= ~RCU_AHBRST_USBFSRST;
 
+	// delay 3us
+	for (uint32_t millis = board_millis(); millis == board_millis(); ) {
 
+	}
 
 	/* Retrieve USB OTG core registers */
 	USB_OTG_GlobalTypeDef* otg_core_regs = (USB_OTG_GlobalTypeDef*)(USB_OTG_FS_PERIPH_BASE + USB_OTG_GLOBAL_BASE);

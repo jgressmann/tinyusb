@@ -31,9 +31,46 @@
 
 #include "supercan_debug.h"
 
+
+#define DCD_ST_SYN_RX_FIFO_SIZE_WORDS   40  // shared
+#define DCD_ST_SYN_TX0_FIFO_SIZE_WORDS  16   // EP0
+#define DCD_ST_SYN_TX1_FIFO_SIZE_WORDS  16   // EP1
+#define DCD_ST_SYN_TX2_FIFO_SIZE_WORDS  32   // EP2
+#define DCD_ST_SYN_TX3_FIFO_SIZE_WORDS  32   // EP3
+#define DCD_ST_SYN_CUSTOM_FIFO_SIZES 1
+
+// #if TU_BIG_ENDIAN == TU_BYTE_ORDER
+// # define be32toh(x) x
+// #else
+// # define be32toh(x) __builtin_bswap32(x)
+// #endif
+
+
+
+
 // Since TinyUSB doesn't use SOF for now, and this interrupt too often (1ms interval)
 // We disable SOF for now until needed later on
 #define USE_SOF     0
+
+#ifndef DCD_ST_SYN_CUSTOM_FIFO_SIZES
+# define DCD_ST_SYN_CUSTOM_FIFO_SIZES 0
+#else
+# ifndef DCD_ST_SYN_RX_FIFO_SIZE_WORDS
+#   error define DCD_ST_SYN_RX_FIFO_SIZE_WORDS
+# endif
+# ifndef DCD_ST_SYN_TX0_FIFO_SIZE_WORDS
+#   error define DCD_ST_SYN_TX0_FIFO_SIZE_WORDS
+# endif
+# ifndef DCD_ST_SYN_TX1_FIFO_SIZE_WORDS
+#   error define DCD_ST_SYN_TX1_FIFO_SIZE_WORDS
+# endif
+# ifndef DCD_ST_SYN_TX2_FIFO_SIZE_WORDS
+#   error define DCD_ST_SYN_TX2_FIFO_SIZE_WORDS
+# endif
+# ifndef DCD_ST_SYN_TX3_FIFO_SIZE_WORDS
+#   error define DCD_ST_SYN_TX3_FIFO_SIZE_WORDS
+# endif
+#endif
 
 #if defined (STM32F105x8) || defined (STM32F105xB) || defined (STM32F105xC) || \
     defined (STM32F107xB) || defined (STM32F107xC)
@@ -138,6 +175,51 @@ static inline void __eclic_disable_interrupt (uint32_t irq){
 
 #include "device/dcd.h"
 
+#if DCD_ST_SYN_CUSTOM_FIFO_SIZES
+TU_VERIFY_STATIC(4 * (DCD_ST_SYN_RX_FIFO_SIZE_WORDS + DCD_ST_SYN_TX0_FIFO_SIZE_WORDS + DCD_ST_SYN_TX2_FIFO_SIZE_WORDS + DCD_ST_SYN_TX3_FIFO_SIZE_WORDS) <= EP_FIFO_SIZE_FS);
+
+static const uint16_t TX_FIFO_SIZES_WORDS[] = {
+  DCD_ST_SYN_TX0_FIFO_SIZE_WORDS,
+  DCD_ST_SYN_TX1_FIFO_SIZE_WORDS,
+  DCD_ST_SYN_TX2_FIFO_SIZE_WORDS,
+  DCD_ST_SYN_TX3_FIFO_SIZE_WORDS,
+};
+
+/* Start address at begin of fifo size, end of RAM -> no effect on size */
+// static const uint16_t TX_FIFO_OFFSETS_WORDS[] = {
+//   1 * (EP_FIFO_SIZE_FS / 4 - DCD_ST_SYN_TX0_FIFO_SIZE_WORDS),
+//   1 * (EP_FIFO_SIZE_FS / 4 - DCD_ST_SYN_TX0_FIFO_SIZE_WORDS - DCD_ST_SYN_TX1_FIFO_SIZE_WORDS),
+//   1 * (EP_FIFO_SIZE_FS / 4 - DCD_ST_SYN_TX0_FIFO_SIZE_WORDS - DCD_ST_SYN_TX1_FIFO_SIZE_WORDS - DCD_ST_SYN_TX2_FIFO_SIZE_WORDS),
+//   1 * (EP_FIFO_SIZE_FS / 4 - DCD_ST_SYN_TX0_FIFO_SIZE_WORDS - DCD_ST_SYN_TX1_FIFO_SIZE_WORDS - DCD_ST_SYN_TX2_FIFO_SIZE_WORDS - DCD_ST_SYN_TX3_FIFO_SIZE_WORDS),
+// };
+
+/* Start address in bytes at begin of fifo size, end of RAM -> no effect on size */
+// static const uint16_t TX_FIFO_OFFSETS_WORDS[] = {
+//   4 * (EP_FIFO_SIZE_FS / 4 - DCD_ST_SYN_TX0_FIFO_SIZE_WORDS),
+//   4 * (EP_FIFO_SIZE_FS / 4 - DCD_ST_SYN_TX0_FIFO_SIZE_WORDS - DCD_ST_SYN_TX1_FIFO_SIZE_WORDS),
+//   4 * (EP_FIFO_SIZE_FS / 4 - DCD_ST_SYN_TX0_FIFO_SIZE_WORDS - DCD_ST_SYN_TX1_FIFO_SIZE_WORDS - DCD_ST_SYN_TX2_FIFO_SIZE_WORDS),
+//   4 * (EP_FIFO_SIZE_FS / 4 - DCD_ST_SYN_TX0_FIFO_SIZE_WORDS - DCD_ST_SYN_TX1_FIFO_SIZE_WORDS - DCD_ST_SYN_TX2_FIFO_SIZE_WORDS - DCD_ST_SYN_TX3_FIFO_SIZE_WORDS),
+// };
+
+/* Start address at begin of fifo size -> no effect on size */
+static const uint16_t TX_FIFO_OFFSETS_WORDS[] = {
+  DCD_ST_SYN_RX_FIFO_SIZE_WORDS,
+  DCD_ST_SYN_RX_FIFO_SIZE_WORDS + DCD_ST_SYN_TX0_FIFO_SIZE_WORDS,
+  DCD_ST_SYN_RX_FIFO_SIZE_WORDS + DCD_ST_SYN_TX0_FIFO_SIZE_WORDS + DCD_ST_SYN_TX1_FIFO_SIZE_WORDS,
+  DCD_ST_SYN_RX_FIFO_SIZE_WORDS + DCD_ST_SYN_TX0_FIFO_SIZE_WORDS + DCD_ST_SYN_TX1_FIFO_SIZE_WORDS + DCD_ST_SYN_TX2_FIFO_SIZE_WORDS,
+};
+
+/* Start address at end of fifo size -> no effect on size */
+// static const uint16_t TX_FIFO_OFFSETS_WORDS[] = {
+//   DCD_ST_SYN_RX_FIFO_SIZE_WORDS + DCD_ST_SYN_TX0_FIFO_SIZE_WORDS,
+//   DCD_ST_SYN_RX_FIFO_SIZE_WORDS + DCD_ST_SYN_TX0_FIFO_SIZE_WORDS + DCD_ST_SYN_TX1_FIFO_SIZE_WORDS,
+//   DCD_ST_SYN_RX_FIFO_SIZE_WORDS + DCD_ST_SYN_TX0_FIFO_SIZE_WORDS + DCD_ST_SYN_TX1_FIFO_SIZE_WORDS + DCD_ST_SYN_TX2_FIFO_SIZE_WORDS,
+//   DCD_ST_SYN_RX_FIFO_SIZE_WORDS + DCD_ST_SYN_TX0_FIFO_SIZE_WORDS + DCD_ST_SYN_TX1_FIFO_SIZE_WORDS + DCD_ST_SYN_TX2_FIFO_SIZE_WORDS + DCD_ST_SYN_TX3_FIFO_SIZE_WORDS,
+// };
+
+
+#endif
+
 //--------------------------------------------------------------------+
 // MACRO TYPEDEF CONSTANT ENUM
 //--------------------------------------------------------------------+
@@ -162,6 +244,7 @@ static inline void __eclic_disable_interrupt (uint32_t irq){
 #define OUT_EP_BASE(_port)     (USB_OTG_OUTEndpointTypeDef *) (RHPORT_REGS_BASE + USB_OTG_OUT_ENDPOINT_BASE)
 #define IN_EP_BASE(_port)      (USB_OTG_INEndpointTypeDef *) (RHPORT_REGS_BASE + USB_OTG_IN_ENDPOINT_BASE)
 #define FIFO_BASE(_port, _x)   ((volatile uint32_t *) (RHPORT_REGS_BASE + USB_OTG_FIFO_BASE + (_x) * USB_OTG_FIFO_SIZE))
+#define FIFO_RAM_BASE(_port)  ((uint8_t *) (RHPORT_REGS_BASE + 0x2000))
 
 enum
 {
@@ -188,6 +271,7 @@ xfer_ctl_t xfer_status[EP_MAX][2];
 // EP0 transfers are limited to 1 packet - larger sizes has to be split
 static uint16_t ep0_pending[2];                   // Index determines direction as tusb_dir_t type
 
+#if !DCD_ST_SYN_CUSTOM_FIFO_SIZES
 // TX FIFO RAM allocation so far in words - RX FIFO size is readily available from usb_otg->GRXFSIZ
 static uint16_t _allocated_fifo_words_tx;         // TX FIFO size in words (IN EPs)
 static bool _out_ep_closed;                       // Flag to check if RX FIFO size needs an update (reduce its size)
@@ -198,7 +282,7 @@ static inline uint16_t calc_rx_ff_size(uint16_t ep_size)
   return 15 + 2*(ep_size/4) + 2*EP_MAX;
 }
 
-static void update_grxfsiz(uint8_t rhport)
+static inline void update_grxfsiz(uint8_t rhport)
 {
   (void) rhport;
 
@@ -214,6 +298,56 @@ static void update_grxfsiz(uint8_t rhport)
   // Update size of RX FIFO
   usb_otg->GRXFSIZ = calc_rx_ff_size(max_epsize);
 }
+#endif
+
+static inline void dump_fifos(bool dump_mem)
+{
+  const uint8_t rhport = 0;
+  USB_OTG_GlobalTypeDef * usb_otg = GLOBAL_BASE(rhport);
+  // USB_OTG_DeviceTypeDef * dev = DEVICE_BASE(rhport);
+  // USB_OTG_OUTEndpointTypeDef * out_ep = OUT_EP_BASE(rhport);
+  USB_OTG_INEndpointTypeDef * in_ep = IN_EP_BASE(rhport);
+  uint8_t* fifo_ram = FIFO_RAM_BASE(rhport);
+
+  for (unsigned i = 0; i < EP_MAX; ++i) {
+      if (i == 0) {
+        unsigned mps = (in_ep[i].DIEPCTL & 0x3);
+
+        switch (mps) {
+        case 0:
+          mps = 64;
+          break;
+        case 1:
+          mps = 32;
+          break;
+        case 2:
+          mps = 16;
+          break;
+        case 3:
+          mps = 8;
+          break;
+        }
+        LOG("in ep=%u start=%u size(w)=%u free(w)=%u mps=%u\n",
+          i,
+          (usb_otg->DIEPTXF0_HNPTXFSIZ & 0xffff),
+          ((usb_otg->DIEPTXF0_HNPTXFSIZ >> 16) & 0xffff),
+          (in_ep[i].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) >> USB_OTG_DTXFSTS_INEPTFSAV_Pos,
+          mps);
+      } else {
+        LOG("in ep=%u start=%u size(w)=%u free(w)=%u mps=%u\n",
+          i,
+          usb_otg->DIEPTXF[i-1] & 0xffff,
+          (usb_otg->DIEPTXF[i-1] >> 16) & 0xffff,
+          (in_ep[i].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) >> USB_OTG_DTXFSTS_INEPTFSAV_Pos,
+          (in_ep[i].DIEPCTL & USB_OTG_DIEPCTL_MPSIZ_Msk) >> USB_OTG_DIEPCTL_MPSIZ_Pos);
+      }
+  }
+
+  if (dump_mem) {
+    //sc_dump_mem(fifo_ram + (usb_otg->DIEPTXF[1] & 0xffff), ((usb_otg->DIEPTXF[1] >> 16) & 0xffff) * 4);
+    sc_dump_mem(fifo_ram, 1280);
+  }
+}
 
 // Setup the control endpoint 0.
 static void bus_reset(uint8_t rhport)
@@ -226,7 +360,9 @@ static void bus_reset(uint8_t rhport)
   USB_OTG_INEndpointTypeDef * in_ep = IN_EP_BASE(rhport);
 
   tu_memclr(xfer_status, sizeof(xfer_status));
+#if !DCD_ST_SYN_CUSTOM_FIFO_SIZES
   _out_ep_closed = false;
+#endif
 
   // clear device address
   dev->DCFG &= ~USB_OTG_DCFG_DAD_Msk;
@@ -291,7 +427,20 @@ static void bus_reset(uint8_t rhport)
   //   are enabled at least "2 x (Largest-EPsize/4) + 1" are recommended.  Maybe provide a macro for application to
   //   overwrite this.
 
+#if DCD_ST_SYN_CUSTOM_FIFO_SIZES
+  usb_otg->GRXFSIZ = DCD_ST_SYN_RX_FIFO_SIZE_WORDS;
+  // Control IN uses FIFO 0 with 64 bytes ( 16 32-bit word )
+  usb_otg->DIEPTXF0_HNPTXFSIZ = (TX_FIFO_SIZES_WORDS[0] << USB_OTG_TX0FD_Pos) | (TX_FIFO_OFFSETS_WORDS[0] << USB_OTG_TX0FSA_Pos);
+  // usb_otg->DIEPTXF0_HNPTXFSIZ = (DCD_ST_SYN_TX0_FIFO_SIZE_WORDS << USB_OTG_TX0FD_Pos) | ((4 * DCD_ST_SYN_RX_FIFO_SIZE_WORDS) << USB_OTG_TX0FSA_Pos);
+  //usb_otg->DIEPTXF0_HNPTXFSIZ = (DCD_ST_SYN_TX0_FIFO_SIZE_WORDS << USB_OTG_TX0FD_Pos) | ((EP_FIFO_SIZE) << USB_OTG_TX0FSA_Pos);
+
+  // Fixed control EP0 size to 64 bytes
+  in_ep[0].DIEPCTL &= ~(0x03 << USB_OTG_DIEPCTL_MPSIZ_Pos);
+  xfer_status[0][TUSB_DIR_OUT].max_size = xfer_status[0][TUSB_DIR_IN].max_size = 4 * DCD_ST_SYN_TX0_FIFO_SIZE_WORDS;
+  LOG("rx fifo size=%u\n", usb_otg->GRXFSIZ & USB_OTG_GRXFSIZ_RXFD_Msk);
+#else
   usb_otg->GRXFSIZ = calc_rx_ff_size(TUD_OPT_HIGH_SPEED ? 512 : 64);
+
 
   _allocated_fifo_words_tx = 16;
 
@@ -301,7 +450,7 @@ static void bus_reset(uint8_t rhport)
   // Fixed control EP0 size to 64 bytes
   in_ep[0].DIEPCTL &= ~(0x03 << USB_OTG_DIEPCTL_MPSIZ_Pos);
   xfer_status[0][TUSB_DIR_OUT].max_size = xfer_status[0][TUSB_DIR_IN].max_size = 64;
-
+#endif
   out_ep[0].DOEPTSIZ |= (3 << USB_OTG_DOEPTSIZ_STUPCNT_Pos);
 
   usb_otg->GINTMSK |= USB_OTG_GINTMSK_OEPINT | USB_OTG_GINTMSK_IEPINT;
@@ -418,6 +567,7 @@ static bool USB_HS_PHYCInit(void)
 }
 #endif
 
+static void write_fifo_packet(uint8_t rhport, uint8_t fifo_num, uint8_t * src, uint16_t len);
 static void edpt_schedule_packets(uint8_t rhport, uint8_t const epnum, uint8_t const dir, uint16_t const num_packets, uint16_t total_bytes)
 {
   (void) rhport;
@@ -436,12 +586,40 @@ static void edpt_schedule_packets(uint8_t rhport, uint8_t const epnum, uint8_t c
 
   // IN and OUT endpoint xfers are interrupt-driven, we just schedule them here.
   if(dir == TUSB_DIR_IN) {
-    //LOG("IN ep=%02x p=%u b=%u\n", epnum, num_packets, total_bytes);
+    xfer_ctl_t *xfer = XFER_CTL_BASE(epnum, TUSB_DIR_IN);
+
+    // if (xfer->max_size) {
+      // SC_ASSERT(0 == (in_ep[epnum].DIEPTSIZ & USB_OTG_DIEPTSIZ_XFRSIZ_Msk) >> USB_OTG_DIEPTSIZ_XFRSIZ_Pos);
+      // SC_ASSERT(in_ep[epnum].DIEPINT & USB_OTG_DIEPINT_TXFE);
+      // if (epnum > 1) {
+      //   LOG("ep=%u free=%u\n", epnum, (in_ep[epnum].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) >> USB_OTG_DTXFSTS_INEPTFSAV_Pos);
+      // }
+      // switch (epnum) {
+      // case 0:
+      //   //SC_ASSERT((in_ep[epnum].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) == DCD_ST_SYN_TX0_FIFO_SIZE_WORDS);
+      //   break;
+      // case 1:
+      //   SC_ASSERT((in_ep[epnum].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) == DCD_ST_SYN_TX1_FIFO_SIZE_WORDS);
+      //   break;
+      // case 2:
+      //   SC_ASSERT((in_ep[epnum].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) == DCD_ST_SYN_TX2_FIFO_SIZE_WORDS);
+      //   break;
+      // case 3:
+      //   SC_ASSERT((in_ep[epnum].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) == DCD_ST_SYN_TX3_FIFO_SIZE_WORDS);
+      //   break;
+      // }
+    // }
+
+
+
+
+    LOG("IN ep=%02x p=%u b=%u\n", epnum, num_packets, total_bytes);
+    // in_ep[epnum].DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;
     // A full IN transfer (multiple packets, possibly) triggers XFRC.
     in_ep[epnum].DIEPTSIZ = (num_packets << USB_OTG_DIEPTSIZ_PKTCNT_Pos) |
         ((total_bytes << USB_OTG_DIEPTSIZ_XFRSIZ_Pos) & USB_OTG_DIEPTSIZ_XFRSIZ_Msk);
 
-    in_ep[epnum].DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;
+
     // For ISO endpoint set correct odd/even bit for next frame.
     if ((in_ep[epnum].DIEPCTL & USB_OTG_DIEPCTL_EPTYP) == USB_OTG_DIEPCTL_EPTYP_0 && (XFER_CTL_BASE(epnum, dir))->interval == 1)
     {
@@ -449,10 +627,44 @@ static void edpt_schedule_packets(uint8_t rhport, uint8_t const epnum, uint8_t c
       uint32_t const odd_frame_now = (dev->DSTS & (1u << USB_OTG_DSTS_FNSOF_Pos));
       in_ep[epnum].DIEPCTL |= (odd_frame_now ? USB_OTG_DIEPCTL_SD0PID_SEVNFRM_Msk : USB_OTG_DIEPCTL_SODDFRM_Msk);
     }
-    // Enable fifo empty interrupt only if there are something to put in the fifo.
-    if(total_bytes != 0) {
-      dev->DIEPEMPMSK |= (1 << epnum);
-    }
+    // // Enable fifo empty interrupt only if there are something to put in the fifo.
+    // if(total_bytes != 0) {
+    //   dev->DIEPEMPMSK |= (1 << epnum);
+    // }
+    TU_ASSERT(!xfer->ff,);
+
+
+  // if (epnum == 2) {
+  //   static char buf[16] = {0};
+  //   static uint8_t x = 0xa5;
+
+  //   ++x;
+
+  //   memset(buf[2], x, sizeof(buf)-2);
+  //   // //LOG("buffer\n");
+  //   write_fifo_packet(rhport, epnum, buf, sizeof(buf));
+
+  //   dump_fifos(true);
+
+  // } else {
+    // size_t offset = 0;
+
+    // for (; offset < total_bytes; offset += 64) {
+    //   write_fifo_packet(rhport, epnum, xfer->buffer + offset, 64);
+    // }
+
+    // if (offset < total_bytes) {
+    //   write_fifo_packet(rhport, epnum, xfer->buffer + offset, xfer->total_len - offset);
+    // }
+    write_fifo_packet(rhport, epnum, xfer->buffer, xfer->total_len);
+    dump_fifos(false);
+    in_ep[epnum].DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;
+  // }
+
+
+
+
+
   } else {
     // A full OUT transfer (multiple packets, possibly) triggers XFRC.
     out_ep[epnum].DOEPTSIZ &= ~(USB_OTG_DOEPTSIZ_PKTCNT_Msk | USB_OTG_DOEPTSIZ_XFRSIZ);
@@ -638,10 +850,10 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * desc_edpt)
   xfer->max_size = desc_edpt->wMaxPacketSize.size;
   xfer->interval = desc_edpt->bInterval;
 
-  uint16_t const fifo_size = (desc_edpt->wMaxPacketSize.size + 3) / 4; // Round up to next full word
-
   if(dir == TUSB_DIR_OUT)
   {
+#if !DCD_ST_SYN_CUSTOM_FIFO_SIZES
+    uint16_t const fifo_size = (desc_edpt->wMaxPacketSize.size + 3) / 4; // Round up to next full word
     // Calculate required size of RX FIFO
     uint16_t const sz = calc_rx_ff_size(4*fifo_size);
 
@@ -653,6 +865,7 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * desc_edpt)
       // Enlarge RX FIFO
       usb_otg->GRXFSIZ = sz;
     }
+#endif
 
     out_ep[epnum].DOEPCTL |= (1 << USB_OTG_DOEPCTL_USBAEP_Pos)        |
         (desc_edpt->bmAttributes.xfer << USB_OTG_DOEPCTL_EPTYP_Pos)   |
@@ -663,6 +876,47 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * desc_edpt)
   }
   else
   {
+#if DCD_ST_SYN_CUSTOM_FIFO_SIZES
+    // uint32_t tx_fifo_size_words = 0;
+    // uint32_t tx_fifo_offset_words = DCD_ST_SYN_RX_FIFO_SIZE_WORDS;
+
+
+    // switch (epnum) {
+    // default:
+    //   TU_ASSERT(false && "USB configuration error");
+    //   break;
+    // case 1:
+    //   tx_fifo_size_words = DCD_ST_SYN_TX1_FIFO_SIZE_WORDS;
+    //   tx_fifo_offset_words += DCD_ST_SYN_TX0_FIFO_SIZE_WORDS;
+    //   // tx_fifo_offset_words -= DCD_ST_SYN_TX0_FIFO_SIZE_WORDS;
+    //   break;
+    // case 2:
+    //   tx_fifo_size_words = DCD_ST_SYN_TX2_FIFO_SIZE_WORDS;
+    //   tx_fifo_offset_words += (DCD_ST_SYN_TX0_FIFO_SIZE_WORDS + DCD_ST_SYN_TX1_FIFO_SIZE_WORDS);
+    //   // tx_fifo_offset_words -= (DCD_ST_SYN_TX0_FIFO_SIZE_WORDS + DCD_ST_SYN_TX1_FIFO_SIZE_WORDS);
+    //   break;
+    // case 3:
+    //   tx_fifo_size_words = DCD_ST_SYN_TX3_FIFO_SIZE_WORDS;
+    //   tx_fifo_offset_words += (DCD_ST_SYN_TX0_FIFO_SIZE_WORDS + DCD_ST_SYN_TX1_FIFO_SIZE_WORDS + DCD_ST_SYN_TX2_FIFO_SIZE_WORDS);
+    //   // tx_fifo_offset_words -= (DCD_ST_SYN_TX0_FIFO_SIZE_WORDS + DCD_ST_SYN_TX1_FIFO_SIZE_WORDS + DCD_ST_SYN_TX2_FIFO_SIZE_WORDS);
+    //   break;
+    // }
+
+
+
+    // DIEPTXF starts at FIFO #1.
+    // Both TXFD and TXSA are in unit of 32-bit words.
+    usb_otg->DIEPTXF[epnum-1] = (TX_FIFO_SIZES_WORDS[epnum] << USB_OTG_DIEPTXF_INEPTXFD_Pos) | (TX_FIFO_OFFSETS_WORDS[epnum] << USB_OTG_DIEPTXF_INEPTXSA_Pos);
+    // usb_otg->DIEPTXF[epnum] = (TX_FIFO_SIZES_WORDS[epnum] << USB_OTG_DIEPTXF_INEPTXFD_Pos) | (TX_FIFO_OFFSETS_WORDS[epnum] << USB_OTG_DIEPTXF_INEPTXSA_Pos);
+    // usb_otg->DIEPTXF[epnum-1] = (tx_fifo_size_words << USB_OTG_DIEPTXF_INEPTXFD_Pos) | ((4*tx_fifo_offset_words) << USB_OTG_DIEPTXF_INEPTXSA_Pos);
+    //LOG("free words ep=%u count=%u\n", epnum, (in_ep[epnum].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) >> USB_OTG_DTXFSTS_INEPTFSAV_Pos);
+
+  // uint32_t count = SystemCoreClock / 1000;
+  // while ( count-- )
+  // {
+  //   __NOP();
+  // }
+#else
     // "USB Data FIFOs" section in reference manual
     // Peripheral FIFO architecture
     //
@@ -694,7 +948,7 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * desc_edpt)
     // DIEPTXF starts at FIFO #1.
     // Both TXFD and TXSA are in unit of 32-bit words.
     usb_otg->DIEPTXF[epnum - 1] = (fifo_size << USB_OTG_DIEPTXF_INEPTXFD_Pos) | (EP_FIFO_SIZE/4 - _allocated_fifo_words_tx);
-
+#endif
     in_ep[epnum].DIEPCTL |= (1 << USB_OTG_DIEPCTL_USBAEP_Pos) |
         (epnum << USB_OTG_DIEPCTL_TXFNUM_Pos) |
         (desc_edpt->bmAttributes.xfer << USB_OTG_DIEPCTL_EPTYP_Pos) |
@@ -702,6 +956,8 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * desc_edpt)
         (desc_edpt->wMaxPacketSize.size << USB_OTG_DIEPCTL_MPSIZ_Pos);
 
     dev->DAINTMSK |= (1 << (USB_OTG_DAINTMSK_IEPM_Pos + epnum));
+
+    dump_fifos(false);
   }
 
   return true;
@@ -731,8 +987,10 @@ void dcd_edpt_close_all (uint8_t rhport)
     xfer_status[n][TUSB_DIR_IN].max_size = 0;
   }
 
+#if !DCD_ST_SYN_CUSTOM_FIFO_SIZES
   // reset allocated fifo IN
   _allocated_fifo_words_tx = 16;
+#endif
 }
 
 bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t total_bytes)
@@ -744,6 +1002,9 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
   xfer->buffer      = buffer;
   xfer->ff          = NULL;
   xfer->total_len   = total_bytes;
+
+  // LOG("dcd_edpt_xfer ep=%02x bytes=%u\n", ep_addr, total_bytes);
+
 
   // EP0 can only handle one packet
   if(epnum == 0) {
@@ -855,15 +1116,18 @@ static void dcd_edpt_disable (uint8_t rhport, uint8_t ep_addr, bool stall)
  */
 void dcd_edpt_close (uint8_t rhport, uint8_t ep_addr)
 {
-  USB_OTG_GlobalTypeDef * usb_otg = GLOBAL_BASE(rhport);
-
   uint8_t const epnum = tu_edpt_number(ep_addr);
   uint8_t const dir   = tu_edpt_dir(ep_addr);
 
   dcd_edpt_disable(rhport, ep_addr, false);
 
-  // Update max_size
   xfer_status[epnum][dir].max_size = 0;  // max_size = 0 marks a disabled EP - required for changing FIFO allocation
+
+#if !DCD_ST_SYN_CUSTOM_FIFO_SIZES
+  USB_OTG_GlobalTypeDef * usb_otg = GLOBAL_BASE(rhport);
+
+  // Update max_size
+
 
   if (dir == TUSB_DIR_IN)
   {
@@ -877,6 +1141,7 @@ void dcd_edpt_close (uint8_t rhport, uint8_t ep_addr)
   {
     _out_ep_closed = true;     // Set flag such that RX FIFO gets reduced in size once RX FIFO is empty
   }
+#endif
 }
 
 void dcd_edpt_stall (uint8_t rhport, uint8_t ep_addr)
@@ -904,6 +1169,18 @@ void dcd_edpt_clear_stall (uint8_t rhport, uint8_t ep_addr)
   }
 }
 
+
+static void read_fifo_packet32(usb_fifo_t rx_fifo, uint32_t * dst, uint_least16_t words)
+{
+  uint32_t word;
+
+  for (uint_least16_t i = 0; i < words; ++i) {
+    word = *rx_fifo;
+
+    *dst++ = word;
+  }
+}
+
 /*------------------------------------------------------------------*/
 
 // Read a single data packet from receive FIFO
@@ -912,27 +1189,54 @@ static void read_fifo_packet(uint8_t rhport, uint8_t * dst, uint16_t len)
   (void) rhport;
 
   usb_fifo_t rx_fifo = FIFO_BASE(rhport, 0);
+  uint_least16_t words = len / 4;
 
-  // Reading full available 32 bit words from fifo
-  uint16_t full_words = len >> 2;
-  for(uint16_t i = 0; i < full_words; i++) {
-    uint32_t tmp = *rx_fifo;
-    dst[0] = tmp & 0x000000FF;
-    dst[1] = (tmp & 0x0000FF00) >> 8;
-    dst[2] = (tmp & 0x00FF0000) >> 16;
-    dst[3] = (tmp & 0xFF000000) >> 24;
-    dst += 4;
+  len -= words * 4;
+
+  if (((uintptr_t)dst) & 3) { // aligned to 4 bytes?
+    // LOG("ro\n");
+    // Reading full available 32 bit words from fifo
+    for(uint_least16_t i = 0; i < words; i++) {
+      uint32_t tmp = *rx_fifo;
+      dst[0] = tmp & 0x000000FF;
+      dst[1] = (tmp & 0x0000FF00) >> 8;
+      dst[2] = (tmp & 0x00FF0000) >> 16;
+      dst[3] = (tmp & 0xFF000000) >> 24;
+      dst += 4;
+    }
+  } else {
+    // LOG("re\n");
+    read_fifo_packet32(rx_fifo, (uint32_t*)dst, words);
+
+    dst += words * 4;
   }
 
+  // uint32_t *dst_word = (uint32_t *)dst;
+  // uint_least16_t words = len / 4;
+  // uint_least16_t rem = len - words * 4;
+  // uint32_t be_word;
+
+  // // Reading full available 32 bit words from fifo
+  // uint_least16_t full_words = len >> 2;
+  // for(uint16_t i = 0; i < full_words; i++) {
+  //   uint32_t tmp = *rx_fifo;
+  //   dst[0] = tmp & 0x000000FF;
+  //   dst[1] = (tmp & 0x0000FF00) >> 8;
+  //   dst[2] = (tmp & 0x00FF0000) >> 16;
+  //   dst[3] = (tmp & 0xFF000000) >> 24;
+  //   dst += 4;
+  // }
+
+
+
   // Read the remaining 1-3 bytes from fifo
-  uint8_t bytes_rem = len & 0x03;
-  if(bytes_rem != 0) {
+  if(len != 0) {
     uint32_t tmp = *rx_fifo;
     dst[0] = tmp & 0x000000FF;
-    if(bytes_rem > 1) {
+    if(len > 1) {
       dst[1] = (tmp & 0x0000FF00) >> 8;
     }
-    if(bytes_rem > 2) {
+    if(len > 2) {
       dst[2] = (tmp & 0x00FF0000) >> 16;
     }
   }
@@ -944,43 +1248,61 @@ static void write_fifo_packet(uint8_t rhport, uint8_t fifo_num, uint8_t * src, u
   (void) rhport;
 
   usb_fifo_t tx_fifo = FIFO_BASE(rhport, fifo_num);
+  uint_least16_t words = len / 4;
 
-  // Pushing full available 32 bit words to fifo
-  uint16_t full_words = len >> 2;
-  for(uint16_t i = 0; i < full_words; i++){
-    *tx_fifo = (src[3] << 24) | (src[2] << 16) | (src[1] << 8) | src[0];
-    src += 4;
+  len -= words * 4;
+
+  if (((uintptr_t)src) & 3) { // aligned to 4 bytes?
+    // LOG("wo\n");
+    for(uint16_t i = 0; i < words; i++){
+      *tx_fifo = (src[3] << 24) | (src[2] << 16) | (src[1] << 8) | src[0];
+      src += 4;
+    }
+  } else {
+    // LOG("we\n");
+    uint32_t const* src32 = (uint32_t*)src;
+
+    for (uint_least16_t i = 0; i < words; ++i) {
+      *tx_fifo = *src32++;
+    }
+
+    src += words * 4;
   }
 
   // Write the remaining 1-3 bytes into fifo
-  uint8_t bytes_rem = len & 0x03;
-  if(bytes_rem){
-    LOG("rem\n");
+  if(len){
+    // LOG("rem\n");
     uint32_t tmp_word = 0;
     tmp_word |= src[0];
-    if(bytes_rem > 1){
+    if(len > 1){
       tmp_word |= src[1] << 8;
     }
-    if(bytes_rem > 2){
+    if(len > 2){
       tmp_word |= src[2] << 16;
     }
     *tx_fifo = tmp_word;
   }
 }
 
-static void handle_rxflvl_ints(uint8_t rhport, USB_OTG_OUTEndpointTypeDef * out_ep) {
+static bool handle_rxflvl_ints(uint8_t rhport, USB_OTG_OUTEndpointTypeDef * out_ep) {
   USB_OTG_GlobalTypeDef * usb_otg = GLOBAL_BASE(rhport);
   usb_fifo_t rx_fifo = FIFO_BASE(rhport, 0);
 
   // Pop control word off FIFO
   uint32_t ctl_word = usb_otg->GRXSTSP;
-  // LOG("ctrl word %08x\n", ctl_word);
+  LOG("ctrl word %08x\n", ctl_word);
   uint8_t pktsts = (ctl_word & USB_OTG_GRXSTSP_PKTSTS_Msk) >> USB_OTG_GRXSTSP_PKTSTS_Pos;
   uint8_t epnum = (ctl_word &  USB_OTG_GRXSTSP_EPNUM_Msk) >>  USB_OTG_GRXSTSP_EPNUM_Pos;
   uint16_t bcnt = (ctl_word & USB_OTG_GRXSTSP_BCNT_Msk) >> USB_OTG_GRXSTSP_BCNT_Pos;
 
+  // if (!bcnt) {
+  //   return false;
+  // }
+
   switch(pktsts) {
     case 0x00: // possibly empty fifo? Happens after dir creation with msc_dual_lun demo
+      LOG("ctrl word %08x bcnt=%04x\n", ctl_word, bcnt);
+      return false;
       break;
     case 0x01: // Global OUT NAK (Interrupt)
       break;
@@ -1030,10 +1352,13 @@ static void handle_rxflvl_ints(uint8_t rhport, USB_OTG_OUTEndpointTypeDef * out_
       break;
 
     default: // Invalid
-      LOG("unhandled packet type %02x\n", pktsts);
-      TU_BREAKPOINT();
+      // LOG("unhandled packet type %02x\n", pktsts);
+      // TU_BREAKPOINT();
+      return false;
       break;
   }
+
+  return true;
 }
 
 static void handle_epout_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OTG_OUTEndpointTypeDef * out_ep) {
@@ -1075,7 +1400,7 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
 
     if ( dev->DAINT & (1 << (USB_OTG_DAINT_IEPINT_Pos + n)) )
     {
-      // LOG("DIEPINT %u %08x\n", n, in_ep[n].DIEPINT);
+      LOG("DIEPINT %u %08x\n", n, in_ep[n].DIEPINT);
       // IN XFER complete (entire xfer).
       if ( in_ep[n].DIEPINT & USB_OTG_DIEPINT_XFRC )
       {
@@ -1091,60 +1416,75 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
         }
       }
 
-      // XFER FIFO empty
-      if ( (in_ep[n].DIEPINT & USB_OTG_DIEPINT_TXFE) && (dev->DIEPEMPMSK & (1 << n)) )
-      {
+      // // XFER FIFO empty
+      // if ( (in_ep[n].DIEPINT & USB_OTG_DIEPINT_TXFE)) {
+      //     TU_ASSERT(!xfer->ff,);
+      //     // TU_ASSERT(xfer->total_len <= in_ep[n].DIEPS);
+
+      //       //LOG("buffer\n");
+      //       write_fifo_packet(rhport, n, xfer->buffer, xfer->total_len);
+
+      //       // // Increment pointer to xfer data
+      //       // xfer->buffer += packet_size;
+
+      //       dev->DIEPEMPMSK &= ~(1 << n);
+      // }
+
+      // // XFER FIFO empty
+      // if ( (in_ep[n].DIEPINT & USB_OTG_DIEPINT_TXFE) && (dev->DIEPEMPMSK & (1 << n)) )
+      // {
         // DIEPINT's TXFE bit is read-only, software cannot clear it.
         // It will only be cleared by hardware when written bytes is more than
         // - 64 bytes or
         // - Half of TX FIFO size (configured by DIEPTXF)
 
 
-        uint16_t remaining_packets = (in_ep[n].DIEPTSIZ & USB_OTG_DIEPTSIZ_PKTCNT_Msk) >> USB_OTG_DIEPTSIZ_PKTCNT_Pos;
+        // uint16_t remaining_packets = (in_ep[n].DIEPTSIZ & USB_OTG_DIEPTSIZ_PKTCNT_Msk) >> USB_OTG_DIEPTSIZ_PKTCNT_Pos;
 
 
 
 
-        // Process every single packet (only whole packets can be written to fifo)
-        for(uint16_t i = 0; i < remaining_packets; i++)
-        {
-          uint16_t const remaining_bytes = (in_ep[n].DIEPTSIZ & USB_OTG_DIEPTSIZ_XFRSIZ_Msk) >> USB_OTG_DIEPTSIZ_XFRSIZ_Pos;
+        // // Process every single packet (only whole packets can be written to fifo)
+        // for(uint16_t i = 0; i < remaining_packets; i++)
+        // {
+        //   uint16_t const remaining_bytes = (in_ep[n].DIEPTSIZ & USB_OTG_DIEPTSIZ_XFRSIZ_Msk) >> USB_OTG_DIEPTSIZ_XFRSIZ_Pos;
 
-          // Packet can not be larger than ep max size
-          uint16_t const packet_size = tu_min16(remaining_bytes, xfer->max_size);
+        //   // Packet can not be larger than ep max size
+        //   uint16_t const packet_size = tu_min16(remaining_bytes, xfer->max_size);
 
-          LOG("IN rem ep=%02x, p=%u b=%u s=%u\n", n, remaining_packets, remaining_bytes, packet_size);
+        //   // LOG("IN rem ep=%02x, p=%u b=%u s=%u\n", n, remaining_packets, remaining_bytes, packet_size);
 
-          // It's only possible to write full packets into FIFO. Therefore DTXFSTS register of current
-          // EP has to be checked if the buffer can take another WHOLE packet
-          if(packet_size > ((in_ep[n].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) << 2)) {
-            LOG("no space in USB fifo\n");
-            break;
-          }
+        //   // It's only possible to write full packets into FIFO. Therefore DTXFSTS register of current
+        //   // EP has to be checked if the buffer can take another WHOLE packet
+        //   if(packet_size > ((in_ep[n].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) << 2)) {
+        //     LOG("ep=%u packet size=%u left=%u\n", n, packet_size, ((in_ep[n].DTXFSTS & USB_OTG_DTXFSTS_INEPTFSAV_Msk) << 2));
+        //     break;
+        //   }
 
-          // Push packet to Tx-FIFO
-          if (xfer->ff)
-          {
-            //LOG("ff\n");
-            usb_fifo_t tx_fifo = FIFO_BASE(rhport, n);
-            tu_fifo_read_n_const_addr_full_words(xfer->ff, (void *) tx_fifo, packet_size);
-          }
-          else
-          {
-            //LOG("buffer\n");
-            write_fifo_packet(rhport, n, xfer->buffer, packet_size);
+        //   // Push packet to Tx-FIFO
+        //   if (xfer->ff)
+        //   {
+        //     //LOG("ff\n");
+        //     usb_fifo_t tx_fifo = FIFO_BASE(rhport, n);
+        //     tu_fifo_read_n_const_addr_full_words(xfer->ff, (void *) tx_fifo, packet_size);
+        //   }
+        //   else
+        //   {
+        //     //LOG("buffer\n");
+        //     write_fifo_packet(rhport, n, xfer->buffer, packet_size);
 
-            // Increment pointer to xfer data
-            xfer->buffer += packet_size;
-          }
-        }
+        //     // Increment pointer to xfer data
+        //     xfer->buffer += packet_size;
+        //   }
+        // }
 
-        // Turn off TXFE if all bytes are written.
-        if (((in_ep[n].DIEPTSIZ & USB_OTG_DIEPTSIZ_XFRSIZ_Msk) >> USB_OTG_DIEPTSIZ_XFRSIZ_Pos) == 0)
-        {
-          dev->DIEPEMPMSK &= ~(1 << n);
-        }
-      }
+        // // Turn off TXFE if all bytes are written.
+        // if (((in_ep[n].DIEPTSIZ & USB_OTG_DIEPTSIZ_XFRSIZ_Msk) >> USB_OTG_DIEPTSIZ_XFRSIZ_Pos) == 0)
+        // {
+        //   dev->DIEPEMPMSK &= ~(1 << n);
+        // }
+      // }
+
     }
   }
 }
@@ -1165,7 +1505,7 @@ void dcd_int_handler(uint8_t rhport)
   //   LOG("ec=%u\n", ec);
   // }
 
-  //LOG("/ %08x\n", int_status);
+  LOG("/ %08x\n", int_status);
 
   if(int_status & USB_OTG_GINTSTS_USBRST)
   {
@@ -1214,6 +1554,7 @@ void dcd_int_handler(uint8_t rhport)
     usb_otg->GOTGINT = otg_int;
   }
 
+#if USE_SOF
   if(int_status & USB_OTG_GINTSTS_SOF)
   {
     usb_otg->GINTSTS = USB_OTG_GINTSTS_SOF;
@@ -1223,21 +1564,46 @@ void dcd_int_handler(uint8_t rhport)
 
     dcd_event_bus_signal(rhport, DCD_EVENT_SOF, true);
   }
+#endif
+
+  // RxFIFO non-empty interrupt handling.
+  // if(int_status & USB_OTG_GINTSTS_RXFLVL)
+  // {
+  //   // RXFLVL bit is read-only
+
+  //   // Mask out RXFLVL while reading data from FIFO
+  //   usb_otg->GINTMSK &= ~USB_OTG_GINTMSK_RXFLVLM;
+
+  //   // Loop until all available packets were handled
+  //   do
+  //   {
+  //     handle_rxflvl_ints(rhport, out_ep);
+  //   } while(usb_otg->GINTSTS & USB_OTG_GINTSTS_RXFLVL);
+
+  //   // Manage RX FIFO size
+  //   if (_out_ep_closed)
+  //   {
+  //     update_grxfsiz(rhport);
+
+  //     // Disable flag
+  //     _out_ep_closed = false;
+  //   }
+
+  //   usb_otg->GINTMSK |= USB_OTG_GINTMSK_RXFLVLM;
+  // }
 
   // RxFIFO non-empty interrupt handling.
   if(int_status & USB_OTG_GINTSTS_RXFLVL)
   {
     // RXFLVL bit is read-only
 
-    // Mask out RXFLVL while reading data from FIFO
-    usb_otg->GINTMSK &= ~USB_OTG_GINTMSK_RXFLVLM;
+    // // Mask out RXFLVL while reading data from FIFO
+    // usb_otg->GINTMSK &= ~USB_OTG_GINTMSK_RXFLVLM;
 
     // Loop until all available packets were handled
-    do
-    {
-      handle_rxflvl_ints(rhport, out_ep);
-    } while(usb_otg->GINTSTS & USB_OTG_GINTSTS_RXFLVL);
+    handle_rxflvl_ints(rhport, out_ep);
 
+#if !DCD_ST_SYN_CUSTOM_FIFO_SIZES
     // Manage RX FIFO size
     if (_out_ep_closed)
     {
@@ -1246,8 +1612,8 @@ void dcd_int_handler(uint8_t rhport)
       // Disable flag
       _out_ep_closed = false;
     }
-
-    usb_otg->GINTMSK |= USB_OTG_GINTMSK_RXFLVLM;
+#endif
+    // usb_otg->GINTMSK |= USB_OTG_GINTMSK_RXFLVLM;
   }
 
   // OUT endpoint interrupt handling.

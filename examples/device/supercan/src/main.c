@@ -187,7 +187,8 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 	struct usb_can *can = &usb.can[index];
 	SC_DEBUG_ASSERT(can->tx_bank < 2);
 	SC_DEBUG_ASSERT(can->tx_offsets[can->tx_bank] > 0);
-	// SC_DEBUG_ASSERT(can->tx_offsets[can->tx_bank] <= MSG_BUFFER_SIZE);
+	SC_DEBUG_ASSERT(can->tx_offsets[can->tx_bank] <= MSG_BUFFER_SIZE);
+	// LOG("ch%u %s enter bytes=%u\n", index, func, can->tx_offsets[can->tx_bank]);
 
 	(void)func;
 
@@ -220,7 +221,9 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 	for (; ptr + SC_MSG_HEADER_LEN <= eptr; ) {
 		struct sc_msg_header *hdr = (struct sc_msg_header *)ptr;
 		if (!hdr->id || !hdr->len) {
+			break;
 			LOG("ch%u %s msg offset %u zero id/len msg\n", index, func, ptr - sptr);
+			break;
 			// sc_dump_mem(sptr, eptr - sptr);
 			SC_DEBUG_ASSERT(false);
 			can->tx_offsets[can->tx_bank] = 0;
@@ -304,6 +307,7 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 	if (MSG_BUFFER_SIZE > SC_M1_EP_SIZE) { // FIX ME -> move to board file
 		uint16_t offset = can->tx_offsets[can->tx_bank];
 		bool need_to_send_zlp = offset < MSG_BUFFER_SIZE && 0 == (offset % SC_M1_EP_SIZE);
+
 		if (need_to_send_zlp) {
 			// LOG("zlpfix\n");
 			memset(&can->tx_buffers[can->tx_bank][offset], 0, 4);
@@ -311,7 +315,17 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 		}
 	}
 
-	// LOG("ch%u %s bytes=%u\n", index, func, can->tx_offsets[can->tx_bank]);
+	// uint16_t rem = can->tx_offsets[can->tx_bank] % 64;
+
+	// if (rem) {
+	// 	unsigned bytes = 64 - rem;
+	// 	memset(&can->tx_buffers[can->tx_bank][can->tx_offsets[can->tx_bank]], 0, bytes);
+	// 	can->tx_offsets[can->tx_bank] += bytes;
+	// 	SC_DEBUG_ASSERT(!(can->tx_offsets[can->tx_bank] % 64));
+	// 	LOG("ch%u %s align bytes=%u\n", index, func, can->tx_offsets[can->tx_bank]);
+	// }
+
+	// LOG("ch%u %s exit bytes=%u\n", index, func, can->tx_offsets[can->tx_bank]);
 	XFER(usb.port, 0x80 | can->pipe, can->tx_buffers[can->tx_bank], can->tx_offsets[can->tx_bank]);
 	can->tx_bank = !can->tx_bank;
 	SC_DEBUG_ASSERT(!can->tx_offsets[can->tx_bank]);

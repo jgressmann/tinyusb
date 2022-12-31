@@ -641,7 +641,13 @@ SC_RAMFUNC bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const 
 	}
 
 #if SUPERCAN_DEBUG
-	SC_DEBUG_ASSERT(!(can->txr & (UINT32_C(1) << msg->track_id)));
+	bool track_id_present = can->txr & (UINT32_C(1) << msg->track_id);
+
+	if (unlikely(track_id_present)) {
+		LOG("ch%u track id %u in TXR bitset %08x\n", index, msg->track_id, can->txr);
+	}
+
+	SC_DEBUG_ASSERT(!track_id_present);
 	can->txr |= (UINT32_C(1) << msg->track_id);
 #endif
 
@@ -685,7 +691,7 @@ SC_RAMFUNC bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const 
 
 	__atomic_store_n(&can->tx_put_index, pi + 1, __ATOMIC_RELEASE);
 
-	LOG("ch%u tx i=%u\n", index, put_index);
+	// LOG("ch%u txq i=%u\n", index, put_index);
 
 	/* trigger interrupt handler */
 	NVIC_SetPendingIRQ(can->tx_irq);
