@@ -127,8 +127,8 @@ EOF
 - supercan-standalone.bin: binary, no bootloader required, flash with debug probe
 - supercan-standalone.hex: hex, no bootloader required, flash with debug probe
 - supercan-standalone.jlink: J-Link flash script
-- supercan-app.bin: binary, requires bootloader, flash with debug probe to 0x4000
-- supercan-app.hex: hex, requires bootloader, flash with debug probe to 0x4000
+- supercan-app.bin: binary, requires bootloader, flash with debug probe to 0x2000
+- supercan-app.hex: hex, requires bootloader, flash with debug probe to 0x2000
 - supercan-app.jlink: J-Link flash script
 - supercan.dfu: requires bootloader, update with dfu-util
 
@@ -372,8 +372,8 @@ EOF
 - supercan-standalone.bin: binary, no bootloader required, flash with debug probe
 - supercan-standalone.hex: hex, no bootloader required, flash with debug probe
 - supercan-standalone.jlink: J-Link flash script
-- supercan-app.bin: binary, requires bootloader, flash with debug probe to 0x4000
-- supercan-app.hex: hex, requires bootloader, flash with debug probe to 0x4000
+- supercan-app.bin: binary, requires bootloader, flash with debug probe to 0x2000
+- supercan-app.hex: hex, requires bootloader, flash with debug probe to 0x2000
 - supercan-app.jlink: J-Link flash script
 - supercan.dfu: requires bootloader, update with dfu-util
 
