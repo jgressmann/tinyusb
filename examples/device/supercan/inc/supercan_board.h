@@ -139,18 +139,6 @@ SC_RAMFUNC extern void sc_can_notify_task_isr(uint8_t index, uint32_t count);
 extern void sc_can_log_bit_timing(sc_can_bit_timing const *c, char const* name);
 SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *status);
 
-#if defined(D5035_01)
-#	include "supercan_D5035_01.h"
-#elif defined(SAME54XPLAINEDPRO)
-#	include "supercan_same54_xplained_pro.h"
-#elif defined(TEENSY_4X)
-#	include "supercan_teensy_4x.h"
-#elif defined(FEATHER_M4_CAN_EXPRESS)
-#	include "supercan_feather_m4_can_express.h"
-#else
-#	error "Unsupported board!"
-#endif
-
 #ifndef D5035_01
 #	define D5035_01 0
 #endif
@@ -166,6 +154,26 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #ifndef FEATHER_M4_CAN_EXPRESS
 #	define FEATHER_M4_CAN_EXPRESS 0
 #endif
+
+#ifndef LONGAN_CANBED_M4
+#	define LONGAN_CANBED_M4 0
+#endif
+
+#if D5035_01
+#	include "supercan_D5035_01.h"
+#elif SAME54XPLAINEDPRO
+#	include "supercan_same54_xplained_pro.h"
+#elif TEENSY_4X
+#	include "supercan_teensy_4x.h"
+#elif FEATHER_M4_CAN_EXPRESS
+#	include "supercan_feather_m4_can_express.h"
+#elif LONGAN_CANBED_M4
+#	include "supercan_longan_canbed_m4.h"
+#else
+#	error "Unsupported board!"
+#endif
+
+
 
 
 SC_RAMFUNC static inline uint32_t sc_bitrate(unsigned brp, unsigned tseg1, unsigned tseg2)

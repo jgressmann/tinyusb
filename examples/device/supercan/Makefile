@@ -44,6 +44,13 @@ SRC_C += $(SAM_SRC_C)
 endif
 
 
+ifeq ($(BOARD),longan_canbed_m4)
+CFLAGS += $(SECTION_CFLAGS) -DLONGAN_CANBED_M4=1
+INC += $(TOP)/examples/device/superdfu/inc
+SRC_C += $(SAM_SRC_C)
+endif
+
+
 
 ifdef MIMXRT10XX
 ifeq ($(MIMXRT10XX),0)

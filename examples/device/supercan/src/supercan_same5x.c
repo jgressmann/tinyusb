@@ -1,14 +1,15 @@
 /* SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2021-2022 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021-2023 Jean Gressmann <jean@0x42.de>
  *
  */
 
+#include <supercan_board.h>
 
-#if defined(D5035_01) || defined(SAME54XPLAINEDPRO) || defined(FEATHER_M4_CAN_EXPRESS)
+#if D5035_01 || SAME54XPLAINEDPRO || FEATHER_M4_CAN_EXPRESS || LONGAN_CANBED_M4
 
 #include <supercan_debug.h>
-#include <supercan_board.h>
+
 #include <m_can.h>
 #include <sam_crc32.h>
 #include <mcu.h>
@@ -1287,6 +1288,4 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 }
 
 
-
-
-#endif
+#endif // supported board
