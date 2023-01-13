@@ -38,7 +38,7 @@ void USB_3_Handler (void)
 // MACRO TYPEDEF CONSTANT ENUM DECLARATION
 //--------------------------------------------------------------------+
 #define LED_PIN            PIN_PA07
-#define BOARD_SERCOM       SERCOM1
+#define BOARD_SERCOM       SERCOM3
 #define CONF_CPU_FREQUENCY 48000000L
 #define USART_BAURATE      115200L
 
@@ -51,18 +51,18 @@ static inline void init_clock(void)
 
 static inline void uart_init(void)
 {
-	/* configure SERCOM1 on PA16 (RX), PA17 (TX) */
+	/* configure SERCOM3 on PA16 (RX), PA17 (TX) */
 	PORT->Group[0].WRCONFIG.reg =
 		PORT_WRCONFIG_WRPINCFG |
 		PORT_WRCONFIG_WRPMUX |
-		PORT_WRCONFIG_PMUX(2) |    /* function C */
+		PORT_WRCONFIG_PMUX(3) |    /* function D */
 		PORT_WRCONFIG_DRVSTR |
 		PORT_WRCONFIG_HWSEL |
 		PORT_WRCONFIG_PINMASK(0x0003) | /* PA16/PA17 */
 		PORT_WRCONFIG_PMUXEN;
 
-	MCLK->APBAMASK.bit.SERCOM1_ = 1;
-	GCLK->PCHCTRL[SERCOM1_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
+	MCLK->APBBMASK.bit.SERCOM3_ = 1;
+	GCLK->PCHCTRL[SERCOM3_GCLK_ID_CORE].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;
 
 	BOARD_SERCOM->USART.CTRLA.reg = 0x00; /* disable SERCOM -> enable config */
 	while(BOARD_SERCOM->USART.SYNCBUSY.bit.ENABLE);
