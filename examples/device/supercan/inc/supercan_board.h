@@ -115,7 +115,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 
 
 extern void sc_board_can_reset(uint8_t index);
-// SC_RAMFUNC extern void sc_board_can_status_fill(uint8_t index, struct sc_msg_can_status *msg);
+
 /* retrieve rx / tx / error messages into buffer
  *
  * Callee places messages into the
@@ -170,7 +170,9 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #elif LONGAN_CANBED_M4
 #	include "supercan_longan_canbed_m4.h"
 #else
-#	error "Unsupported board!"
+#	pragma GCC warning "unknown board, using dummy CAN implementation"
+#	define SUPERCAN_DUMMY 1
+#	include "supercan_dummy.h"
 #endif
 
 
