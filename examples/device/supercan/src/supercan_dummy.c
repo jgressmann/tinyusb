@@ -10,8 +10,30 @@
 
 #include <supercan_debug.h>
 #include <tusb.h>
-#include <m_can.h>
 #include <leds.h>
+
+#define M_CAN_NMBT_TQ_MIN            0x0004
+#define M_CAN_NMBT_TQ_MAX            0x0181
+#define M_CAN_NMBT_BRP_MIN           0x0001
+#define M_CAN_NMBT_BRP_MAX           0x0200
+#define M_CAN_NMBT_SJW_MIN           0x0001
+#define M_CAN_NMBT_SJW_MAX           0x0080
+#define M_CAN_NMBT_TSEG1_MIN         0x0002
+#define M_CAN_NMBT_TSEG1_MAX         0x0100
+#define M_CAN_NMBT_TSEG2_MIN         0x0002
+#define M_CAN_NMBT_TSEG2_MAX         0x0080
+
+#define M_CAN_DTBT_TQ_MIN            0x04
+#define M_CAN_DTBT_TQ_MAX            0x31
+#define M_CAN_DTBT_BRP_MIN           0x01
+#define M_CAN_DTBT_BRP_MAX           0x20
+#define M_CAN_DTBT_SJW_MIN           0x01
+#define M_CAN_DTBT_SJW_MAX           0x10
+#define M_CAN_DTBT_TSEG1_MIN         0x01
+#define M_CAN_DTBT_TSEG1_MAX         0x20
+#define M_CAN_DTBT_TSEG2_MIN         0x01
+#define M_CAN_DTBT_TSEG2_MAX         0x10
+#define M_CAN_TDCR_TDCO_MAX          0x7f
 
 static volatile uint8_t *null_ptr_ = NULL;
 
