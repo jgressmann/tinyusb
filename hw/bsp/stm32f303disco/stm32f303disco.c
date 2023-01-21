@@ -2,6 +2,7 @@
  * The MIT License (MIT)
  *
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
+ * Copyright (c) 2023 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -78,57 +79,23 @@ void USBWakeUp_RMP_IRQHandler(void)
 /**
   * @brief  System Clock Configuration
   *         The system Clock is configured as follow :
-  *            System Clock source            = PLL (HSE)
-  *            SYSCLK(Hz)                     = 72000000
-  *            HCLK(Hz)                       = 72000000
+  *            System Clock source            = PLL (HSI)
+  *            SYSCLK(Hz)                     = 48000000
+  *            HCLK(Hz)                       = 48000000
   *            AHB Prescaler                  = 1
-  *            APB1 Prescaler                 = 2
+  *            APB1 Prescaler                 = 1
   *            APB2 Prescaler                 = 1
-  *            HSE Frequency(Hz)              = 8000000
-  *            HSE PREDIV                     = 1
-  *            PLLMUL                         = RCC_PLL_MUL9 (9)
-  *            Flash Latency(WS)              = 2
+  *            PLLMUL                         = RCC_PLL_MUL12 (12)
+  *            Flash Latency(WS)              = 1
+  *
+  * Chip boots off of 8 MHz interal RC oscillator (HSI).
+  * Configure for 48 MHz system clock.
+  * HSI gets deviced by 2 before feed to PLL.
+  *
   * @param  None
   * @retval None
   */
-static void SystemClock_Config(void)
-{
-  RCC_ClkInitTypeDef RCC_ClkInitStruct;
-  RCC_OscInitTypeDef RCC_OscInitStruct;
-  RCC_PeriphCLKInitTypeDef  RCC_PeriphClkInit;
-
-  /* Enable HSE Oscillator and activate PLL with HSE as source */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
-  HAL_RCC_OscConfig(&RCC_OscInitStruct);
-
-  /* Configures the USB clock */
-  HAL_RCCEx_GetPeriphCLKConfig(&RCC_PeriphClkInit);
-  RCC_PeriphClkInit.USBClockSelection = RCC_USBCLKSOURCE_PLL_DIV1_5;
-  HAL_RCCEx_PeriphCLKConfig(&RCC_PeriphClkInit);
-
-  /* Select PLL as system clock source and configure the HCLK, PCLK1 and PCLK2
-  clocks dividers */
-  RCC_ClkInitStruct.ClockType = (RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2);
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
-  HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2);
-
-  /* Enable Power Clock */
-  __HAL_RCC_PWR_CLK_ENABLE();
-}
-/* Chip boots off of 8 MHz interal RC oscillator (HSI).
- * Configure for 48 MHz system clock.
- * HSI gets deviced by 2 before feed to PLL.
- */
-
-void clock_init(void)
+static void clock_init(void)
 {
   // set flash for 1 wait state, DocID022558 Rev 8, p.78
   FLASH->ACR = (FLASH->ACR  & ~(FLASH_ACR_LATENCY)) | FLASH_ACR_LATENCY_1;
@@ -151,25 +118,28 @@ void clock_init(void)
   SystemCoreClock = CONF_CPU_FREQUENCY;
 }
 
-/* configure UART1 on PC4 (TX) / PC5 (RX)
- */
+
+/* configure UART1 on PC4 (TX) / PC5 (RX), available through ACM on ST-Link USB connection, 8N1 */
 void uart_init(void)
 {
+  /* configure pins for UART */
+
   // enable clock to GPIO block C
   RCC->AHBENR |= RCC_AHBENR_GPIOCEN;
 
-  // enable clock to UART1
-  RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
-
-  // configure pins for UART
   // pull up on RX pin
   GPIOC->PUPDR = (GPIOC->PUPDR & ~(GPIO_PUPDR_PUPDR5)) | (UINT32_C(0x1) << GPIO_PUPDR_PUPDR5_Pos);
   // high speed output on TX pin
-  GPIOC->OSPEEDR = (GPIOC->OSPEEDR & ~(GPIO_OSPEEDER_OSPEEDR4)) | (UINT32_C(0x3) << GPIO_OSPEEDER_OSPEEDR4_Pos);
+  GPIOC->OSPEEDR = (GPIOC->OSPEEDR & ~(GPIO_OSPEEDER_OSPEEDR4)) | (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDER_OSPEEDR4_Pos);
   // alternate function to UART1
   GPIOC->AFR[0] = (GPIOC->AFR[0] & ~(GPIO_AFRL_AFRL4 | GPIO_AFRL_AFRL5)) | (GPIO_AF7_USART1 << GPIO_AFRL_AFRL4_Pos) | (GPIO_AF7_USART1 << GPIO_AFRL_AFRL5_Pos);
   // switch mode to alternate function
-  GPIOC->MODER = (GPIOC->MODER & ~(GPIO_MODER_MODER4 | GPIO_MODER_MODER5)) | (UINT32_C(0x2) << GPIO_MODER_MODER4_Pos) | (UINT32_C(0x2) << GPIO_MODER_MODER5_Pos);
+  GPIOC->MODER = (GPIOC->MODER & ~(GPIO_MODER_MODER4 | GPIO_MODER_MODER5)) | (GPIO_MODE_AF_PP << GPIO_MODER_MODER4_Pos) | (GPIO_MODE_AF_PP << GPIO_MODER_MODER5_Pos);
+
+  /* configure UART */
+
+  // enable clock to UART1
+  RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
 
   // configure baud rate
   BOARD_USART->BRR = CONF_CPU_FREQUENCY / USART_BAURATE;
@@ -200,8 +170,6 @@ static inline void uart_send_str(const char* text)
 
 void board_init(void)
 {
-  //SystemClock_Config();
-  (void)SystemClock_Config;
   clock_init();
   uart_init();
 
