@@ -6,7 +6,7 @@
 
 #include <supercan_board.h>
 
-#if SUPERCAN_DUMMY
+#if defined(SUPERCAN_DUMMY) && SUPERCAN_DUMMY
 
 #include <supercan_debug.h>
 #include <tusb.h>

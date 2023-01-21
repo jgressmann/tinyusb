@@ -1,14 +1,16 @@
 /* SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2021-2022 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021-2023 Jean Gressmann <jean@0x42.de>
  *
  */
 
-#ifdef SAME54XPLAINEDPRO
+#include <supercan_board.h>
+
+#if SAME54XPLAINEDPRO
 
 #include <supercan_debug.h>
-#include <supercan_board.h>
 #include <sam_crc32.h>
+#include <bsp/board.h>
 
 #include <hal/include/hal_gpio.h>
 

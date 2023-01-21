@@ -14,6 +14,8 @@
 #include <sam_crc32.h>
 #include <mcu.h>
 #include <leds.h>
+#include <string.h>
+#include <tusb.h>
 
 #include <hal/include/hal_gpio.h>
 #include <usb_descriptors.h>

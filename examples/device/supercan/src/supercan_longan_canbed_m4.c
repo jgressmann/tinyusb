@@ -17,6 +17,7 @@
 #include <dfu_app.h>
 #include <sam_crc32.h>
 #include <leds.h>
+#include <bsp/board.h>
 
 #include <tusb.h>
 #include <class/dfu/dfu_rt_device.h>

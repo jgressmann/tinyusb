@@ -250,7 +250,7 @@ EOF
 ##########################
 
 
-boards="teensy_40 d5035_03"
+boards="stm32f303disco teensy_40 d5035_03"
 for board in $boards; do
 	export BOARD=$board
 
