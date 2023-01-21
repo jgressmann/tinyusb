@@ -11,6 +11,7 @@
 #include <supercan_debug.h>
 #include <tusb.h>
 #include <leds.h>
+#include <bsp/board.h>
 
 #define M_CAN_NMBT_TQ_MIN            0x0004
 #define M_CAN_NMBT_TQ_MAX            0x0181

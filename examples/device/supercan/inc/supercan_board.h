@@ -12,7 +12,7 @@
 #include <sections.h>
 #include <supercan_debug.h>
 
-#define SC_PACKED __packed
+#define SC_PACKED  __attribute__((packed))
 #include <supercan.h>
 
 #include <supercan_version.h>

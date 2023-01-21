@@ -42,6 +42,8 @@
  * See http://www.freertos.org/a00110.html.
  *----------------------------------------------------------*/
 
+#include "supercan_debug.h"
+
 // for OPT_MCU_
 #include "bsp/board_mcu.h"
 
@@ -141,7 +143,7 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, s
 #define configASSERT(x) \
   do { \
     if (__builtin_expect(!(x), 0)) { \
-      sc_assert_failed("FreeRTOS ASSERT FAILED: " #x "\n", sizeof("FreeRTOS ASSERT FAILED: " #x "\n")-1); \
+      SC_ASSERT_FAILED("FreeRTOS ASSERT FAILED: " #x " " __FILE__ ":" SC_DEBUG_STR(__LINE__) "\n"); \
     } \
   } while (0)
 #else

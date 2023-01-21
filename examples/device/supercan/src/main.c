@@ -48,8 +48,8 @@ extern void sc_can_log_bit_timing(sc_can_bit_timing const *c, char const* name)
 
 
 // FIX ME: move to struct usb
-static StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
-static StaticTask_t usb_device_stack_mem;
+static StackType_t usb_device_stack[3*configMINIMAL_SECURE_STACK_SIZE];
+static StaticTask_t usb_device_task_mem;
 
 static void tusb_device_task(void* param);
 
@@ -85,7 +85,7 @@ static struct usb {
 
 static struct can {
 	sc_can_status status_fifo[CAN_STATUS_FIFO_SIZE];
-	StackType_t usb_task_stack_mem[configMINIMAL_SECURE_STACK_SIZE];
+	StackType_t usb_task_stack_mem[3*configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_task_mem;
 	TaskHandle_t usb_task_handle;
 
@@ -848,12 +848,12 @@ int main(void)
 
 	LOG("led_init\n");
 	led_init();
+
 	LOG("tusb_init\n");
 	tusb_init();
 
-
-	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, SC_TASK_PRIORITY, usb_device_stack, &usb_device_stack_mem);
-	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, SC_TASK_PRIORITY, led_task_stack, &led_task_mem);
+	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, configMAX_PRIORITIES-1, usb_device_stack, &usb_device_task_mem);
+	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, configMAX_PRIORITIES-1, led_task_stack, &led_task_mem);
 
 	usb.cmd[0].pipe = SC_M1_EP_CMD0_BULK_OUT;
 	usb.can[0].pipe = SC_M1_EP_MSG0_BULK_OUT;
@@ -871,8 +871,11 @@ int main(void)
 		can->usb_task_handle = xTaskCreateStatic(&can_usb_task, NULL, TU_ARRAY_SIZE(can->usb_task_stack_mem), (void*)(uintptr_t)i, SC_TASK_PRIORITY, can->usb_task_stack_mem, &can->usb_task_mem);
 	}
 
+
+	LOG("can_usb_disconnect\n");
 	can_usb_disconnect();
 
+	LOG("sc_board_init_end\n");
 	sc_board_init_end();
 
 	LOG("vTaskStartScheduler\n");
@@ -892,6 +895,8 @@ int main(void)
 SC_RAMFUNC static void tusb_device_task(void* param)
 {
 	(void) param;
+
+
 
 	while (1) {
 		LOG("tud_task\n");

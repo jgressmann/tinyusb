@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License (MIT)
  *
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
@@ -26,6 +26,10 @@
 
 #include "../board.h"
 #include "stm32f3xx_hal.h"
+
+#define CONF_CPU_FREQUENCY 48000000
+#define USART_BAURATE      115200
+#define BOARD_USART        USART1
 
 //--------------------------------------------------------------------+
 // Forward USB interrupt events to TinyUSB IRQ Handler
@@ -119,15 +123,99 @@ static void SystemClock_Config(void)
   /* Enable Power Clock */
   __HAL_RCC_PWR_CLK_ENABLE();
 }
+/* Chip boots off of 8 MHz interal RC oscillator (HSI).
+ * Configure for 48 MHz system clock.
+ * HSI gets deviced by 2 before feed to PLL.
+ */
+
+void clock_init(void)
+{
+  // set flash for 1 wait state, DocID022558 Rev 8, p.78
+  FLASH->ACR = (FLASH->ACR  & ~(FLASH_ACR_LATENCY)) | FLASH_ACR_LATENCY_1;
+
+  // configure PLL input to HSI, no USB prediv
+  RCC->CFGR = RCC_CFGR_PLLMUL12 | RCC_CFGR_USBPRE;
+
+  // enable PLL
+  RCC->CR |= RCC_CR_PLLON;
+
+  // wait for PLL ready
+  while ((RCC->CR & RCC_CR_PLLRDY) != RCC_CR_PLLRDY);
+
+  // switch main clock to PLL
+  RCC->CFGR = (RCC->CFGR & ~(RCC_CFGR_SW)) | RCC_CFGR_SW_PLL;
+
+  // wait for clock switch
+  while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL);
+
+  SystemCoreClock = CONF_CPU_FREQUENCY;
+}
+
+/* configure UART1 on PC4 (TX) / PC5 (RX)
+ */
+void uart_init(void)
+{
+  // enable clock to GPIO block C
+  RCC->AHBENR |= RCC_AHBENR_GPIOCEN;
+
+  // enable clock to UART1
+  RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
+
+  // configure pins for UART
+  // pull up on RX pin
+  GPIOC->PUPDR = (GPIOC->PUPDR & ~(GPIO_PUPDR_PUPDR5)) | (UINT32_C(0x1) << GPIO_PUPDR_PUPDR5_Pos);
+  // high speed output on TX pin
+  GPIOC->OSPEEDR = (GPIOC->OSPEEDR & ~(GPIO_OSPEEDER_OSPEEDR4)) | (UINT32_C(0x3) << GPIO_OSPEEDER_OSPEEDR4_Pos);
+  // alternate function to UART1
+  GPIOC->AFR[0] = (GPIOC->AFR[0] & ~(GPIO_AFRL_AFRL4 | GPIO_AFRL_AFRL5)) | (GPIO_AF7_USART1 << GPIO_AFRL_AFRL4_Pos) | (GPIO_AF7_USART1 << GPIO_AFRL_AFRL5_Pos);
+  // switch mode to alternate function
+  GPIOC->MODER = (GPIOC->MODER & ~(GPIO_MODER_MODER4 | GPIO_MODER_MODER5)) | (UINT32_C(0x2) << GPIO_MODER_MODER4_Pos) | (UINT32_C(0x2) << GPIO_MODER_MODER5_Pos);
+
+  // configure baud rate
+  BOARD_USART->BRR = CONF_CPU_FREQUENCY / USART_BAURATE;
+
+  // enable uart (TX)
+  BOARD_USART->CR1 = USART_CR1_UE | USART_CR1_TE;
+}
+
+static inline void tx_char(uint8_t ch)
+{
+    BOARD_USART->TDR = ch;
+		while((BOARD_USART->ISR & USART_ISR_TXE) != USART_ISR_TXE);
+}
+
+static inline void uart_send_buffer(uint8_t const *text, size_t len)
+{
+	for (size_t i = 0; i < len; ++i) {
+    tx_char(text[i]);
+	}
+}
+
+static inline void uart_send_str(const char* text)
+{
+	while (*text) {
+    tx_char(*text++);
+	}
+}
 
 void board_init(void)
 {
-  SystemClock_Config();
+  //SystemClock_Config();
+  (void)SystemClock_Config;
+  clock_init();
+  uart_init();
 
   #if CFG_TUSB_OS  == OPT_OS_NONE
   // 1ms tick timer
   SysTick_Config(SystemCoreClock / 1000);
   #endif
+
+#if CFG_TUSB_OS == OPT_OS_FREERTOS
+	// If freeRTOS is used, IRQ priority is limit by max syscall ( smaller is higher )
+	NVIC_SetPriority(USB_HP_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(USB_LP_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	NVIC_SetPriority(USBWakeUp_RMP_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+#endif
 
   // Remap the USB interrupts
   __HAL_RCC_SYSCFG_CLK_ENABLE();
@@ -161,6 +249,8 @@ void board_init(void)
 
   // Enable USB clock
   __HAL_RCC_USB_CLK_ENABLE();
+
+
 }
 
 //--------------------------------------------------------------------+
@@ -185,8 +275,12 @@ int board_uart_read(uint8_t* buf, int len)
 
 int board_uart_write(void const * buf, int len)
 {
-  (void) buf; (void) len;
-  return 0;
+  if (len < 0) {
+		uart_send_str(buf);
+	} else {
+		uart_send_buffer(buf, len);
+	}
+	return len;
 }
 
 #if CFG_TUSB_OS  == OPT_OS_NONE

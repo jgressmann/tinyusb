@@ -33,7 +33,7 @@
 #	define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
 #endif
 
-#if SUPERCAN_DEBUG && !CFG_TUSB_DEBUG
+#if SUPERCAN_DEBUG
 char sc_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
 #endif
 

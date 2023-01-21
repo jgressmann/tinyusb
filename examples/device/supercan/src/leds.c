@@ -26,6 +26,7 @@
 #include "leds.h"
 #include "supercan_debug.h"
 #include "supercan_board.h"
+#include <string.h> // memset
 
 
 #ifndef ARRAY_SIZE
