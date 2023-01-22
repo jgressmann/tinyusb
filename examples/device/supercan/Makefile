@@ -19,23 +19,27 @@ INC += \
 SRC_C += $(TOP)/lib/misc/src/usnprintf.c
 SAM_SRC_C += $(TOP)/lib/misc/src/sam_crc32.c
 
-ifeq ($(D5035_01),1)
-INC += $(TOP)/examples/device/superdfu/inc
-SRC_C += $(SAM_SRC_C)
-endif
-
-
-ifeq ($(SAME54XPLAINEDPRO),1)
-INC += $(TOP)/examples/device/superdfu/inc
-CONF_CPU_FREQUENCY = 120000000
-SRC_C += $(SAM_SRC_C)
-endif
 
 
 
 CFLAGS += -Wno-error
 
 SECTION_CFLAGS = -DUSNPRINTF_SECTION_NAME=RAMFUNC_SECTION_NAME -DSC_RAMFUNC_SECTION_NAME=RAMFUNC_SECTION_NAME
+
+ifeq ($(D5035_01),1)
+CFLAGS += $(SECTION_CFLAGS)
+INC += $(TOP)/examples/device/superdfu/inc
+SRC_C += $(SAM_SRC_C)
+endif
+
+
+ifeq ($(SAME54XPLAINEDPRO),1)
+CFLAGS += $(SECTION_CFLAGS)
+INC += $(TOP)/examples/device/superdfu/inc
+CONF_CPU_FREQUENCY = 120000000
+SRC_C += $(SAM_SRC_C)
+endif
+
 
 ifeq ($(BOARD),feather_m4_can_express)
 CFLAGS += $(SECTION_CFLAGS) -DFEATHER_M4_CAN_EXPRESS=1
@@ -50,19 +54,8 @@ INC += $(TOP)/examples/device/superdfu/inc
 SRC_C += $(SAM_SRC_C)
 endif
 
-
-
-ifdef MIMXRT10XX
-ifeq ($(MIMXRT10XX),0)
-CFLAGS += $(SECTION_CFLAGS)
-else
-endif
-else
-CFLAGS += $(SECTION_CFLAGS)
-endif
-
 ifeq ($(BOARD),stm32f303disco)
-CFLAGS += $(SECTION_CFLAGS) -UUSNPRINTF_SECTION_NAME -USC_RAMFUNC_SECTION_NAME -DBOARD_NAME="\"STM32F303DISCOVERY\""
+CFLAGS += -DSTM32F3DISCOVERY
 endif
 
 

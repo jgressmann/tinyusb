@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2021-2022 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021-2023 Jean Gressmann <jean@0x42.de>
  *
  */
 
@@ -159,6 +159,10 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #	define LONGAN_CANBED_M4 0
 #endif
 
+#ifndef STM32F3DISCOVERY
+#	define STM32F3DISCOVERY 0
+#endif
+
 #if D5035_01
 #	include "supercan_D5035_01.h"
 #elif SAME54XPLAINEDPRO
@@ -169,6 +173,8 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #	include "supercan_feather_m4_can_express.h"
 #elif LONGAN_CANBED_M4
 #	include "supercan_longan_canbed_m4.h"
+#elif STM32F3DISCOVERY
+#	include "supercan_stm32f3discovery.h"
 #else
 #	pragma GCC warning "unknown board, using dummy CAN implementation"
 #	define SUPERCAN_DUMMY 1
