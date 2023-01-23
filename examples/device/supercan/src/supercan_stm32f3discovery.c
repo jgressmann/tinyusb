@@ -14,9 +14,25 @@
 #include <bsp/board.h>
 #include <stm32f3xx_hal.h>
 
+struct rx_mailbox {
+	uint32_t RIR;
+	uint32_t RDTR;
+	uint32_t RDLR;
+	uint32_t RDHR;
+};
+
+struct tx_mailbox {
+	uint32_t TIR;
+	uint32_t TDTR;
+	uint32_t TDLR;
+	uint32_t TDHR;
+	uint8_t track_id;
+};
+
 static struct can {
-	CAN_FIFOMailBox_TypeDef rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
-	uint8_t txr_buffer[SC_BOARD_CAN_TX_FIFO_SIZE];
+	struct rx_mailbox rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
+	struct tx_mailbox tx_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
+	uint8_t txr_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
 	uint8_t txr_get_index; // NOT an index, uses full range of type
 	uint8_t txr_put_index; // NOT an index, uses full range of typ
 	uint8_t rx_get_index; // NOT an index, uses full range of type
@@ -127,7 +143,7 @@ static inline void can_init(void)
 	NVIC_SetPriority(CAN_TX_IRQn, SC_ISR_PRIORITY);
 	NVIC_SetPriority(CAN_RX0_IRQn, SC_ISR_PRIORITY);
 	NVIC_SetPriority(CAN_SCE_IRQn, SC_ISR_PRIORITY);
-	NVIC_SetPriority(CAN_RX1_IRQn, SC_ISR_PRIORITY);
+	// NVIC_SetPriority(CAN_RX1_IRQn, SC_ISR_PRIORITY);
 }
 
 extern void sc_board_led_set(uint8_t index, bool on)
@@ -179,23 +195,79 @@ extern uint16_t sc_board_can_feat_conf(uint8_t index)
 SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
 {
 	struct can *can = &cans[index];
-	uint8_t pi = can->txr_put_index;
-	uint8_t gi = __atomic_load_n(&can->txr_get_index, __ATOMIC_ACQUIRE);
+	uint8_t pi = can->tx_put_index;
+	uint8_t gi = __atomic_load_n(&can->tx_get_index, __ATOMIC_ACQUIRE);
 	uint8_t used = pi - gi;
-	bool available = used < TU_ARRAY_SIZE(can->txr_buffer);
+	bool available = used < TU_ARRAY_SIZE(can->tx_fifo);
 
 	if (available) {
-		uint8_t txr_put_index = pi % TU_ARRAY_SIZE(can->txr_buffer);
+		uint8_t const tx_put_index = pi % TU_ARRAY_SIZE(can->tx_fifo);
+		struct tx_mailbox *box = &can->tx_fifo[tx_put_index];
+
 
 		// store
-		can->txr_buffer[txr_put_index] = msg->track_id;
+		box->TDTR = msg->dlc;
+		box->TIR = CAN_TI0R_TXRQ; // mark ready for TX
+
+		if (msg->flags & SC_CAN_FRAME_FLAG_EXT) {
+			box->TIR |= (msg->can_id << 3) | CAN_TI0R_IDE;
+		} else {
+			box->TIR |= msg->can_id << 21;
+		}
+
+		if (msg->flags & SC_CAN_FRAME_FLAG_RTR) {
+			box->TIR |= CAN_TI0R_RTR;
+		} else {
+			if (msg->dlc >= 4) {
+				memcpy(&box->TDLR, &msg->data[0], 4);
+
+				if (8 == msg->dlc) {
+					memcpy(&box->TDHR, &msg->data[4], 4);
+				} else {
+					box->TDHR = 0;
+
+					switch (msg->dlc) {
+					case 7:
+						box->TDHR <<= 8;
+						box->TDHR |= msg->data[6];
+						__attribute__((fallthrough));
+					case 6:
+						box->TDHR <<= 8;
+						box->TDHR |= msg->data[5];
+						__attribute__((fallthrough));
+					case 5:
+						box->TDHR <<= 8;
+						box->TDHR |= msg->data[4];
+					}
+				}
+			} else {
+				box->TDLR = 0;
+
+				switch (msg->dlc) {
+				case 3:
+					box->TDHR <<= 8;
+					box->TDHR |= msg->data[2];
+					__attribute__((fallthrough));
+				case 2:
+					box->TDHR <<= 8;
+					box->TDHR |= msg->data[1];
+					__attribute__((fallthrough));
+				case 1:
+					box->TDHR <<= 8;
+					box->TDHR |= msg->data[0];
+				}
+			}
+		}
+
+		box->track_id = msg->track_id;
+
+		LOG("ch%u placed TXR %u\n", index, msg->track_id);
 
 		// mark available
-		__atomic_store_n(&can->txr_put_index, pi + 1, __ATOMIC_RELEASE);
+		__atomic_store_n(&can->tx_put_index, pi + 1, __ATOMIC_RELEASE);
 
-		LOG("ch%u queued TXR %u\n", index, msg->track_id);
-
-		sc_can_notify_task_def(index, 1);
+		// flag interrupt to handle actual transmit
+		NVIC_SetPendingIRQ(CAN_TX_IRQn);
 	}
 
 	return available;
@@ -210,9 +282,9 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 
 	for (bool done = false; !done; ) {
 		done = true;
-		uint8_t txr_pi = __atomic_load_n(&can->txr_put_index, __ATOMIC_ACQUIRE);
+		uint8_t const txr_put_index = __atomic_load_n(&can->txr_put_index, __ATOMIC_ACQUIRE);
 
-		if (can->txr_get_index != txr_pi) {
+		if (can->txr_get_index != txr_put_index) {
 			struct sc_msg_can_txr *txr = NULL;
 			uint8_t const bytes = sizeof(*txr);
 
@@ -220,7 +292,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 
 
 			if ((size_t)(tx_end - tx_ptr) >= bytes) {
-				uint8_t const txr_get_index = can->txr_get_index % TU_ARRAY_SIZE(can->txr_buffer);
+				uint8_t const txr_get_index = can->txr_get_index % TU_ARRAY_SIZE(can->txr_fifo);
 				done = false;
 
 				txr = (struct sc_msg_can_txr *)tx_ptr;
@@ -231,7 +303,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 				txr->flags = 0;
 				txr->id = SC_MSG_CAN_TXR;
 				txr->len = bytes;
-				txr->track_id = cans->txr_buffer[txr_get_index];
+				txr->track_id = cans->txr_fifo[txr_get_index];
 				txr->timestamp_us = sc_board_can_ts_wait(index);
 
 				__atomic_store_n(&can->txr_get_index, can->txr_get_index+1, __ATOMIC_RELEASE);
@@ -301,13 +373,13 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 		NVIC_EnableIRQ(CAN_TX_IRQn);
 		NVIC_EnableIRQ(CAN_RX0_IRQn);
 		NVIC_EnableIRQ(CAN_SCE_IRQn);
-		NVIC_EnableIRQ(CAN_RX1_IRQn);
+		// NVIC_EnableIRQ(CAN_RX1_IRQn);
 		CAN->MCR &= ~CAN_MCR_INRQ;
 	} else {
 		NVIC_DisableIRQ(CAN_TX_IRQn);
 		NVIC_DisableIRQ(CAN_RX0_IRQn);
 		NVIC_DisableIRQ(CAN_SCE_IRQn);
-		NVIC_DisableIRQ(CAN_RX1_IRQn);
+		// NVIC_DisableIRQ(CAN_RX1_IRQn);
 		CAN->MCR |= CAN_MCR_INRQ;
 
 		sc_board_can_reset(index);
@@ -462,7 +534,7 @@ SC_RAMFUNC void CAN_RX0_IRQHandler(void)
 			++lost;
 		} else {
 			uint8_t const put_index = pi % TU_ARRAY_SIZE(can->rx_fifo);
-			CAN_FIFOMailBox_TypeDef* box = &can->rx_fifo[put_index];
+			struct rx_mailbox* box = &can->rx_fifo[put_index];
 
 			box->RIR = CAN->sFIFOMailBox[0].RIR;
 			box->RDTR = CAN->sFIFOMailBox[0].RDTR;
@@ -497,10 +569,10 @@ SC_RAMFUNC void CAN_RX0_IRQHandler(void)
 	}
 }
 
-SC_RAMFUNC void CAN_RX1_IRQHandler(void)
-{
-	SC_ASSERT(false && "no messages expected in FIFO1");
-}
+// SC_RAMFUNC void CAN_RX1_IRQHandler(void)
+// {
+// 	SC_ASSERT(false && "no messages expected in FIFO1");
+// }
 
 SC_RAMFUNC void CAN_SCE_IRQHandler(void)
 {
