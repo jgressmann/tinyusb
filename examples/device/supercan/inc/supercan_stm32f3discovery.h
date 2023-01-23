@@ -6,7 +6,7 @@
 
 #pragma once
 
-
+#include <stm32f3xx_hal.h>
 
 #define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
 #define SC_BOARD_USB_MANUFACTURER_STRING "STMicroelectronics"
@@ -34,4 +34,4 @@ enum {
 #define sc_board_led_can_traffic_burst(index) led_burst(LED_CAN_TRAFFIC, SC_LED_BURST_DURATION_MS)
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status);
 #define sc_board_can_ts_request(index)
-#define sc_board_can_ts_wait(index) (board_millis() * 1000U)
+#define sc_board_can_ts_wait(index) (TIM2->CNT)

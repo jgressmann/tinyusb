@@ -100,7 +100,7 @@ static void clock_init(void)
   // set flash for 1 wait state, DocID022558 Rev 8, p.78
   FLASH->ACR = (FLASH->ACR  & ~(FLASH_ACR_LATENCY)) | FLASH_ACR_LATENCY_1;
 
-  // configure PLL input to HSI, no USB prediv
+  // configure PLL input to HSI, USB prediv to 1
   RCC->CFGR = RCC_CFGR_PLLMUL12 | RCC_CFGR_USBPRE;
 
   // enable PLL

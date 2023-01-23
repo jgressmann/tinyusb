@@ -12,13 +12,15 @@
 #include <tusb.h>
 #include <leds.h>
 #include <bsp/board.h>
-#include <stm32f3xx_hal.h>
+
+
 
 struct rx_mailbox {
 	uint32_t RIR;
 	uint32_t RDTR;
 	uint32_t RDLR;
 	uint32_t RDHR;
+	uint32_t tsc;
 };
 
 struct tx_mailbox {
@@ -146,6 +148,22 @@ static inline void can_init(void)
 	// NVIC_SetPriority(CAN_RX1_IRQn, SC_ISR_PRIORITY);
 }
 
+static inline void counter_1MHz_init(void)
+{
+	// TIM2
+	RCC->APB1ENR |= RCC_APB1ENR_TIM2EN | RCC_APB1ENR_TIM3EN ;
+
+	// prescaler: 48 MHz -> 1MHz
+	TIM2->PSC = 47; /* yes, minus one */
+	// count as far as possible
+	TIM2->ARR = 0xffffffff;
+
+	TIM2->CR1 =
+		TIM_CR1_URS  /* only under/overflow, DMA */
+		| TIM_CR1_CEN;
+
+}
+
 extern void sc_board_led_set(uint8_t index, bool on)
 {
 	uint32_t pin = leds[index].port_pin_mux & 0xf;
@@ -166,7 +184,42 @@ extern void sc_board_init_begin(void)
 
 	leds_init();
 	can_init();
+	counter_1MHz_init();
 
+	// // PA3
+	// RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
+	// GPIOA->MODER =
+	//   	(GPIOA->MODER & ~(GPIO_MODER_MODER3))
+	// 	| (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODER3_Pos);
+
+	// GPIOA->OSPEEDR =
+	//   	(GPIOA->OSPEEDR & ~(GPIO_OSPEEDER_OSPEEDR3))
+	// 	| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDER_OSPEEDR3_Pos);
+
+
+	// TIM2->PSC = 47;
+	// TIM2->DIER = TIM_DIER_UIE;
+	// TIM2->ARR = 1000;
+
+	// TIM2->CR1 =
+	// 	TIM_CR1_URS  /* only under/overflow, DMA */
+	// 	| TIM_CR1_CEN;
+
+
+	// NVIC_SetPriority(TIM2_IRQn, SC_ISR_PRIORITY);
+	// NVIC_EnableIRQ(TIM2_IRQn);
+
+	// TIM3->PSC = (48000000 / 1000) - 1;
+	// TIM3->DIER = TIM_DIER_UIE;
+	// TIM3->ARR = 1000;
+
+	// TIM3->CR1 =
+	// 	TIM_CR1_URS  /* only under/overflow, DMA */
+	// 	| TIM_CR1_CEN;
+
+
+	// NVIC_SetPriority(TIM3_IRQn, SC_ISR_PRIORITY);
+	// NVIC_EnableIRQ(TIM3_IRQn);
 }
 
 extern void sc_board_init_end(void)
@@ -210,53 +263,56 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 		box->TIR = CAN_TI0R_TXRQ; // mark ready for TX
 
 		if (msg->flags & SC_CAN_FRAME_FLAG_EXT) {
-			box->TIR |= (msg->can_id << 3) | CAN_TI0R_IDE;
+			box->TIR |= (msg->can_id << CAN_TI0R_STID_Pos) | CAN_TI0R_IDE;
 		} else {
-			box->TIR |= msg->can_id << 21;
+			box->TIR |= msg->can_id << CAN_TI0R_EXID_Pos;
 		}
 
 		if (msg->flags & SC_CAN_FRAME_FLAG_RTR) {
 			box->TIR |= CAN_TI0R_RTR;
 		} else {
-			if (msg->dlc >= 4) {
-				memcpy(&box->TDLR, &msg->data[0], 4);
+			uint8_t *d = (uint8_t *)&box->TDLR;
 
-				if (8 == msg->dlc) {
-					memcpy(&box->TDHR, &msg->data[4], 4);
-				} else {
-					box->TDHR = 0;
+			memcpy(d, msg->data, msg->dlc);
+			// if (msg->dlc >= 4) {
+			// 	memcpy(&box->TDLR, &msg->data[0], 4);
 
-					switch (msg->dlc) {
-					case 7:
-						box->TDHR <<= 8;
-						box->TDHR |= msg->data[6];
-						__attribute__((fallthrough));
-					case 6:
-						box->TDHR <<= 8;
-						box->TDHR |= msg->data[5];
-						__attribute__((fallthrough));
-					case 5:
-						box->TDHR <<= 8;
-						box->TDHR |= msg->data[4];
-					}
-				}
-			} else {
-				box->TDLR = 0;
+			// 	if (8 == msg->dlc) {
+			// 		memcpy(&box->TDHR, &msg->data[4], 4);
+			// 	} else {
+			// 		box->TDHR = 0;
 
-				switch (msg->dlc) {
-				case 3:
-					box->TDHR <<= 8;
-					box->TDHR |= msg->data[2];
-					__attribute__((fallthrough));
-				case 2:
-					box->TDHR <<= 8;
-					box->TDHR |= msg->data[1];
-					__attribute__((fallthrough));
-				case 1:
-					box->TDHR <<= 8;
-					box->TDHR |= msg->data[0];
-				}
-			}
+			// 		switch (msg->dlc) {
+			// 		case 7:
+			// 			box->TDHR <<= 8;
+			// 			box->TDHR |= msg->data[6];
+			// 			__attribute__((fallthrough));
+			// 		case 6:
+			// 			box->TDHR <<= 8;
+			// 			box->TDHR |= msg->data[5];
+			// 			__attribute__((fallthrough));
+			// 		case 5:
+			// 			box->TDHR <<= 8;
+			// 			box->TDHR |= msg->data[4];
+			// 		}
+			// 	}
+			// } else {
+			// 	box->TDLR = 0;
+
+			// 	switch (msg->dlc) {
+			// 	case 3:
+			// 		box->TDHR <<= 8;
+			// 		box->TDHR |= msg->data[2];
+			// 		__attribute__((fallthrough));
+			// 	case 2:
+			// 		box->TDHR <<= 8;
+			// 		box->TDHR |= msg->data[1];
+			// 		__attribute__((fallthrough));
+			// 	case 1:
+			// 		box->TDHR <<= 8;
+			// 		box->TDHR |= msg->data[0];
+			// 	}
+			// }
 		}
 
 		box->track_id = msg->track_id;
@@ -281,8 +337,10 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 	bool have_data_to_place = false;
 
 	for (bool done = false; !done; ) {
-		done = true;
 		uint8_t const txr_put_index = __atomic_load_n(&can->txr_put_index, __ATOMIC_ACQUIRE);
+		uint8_t const rx_put_index = __atomic_load_n(&can->rx_put_index, __ATOMIC_ACQUIRE);
+
+		done = true;
 
 		if (can->txr_get_index != txr_put_index) {
 			struct sc_msg_can_txr *txr = NULL;
@@ -309,6 +367,53 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 				__atomic_store_n(&can->txr_get_index, can->txr_get_index+1, __ATOMIC_RELEASE);
 
 				LOG("ch%u retrievd TXR %u\n", index, txr->track_id);
+			}
+		}
+
+		if (can->rx_get_index != rx_put_index) {
+			struct sc_msg_can_rx *rx = NULL;
+			uint8_t const rx_get_index = can->rx_get_index % TU_ARRAY_SIZE(can->rx_fifo);
+			struct rx_mailbox *box = &can->rx_fifo[rx_get_index];
+			uint8_t dlc = (box->RDTR & CAN_RDT0R_DLC_Msk) >> CAN_RDT0R_DLC_Pos;
+			uint8_t bytes = sizeof(*rx) + dlc;
+
+			if (bytes & (SC_MSG_CAN_LEN_MULTIPLE-1)) {
+				bytes += SC_MSG_CAN_LEN_MULTIPLE - (bytes & (SC_MSG_CAN_LEN_MULTIPLE-1));
+			}
+
+			have_data_to_place = true;
+
+
+			if ((size_t)(tx_end - tx_ptr) >= bytes) {
+				done = false;
+
+				rx = (struct sc_msg_can_rx *)tx_ptr;
+
+				tx_ptr += bytes;
+				result += bytes;
+
+				rx->id = SC_MSG_CAN_RX;
+				rx->len = bytes;
+				rx->dlc = dlc;
+				rx->flags = 0;
+				rx->timestamp_us = box->tsc;
+
+				if (box->RIR & CAN_RI0R_IDE) {
+					rx->can_id = (box->RIR & CAN_RI0R_EXID_Msk) >> CAN_RI0R_EXID_Pos;
+					rx->flags |= SC_CAN_FRAME_FLAG_EXT;
+				} else {
+					rx->can_id = (box->RIR & CAN_RI0R_STID_Msk) >> CAN_RI0R_STID_Pos;
+				}
+
+				if (box->RIR & CAN_RI0R_RTR) {
+					rx->flags |= SC_CAN_FRAME_FLAG_RTR;
+				} else {
+					uint8_t const *d = (uint8_t const *)&box->RDLR;
+
+					memcpy(rx->data, d, dlc);
+				}
+
+				__atomic_store_n(&can->rx_get_index, can->rx_get_index+1, __ATOMIC_RELEASE);
 			}
 		}
 	}
@@ -392,10 +497,10 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 
 	CAN->BTR =
 		(CAN->BTR & ~(CAN_BTR_SJW | CAN_BTR_TS1 | CAN_BTR_TS1 | CAN_BTR_BRP))
-		| (bt->sjw << CAN_BTR_SJW_Pos)
-		| (bt->tseg1 << CAN_BTR_TS1_Pos)
-		| (bt->tseg2 << CAN_BTR_TS2_Pos)
-		| (bt->brp << CAN_BTR_BRP_Pos)
+		| ((bt->sjw-1) << CAN_BTR_SJW_Pos)
+		| ((bt->tseg1-1) << CAN_BTR_TS1_Pos)
+		| ((bt->tseg2-1) << CAN_BTR_TS2_Pos)
+		| ((bt->brp-1) << CAN_BTR_BRP_Pos)
 		;
 }
 
@@ -429,6 +534,8 @@ extern void sc_board_can_reset(uint8_t index)
 	can->rx_put_index = 0;
 	can->tx_get_index = 0;
 	can->tx_put_index = 0;
+	can->txr_get_index = 0;
+	can->txr_put_index = 0;
 
 	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
 }
@@ -493,6 +600,7 @@ SC_RAMFUNC void CAN_TX_IRQHandler(void)
 {
 	uint8_t const index = 0;
 	struct can *can = &cans[index];
+	uint32_t const tsc = sc_board_can_ts_wait(index);
 	uint32_t tsr = CAN->TSR;
 
 	LOG("TSR=%08x\n", tsr);
@@ -521,7 +629,7 @@ SC_RAMFUNC void CAN_RX0_IRQHandler(void)
 	struct can *can = &cans[index];
 	uint32_t rf0r = CAN->RF0R;
 	uint8_t lost = 0;
-	uint32_t tsc = 0;
+	uint32_t const tsc = sc_board_can_ts_wait(index);
 
 	LOG("RF0R=%08x\n", rf0r);
 
@@ -583,7 +691,7 @@ SC_RAMFUNC void CAN_SCE_IRQHandler(void)
 	uint32_t const msr = CAN->MSR;
 	uint8_t current_bus_state = 0;
 	uint32_t events = 0;
-	uint32_t tsc = 0;
+	uint32_t const tsc = sc_board_can_ts_wait(index);
 	uint8_t rec, tec, lec;
 
 	LOG("ESR=%08x\n", esr);
@@ -667,6 +775,35 @@ SC_RAMFUNC void CAN_SCE_IRQHandler(void)
 	}
 }
 
+// SC_RAMFUNC void TIM2_IRQHandler(void)
+// {
+// 	static unsigned i = 0;
+// 	const unsigned pin = 3;
+// 	unsigned v = i++ & 1;
+
+// 	uint16_t sr = TIM2->SR;
+
+// 	TIM2->SR = 0;
+
+// 	// LOG("%08x\n", TIM2->CNT);
+
+// 	GPIOA->BSRR = UINT32_C(1) << (pin + (!v) * 16);
+// }
+
+// SC_RAMFUNC void TIM3_IRQHandler(void)
+// {
+// 	static unsigned i = 0;
+// 	const unsigned pin = 3;
+// 	unsigned v = i++ & 1;
+
+// 	uint16_t sr = TIM3->SR;
+
+// 	TIM3->SR = 0;
+
+// 	LOG("SR=%08x CNT=%08x PSC=%08x ARR=%08x\n", sr, TIM3->CNT, TIM3->PSC, TIM3->ARR);
+
+// 	GPIOA->BSRR = UINT32_C(1) << (pin + (!v) * 16);
+// }
 
 #endif // #if STM32F3DISCOVERY
 
