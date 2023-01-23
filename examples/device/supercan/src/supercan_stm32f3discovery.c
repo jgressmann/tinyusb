@@ -15,9 +15,17 @@
 #include <stm32f3xx_hal.h>
 
 static struct can {
+	CAN_FIFOMailBox_TypeDef rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
 	uint8_t txr_buffer[SC_BOARD_CAN_TX_FIFO_SIZE];
 	uint8_t txr_get_index; // NOT an index, uses full range of type
 	uint8_t txr_put_index; // NOT an index, uses full range of typ
+	uint8_t rx_get_index; // NOT an index, uses full range of type
+	uint8_t rx_put_index; // NOT an index, uses full range of type
+	uint8_t tx_get_index; // NOT an index, uses full range of type
+	uint8_t tx_put_index; // NOT an index, uses full range of type
+	uint8_t int_prev_bus_status;
+	uint8_t int_prev_rec; // RX error counter
+	uint8_t int_prev_tec; // TX error counter
 } cans[SC_BOARD_CAN_COUNT];
 
 struct led {
@@ -136,11 +144,13 @@ extern void sc_board_leds_on_unsafe(void)
 
 extern void sc_board_init_begin(void)
 {
+	memset(cans, 0, sizeof(cans));
+
 	board_init();
 
 	leds_init();
+	can_init();
 
-	memset(cans, 0, sizeof(cans));
 }
 
 extern void sc_board_init_end(void)
@@ -287,9 +297,6 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 
 extern void sc_board_can_go_bus(uint8_t index, bool on)
 {
-	(void)index;
-	(void)on;
-
 	if (on) {
 		NVIC_EnableIRQ(CAN_TX_IRQn);
 		NVIC_EnableIRQ(CAN_RX0_IRQn);
@@ -302,6 +309,8 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 		NVIC_DisableIRQ(CAN_SCE_IRQn);
 		NVIC_DisableIRQ(CAN_RX1_IRQn);
 		CAN->MCR |= CAN_MCR_INRQ;
+
+		sc_board_can_reset(index);
 	}
 }
 
@@ -339,7 +348,33 @@ extern uint32_t sc_board_identifier(void)
 
 extern void sc_board_can_reset(uint8_t index)
 {
-	(void)index;
+	struct can* can = &cans[index];
+
+	can->int_prev_bus_status = 0;
+	can->int_prev_rec = 0;
+	can->int_prev_tec = 0;
+	can->rx_get_index = 0;
+	can->rx_put_index = 0;
+	can->tx_get_index = 0;
+	can->tx_put_index = 0;
+
+	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
+}
+
+SC_RAMFUNC static inline uint8_t can_map_bxcan_ec(uint8_t value)
+{
+	static const uint8_t can_map_bxcan_ec_table[8] = {
+		SC_CAN_ERROR_NONE,
+		SC_CAN_ERROR_STUFF,
+		SC_CAN_ERROR_FORM,
+		SC_CAN_ERROR_ACK,
+		SC_CAN_ERROR_BIT1,
+		SC_CAN_ERROR_BIT0,
+		SC_CAN_ERROR_CRC,
+		0xff
+	};
+
+	return can_map_bxcan_ec_table[value & 7];
 }
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
@@ -384,6 +419,8 @@ SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
 
 SC_RAMFUNC void CAN_TX_IRQHandler(void)
 {
+	uint8_t const index = 0;
+	struct can *can = &cans[index];
 	uint32_t tsr = CAN->TSR;
 
 	LOG("TSR=%08x\n", tsr);
@@ -408,11 +445,56 @@ SC_RAMFUNC void CAN_TX_IRQHandler(void)
 
 SC_RAMFUNC void CAN_RX0_IRQHandler(void)
 {
+	uint8_t const index = 0;
+	struct can *can = &cans[index];
 	uint32_t rf0r = CAN->RF0R;
+	uint8_t lost = 0;
+	uint32_t tsc = 0;
 
 	LOG("RF0R=%08x\n", rf0r);
 
+	for ( ; (rf0r & CAN_RF0R_FMP0_Msk) >> CAN_RF0R_FMP0_Pos; rf0r = CAN->RF0R) {
+		uint8_t pi = can->rx_put_index;
+		uint8_t gi = __atomic_load_n(&can->rx_get_index, __ATOMIC_ACQUIRE);
+		uint8_t used = pi - gi;
+
+		if (unlikely(used == TU_ARRAY_SIZE(can->rx_fifo))) {
+			++lost;
+		} else {
+			uint8_t const put_index = pi % TU_ARRAY_SIZE(can->rx_fifo);
+			CAN_FIFOMailBox_TypeDef* box = &can->rx_fifo[put_index];
+
+			box->RIR = CAN->sFIFOMailBox[0].RIR;
+			box->RDTR = CAN->sFIFOMailBox[0].RDTR;
+			box->RDLR = CAN->sFIFOMailBox[0].RDLR;
+			box->RDHR = CAN->sFIFOMailBox[0].RDHR;
+
+			__atomic_store_n(&can->rx_put_index, pi + 1, __ATOMIC_RELEASE);
+		}
+
+		// release hw mailbox
+		CAN->RF0R |= CAN_RF0R_RFOM0;
+
+		// wait for hw
+		while (CAN->RF0R & CAN_RF0R_RFOM0);
+	}
+
+	if (unlikely(rf0r & CAN_RF0R_FOVR0)) {
+		++lost;
+	}
+
 	CAN->RF0R = CAN_RF0R_FOVR0 | CAN_RF0R_FULL0;
+
+	if (unlikely(lost)) {
+		sc_can_status status;
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_RX_LOST;
+		status.timestamp_us = tsc;
+		status.rx_lost = lost;
+
+		sc_can_status_queue(index, &status);
+		sc_can_notify_task_isr(index, 1);
+	}
 }
 
 SC_RAMFUNC void CAN_RX1_IRQHandler(void)
@@ -422,9 +504,95 @@ SC_RAMFUNC void CAN_RX1_IRQHandler(void)
 
 SC_RAMFUNC void CAN_SCE_IRQHandler(void)
 {
-	uint32_t esr = CAN->ESR;
+	uint8_t const index = 0;
+	struct can *can = &cans[index];
+	sc_can_status status;
+	uint32_t const esr = CAN->ESR;
+	uint32_t const msr = CAN->MSR;
+	uint8_t current_bus_state = 0;
+	uint32_t events = 0;
+	uint32_t tsc = 0;
+	uint8_t rec, tec, lec;
 
 	LOG("ESR=%08x\n", esr);
+
+	if (esr & CAN_ESR_BOFF) {
+		current_bus_state = SC_CAN_STATUS_BUS_OFF;
+	} else if (esr & CAN_ESR_EPVF) {
+		current_bus_state = SC_CAN_STATUS_ERROR_PASSIVE;
+	} else if (esr & CAN_ESR_EWGF) {
+		current_bus_state = SC_CAN_STATUS_ERROR_WARNING;
+	} else {
+		current_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
+	}
+
+	if (unlikely(can->int_prev_bus_status != current_bus_state)) {
+		can->int_prev_bus_status = current_bus_state;
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS;
+		status.timestamp_us = tsc;
+		status.bus_state = current_bus_state;
+
+		sc_can_status_queue(index, &status);
+		++events;
+
+		switch (current_bus_state) {
+		case SC_CAN_STATUS_BUS_OFF:
+			LOG("CAN%u bus off\n", index);
+			break;
+		case SC_CAN_STATUS_ERROR_PASSIVE:
+			LOG("CAN%u error passive\n", index);
+			break;
+		case SC_CAN_STATUS_ERROR_WARNING:
+			LOG("CAN%u error warning\n", index);
+			break;
+		case SC_CAN_STATUS_ERROR_ACTIVE:
+			LOG("CAN%u error active\n", index);
+			break;
+		default:
+			LOG("CAN%u unhandled bus state\n", index);
+			break;
+		}
+	}
+
+	rec = (esr & CAN_ESR_REC_Msk) >> CAN_ESR_REC_Pos;
+	tec = (esr & CAN_ESR_TEC_Msk) >> CAN_ESR_TEC_Pos;
+
+	if (unlikely(rec != can->int_prev_rec || tec != can->int_prev_tec)) {
+		can->int_prev_tec = tec;
+		can->int_prev_rec = rec;
+
+		// LOG("CAN%u REC=%u TEC=%u\n", index, can->int_prev_rx_errors, can->int_prev_tx_errors);
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS;
+		status.timestamp_us = tsc;
+		status.counts.rx = rec;
+		status.counts.tx = tec;
+
+		sc_can_status_queue(index, &status);
+		++events;
+	}
+
+	lec = (esr & CAN_ESR_LEC_Msk) >> CAN_ESR_LEC_Pos;
+
+	if (unlikely(lec > 0 && lec <= 7)) {
+		const bool is_tx_error = (msr & CAN_MSR_TXM) == CAN_MSR_TXM;
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
+		status.timestamp_us = tsc;
+		status.bus_error.tx = is_tx_error;
+		status.bus_error.code = can_map_bxcan_ec(lec),
+		status.bus_error.data_part = 0;
+
+		sc_can_status_queue(index, &status);
+		++events;
+	}
+
+
+	if (likely(events)) {
+		// LOG(">");
+		sc_can_notify_task_isr(index, events);
+	}
 }
 
 
