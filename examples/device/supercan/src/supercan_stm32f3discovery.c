@@ -475,11 +475,15 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 extern void sc_board_can_go_bus(uint8_t index, bool on)
 {
 	if (on) {
+		LOG("BTR=%08x\n", CAN->BTR);
+
 		NVIC_EnableIRQ(CAN_TX_IRQn);
 		NVIC_EnableIRQ(CAN_RX0_IRQn);
 		NVIC_EnableIRQ(CAN_SCE_IRQn);
 		// NVIC_EnableIRQ(CAN_RX1_IRQn);
 		CAN->MCR &= ~CAN_MCR_INRQ;
+
+
 	} else {
 		NVIC_DisableIRQ(CAN_TX_IRQn);
 		NVIC_DisableIRQ(CAN_RX0_IRQn);
@@ -496,7 +500,7 @@ extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 	(void)index;
 
 	CAN->BTR =
-		(CAN->BTR & ~(CAN_BTR_SJW | CAN_BTR_TS1 | CAN_BTR_TS1 | CAN_BTR_BRP))
+		(CAN->BTR & ~(CAN_BTR_SJW | CAN_BTR_TS1 | CAN_BTR_TS2 | CAN_BTR_BRP))
 		| ((bt->sjw-1) << CAN_BTR_SJW_Pos)
 		| ((bt->tseg1-1) << CAN_BTR_TS1_Pos)
 		| ((bt->tseg2-1) << CAN_BTR_TS2_Pos)
@@ -694,7 +698,9 @@ SC_RAMFUNC void CAN_SCE_IRQHandler(void)
 	uint32_t const tsc = sc_board_can_ts_wait(index);
 	uint8_t rec, tec, lec;
 
-	LOG("ESR=%08x\n", esr);
+	// LOG("ESR=%08x\n", esr);
+
+
 
 	if (esr & CAN_ESR_BOFF) {
 		current_bus_state = SC_CAN_STATUS_BUS_OFF;
