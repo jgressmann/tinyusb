@@ -106,6 +106,16 @@ static inline void leds_init(void)
 	GPIOE->BSRR = GPIO_BSRR_BR_8 | GPIO_BSRR_BR_9 | GPIO_BSRR_BR_10 | GPIO_BSRR_BR_11 | GPIO_BSRR_BR_13;
 }
 
+static inline void dump_irq_prios(void)
+{
+	LOG("CAN_TX(%u)=%u\n", CAN_TX_IRQn, NVIC_GetPriority(CAN_TX_IRQn));
+	LOG("CAN_RX0(%u)=%u\n", CAN_RX0_IRQn, NVIC_GetPriority(CAN_RX0_IRQn));
+	LOG("CAN_SCE(%u)=%u\n", CAN_SCE_IRQn, NVIC_GetPriority(CAN_SCE_IRQn));
+	LOG("USB_HP(%u)=%u\n", USB_HP_IRQn, NVIC_GetPriority(USB_HP_IRQn));
+	LOG("USB_LP(%u)=%u\n", USB_LP_IRQn, NVIC_GetPriority(USB_LP_IRQn));
+	LOG("USBWakeUp_RMP(%u)=%u\n", USBWakeUp_RMP_IRQn, NVIC_GetPriority(USBWakeUp_RMP_IRQn));
+}
+
 static inline void can_init_hw(void)
 {
 	/* Setup CAN on PB8 (RX) / PB9 (TX) */
@@ -184,6 +194,8 @@ static inline void can_init(void)
 			can->tx_mailbox_free_fifo[mb] = mb;
 		}
 	}
+
+	can_init_hw();
 }
 
 static inline void counter_1MHz_init(void)
@@ -260,7 +272,11 @@ extern void sc_board_init_begin(void)
 
 extern void sc_board_init_end(void)
 {
+
 	led_blink(0, 2000);
+	NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
+
+	dump_irq_prios();
 }
 
 __attribute__((noreturn)) extern void sc_board_reset(void)
@@ -409,7 +425,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 				txr->id = SC_MSG_CAN_TXR;
 				txr->len = bytes;
 				txr->track_id = cans->txr_fifo[txr_get_index].track_id;
-				txr->timestamp_us = sc_board_can_ts_wait(index);
+				txr->timestamp_us = cans->txr_fifo[txr_get_index].ts;
 
 				__atomic_store_n(&can->txr_get_index, can->txr_get_index+1, __ATOMIC_RELEASE);
 
@@ -418,7 +434,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 				can->txr &= ~(UINT32_C(1) << txr->track_id);
 #endif
 
-				LOG("ch%u retrievd TXR %u\n", index, txr->track_id);
+				// LOG("ch%u retrievd TXR %u\n", index, txr->track_id);
 			}
 		}
 
@@ -599,18 +615,21 @@ extern void sc_board_can_reset(uint8_t index)
 	can->txr_put_index = 0;
 
 
-#if SUPERCAN_DEBUG
-	can->txr = 0;
-#endif
-
 	can->tx_mailbox_used_get_index = 0;
 	can->tx_mailbox_used_put_index = 0;
 	can->tx_mailbox_free_get_index = 0;
 	can->tx_mailbox_free_put_index = HW_TX_MB_COUNT;
 
+
 	for (uint8_t mb = 0; mb < HW_TX_MB_COUNT; ++mb) {
 		can->tx_mailbox_free_fifo[mb] = mb;
 	}
+
+
+
+#if SUPERCAN_DEBUG
+	can->txr = 0;
+#endif
 
 	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
 }
@@ -682,16 +701,21 @@ SC_RAMFUNC void CAN_TX_IRQHandler(void)
 	uint16_t ts[HW_TX_MB_COUNT];
 	uint8_t indices[HW_TX_MB_COUNT];
 
-	LOG("TSR=%08x\n", tsr);
+	// LOG("TSR=%08x\n", tsr);
+
+
 
 	/* forward scan for finished mailboxes */
 	while (can->tx_mailbox_used_get_index != can->tx_mailbox_used_put_index) {
 		uint8_t const used_fifo_index = can->tx_mailbox_used_get_index % TU_ARRAY_SIZE(can->tx_mailbox_used_fifo);
 		uint8_t const mailbox_index = can->tx_mailbox_used_fifo[used_fifo_index];
-		uint32_t const mailbox_finished_bit = UINT32_C(1) << (26 + mailbox_index);
+		uint32_t const mailbox_finished_bit = UINT32_C(1) << (8 * mailbox_index);
 
 		if (tsr & mailbox_finished_bit) {
 			uint8_t const free_fifo_index = can->tx_mailbox_free_put_index % TU_ARRAY_SIZE(can->tx_mailbox_free_fifo);
+
+			/* acknowledge hw finished */
+			CAN->TSR |= mailbox_finished_bit;
 
 			ts[count] = (CAN->sTxMailBox[mailbox_index].TDTR & CAN_TDT0R_TIME_Msk) >> CAN_TDT0R_TIME_Pos;
 			indices[count] = mailbox_index;
@@ -745,6 +769,7 @@ SC_RAMFUNC void CAN_TX_IRQHandler(void)
 			status.timestamp_us = tsc;
 
 			sc_can_status_queue(index, &status);
+			++events;
 		}
 	}
 
@@ -759,6 +784,7 @@ SC_RAMFUNC void CAN_TX_IRQHandler(void)
 		struct tx_frame *txf = &can->tx_fifo[tx_index];
 		uint8_t const free_fifo_index = can->tx_mailbox_free_get_index % TU_ARRAY_SIZE(can->tx_mailbox_free_fifo);
 		uint8_t const mailbox_index = can->tx_mailbox_free_fifo[free_fifo_index];
+
 
 		// LOG("ch%u tx i=%02u -> mb=%u\n", index, tx_index, mailbox_index);
 
@@ -798,19 +824,16 @@ SC_RAMFUNC void CAN_TX_IRQHandler(void)
 		sc_can_notify_task_isr(index, events);
 	}
 
-	// CAN->TSR =
+	// CAN->TSR |=
 	// 	CAN_TSR_TERR2
 	// 	| CAN_TSR_ALST2
 	// 	| CAN_TSR_TXOK2
-	// 	| CAN_TSR_RQCP2
 	// 	| CAN_TSR_TERR1
 	// 	| CAN_TSR_ALST1
 	// 	| CAN_TSR_TXOK1
-	// 	| CAN_TSR_RQCP1
 	// 	| CAN_TSR_TERR0
 	// 	| CAN_TSR_ALST0
 	// 	| CAN_TSR_TXOK0
-	// 	| CAN_TSR_RQCP0
 	// 	;
 }
 
@@ -852,7 +875,7 @@ SC_RAMFUNC void CAN_RX0_IRQHandler(void)
 	}
 
 	if (unlikely(rf0r & CAN_RF0R_FOVR0)) {
-		LOG("-");
+		// LOG("-");
 		++lost;
 	}
 
@@ -933,6 +956,7 @@ SC_RAMFUNC void CAN_SCE_IRQHandler(void)
 	rec = (esr & CAN_ESR_REC_Msk) >> CAN_ESR_REC_Pos;
 	tec = (esr & CAN_ESR_TEC_Msk) >> CAN_ESR_TEC_Pos;
 
+	// ? necessary?
 	if (unlikely(rec != can->int_prev_rec || tec != can->int_prev_tec)) {
 		can->int_prev_tec = tec;
 		can->int_prev_rec = rec;
