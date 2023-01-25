@@ -300,14 +300,13 @@ extern uint16_t sc_board_can_feat_conf(uint8_t index)
 SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
 {
 	struct can *can = &cans[index];
-	uint8_t pi = can->tx_put_index;
-	uint8_t gi = __atomic_load_n(&can->tx_get_index, __ATOMIC_ACQUIRE);
-	uint8_t used = pi - gi;
+	uint8_t const tx_get_index = __atomic_load_n(&can->tx_get_index, __ATOMIC_ACQUIRE);
+	uint8_t used = can->tx_put_index - tx_get_index;
 	bool available = used < TU_ARRAY_SIZE(can->tx_fifo);
 
 	if (available) {
-		uint8_t const tx_put_index = pi % TU_ARRAY_SIZE(can->tx_fifo);
-		struct tx_frame *txf = &can->tx_fifo[tx_put_index];
+		uint8_t const tx_put_index_mod = can->tx_put_index % TU_ARRAY_SIZE(can->tx_fifo);
+		struct tx_frame *txf = &can->tx_fifo[tx_put_index_mod];
 
 #if SUPERCAN_DEBUG
 		bool track_id_present = can->txr & (UINT32_C(1) << msg->track_id);
@@ -321,14 +320,15 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 #endif
 
 
+
 		// store
 		txf->TDTR = msg->dlc;
 		txf->TIR = CAN_TI0R_TXRQ; // mark ready for TX
 
 		if (msg->flags & SC_CAN_FRAME_FLAG_EXT) {
-			txf->TIR |= (msg->can_id << CAN_TI0R_STID_Pos) | CAN_TI0R_IDE;
+			txf->TIR |= (msg->can_id << CAN_TI0R_EXID_Pos) | CAN_TI0R_IDE;
 		} else {
-			txf->TIR |= msg->can_id << CAN_TI0R_EXID_Pos;
+			txf->TIR |= msg->can_id << CAN_TI0R_STID_Pos;
 		}
 
 		if (msg->flags & SC_CAN_FRAME_FLAG_RTR) {
@@ -337,53 +337,14 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 			uint8_t *d = (uint8_t *)&txf->TDLR;
 
 			memcpy(d, msg->data, msg->dlc);
-			// if (msg->dlc >= 4) {
-			// 	memcpy(&box->TDLR, &msg->data[0], 4);
-
-			// 	if (8 == msg->dlc) {
-			// 		memcpy(&box->TDHR, &msg->data[4], 4);
-			// 	} else {
-			// 		box->TDHR = 0;
-
-			// 		switch (msg->dlc) {
-			// 		case 7:
-			// 			box->TDHR <<= 8;
-			// 			box->TDHR |= msg->data[6];
-			// 			__attribute__((fallthrough));
-			// 		case 6:
-			// 			box->TDHR <<= 8;
-			// 			box->TDHR |= msg->data[5];
-			// 			__attribute__((fallthrough));
-			// 		case 5:
-			// 			box->TDHR <<= 8;
-			// 			box->TDHR |= msg->data[4];
-			// 		}
-			// 	}
-			// } else {
-			// 	box->TDLR = 0;
-
-			// 	switch (msg->dlc) {
-			// 	case 3:
-			// 		box->TDHR <<= 8;
-			// 		box->TDHR |= msg->data[2];
-			// 		__attribute__((fallthrough));
-			// 	case 2:
-			// 		box->TDHR <<= 8;
-			// 		box->TDHR |= msg->data[1];
-			// 		__attribute__((fallthrough));
-			// 	case 1:
-			// 		box->TDHR <<= 8;
-			// 		box->TDHR |= msg->data[0];
-			// 	}
-			// }
 		}
+
+		// LOG("%02u TIR=%08x\n", tx_put_index_mod, txf->TIR);
 
 		txf->track_id = msg->track_id;
 
-		// LOG("ch%u placed TXR %u\n", index, msg->track_id);
-
 		// mark available
-		__atomic_store_n(&can->tx_put_index, pi + 1, __ATOMIC_RELEASE);
+		__atomic_store_n(&can->tx_put_index, can->tx_put_index + 1, __ATOMIC_RELEASE);
 
 		// flag interrupt to handle actual transmit
 		NVIC_SetPendingIRQ(CAN_TX_IRQn);
