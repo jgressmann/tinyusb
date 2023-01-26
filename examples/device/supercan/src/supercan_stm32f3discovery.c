@@ -51,7 +51,6 @@ static struct can {
 	volatile uint32_t txr; // volatile b/c of use in interrupt handler
 #endif
 	uint8_t tx_track_id_boxes[HW_TX_MB_FIFO_SIZE];
-	// uint8_t flags_boxes[3];
 	uint8_t tx_mailbox_free_fifo[HW_TX_MB_FIFO_SIZE];
 	uint8_t tx_mailbox_used_fifo[HW_TX_MB_FIFO_SIZE];
 	uint8_t txr_get_index; // NOT an index, uses full range of type
@@ -319,7 +318,7 @@ extern void sc_board_init_end(void)
 	led_blink(0, 2000);
 	NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 
-	dump_irq_prios();
+	// dump_irq_prios();
 }
 
 __attribute__((noreturn)) extern void sc_board_reset(void)
@@ -447,7 +446,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 			struct sc_msg_can_rx *rx = NULL;
 			uint8_t const rx_gi_mod = rx_gi % TU_ARRAY_SIZE(can->rx_fifo);
 			struct rx_frame *rxf = &can->rx_fifo[rx_gi_mod];
-			uint8_t dlc = (rxf->RDTR & CAN_RDT0R_DLC_Msk) >> CAN_RDT0R_DLC_Pos;
+			uint8_t const dlc = (rxf->RDTR & CAN_RDT0R_DLC_Msk) >> CAN_RDT0R_DLC_Pos;
 			uint8_t bytes = sizeof(*rx) + dlc;
 
 			if (bytes & (SC_MSG_CAN_LEN_MULTIPLE-1)) {
@@ -486,7 +485,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 					memcpy(rx->data, d, dlc);
 				}
 
-				__atomic_store_n(&can->rx_get_index, can->rx_get_index+1, __ATOMIC_RELEASE);
+				__atomic_store_n(&can->rx_get_index, rx_gi+1, __ATOMIC_RELEASE);
 			}
 		}
 	}
@@ -755,7 +754,7 @@ SC_RAMFUNC void CAN_TX_IRQHandler(void)
 
 		// LOG("used gi=%02x pi=%02x gi_mod=%02x mb=%x\n", can->tx_mailbox_used_get_index, can->tx_mailbox_used_put_index, used_gi_mod, mailbox_index);
 
-		if (CAN->TSR & mailbox_finished_bit) {
+		if (tsr & mailbox_finished_bit) {
 			uint8_t const free_pi_mod = can->tx_mailbox_free_put_index % TU_ARRAY_SIZE(can->tx_mailbox_free_fifo);
 			SC_DEBUG_ASSERT(free_pi_mod < TU_ARRAY_SIZE(can->tx_mailbox_free_fifo));
 
@@ -908,20 +907,22 @@ SC_RAMFUNC void CAN_RX0_IRQHandler(void)
 	struct can *can = &stm32_cans[index];
 	uint32_t rf0r = CAN->RF0R;
 	uint8_t lost = 0;
+	uint32_t events = 0;
 	uint32_t const tsc = sc_board_can_ts_wait(index);
 
 	// LOG("RF0R=%08x\n", rf0r);
 
+	uint8_t rx_pi = can->rx_put_index;
+
 	for ( ; (rf0r & CAN_RF0R_FMP0_Msk) >> CAN_RF0R_FMP0_Pos; rf0r = CAN->RF0R) {
-		uint8_t pi = can->rx_put_index;
-		uint8_t gi = __atomic_load_n(&can->rx_get_index, __ATOMIC_ACQUIRE);
-		uint8_t used = pi - gi;
+		uint8_t rx_gi = __atomic_load_n(&can->rx_get_index, __ATOMIC_ACQUIRE);
+		uint8_t used = rx_pi - rx_gi;
 
 		if (unlikely(used == TU_ARRAY_SIZE(can->rx_fifo))) {
 			++lost;
 		} else {
-			uint8_t const put_index = pi % TU_ARRAY_SIZE(can->rx_fifo);
-			struct rx_frame* rxf = &can->rx_fifo[put_index];
+			uint8_t const rx_pi_mod = rx_pi++ % TU_ARRAY_SIZE(can->rx_fifo);
+			struct rx_frame* rxf = &can->rx_fifo[rx_pi_mod];
 
 			rxf->RIR = CAN->sFIFOMailBox[0].RIR;
 			rxf->RDTR = CAN->sFIFOMailBox[0].RDTR;
@@ -929,7 +930,7 @@ SC_RAMFUNC void CAN_RX0_IRQHandler(void)
 			rxf->RDHR = CAN->sFIFOMailBox[0].RDHR;
 			rxf->ts = tsc;
 
-			__atomic_store_n(&can->rx_put_index, pi + 1, __ATOMIC_RELEASE);
+			++events;
 		}
 
 		// release hw mailbox
@@ -938,6 +939,8 @@ SC_RAMFUNC void CAN_RX0_IRQHandler(void)
 		// wait for hw
 		while (CAN->RF0R & CAN_RF0R_RFOM0);
 	}
+
+	__atomic_store_n(&can->rx_put_index, rx_pi, __ATOMIC_RELEASE);
 
 	if (unlikely(rf0r & CAN_RF0R_FOVR0)) {
 		// LOG("-");
@@ -954,7 +957,12 @@ SC_RAMFUNC void CAN_RX0_IRQHandler(void)
 		status.rx_lost = lost;
 
 		sc_can_status_queue(index, &status);
-		sc_can_notify_task_isr(index, 1);
+		++events;
+
+	}
+
+	if (likely(events)) {
+		sc_can_notify_task_isr(index, events);
 	}
 }
 
