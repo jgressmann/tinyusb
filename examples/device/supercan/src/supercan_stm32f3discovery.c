@@ -66,6 +66,7 @@ static struct can {
 	uint8_t tx_mailbox_free_put_index; // NOT an index, uses full range of type
 	uint8_t tx_mailbox_used_get_index; // NOT an index, uses full range of type
 	uint8_t tx_mailbox_used_put_index; // NOT an index, uses full range of type
+	uint8_t notify; // keep notifying main loop for busy light
 } stm32_cans[SC_BOARD_CAN_COUNT];
 
 struct led {
@@ -240,7 +241,7 @@ static inline void can_init(void)
 	can_init_hw();
 }
 
-static inline void counter_1MHz_init(void)
+static inline void counter_1mhz_init(void)
 {
 	// TIM2
 	RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
@@ -253,7 +254,24 @@ static inline void counter_1MHz_init(void)
 	TIM2->CR1 =
 		TIM_CR1_URS  /* only under/overflow, DMA */
 		| TIM_CR1_CEN;
+}
 
+static inline void notify_timer_init(void)
+{
+	NVIC_SetPriority(TIM3_IRQn, SC_ISR_PRIORITY);
+	NVIC_EnableIRQ(TIM3_IRQn);
+
+	// TIM3
+	RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
+
+	// prescaler: 48 MHz -> 1MHz
+	TIM3->PSC = 47; /* yes, minus one */
+	TIM3->ARR = 1u << 13; // ~8 millis
+	TIM3->DIER = TIM_DIER_UIE;
+
+	TIM3->CR1 =
+		TIM_CR1_URS  /* only under/overflow, DMA */
+		| TIM_CR1_CEN;
 }
 
 extern void sc_board_led_set(uint8_t index, bool on)
@@ -274,7 +292,8 @@ extern void sc_board_init_begin(void)
 
 	leds_init();
 	can_init();
-	counter_1MHz_init();
+	counter_1mhz_init();
+	notify_timer_init();
 
 	// // PA3
 	// RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
@@ -298,18 +317,6 @@ extern void sc_board_init_begin(void)
 
 	// NVIC_SetPriority(TIM2_IRQn, SC_ISR_PRIORITY);
 	// NVIC_EnableIRQ(TIM2_IRQn);
-
-	// TIM3->PSC = (48000000 / 1000) - 1;
-	// TIM3->DIER = TIM_DIER_UIE;
-	// TIM3->ARR = 1000;
-
-	// TIM3->CR1 =
-	// 	TIM_CR1_URS  /* only under/overflow, DMA */
-	// 	| TIM_CR1_CEN;
-
-
-	// NVIC_SetPriority(TIM3_IRQn, SC_ISR_PRIORITY);
-	// NVIC_EnableIRQ(TIM3_IRQn);
 }
 
 extern void sc_board_init_end(void)
@@ -546,10 +553,14 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 
 static void can_off(uint8_t index)
 {
+	struct can* can = &stm32_cans[index];
+
 	NVIC_DisableIRQ(CAN_TX_IRQn);
 	NVIC_DisableIRQ(CAN_RX0_IRQn);
 	NVIC_DisableIRQ(CAN_SCE_IRQn);
 	// NVIC_DisableIRQ(CAN_RX1_IRQn);
+
+	__atomic_store_n(&can->notify, 0, __ATOMIC_RELEASE);
 
 	/* abort scheduled transmissions */
 	CAN->TSR |= CAN_TSR_ABRQ0 | CAN_TSR_ABRQ1 | CAN_TSR_ABRQ2;
@@ -562,12 +573,16 @@ static void can_off(uint8_t index)
 
 extern void sc_board_can_go_bus(uint8_t index, bool on)
 {
+	struct can* can = &stm32_cans[index];
+
 	if (on) {
 		NVIC_EnableIRQ(CAN_TX_IRQn);
 		NVIC_EnableIRQ(CAN_RX0_IRQn);
 		NVIC_EnableIRQ(CAN_SCE_IRQn);
 		// NVIC_EnableIRQ(CAN_RX1_IRQn);
 		CAN->MCR &= ~CAN_MCR_INRQ;
+
+		__atomic_store_n(&can->notify, 1, __ATOMIC_RELEASE);
 	} else {
 		can_off(index);
 	}
@@ -1078,24 +1093,23 @@ SC_RAMFUNC void CAN_SCE_IRQHandler(void)
 // 	TIM2->SR = 0;
 
 // 	// LOG("%08x\n", TIM2->CNT);
-
+//  // toggle pin
 // 	GPIOA->BSRR = UINT32_C(1) << (pin + (!v) * 16);
 // }
 
-// SC_RAMFUNC void TIM3_IRQHandler(void)
-// {
-// 	static unsigned i = 0;
-// 	const unsigned pin = 3;
-// 	unsigned v = i++ & 1;
+SC_RAMFUNC void TIM3_IRQHandler(void)
+{
+	TIM3->SR = 0;
 
-// 	uint16_t sr = TIM3->SR;
+	// notify CAN task periodically (status lights)
+	for (uint8_t i = 0; i < TU_ARRAY_SIZE(stm32_cans); ++i) {
+		struct can *can = &stm32_cans[i];
 
-// 	TIM3->SR = 0;
-
-// 	LOG("SR=%08x CNT=%08x PSC=%08x ARR=%08x\n", sr, TIM3->CNT, TIM3->PSC, TIM3->ARR);
-
-// 	GPIOA->BSRR = UINT32_C(1) << (pin + (!v) * 16);
-// }
+		if (__atomic_load_n(&can->notify, __ATOMIC_ACQUIRE)) {
+			sc_can_notify_task_isr(i, 1);
+		}
+	}
+}
 
 #endif // #if STM32F3DISCOVERY
 

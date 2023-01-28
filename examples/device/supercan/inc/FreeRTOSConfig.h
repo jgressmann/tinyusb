@@ -54,10 +54,10 @@ extern int board_uart_write(void const * buf, int len);
 __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, size_t len);
 
 /* Cortex M23/M33 port configuration. */
-#define configENABLE_MPU								        0
-#define configENABLE_FPU								        0
-#define configENABLE_TRUSTZONE					        0
-#define configMINIMAL_SECURE_STACK_SIZE					( 1024 )
+#define configENABLE_MPU                        0
+#define configENABLE_FPU                        0
+#define configENABLE_TRUSTZONE                  0
+#define configMINIMAL_SECURE_STACK_SIZE         ( 1024 )
 
 #define configUSE_PREEMPTION                    1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 1 /* NOTE: disable this to debug FreeRTOS crashes */
