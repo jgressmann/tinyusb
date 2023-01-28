@@ -471,7 +471,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 				rx->timestamp_us = rxf->ts;
 
 				if (rxf->RIR & CAN_RI0R_IDE) {
-					rx->can_id = (rxf->RIR & CAN_RI0R_EXID_Msk) >> CAN_RI0R_EXID_Pos;
+					rx->can_id = (rxf->RIR & (CAN_RI0R_EXID_Msk | CAN_RI0R_STID_Msk)) >> CAN_RI0R_EXID_Pos;
 					rx->flags |= SC_CAN_FRAME_FLAG_EXT;
 				} else {
 					rx->can_id = (rxf->RIR & CAN_RI0R_STID_Msk) >> CAN_RI0R_STID_Pos;
@@ -913,9 +913,9 @@ SC_RAMFUNC void CAN_RX0_IRQHandler(void)
 	// LOG("RF0R=%08x\n", rf0r);
 
 	uint8_t rx_pi = can->rx_put_index;
+	uint8_t const rx_gi = __atomic_load_n(&can->rx_get_index, __ATOMIC_ACQUIRE);
 
 	for ( ; (rf0r & CAN_RF0R_FMP0_Msk) >> CAN_RF0R_FMP0_Pos; rf0r = CAN->RF0R) {
-		uint8_t rx_gi = __atomic_load_n(&can->rx_get_index, __ATOMIC_ACQUIRE);
 		uint8_t used = rx_pi - rx_gi;
 
 		if (unlikely(used == TU_ARRAY_SIZE(can->rx_fifo))) {
