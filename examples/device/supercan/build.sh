@@ -61,7 +61,7 @@ for i in $hw_revs; do
 	cp _build/$BOARD/${project}.dfu $target_dir/supercan/$BOARD/0$i/
 
 	# generate J-Link flash script
-	cat <<EOF >$target_dir/supercan/$BOARD/0$i/superdfu.jlink
+	cat <<"EOF" >$target_dir/supercan/$BOARD/0$i/superdfu.jlink
 r
 loadfile superdfu.hex
 r
@@ -70,7 +70,7 @@ exit
 EOF
 
 	# generate README
-	cat <<EOF >>$target_dir/supercan/$BOARD/0$i/$readme_file
+	cat <<"EOF" >>$target_dir/supercan/$BOARD/0$i/$readme_file
 # SuperCAN Device Firmware
 
 ## Content
@@ -103,7 +103,7 @@ for i in $hw_revs; do
 	cp _build/$BOARD/${project}.dfu $target_dir/supercan/$BOARD/0$i/supercan.dfu
 
 	# generate J-Link flash script (standalone)
-	cat <<EOF >$target_dir/supercan/$BOARD/0$i/supercan-standalone.jlink
+	cat <<"EOF" >$target_dir/supercan/$BOARD/0$i/supercan-standalone.jlink
 r
 loadfile supercan-standalone.hex
 r
@@ -112,7 +112,7 @@ exit
 EOF
 
 	# generate J-Link flash script (requires bootloader)
-	cat >$target_dir/supercan/$BOARD/0$i/supercan-app.jlink <<EOF
+	cat >$target_dir/supercan/$BOARD/0$i/supercan-app.jlink <<"EOF"
 r
 loadfile supercan-app.hex
 r
@@ -121,7 +121,7 @@ exit
 EOF
 
 
-	cat <<EOF >>$target_dir/supercan/$BOARD/0$i/$readme_file
+	cat <<"EOF" >>$target_dir/supercan/$BOARD/0$i/$readme_file
 ### CAN Application (SuperCAN)
 
 - supercan-standalone.bin: binary, no bootloader required, flash with debug probe
@@ -228,7 +228,7 @@ cp _build/$BOARD/${project}.bin $target_dir/supercan/$BOARD/
 
 
 # generate J-Link flash script (standalone)
-cat <<EOF >$target_dir/supercan/$BOARD/$readme_file
+cat <<"EOF" >$target_dir/supercan/$BOARD/$readme_file
 # SuperCAN Device Firmware
 
 ## Content
@@ -309,7 +309,7 @@ for i in "${!boards[@]}"; do
 	cp _build/$BOARD/${project}.dfu $target_dir/supercan/$BOARD/
 
 	# generate J-Link flash script
-	cat <<EOF >$target_dir/supercan/$BOARD/superdfu.jlink
+	cat <<"EOF" >$target_dir/supercan/$BOARD/superdfu.jlink
 r
 loadfile superdfu.hex
 r
@@ -318,7 +318,7 @@ exit
 EOF
 
 	# generate README
-	cat <<EOF >>$target_dir/supercan/$BOARD/$readme_file
+	cat <<"EOF" >>$target_dir/supercan/$BOARD/$readme_file
 # SuperCAN Device Firmware
 
 ## Content
@@ -348,7 +348,7 @@ EOF
 	cp _build/$BOARD/${project}.dfu $target_dir/supercan/$BOARD/supercan.dfu
 
 	# generate J-Link flash script (standalone)
-	cat <<EOF >$target_dir/supercan/$BOARD/supercan-standalone.jlink
+	cat <<"EOF" >$target_dir/supercan/$BOARD/supercan-standalone.jlink
 r
 loadfile supercan-standalone.hex
 r
@@ -357,7 +357,7 @@ exit
 EOF
 
 	# generate J-Link flash script (requires bootloader)
-	cat >$target_dir/supercan/$BOARD/supercan-app.jlink <<EOF
+	cat >$target_dir/supercan/$BOARD/supercan-app.jlink <<"EOF"
 r
 loadfile supercan-app.hex
 r
@@ -366,7 +366,7 @@ exit
 EOF
 
 
-	cat <<EOF >>$target_dir/supercan/$BOARD/$readme_file
+	cat <<"EOF" >>$target_dir/supercan/$BOARD/$readme_file
 ### CAN Application (SuperCAN)
 
 - supercan-standalone.bin: binary, no bootloader required, flash with debug probe
