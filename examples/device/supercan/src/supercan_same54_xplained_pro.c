@@ -47,24 +47,10 @@ extern void sc_board_leds_on_unsafe(void)
 
 static void can_init_module(void)
 {
-	same5x_can_init();
+	mcan_can_init();
 
-	same5x_cans[0].m_can = CAN1;
-	same5x_cans[0].interrupt_id = CAN1_IRQn;
-
-	for (size_t j = 0; j < TU_ARRAY_SIZE(same5x_cans); ++j) {
-		struct same5x_can *can = &same5x_cans[j];
-
-		can->features = CAN_FEAT_PERM;
-
-		for (size_t i = 0; i < TU_ARRAY_SIZE(same5x_cans[0].rx_fifo); ++i) {
-			SC_DEBUG_ASSERT(can->rx_frames[i].ts == 0);
-		}
-
-		for (size_t i = 0; i < TU_ARRAY_SIZE(same5x_cans[0].tx_fifo); ++i) {
-			SC_DEBUG_ASSERT(can->tx_frames[i].ts == 0);
-		}
-	}
+	mcan_cans[0].m_can = CAN1;
+	mcan_cans[0].interrupt_id = CAN1_IRQn;
 
 	m_can_init_begin(CAN1);
 
@@ -102,7 +88,7 @@ SC_RAMFUNC extern void CAN1_Handler(void)
 {
 	// LOG("CAN1 int\n");
 
-	same5x_can_int(0); // map to index 0
+	mcan_can_int(0); // map to index 0
 }
 
 

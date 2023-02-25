@@ -100,23 +100,10 @@ static inline void can_init_clock(void) // controller and hardware specific setu
 
 static void can_init_module(void)
 {
-	same5x_can_init();
+	mcan_can_init();
 
-	same5x_cans[0].m_can = CAN0;
-	same5x_cans[0].interrupt_id = CAN0_IRQn;
-
-	for (size_t j = 0; j < TU_ARRAY_SIZE(same5x_cans); ++j) {
-		struct same5x_can *can = &same5x_cans[j];
-		can->features = CAN_FEAT_PERM;
-
-		for (size_t i = 0; i < TU_ARRAY_SIZE(same5x_cans[0].rx_fifo); ++i) {
-			SC_DEBUG_ASSERT(can->rx_frames[i].ts == 0);
-		}
-
-		for (size_t i = 0; i < TU_ARRAY_SIZE(same5x_cans[0].tx_fifo); ++i) {
-			SC_DEBUG_ASSERT(can->tx_frames[i].ts == 0);
-		}
-	}
+	mcan_cans[0].m_can = CAN0;
+	mcan_cans[0].interrupt_id = CAN0_IRQn;
 
 	m_can_init_begin(CAN0);
 
@@ -237,7 +224,7 @@ SC_RAMFUNC void CAN0_Handler(void)
 {
 	// LOG("CAN0 int\n");
 
-	same5x_can_int(0);
+	mcan_can_int(0);
 }
 
 #endif // #ifdef LONGAN_CANBED_M4
