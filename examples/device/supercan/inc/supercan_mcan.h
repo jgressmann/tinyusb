@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <supercan_mcanx.h>
 
 #include <m_can.h>
 
@@ -54,32 +55,32 @@ enum {
 
 
 struct mcan_tx_fifo_element {
-	__IO CAN_TXBE_0_Type T0;
-	__IO CAN_TXBE_1_Type T1;
+	__IO MCANX_TXBE_0_Type T0;
+	__IO MCANX_TXBE_1_Type T1;
 	uint8_t data[CAN_ELEMENT_DATA_SIZE];
 };
 
 struct mcan_txe_fifo_element {
-	__IO CAN_TXEFE_0_Type T0;
-	__IO CAN_TXEFE_1_Type T1;
+	__IO MCANX_TXEFE_0_Type T0;
+	__IO MCANX_TXEFE_1_Type T1;
 };
 
 struct mcan_rx_fifo_element {
-	__IO CAN_RXF0E_0_Type R0;
-	__IO CAN_RXF0E_1_Type R1;
+	__IO MCANX_RXF0E_0_Type R0;
+	__IO MCANX_RXF0E_1_Type R1;
 	uint8_t data[CAN_ELEMENT_DATA_SIZE];
 };
 
 struct rx_frame {
-	__IO CAN_RXF0E_0_Type R0;
-	__IO CAN_RXF0E_1_Type R1;
+	__IO MCANX_RXF0E_0_Type R0;
+	__IO MCANX_RXF0E_1_Type R1;
 	__IO uint32_t ts;
 	uint8_t data[CAN_ELEMENT_DATA_SIZE];
 };
 
 struct tx_frame {
-	__IO CAN_TXEFE_0_Type T0;
-	__IO CAN_TXEFE_1_Type T1;
+	__IO MCANX_TXEFE_0_Type T0;
+	__IO MCANX_TXEFE_1_Type T1;
 	__IO uint32_t ts;
 };
 
@@ -99,7 +100,7 @@ struct mcan_can {
 	struct tx_frame tx_frames[SC_BOARD_CAN_TX_FIFO_SIZE];
 	sc_can_bit_timing nm;
 	sc_can_bit_timing dt;
-	Can *m_can;
+	MCanX *m_can;
 	IRQn_Type interrupt_id;
 	uint32_t nm_us_per_bit;
 	uint32_t dt_us_per_bit_factor_shift8;

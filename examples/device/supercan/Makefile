@@ -55,7 +55,11 @@ SRC_C += $(SAM_SRC_C)
 endif
 
 ifeq ($(BOARD),stm32f303disco)
-CFLAGS += -DSTM32F3DISCOVERY
+CFLAGS += $(SECTION_CFLAGS) -DSTM32F3DISCOVERY
+endif
+
+ifeq ($(BOARD),d5035_05)
+CFLAGS += -DD5035_05
 endif
 
 

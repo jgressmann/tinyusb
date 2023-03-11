@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License (MIT)
  *
  * Copyright (c) 2019 Nathan Conrad
@@ -39,6 +39,7 @@
  * F102, F103                      512 byte buffer; no internal D+ pull-up (maybe many more changes?)
  * F302xB/C, F303xB/C, F373        512 byte buffer; no internal D+ pull-up
  * F302x6/8, F302xD/E2, F303xD/E  1024 byte buffer; no internal D+ pull-up
+ * G0X1                           2048 byte buffer
  * L0x2, L0x3                     1024 byte buffer
  * L1                              512 byte buffer
  * L4x2, L4x3                     1024 byte buffer
@@ -113,7 +114,7 @@
       (CFG_TUSB_MCU == OPT_MCU_STM32F0                          ) || \
       (CFG_TUSB_MCU == OPT_MCU_STM32F1 && defined(STM32F1_FSDEV)) || \
       (CFG_TUSB_MCU == OPT_MCU_STM32F3                          ) || \
-	  (CFG_TUSB_MCU == OPT_MCU_STM32L0                          ) || \
+      (CFG_TUSB_MCU == OPT_MCU_STM32L0                          ) || \
       (CFG_TUSB_MCU == OPT_MCU_STM32L1                          ) \
     )
 
@@ -190,7 +191,7 @@ static void dcd_handle_bus_reset(void);
 static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix);
 static void dcd_ep_ctr_handler(void);
 
-// PMA allocation/access 
+// PMA allocation/access
 static uint8_t open_ep_count;
 static uint16_t ep_buf_ptr; ///< Points to first free memory location
 static void dcd_pma_alloc_reset(void);
@@ -238,7 +239,7 @@ void dcd_init (uint8_t rhport)
     asm("NOP");
   }
   USB->CNTR = 0; // Enable USB
-  
+
   USB->BTABLE = DCD_STM32_BTABLE_BASE;
 
   USB->ISTR = 0; // Clear pending interrupts
@@ -252,7 +253,7 @@ void dcd_init (uint8_t rhport)
 
   USB->CNTR |= USB_CNTR_RESETM | (USE_SOF ? USB_CNTR_SOFM : 0) | USB_CNTR_ESOFM | USB_CNTR_CTRM | USB_CNTR_SUSPM | USB_CNTR_WKUPM;
   dcd_handle_bus_reset();
-  
+
   // Enable pull-up if supported
   if ( dcd_connect ) dcd_connect(rhport);
 }
@@ -473,7 +474,7 @@ static void dcd_ep_ctr_rx_handler(uint32_t wIstr)
   {
     return;
   }
-  
+
   if((EPindex == 0U) && ((wEPRegVal & USB_EP_SETUP) != 0U)) /* Setup packet */
   {
     // The setup_received function uses memcpy, so this must first copy the setup data into
@@ -617,7 +618,7 @@ void dcd_int_handler(uint8_t rhport) {
     clear_istr_bits(USB_ISTR_SOF);
     dcd_event_bus_signal(0, DCD_EVENT_SOF, true);
   }
-#endif 
+#endif
 
   if(int_status & USB_ISTR_ESOF) {
     if(remoteWakeCountdown == 1u)
@@ -669,11 +670,11 @@ static void dcd_pma_alloc_reset(void)
 
 /***
  * Allocate a section of PMA
- * 
+ *
  * If the EP number has already been allocated, and the new allocation
  * is larger than the old allocation, then this will fail with a TU_ASSERT.
  * (This is done to simplify the code. More complicated algorithms could be used)
- * 
+ *
  * During failure, TU_ASSERT is used. If this happens, rework/reallocate memory manually.
  */
 static uint16_t dcd_pma_alloc(uint8_t ep_addr, size_t length)
@@ -689,13 +690,13 @@ static uint16_t dcd_pma_alloc(uint8_t ep_addr, size_t length)
     TU_ASSERT(length <= epXferCtl->pma_alloc_size, 0xFFFF);  // Verify no larger than previous alloc
     return epXferCtl->pma_ptr;
   }
-  
-  uint16_t addr = ep_buf_ptr; 
+
+  uint16_t addr = ep_buf_ptr;
   ep_buf_ptr = (uint16_t)(ep_buf_ptr + length); // increment buffer pointer
-  
+
   // Verify no overflow
   TU_ASSERT(ep_buf_ptr <= PMA_LENGTH, 0xFFFF);
-  
+
   epXferCtl->pma_ptr = addr;
   epXferCtl->pma_alloc_size = length;
   //TU_LOG2("dcd_pma_alloc(%x,%x)=%x\r\n",ep_addr,length,addr);
@@ -744,7 +745,7 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
   const uint16_t epMaxPktSize = p_endpoint_desc->wMaxPacketSize.size;
   uint16_t pma_addr;
   uint32_t wType;
-  
+
   // Isochronous not supported (yet), and some other driver assumptions.
   TU_ASSERT(p_endpoint_desc->bmAttributes.xfer != TUSB_XFER_ISOCHRONOUS);
   TU_ASSERT(epnum < MAX_EP_COUNT);
@@ -808,9 +809,9 @@ void dcd_edpt_close_all (uint8_t rhport)
 
 /**
  * Close an endpoint.
- * 
+ *
  * This function may be called with interrupts enabled or disabled.
- * 
+ *
  * This also clears transfers in progress, should there be any.
  */
 void dcd_edpt_close (uint8_t rhport, uint8_t ep_addr)
@@ -818,7 +819,7 @@ void dcd_edpt_close (uint8_t rhport, uint8_t ep_addr)
   (void)rhport;
   uint32_t const epnum = tu_edpt_number(ep_addr);
   uint32_t const dir   = tu_edpt_dir(ep_addr);
-  
+
   if(dir == TUSB_DIR_IN)
   {
     pcd_set_ep_tx_status(USB,epnum,USB_EP_TX_DIS);

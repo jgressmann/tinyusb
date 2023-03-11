@@ -163,6 +163,10 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #	define STM32F3DISCOVERY 0
 #endif
 
+#ifndef D5035_05
+#	define D5035_05 0
+#endif
+
 #if D5035_01
 #	include "supercan_D5035_01.h"
 #elif SAME54XPLAINEDPRO
@@ -175,6 +179,8 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #	include "supercan_longan_canbed_m4.h"
 #elif STM32F3DISCOVERY
 #	include "supercan_stm32f3discovery.h"
+#elif D5035_05
+#	include "supercan_D5035_05.h"
 #else
 #	pragma GCC warning "unknown board, using dummy CAN implementation"
 #	define SUPERCAN_DUMMY 1
