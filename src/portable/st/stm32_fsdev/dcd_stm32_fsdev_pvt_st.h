@@ -135,11 +135,6 @@ static inline __IO uint32_t * pcd_ep_base_pma(unsigned bEpNum)
   return &pma[bEpNum*2];
 }
 
-static inline __IO uint32_t * pcd_buffer_base_pma(void)
-{
-  return &pma[16];
-}
-
 /* SetENDPOINT */
 static inline void pcd_set_endpoint(USB_DRD_TypeDef * USBx, uint32_t bEpNum, uint32_t wRegValue)
 {
@@ -179,7 +174,7 @@ static inline __IO uint16_t* pcd_ep_rx_cnt_ptr(USB_TypeDef * USBx, uint32_t bEpN
 }
 
 
-#else
+#else // !STM_FSDEV32
 
 typedef uint16_t usb_reg_t;
 

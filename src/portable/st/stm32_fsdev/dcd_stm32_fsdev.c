@@ -699,6 +699,12 @@ static uint16_t dcd_pma_alloc(uint8_t ep_addr, size_t length)
     return epXferCtl->pma_ptr;
   }
 
+#if STM_FSDEV32
+  TU_ASSERT(length % 4 == 0); // 4 byte aligned
+#else
+  TU_ASSERT(length % 2 == 0); // 2 byte aligned
+#endif
+
   uint16_t addr = ep_buf_ptr;
   ep_buf_ptr = (uint16_t)(ep_buf_ptr + length); // increment buffer pointer
 
@@ -979,7 +985,7 @@ void dcd_edpt_clear_stall (uint8_t rhport, uint8_t ep_addr)
 static void dcd_write_packet_memory32(unsigned dst, const void * src, unsigned words)
 {
   uint32_t const * src32 = src;
-  __IO uint32_t *dst32 = &pma[dst / 4u];
+  __O uint32_t *dst32 = &pma[dst / 4u];
 
   for (; words; --words, ++src32, ++dst32) {
     *dst32 = *src32;
@@ -989,7 +995,7 @@ static void dcd_write_packet_memory32(unsigned dst, const void * src, unsigned w
 static void dcd_write_packet_memory8(unsigned dst, const void * src, unsigned words)
 {
   uint32_t tmp;
-  __IO uint32_t *dst32 = &pma[dst / 4u];
+  __O uint32_t *dst32 = &pma[dst / 4u];
   uint8_t const *src8 = src;
   uint8_t *dst8;
 
@@ -1008,7 +1014,7 @@ static void dcd_write_packet_memory8(unsigned dst, const void * src, unsigned wo
 static void dcd_read_packet_memory32(void * dst, unsigned src, unsigned words)
 {
   uint32_t * dst32 = dst;
-  __IO uint32_t const *src32 = &pma[src / 4u];
+  __I uint32_t const *src32 = &pma[src / 4u];
 
   for (; words; --words, ++src32, ++dst32) {
     *dst32 = *src32;
@@ -1018,7 +1024,7 @@ static void dcd_read_packet_memory32(void * dst, unsigned src, unsigned words)
 static void dcd_read_packet_memory8(void * dst, unsigned src, unsigned words)
 {
   uint32_t tmp;
-  __IO uint32_t *src32 = &pma[src / 4u];
+  __I uint32_t *src32 = &pma[src / 4u];
   uint8_t *dst8 = dst;
   uint8_t const *src8;
 
