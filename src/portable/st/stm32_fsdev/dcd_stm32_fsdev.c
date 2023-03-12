@@ -6,6 +6,7 @@
  * Portions:
  * Copyright (c) 2016 STMicroelectronics
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
+ * Copyright (c) 2023 Jean Gressmann
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -114,6 +115,7 @@
       (CFG_TUSB_MCU == OPT_MCU_STM32F0                          ) || \
       (CFG_TUSB_MCU == OPT_MCU_STM32F1 && defined(STM32F1_FSDEV)) || \
       (CFG_TUSB_MCU == OPT_MCU_STM32F3                          ) || \
+      (CFG_TUSB_MCU == OPT_MCU_STM32G0                          ) || \
       (CFG_TUSB_MCU == OPT_MCU_STM32L0                          ) || \
       (CFG_TUSB_MCU == OPT_MCU_STM32L1                          ) \
     )
@@ -205,12 +207,12 @@ static bool dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wN
 
 // Using a function due to better type checks
 // This seems better than having to do type casts everywhere else
-static inline void reg16_clear_bits(__IO uint16_t *reg, uint16_t mask) {
-  *reg = (uint16_t)(*reg & ~mask);
+static inline void reg_clear_bits(__IO usb_reg_t *reg, usb_reg_t mask) {
+  *reg = (usb_reg_t)(*reg & ~mask);
 }
 
 // Bits in ISTR are cleared upon writing 0
-static inline void clear_istr_bits(uint16_t mask) {
+static inline void clear_istr_bits(usb_reg_t mask) {
   USB->ISTR = ~mask;
 }
 
@@ -232,7 +234,7 @@ void dcd_init (uint8_t rhport)
   {
     asm("NOP");
   }
-  reg16_clear_bits(&USB->CNTR, USB_CNTR_PDWN);// Remove powerdown
+  reg_clear_bits(&USB->CNTR, USB_CNTR_PDWN);// Remove powerdown
   // Wait startup time, for F042 and F070, this is <= 1 us.
   for(uint32_t i = 0; i<200; i++) // should be a few us
   {
@@ -240,7 +242,9 @@ void dcd_init (uint8_t rhport)
   }
   USB->CNTR = 0; // Enable USB
 
+#if !STM_FSDEV32
   USB->BTABLE = DCD_STM32_BTABLE_BASE;
+#endif
 
   USB->ISTR = 0; // Clear pending interrupts
 
@@ -298,7 +302,9 @@ void dcd_int_enable (uint8_t rhport)
   // Member here forces write to RAM before allowing ISR to execute
   __DSB();
   __ISB();
-#if CFG_TUSB_MCU == OPT_MCU_STM32F0 || CFG_TUSB_MCU == OPT_MCU_STM32L0
+#if CFG_TUSB_MCU == OPT_MCU_STM32G0
+  NVIC_EnableIRQ(USB_UCPD1_2_IRQn);
+#elif CFG_TUSB_MCU == OPT_MCU_STM32F0 || CFG_TUSB_MCU == OPT_MCU_STM32L0
   NVIC_EnableIRQ(USB_IRQn);
 #elif CFG_TUSB_MCU == OPT_MCU_STM32L1
   NVIC_EnableIRQ(USB_LP_IRQn);
@@ -334,7 +340,9 @@ void dcd_int_disable(uint8_t rhport)
 {
   (void)rhport;
 
-#if CFG_TUSB_MCU == OPT_MCU_STM32F0 || CFG_TUSB_MCU == OPT_MCU_STM32L0
+#if CFG_TUSB_MCU == OPT_MCU_STM32G0
+  NVIC_DisableIRQ(USB_UCPD1_2_IRQn);
+#elif CFG_TUSB_MCU == OPT_MCU_STM32F0 || CFG_TUSB_MCU == OPT_MCU_STM32L0
   NVIC_DisableIRQ(USB_IRQn);
 #elif CFG_TUSB_MCU == OPT_MCU_STM32L1
   NVIC_DisableIRQ(USB_LP_IRQn);
@@ -593,8 +601,8 @@ void dcd_int_handler(uint8_t rhport) {
 
   if (int_status & USB_ISTR_WKUP)
   {
-    reg16_clear_bits(&USB->CNTR, USB_CNTR_LPMODE);
-    reg16_clear_bits(&USB->CNTR, USB_CNTR_FSUSP);
+    reg_clear_bits(&USB->CNTR, USB_CNTR_LPMODE);
+    reg_clear_bits(&USB->CNTR, USB_CNTR_FSUSP);
     clear_istr_bits(USB_ISTR_WKUP);
     dcd_event_bus_signal(0, DCD_EVENT_RESUME, true);
   }
@@ -650,7 +658,7 @@ void dcd_edpt0_status_complete(uint8_t rhport, tusb_control_request_t const * re
     uint8_t const dev_addr = (uint8_t) request->wValue;
 
     // Setting new address after the whole request is complete
-    reg16_clear_bits(&USB->DADDR, USB_DADDR_ADD);
+    reg_clear_bits(&USB->DADDR, USB_DADDR_ADD);
     USB->DADDR = (uint16_t)(USB->DADDR | dev_addr); // leave the enable bit set
   }
 }
@@ -966,6 +974,110 @@ void dcd_edpt_clear_stall (uint8_t rhport, uint8_t ep_addr)
   }
 }
 
+#if STM_FSDEV32
+
+static void dcd_write_packet_memory32(unsigned dst, const void * src, unsigned words)
+{
+  uint32_t const * src32 = src;
+  __IO uint32_t *dst32 = &pma[dst / 4u];
+
+  for (; words; --words, ++src32, ++dst32) {
+    *dst32 = *src32;
+  }
+}
+
+static void dcd_write_packet_memory8(unsigned dst, const void * src, unsigned words)
+{
+  uint32_t tmp;
+  __IO uint32_t *dst32 = &pma[dst / 4u];
+  uint8_t const *src8 = src;
+  uint8_t *dst8;
+
+  for (; words; --words, src8 += 4, ++dst32) {
+    dst8 = (uint8_t *)&tmp;
+
+    dst8[0] = src8[0];
+    dst8[1] = src8[1];
+    dst8[2] = src8[2];
+    dst8[3] = src8[3];
+
+    *dst32 = tmp;
+  }
+}
+
+static void dcd_read_packet_memory32(void * dst, unsigned src, unsigned words)
+{
+  uint32_t * dst32 = dst;
+  __IO uint32_t const *src32 = &pma[src / 4u];
+
+  for (; words; --words, ++src32, ++dst32) {
+    *dst32 = *src32;
+  }
+}
+
+static void dcd_read_packet_memory8(void * dst, unsigned src, unsigned words)
+{
+  uint32_t tmp;
+  __IO uint32_t *src32 = &pma[src / 4u];
+  uint8_t *dst8 = dst;
+  uint8_t const *src8;
+
+  for (; words; --words, dst8 += 4, ++src32) {
+    src8 = (uint8_t const *)&tmp;
+
+    tmp = *src32;
+
+    dst8[0] = src8[0];
+    dst8[1] = src8[1];
+    dst8[2] = src8[2];
+    dst8[3] = src8[3];
+  }
+}
+
+/**
+  * @brief Copy a buffer from user memory area to packet memory area (PMA).
+  *        This uses byte-access for user memory (so support non-aligned buffers)
+  * @param   dst, byte address in PMA; must be 32-bit aligned
+  * @param   src pointer to user memory area.
+  * @param   wNBytes no. of bytes to be copied.
+  * @retval None
+  */
+static bool dcd_write_packet_memory(uint16_t dst, const void *__restrict src, size_t wNBytes)
+{
+  uintptr_t srcu = (uintptr_t)src;
+  unsigned words = (wNBytes + 3) / 4u;
+
+  if (srcu & 3) {
+    dcd_write_packet_memory8(dst, src, words);
+  } else {
+    dcd_write_packet_memory32(dst, src, words);
+  }
+
+  return true;
+}
+
+/**
+  * @brief Copy a buffer from packet memory area (PMA) to user memory area.
+  *        Uses byte-access of system memory and 32-bit access of packet memory
+  * @param   wNBytes no. of bytes to be copied.
+  * @retval None
+  */
+static bool dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wNBytes)
+{
+  uintptr_t dstu = (uintptr_t)dst;
+  unsigned words = (wNBytes + 3) / 4u;
+
+   if (dstu & 3) {
+    dcd_read_packet_memory8(dst, src, words);
+  } else {
+    dcd_read_packet_memory32(dst, src, words);
+  }
+
+  return true;
+}
+
+#else // #if STM_FSDEV32
+
 // Packet buffer access can only be 8- or 16-bit.
 /**
   * @brief Copy a buffer from user memory area to packet memory area (PMA).
@@ -1002,6 +1114,46 @@ static bool dcd_write_packet_memory(uint16_t dst, const void *__restrict src, si
   }
   return true;
 }
+
+
+/**
+  * @brief Copy a buffer from packet memory area (PMA) to user memory area.
+  *        Uses byte-access of system memory and 16-bit access of packet memory
+  * @param   wNBytes no. of bytes to be copied.
+  * @retval None
+  */
+static bool dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wNBytes)
+{
+  uint32_t n = (uint32_t)wNBytes >> 1U;
+  uint32_t i;
+  // The GCC optimizer will combine access to 32-bit sizes if we let it. Force
+  // it volatile so that it won't do that.
+  __IO const uint16_t *pdwVal;
+  uint32_t temp;
+
+  pdwVal = &pma[PMA_STRIDE*(src>>1)];
+  uint8_t *dstVal = (uint8_t*)dst;
+
+  for (i = n; i != 0U; i--)
+  {
+    temp = *pdwVal;
+    pdwVal += PMA_STRIDE;
+    *dstVal++ = ((temp >> 0) & 0xFF);
+    *dstVal++ = ((temp >> 8) & 0xFF);
+  }
+
+  if (wNBytes % 2)
+  {
+    temp = *pdwVal;
+    pdwVal += PMA_STRIDE;
+    *dstVal++ = ((temp >> 0) & 0xFF);
+  }
+  return true;
+}
+
+#endif
+
+
 
 #if 0 // TODO support dcd_edpt_xfer_fifo API
 /**
@@ -1048,44 +1200,7 @@ static bool dcd_write_packet_memory_ff(tu_fifo_t * ff, uint16_t dst, uint16_t wN
 
   return true;
 }
-#endif
 
-/**
-  * @brief Copy a buffer from packet memory area (PMA) to user memory area.
-  *        Uses byte-access of system memory and 16-bit access of packet memory
-  * @param   wNBytes no. of bytes to be copied.
-  * @retval None
-  */
-static bool dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wNBytes)
-{
-  uint32_t n = (uint32_t)wNBytes >> 1U;
-  uint32_t i;
-  // The GCC optimizer will combine access to 32-bit sizes if we let it. Force
-  // it volatile so that it won't do that.
-  __IO const uint16_t *pdwVal;
-  uint32_t temp;
-
-  pdwVal = &pma[PMA_STRIDE*(src>>1)];
-  uint8_t *dstVal = (uint8_t*)dst;
-
-  for (i = n; i != 0U; i--)
-  {
-    temp = *pdwVal;
-    pdwVal += PMA_STRIDE;
-    *dstVal++ = ((temp >> 0) & 0xFF);
-    *dstVal++ = ((temp >> 8) & 0xFF);
-  }
-
-  if (wNBytes % 2)
-  {
-    temp = *pdwVal;
-    pdwVal += PMA_STRIDE;
-    *dstVal++ = ((temp >> 0) & 0xFF);
-  }
-  return true;
-}
-
-#if 0 // TODO support dcd_edpt_xfer_fifo API
 /**
   * @brief Copy a buffer from user packet memory area (PMA) to FIFO.
   *        Uses byte-access of system memory and 16-bit access of packet memory
