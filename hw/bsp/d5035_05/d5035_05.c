@@ -11,6 +11,9 @@
 #define USART_BAURATE      115200
 #define BOARD_USART        USART1
 
+const uint32_t GPIO_SPEED_FREQ_HIGH = 0x00000003U;
+const uint32_t GPIO_MODE_AF_PP = 0x00000002U;
+
 //--------------------------------------------------------------------+
 // Forward USB interrupt events to TinyUSB IRQ Handler
 //--------------------------------------------------------------------+
@@ -22,19 +25,21 @@ __attribute__((section(".RamFunc"))) void USB_UCPD1_2_IRQHandler(void)
 /* Configure for 64 Mhz system clock from HSE 16 MHz oscillator */
 static void clock_init(void)
 {
+
   // The system starts from the 16 MHz HSI clock.
-  const uint32_t RCC_CFGR_SW_PLLSRC = UINT32_C(1) << RCC_CFGR_SW_Pos;
-  const uint32_t RCC_CFGR_SWS_PLLSRC = UINT32_C(1) << RCC_CFGR_SWS_Pos;
+  const uint32_t RCC_CFGR_SW_PLLSRC = UINT32_C(2) << RCC_CFGR_SW_Pos;
+  const uint32_t RCC_CFGR_SWS_PLLSRC = UINT32_C(2) << RCC_CFGR_SWS_Pos;
 
-  // enable HSE
-  RCC->CR |= RCC_CR_HSEON;
+  // enable HSE, HSI48 (USB)
+  RCC->CR |= RCC_CR_HSEON | RCC_CR_HSI48ON;
 
-  // wait for HSE ready
-  while ((RCC->CR & RCC_CR_HSERDY) != RCC_CR_HSERDY);
+  // wait for clock ready
+  while ((RCC->CR & (RCC_CR_HSERDY | RCC_CR_HSI48RDY)) != (RCC_CR_HSERDY | RCC_CR_HSI48RDY));
 
   // configure PLL input to HSE
   RCC->PLLCFGR =
-    RCC_PLLCFGR_PLLSRC_HSE
+    // RCC_PLLCFGR_PLLSRC_HSE
+    RCC_PLLCFGR_PLLSRC_HSI
     | (UINT32_C(0) << RCC_PLLCFGR_PLLM_Pos) /* no division of input clock (16 MHz) */
     | (UINT32_C(16) << RCC_PLLCFGR_PLLN_Pos) /* 256 MHz */
     | (UINT32_C(3) << RCC_PLLCFGR_PLLR_Pos)  /* R = 4, SYSCLK to 64 MHz = Fmax */
@@ -48,8 +53,8 @@ static void clock_init(void)
   // wait for PLL ready
   while ((RCC->CR & RCC_CR_PLLRDY) != RCC_CR_PLLRDY);
 
-  // set flash for 2 wait state, RM0444 Rev 5, p.72
-  FLASH->ACR = (FLASH->ACR  & ~(FLASH_ACR_LATENCY)) | FLASH_ACR_LATENCY_2;
+  // set flash for 2 wait states, RM0444 Rev 5, p.72
+  FLASH->ACR = (FLASH->ACR & ~(FLASH_ACR_LATENCY)) | (UINT32_C(2) << FLASH_ACR_LATENCY_Pos);
 
   // switch main clock to PLL (reset values of HPRE (HCLK) and PPRE (PCLK) setup division by 1 of SYSCLK)
   RCC->CFGR = (RCC->CFGR & ~(RCC_CFGR_SW)) | RCC_CFGR_SW_PLLSRC;
@@ -58,6 +63,9 @@ static void clock_init(void)
   while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLLSRC);
 
   SystemCoreClock = CONF_CPU_FREQUENCY;
+
+  // configure HSI48 for USB
+  RCC->CCIPR2 &= ~(RCC_CCIPR2_USBSEL);
 }
 
 
@@ -65,8 +73,6 @@ static void clock_init(void)
 void uart_init(void)
 {
   /* configure pins for UART */
-  const uint32_t GPIO_SPEED_FREQ_HIGH = 0x00000003U;
-  const uint32_t GPIO_MODE_AF_PP = 0x00000002U;
   const uint32_t GPIO_AF1_USART1 = 1;
 
   // enable clock to GPIO block A
@@ -104,8 +110,47 @@ static inline void led_init(void)
   // disable output
 	GPIOB->BSRR = GPIO_BSRR_BR12;
 
+  // switch output type is push-pull on reset
+
   // switch mode to output
   GPIOB->MODER = (GPIOB->MODER & ~(GPIO_MODER_MODE12)) | (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE12_Pos);
+}
+
+/* configure USB on PA11 (D-) and PA12 (D+) */
+static inline void usb_init(void)
+{
+  /* configure pins for USB */
+  // const uint32_t GPIO_AF14_USB = 14;
+
+  // enable clock to GPIO block A
+  RCC->IOPENR |= RCC_IOPENR_GPIOAEN;
+
+  // high speed output
+  GPIOA->OSPEEDR =
+    (GPIOA->OSPEEDR & ~(GPIO_OSPEEDR_OSPEED11
+      | GPIO_OSPEEDR_OSPEED12))
+      | (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED11_Pos)
+      | (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED12_Pos);
+
+
+  // // alternate function to USB
+  // GPIOA->AFR[1] =
+  //   (GPIOA->AFR[1] & ~(GPIO_AFRH_AFSEL11 | GPIO_AFRH_AFSEL12))
+  //     | (GPIO_AF14_USB << GPIO_AFRH_AFSEL11_Pos)
+  //     | (GPIO_AF14_USB << GPIO_AFRH_AFSEL12_Pos);
+
+  // // switch mode to alternate function
+  // GPIOA->MODER = (GPIOA->MODER & ~(GPIO_MODER_MODE11 | GPIO_MODER_MODE12)) | (GPIO_MODE_AF_PP << GPIO_MODER_MODE11_Pos) | (GPIO_MODE_AF_PP << GPIO_MODER_MODE12_Pos);
+
+
+
+  PWR->CR2 |= PWR_CR2_USV;
+  // | PWR_CR2_PVMEN_USB;
+
+
+  // enable clock to USB
+  RCC->APBENR1 |= RCC_APBENR1_USBEN;
+
 }
 
 static inline void tx_char(uint8_t ch)
@@ -135,6 +180,9 @@ void board_init(void)
   led_init();
   clock_init();
   uart_init();
+#if CFG_TUSB_DEBUG >= 2
+  uart_send_str("D5035-05 UART initialized\n");
+#endif
 
 #if CFG_TUSB_OS  == OPT_OS_NONE
   // 1ms tick timer
@@ -192,11 +240,6 @@ uint32_t board_millis(void)
 }
 #endif
 
-// void HardFault_Handler (void)
-// {
-//   asm("bkpt");
-// }
-
 // Required by __libc_init_array in startup code if we are compiling using
 // -nostdlib/-nostartfiles.
 void _init(void)
@@ -206,7 +249,6 @@ void _init(void)
 
 void SystemInit(void)
 {
-  // clock setup for board called from assembler startup code, unsed
 }
 
 uint32_t SystemCoreClock;

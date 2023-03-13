@@ -15,6 +15,10 @@ CFLAGS += \
   -DCFG_TUSB_MCU=OPT_MCU_STM32G0 \
   -DRAMFUNC_SECTION_NAME="\".RamFunc\""
 
+
+
+
+
 # mcu driver cause following warnings
 CFLAGS += -Wno-error=unused-parameter
 
@@ -39,7 +43,11 @@ INC += \
 FREERTOS_PORT = ARM_CM0
 
 # For flash-jlink target
-JLINK_DEVICE = STM32G0B1CB
+JLINK_DEVICE = STM32G0B1CE
 
-# flash target using on-board stlink
-flash: flash-stlink
+# # flash target using on-board stlink
+# flash: flash-jlink
+
+# flash target ROM bootloader
+flash: $(BUILD)/$(PROJECT).bin
+	dfu-util -R -a 0 --dfuse-address 0x08000000 -D $<
