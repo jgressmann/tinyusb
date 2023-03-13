@@ -298,6 +298,7 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 	if (MSG_BUFFER_SIZE > SC_M1_EP_SIZE) { // FIX ME -> move to board file
 		uint16_t offset = can->tx_offsets[can->tx_bank];
 		bool need_to_send_zlp = offset < MSG_BUFFER_SIZE && 0 == (offset % SC_M1_EP_SIZE);
+
 		if (need_to_send_zlp) {
 			// LOG("zlpfix\n");
 			memset(&can->tx_buffers[can->tx_bank][offset], 0, 4);
@@ -1374,9 +1375,8 @@ SC_RAMFUNC static void can_usb_task(void *param)
 #else
 SC_RAMFUNC static void can_usb_task(void *param)
 {
-
-
 	const uint8_t index = (uint8_t)(uintptr_t)param;
+
 	SC_ASSERT(index < TU_ARRAY_SIZE(cans));
 	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 
