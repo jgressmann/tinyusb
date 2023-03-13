@@ -12,7 +12,11 @@
 #define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
 #define SC_BOARD_USB_MANUFACTURER_STRING "<unknown>"
 #define SC_BOARD_CAN_COUNT 1
-#define SC_BOARD_NAME BOARD_NAME
+#ifdef BOARD_NAME
+	#define SC_BOARD_NAME BOARD_NAME
+#else
+	#define SC_BOARD_NAME "board???"
+#endif
 #define SC_BOARD_CAN_CLK_HZ 48000000
 
 enum {

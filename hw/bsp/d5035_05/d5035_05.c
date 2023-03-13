@@ -119,11 +119,8 @@ static inline void led_init(void)
 /* configure USB on PA11 (D-) and PA12 (D+) */
 static inline void usb_init(void)
 {
-  /* configure pins for USB */
-  // const uint32_t GPIO_AF14_USB = 14;
-
-  // enable clock to GPIO block A
-  RCC->IOPENR |= RCC_IOPENR_GPIOAEN;
+  // // enable clock to GPIO block A
+  // RCC->IOPENR |= RCC_IOPENR_GPIOAEN;
 
   // high speed output
   GPIOA->OSPEEDR =

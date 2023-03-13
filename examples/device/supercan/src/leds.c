@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2023 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -39,6 +39,10 @@
 
 #ifndef unlikely
 #	define unlikely(x) __builtin_expect(!!(x),0)
+#endif
+
+#ifndef HAVE_ATOMIC_COMPARE_EXCHANGE
+#	define HAVE_ATOMIC_COMPARE_EXCHANGE 0
 #endif
 
 StackType_t led_task_stack[LED_STACK_SIZE];
@@ -136,6 +140,8 @@ SC_RAMFUNC extern void led_task(void *param)
 
 			if (unlikely(LED_CMD_NO_CHANGE != c.bit.cmd)) {
 				led_cmd_t x = c; // use a copy so that later can handle the command
+
+#if HAVE_ATOMIC_COMPARE_EXCHANGE
 				do {
 					__atomic_compare_exchange_n(
 						&leds[i].cmd,
@@ -145,6 +151,13 @@ SC_RAMFUNC extern void led_task(void *param)
 						__ATOMIC_ACQ_REL,
 						__ATOMIC_ACQUIRE);
 				} while (LED_CMD_NO_CHANGE != x.bit.cmd);
+#else
+				taskENTER_CRITICAL();
+				if (leds[i].cmd == x.reg) {
+					leds[i].cmd = 0;
+				}
+				taskEXIT_CRITICAL();
+#endif
 			}
 
 			if (unlikely(LED_CMD_NO_CHANGE != c.bit.cmd)) {

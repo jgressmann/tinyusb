@@ -112,7 +112,13 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 		can->status_fifo[fifo_index] = *status;
 		__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
 	} else {
+#if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
 		__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
+#else
+		taskENTER_CRITICAL();
+		can->int_comm_flags |= SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL;
+		taskEXIT_CRITICAL();
+#endif
 	}
 }
 
@@ -1479,7 +1485,14 @@ SC_RAMFUNC static void can_usb_task(void *param)
 							msg->rx_fifo_size = 0;
 							msg->tx_errors = tx_errors;
 							msg->rx_errors = rx_errors;
+#if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
 							msg->flags = __sync_fetch_and_and(&can->int_comm_flags, 0);
+#else
+							taskENTER_CRITICAL();
+							msg->flags = can->int_comm_flags;
+							can->int_comm_flags = 0;
+							taskEXIT_CRITICAL();
+#endif
 
 							if (can->desync) {
 								msg->flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;

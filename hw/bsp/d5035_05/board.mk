@@ -17,7 +17,7 @@ CFLAGS += \
 
 
 
-
+# LDFLAGS += -latomic
 
 # mcu driver cause following warnings
 CFLAGS += -Wno-error=unused-parameter
