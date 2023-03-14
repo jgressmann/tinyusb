@@ -15,7 +15,7 @@
 #ifdef BOARD_NAME
 	#define SC_BOARD_NAME BOARD_NAME
 #else
-	#define SC_BOARD_NAME "board???"
+	#define SC_BOARD_NAME "<unknown>"
 #endif
 #define SC_BOARD_CAN_CLK_HZ 48000000
 

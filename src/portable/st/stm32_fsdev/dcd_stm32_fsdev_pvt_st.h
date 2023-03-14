@@ -149,28 +149,86 @@ static inline uint32_t pcd_get_endpoint(USB_DRD_TypeDef * USBx, uint32_t bEpNum)
 }
 
 // Pointers to the PMA table entries (using the ARM address space)
-static inline __IO uint16_t* pcd_ep_tx_address_ptr(USB_TypeDef * USBx, uint32_t bEpNum)
+static inline __IO uint32_t* pcd_ep_tx_ptr(USB_TypeDef * USBx, uint32_t bEpNum)
 {
   (void)USBx;
-  return ((__IO uint16_t*)pcd_ep_base_pma(bEpNum)) + 0;
+
+  return pcd_ep_base_pma(bEpNum) + 0;
 }
 
-static inline __IO uint16_t* pcd_ep_tx_cnt_ptr(USB_TypeDef * USBx, uint32_t bEpNum)
+static inline __IO uint32_t* pcd_ep_rx_ptr(USB_TypeDef * USBx, uint32_t bEpNum)
 {
   (void)USBx;
-  return ((__IO uint16_t*)pcd_ep_base_pma(bEpNum)) + 1;
+
+  return pcd_ep_base_pma(bEpNum) + 1;
 }
 
-static inline __IO uint16_t* pcd_ep_rx_address_ptr(USB_TypeDef * USBx, uint32_t bEpNum)
+
+static inline uint16_t pcd_ep_tx_address_get(USB_TypeDef * USBx, uint32_t bEpNum)
 {
-  (void)USBx;
-  return ((__IO uint16_t*)pcd_ep_base_pma(bEpNum)) + 2;
+  return (uint16_t)*pcd_ep_tx_ptr(USBx, bEpNum);
 }
 
-static inline __IO uint16_t* pcd_ep_rx_cnt_ptr(USB_TypeDef * USBx, uint32_t bEpNum)
+// Pointers to the PMA table entries (using the ARM address space)
+static inline void pcd_ep_tx_address_set(USB_TypeDef * USBx, uint32_t bEpNum, uint16_t addr)
 {
-  (void)USBx;
-  return ((__IO uint16_t*)pcd_ep_base_pma(bEpNum)) + 3;
+  __IO uint32_t* reg_ptr = pcd_ep_tx_ptr(USBx, bEpNum);
+  uint32_t reg = *reg_ptr;
+
+  reg &= 0xffff0000;
+  reg |= addr;
+
+  *reg_ptr = reg;
+}
+
+static inline uint16_t pcd_ep_tx_cnt_get(USB_TypeDef * USBx, uint32_t bEpNum)
+{
+  return (uint16_t)(*pcd_ep_tx_ptr(USBx, bEpNum)) >> 16;
+}
+
+static inline void pcd_ep_tx_cnt_set(USB_TypeDef * USBx, uint32_t bEpNum, uint16_t value)
+{
+  __IO uint32_t* reg_ptr = pcd_ep_tx_ptr(USBx, bEpNum);
+  uint32_t reg = *reg_ptr;
+
+  reg &= 0x0000ffff;
+  reg |= ((uint32_t)value) << 16;
+
+  *reg_ptr = reg;
+}
+
+
+static inline uint16_t pcd_ep_rx_address_get(USB_TypeDef * USBx, uint32_t bEpNum)
+{
+  return (uint16_t)*pcd_ep_rx_ptr(USBx, bEpNum);
+}
+
+// Pointers to the PMA table entries (using the ARM address space)
+static inline void pcd_ep_rx_address_set(USB_TypeDef * USBx, uint32_t bEpNum, uint16_t addr)
+{
+  __IO uint32_t* reg_ptr = pcd_ep_rx_ptr(USBx, bEpNum);
+  uint32_t reg = *reg_ptr;
+
+  reg &= 0xffff0000;
+  reg |= addr;
+
+  *reg_ptr = reg;
+}
+
+static inline uint16_t pcd_ep_rx_cnt_get(USB_TypeDef * USBx, uint32_t bEpNum)
+{
+  return (uint16_t)((*pcd_ep_rx_ptr(USBx, bEpNum)) >> 16);
+}
+
+static inline void pcd_ep_rx_cnt_set(USB_TypeDef * USBx, uint32_t bEpNum, uint16_t value)
+{
+  __IO uint32_t* reg_ptr = pcd_ep_rx_ptr(USBx, bEpNum);
+  uint32_t reg = *reg_ptr;
+
+  reg &= 0x0000ffff;
+  reg |= ((uint32_t)value) << 16;
+
+  *reg_ptr = reg;
 }
 
 
@@ -253,14 +311,17 @@ static inline __IO uint16_t* pcd_ep_rx_cnt_ptr(USB_TypeDef * USBx, uint32_t bEpN
   */
 static inline uint32_t pcd_get_ep_tx_cnt(USB_TypeDef * USBx, uint32_t bEpNum)
 {
-  __I uint16_t *regPtr = pcd_ep_tx_cnt_ptr(USBx, bEpNum);
-  return *regPtr & 0x3ffU;
+  // __I uint16_t *regPtr = pcd_ep_tx_cnt_ptr(USBx, bEpNum);
+  // return *regPtr & 0x3ffU;
+
+  return pcd_ep_tx_cnt_get(USBx, bEpNum) & 0x3ffU;
 }
 
 static inline uint32_t pcd_get_ep_rx_cnt(USB_TypeDef * USBx, uint32_t bEpNum)
 {
-  __I uint16_t *regPtr = pcd_ep_rx_cnt_ptr(USBx, bEpNum);
-  return *regPtr & 0x3ffU;
+  // __I uint16_t *regPtr = pcd_ep_rx_cnt_ptr(USBx, bEpNum);
+  // return *regPtr & 0x3ffU;
+  return pcd_ep_rx_cnt_get(USBx, bEpNum) & 0x3ffU;
 }
 
 /**
@@ -297,6 +358,38 @@ static inline void pcd_set_ep_cnt_rx_reg(__O uint16_t * pdwReg, size_t wCount)  
 
 
 /**
+  * @brief Computes register count.
+  * @param  wCount Counter.
+  * @param  wNBlocks no. of Blocks.
+  * @retval count
+  */
+
+static inline uint16_t pcd_ep_cnt_compute(size_t wCount)  {
+  uint32_t wNBlocks;
+  if(wCount > 62u)
+  {
+    wNBlocks = wCount >> 5u;
+    if((wCount & 0x1fU) == 0u)
+    {
+      wNBlocks--;
+    }
+    wNBlocks = wNBlocks << 10u;
+    wNBlocks |= 0x8000u; // Mark block size as 32byte
+    return (uint16_t)wNBlocks;
+  }
+  else
+  {
+    wNBlocks = wCount >> 1u;
+    if((wCount & 0x1U) != 0u)
+    {
+      wNBlocks++;
+    }
+    return (uint16_t)((wNBlocks) << 10u);
+  }
+}
+
+
+/**
   * @brief  Sets address in an endpoint register.
   * @param  USBx USB peripheral instance register address.
   * @param  bEpNum Endpoint Number.
@@ -315,13 +408,15 @@ static inline void pcd_set_ep_address(USB_TypeDef * USBx,  uint32_t bEpNum, uint
 
 static inline void pcd_set_ep_tx_cnt(USB_TypeDef * USBx,  uint32_t bEpNum, uint32_t wCount)
 {
-  *pcd_ep_tx_cnt_ptr(USBx, bEpNum) = (uint16_t)wCount;
+  //*pcd_ep_tx_cnt_ptr(USBx, bEpNum) = (uint16_t)wCount;
+  pcd_ep_tx_cnt_set(USBx, bEpNum, wCount);
 }
 
 static inline void pcd_set_ep_rx_cnt(USB_TypeDef * USBx,  uint32_t bEpNum, uint32_t wCount)
 {
-  __IO uint16_t *pdwReg = pcd_ep_rx_cnt_ptr((USBx),(bEpNum));
-  pcd_set_ep_cnt_rx_reg(pdwReg, wCount);
+  // __IO uint16_t *pdwReg = pcd_ep_rx_cnt_ptr((USBx),(bEpNum));
+  // pcd_set_ep_cnt_rx_reg(pdwReg, wCount);
+  pcd_ep_rx_cnt_set(USBx, bEpNum, pcd_ep_cnt_compute(wCount));
 }
 
 
