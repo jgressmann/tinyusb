@@ -71,7 +71,7 @@ void mcan_can_init(void)
 void mcan_can_configure(uint8_t index)
 {
 	struct mcan_can *c = &mcan_cans[index];
-	Can *can = c->m_can;
+	MCanX *can = c->m_can;
 
 	m_can_conf_begin(can);
 
@@ -119,22 +119,22 @@ void mcan_can_configure(uint8_t index)
 #endif
 
 	// reset default TSCV.TSS = 0 (= value always 0)
-	//can->TSCC.reg = CAN_TSCC_TSS_ZERO; // time stamp counter in CAN bittime
+	//can->TSCC.reg = MCANX_TSCC_TSS_ZERO; // time stamp counter in CAN bittime
 
 	// NOTE: this needs to be on, else we might actually wrap TC0/1
 	// which would lead to mistallying of time on the host
-	can->TSCC.reg = CAN_TSCC_TSS_INC;
+	can->TSCC.reg = MCANX_TSCC_TSS_INC;
 	// reset default TOCC.ETOC = 0 (disabled)
-	// can->TOCC.reg = CAN_TOCC_TOP(0xffff) | CAN_TOCC_TOS(0); // Timeout Counter disabled, Reset-default
-	can->NBTP.reg = CAN_NBTP_NSJW(c->nm.sjw-1)
-			| CAN_NBTP_NBRP(c->nm.brp-1)
-			| CAN_NBTP_NTSEG1(c->nm.tseg1-1)
-			| CAN_NBTP_NTSEG2(c->nm.tseg2-1);
-	can->DBTP.reg = CAN_DBTP_DBRP(c->dt.brp-1)
-			| CAN_DBTP_DTSEG1(c->dt.tseg1-1)
-			| CAN_DBTP_DTSEG2(c->dt.tseg2-1)
-			| CAN_DBTP_DSJW(c->dt.sjw-1)
-			| (sc_bitrate(c->dt.brp, c->dt.tseg1, c->dt.tseg2) >= 1000000) * CAN_DBTP_TDC; // enable TDC for bitrates >= 1MBit/s
+	// can->TOCC.reg = MCANX_TOCC_TOP(0xffff) | MCANX_TOCC_TOS(0); // Timeout Counter disabled, Reset-default
+	can->NBTP.reg = MCANX_NBTP_NSJW(c->nm.sjw-1)
+			| MCANX_NBTP_NBRP(c->nm.brp-1)
+			| MCANX_NBTP_NTSEG1(c->nm.tseg1-1)
+			| MCANX_NBTP_NTSEG2(c->nm.tseg2-1);
+	can->DBTP.reg = MCANX_DBTP_DBRP(c->dt.brp-1)
+			| MCANX_DBTP_DTSEG1(c->dt.tseg1-1)
+			| MCANX_DBTP_DTSEG2(c->dt.tseg2-1)
+			| MCANX_DBTP_DSJW(c->dt.sjw-1)
+			| (sc_bitrate(c->dt.brp, c->dt.tseg1, c->dt.tseg2) >= 1000000) * MCANX_DBTP_TDC; // enable TDC for bitrates >= 1MBit/s
 
 	// transmitter delay compensation offset
 	// can->TDCR.bit.TDCO = tu_min8((1 + c->dtbt_tseg1 + c->dtbt_tseg2) / 2, M_CAN_TDCR_TDCO_MAX);
@@ -143,39 +143,39 @@ void mcan_can_configure(uint8_t index)
 
 #if MCAN_MESSAGE_RAM_CONFIGURABLE
 	// tx fifo
-	can->TXBC.reg = CAN_TXBC_TBSA((uint32_t) c->hw_tx_fifo_ram) | CAN_TXBC_TFQS(MCAN_HW_TX_FIFO_SIZE);
+	can->TXBC.reg = MCANX_TXBC_TBSA((uint32_t) c->hw_tx_fifo_ram) | MCANX_TXBC_TFQS(MCAN_HW_TX_FIFO_SIZE);
 	// tx event fifo
-	can->TXEFC.reg = CAN_TXEFC_EFSA((uint32_t) c->hw_txe_fifo_ram) | CAN_TXEFC_EFS(MCAN_HW_TX_FIFO_SIZE);
+	can->TXEFC.reg = MCANX_TXEFC_EFSA((uint32_t) c->hw_txe_fifo_ram) | MCANX_TXEFC_EFS(MCAN_HW_TX_FIFO_SIZE);
 	// rx fifo0
-	can->RXF0C.reg = CAN_RXF0C_F0SA((uint32_t) c->hw_rx_fifo_ram) | CAN_RXF0C_F0S(MCAN_HW_RX_FIFO_SIZE);
+	can->RXF0C.reg = MCANX_RXF0C_F0SA((uint32_t) c->hw_rx_fifo_ram) | MCANX_RXF0C_F0S(MCAN_HW_RX_FIFO_SIZE);
 #endif
 
 	// configure for max message size
-	can->TXESC.reg = CAN_TXESC_TBDS_DATA64;
-	//  | CAN_RXF0C_F0OM; // FIFO 0 overwrite mode
-	can->RXESC.reg = CAN_RXESC_RBDS_DATA64 + CAN_RXESC_F0DS_DATA64;
+	can->TXESC.reg = MCANX_TXESC_TBDS_DATA64;
+	//  | MCANX_RXF0C_F0OM; // FIFO 0 overwrite mode
+	can->RXESC.reg = MCANX_RXESC_RBDS_DATA64 + MCANX_RXESC_F0DS_DATA64;
 
 	// enable interrupt line 0
-	can->ILE.reg = CAN_ILE_EINT0;
+	can->ILE.reg = MCANX_ILE_EINT0;
 
 	// wanted interrupts
 	can->IE.reg =
 		//
 		0
-		| CAN_IE_TSWE   // time stamp counter wrap
-		| CAN_IE_BOE    // bus off
-		| CAN_IE_EWE    // error warning
-		| CAN_IE_EPE    // error passive
-		| CAN_IE_RF0NE  // new message in rx fifo0
-		| CAN_IE_RF0LE  // message lost b/c fifo0 was full
-		| CAN_IE_PEAE   // proto error in arbitration phase
-		| CAN_IE_PEDE   // proto error in data phase
-		// | CAN_IE_ELOE   // error logging overflow
-	 	| CAN_IE_TEFNE  // new message in tx event fifo
-		| CAN_IE_MRAFE  // message RAM access failure
-		| CAN_IE_BEUE   // bit error uncorrected, sets CCCR.INIT
-		| CAN_IE_BECE   // bit error corrected
-		// | CAN_IE_RF0WE
+		| MCANX_IE_TSWE   // time stamp counter wrap
+		| MCANX_IE_BOE    // bus off
+		| MCANX_IE_EWE    // error warning
+		| MCANX_IE_EPE    // error passive
+		| MCANX_IE_RF0NE  // new message in rx fifo0
+		| MCANX_IE_RF0LE  // message lost b/c fifo0 was full
+		| MCANX_IE_PEAE   // proto error in arbitration phase
+		| MCANX_IE_PEDE   // proto error in data phase
+		// | MCANX_IE_ELOE   // error logging overflow
+	 	| MCANX_IE_TEFNE  // new message in tx event fifo
+		| MCANX_IE_MRAFE  // message RAM access failure
+		| MCANX_IE_BEUE   // bit error uncorrected, sets CCCR.INIT
+		| MCANX_IE_BECE   // bit error corrected
+		// | MCANX_IE_RF0WE
 	;
 
 	m_can_conf_end(can);
@@ -207,8 +207,8 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 
 	struct mcan_can *can = &mcan_cans[index];
 	uint8_t current_bus_state = 0;
-	CAN_PSR_Type current_psr = can->m_can->PSR; // always read, sets NC
-	CAN_ECR_Type current_ecr = can->m_can->ECR; // always read, clears CEL
+	MCANX_PSR_Type current_psr = can->m_can->PSR; // always read, sets NC
+	MCANX_ECR_Type current_ecr = can->m_can->ECR; // always read, clears CEL
 	sc_can_status status;
 	uint8_t rec = current_ecr.bit.REC;
 	uint8_t tec = current_ecr.bit.TEC;
@@ -230,7 +230,7 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 			LOG("CAN%u end error active fake\n", index);
 		} else {
 			// clear all errors except for bus off
-			current_psr.reg &= CAN_PSR_BO;
+			current_psr.reg &= MCANX_PSR_BO;
 		}
 	}
 
@@ -295,8 +295,8 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 	uint8_t lec = current_psr.bit.LEC;
 	uint8_t dlec = current_psr.bit.DLEC;
 
-	if (unlikely(lec >= CAN_PSR_LEC_STUFF_Val && lec <= CAN_PSR_LEC_CRC_Val)) {
-		const bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
+	if (unlikely(lec >= MCANX_PSR_LEC_STUFF_Val && lec <= MCANX_PSR_LEC_CRC_Val)) {
+		const bool is_tx_error = current_psr.bit.ACT == MCANX_PSR_ACT_TX_Val;
 		LOG("CAN%u PSR=%08lx prev lec=%x dlec=%x\n", index, current_psr.reg, lec, dlec);
 
 		can->int_prev_error_ts = tsc;
@@ -311,8 +311,8 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 		++*events;
 	}
 
-	if (unlikely(dlec >= CAN_PSR_DLEC_STUFF_Val && dlec <= CAN_PSR_DLEC_CRC_Val)) {
-		const bool is_tx_error = current_psr.bit.ACT == CAN_PSR_ACT_TX_Val;
+	if (unlikely(dlec >= MCANX_PSR_DLEC_STUFF_Val && dlec <= MCANX_PSR_DLEC_CRC_Val)) {
+		const bool is_tx_error = current_psr.bit.ACT == MCANX_PSR_ACT_TX_Val;
 		LOG("CAN%u PSR=%08lx prev lec=%x dlec=%x\n", index, current_psr.reg, lec, dlec);
 
 		can->int_prev_error_ts = tsc;
@@ -350,7 +350,7 @@ SC_RAMFUNC void mcan_can_int(uint8_t index)
 
 	// LOG(".");
 
-	CAN_IR_Type ir = can->m_can->IR;
+	MCANX_IR_Type ir = can->m_can->IR;
 
 	// clear all interrupts
 	can->m_can->IR = ir;
@@ -394,13 +394,13 @@ SC_RAMFUNC void mcan_can_int(uint8_t index)
 
 	can_int_update_status(index, &events, tsc);
 
-	if (ir.reg & (CAN_IR_TEFN | CAN_IR_RF0N)) {
+	if (ir.reg & (MCANX_IR_TEFN | MCANX_IR_RF0N)) {
 
 		// LOG("CAN%u RX/TX\n", index);
 		can_poll(index, &events, tsc);
 	}
 
-	// msg->hw_tx_fifo_ram_size = SC_BOARD_CAN_hw_tx_fifo_ram_SIZE - can->m_can->TXFQS.bit.TFFL;
+	// msg->hw_tx_fifo_ram_size = SC_BOARD_MCANX_hw_tx_fifo_ram_SIZE - can->m_can->TXFQS.bit.TFFL;
 	// msg->rx_fifo_size = can->m_can->RXF0S.bit.F0FL;
 
 	if (likely(events)) {
@@ -413,7 +413,7 @@ SC_RAMFUNC void mcan_can_int(uint8_t index)
 }
 
 
-static inline void can_set_state1(Can *can, IRQn_Type interrupt_id, bool enabled)
+static inline void can_set_state1(MCanX* can, IRQn_Type interrupt_id, bool enabled)
 {
 	if (enabled) {
 		// enable interrupt
@@ -486,7 +486,7 @@ static inline void can_off(uint8_t index)
 static void can_on(uint8_t index)
 {
 	struct mcan_can *can = &mcan_cans[index];
-	CAN_ECR_Type current_ecr;
+	MCANX_ECR_Type current_ecr;
 	uint32_t dtbr = 0;
 
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(mcan_cans));
@@ -511,7 +511,7 @@ static void can_on(uint8_t index)
 	 * we need to tx/rx messages for the error counters to go down.
 	 */
 	if (current_ecr.bit.REC | current_ecr.bit.TEC) {
-		CAN_ECR_Type previous_ecr;
+		MCANX_ECR_Type previous_ecr;
 
 		LOG("ch%u PSR=%x ECR=%x\n", index, can->m_can->PSR.reg, can->m_can->ECR.reg);
 		// LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
@@ -542,7 +542,7 @@ static void can_on(uint8_t index)
 
 			can->m_can->TXBAR.reg = UINT32_C(1) << put_index;
 
-			while ((can->m_can->IR.reg & (CAN_IR_RF0N)) != (CAN_IR_RF0N));
+			while ((can->m_can->IR.reg & (MCANX_IR_RF0N)) != (MCANX_IR_RF0N));
 
 			// clear interrupts
 			can->m_can->IR.reg = ~0;
@@ -550,7 +550,7 @@ static void can_on(uint8_t index)
 			// LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
 
 			// throw away rx msg, tx event
-			can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(can->m_can->RXF0S.bit.F0GI);
+			can->m_can->RXF0A.reg = MCANX_RXF0A_F0AI(can->m_can->RXF0S.bit.F0GI);
 
 			current_ecr = can->m_can->ECR;
 
@@ -617,25 +617,25 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	if (available) {
 		uint32_t id = msg->can_id;
 		uint8_t const tx_pi_mod = can->m_can->TXFQS.bit.TFQPI;
-		CAN_TXBE_0_Type t0;
-		CAN_TXBE_1_Type t1;
+		MCANX_TXBE_0_Type t0;
+		MCANX_TXBE_1_Type t1;
 
-		t0.reg = (((msg->flags & SC_CAN_FRAME_FLAG_ESI) == SC_CAN_FRAME_FLAG_ESI) << CAN_TXBE_0_ESI_Pos)
-			| (((msg->flags & SC_CAN_FRAME_FLAG_RTR) == SC_CAN_FRAME_FLAG_RTR) << CAN_TXBE_0_RTR_Pos)
-			| (((msg->flags & SC_CAN_FRAME_FLAG_EXT) == SC_CAN_FRAME_FLAG_EXT) << CAN_TXBE_0_XTD_Pos)
+		t0.reg = (((msg->flags & SC_CAN_FRAME_FLAG_ESI) == SC_CAN_FRAME_FLAG_ESI) << MCANX_TXBE_0_ESI_Pos)
+			| (((msg->flags & SC_CAN_FRAME_FLAG_RTR) == SC_CAN_FRAME_FLAG_RTR) << MCANX_TXBE_0_RTR_Pos)
+			| (((msg->flags & SC_CAN_FRAME_FLAG_EXT) == SC_CAN_FRAME_FLAG_EXT) << MCANX_TXBE_0_XTD_Pos)
 			;
 
 		if (msg->flags & SC_CAN_FRAME_FLAG_EXT) {
-			t0.reg |= CAN_TXBE_0_ID(id);
+			t0.reg |= MCANX_TXBE_0_ID(id);
 		} else {
-			t0.reg |= CAN_TXBE_0_ID(id << 18);
+			t0.reg |= MCANX_TXBE_0_ID(id << 18);
 		}
 
-		t1.reg = CAN_TXBE_1_EFC
-			| CAN_TXBE_1_DLC(msg->dlc)
-			| CAN_TXBE_1_MM(msg->track_id)
-			| (((msg->flags & SC_CAN_FRAME_FLAG_FDF) == SC_CAN_FRAME_FLAG_FDF) << CAN_TXBE_1_FDF_Pos)
-			| (((msg->flags & SC_CAN_FRAME_FLAG_BRS) == SC_CAN_FRAME_FLAG_BRS) << CAN_TXBE_1_BRS_Pos)
+		t1.reg = MCANX_TXBE_1_EFC
+			| MCANX_TXBE_1_DLC(msg->dlc)
+			| MCANX_TXBE_1_MM(msg->track_id)
+			| (((msg->flags & SC_CAN_FRAME_FLAG_FDF) == SC_CAN_FRAME_FLAG_FDF) << MCANX_TXBE_1_FDF_Pos)
+			| (((msg->flags & SC_CAN_FRAME_FLAG_BRS) == SC_CAN_FRAME_FLAG_BRS) << MCANX_TXBE_1_BRS_Pos)
 			;
 
 
@@ -679,8 +679,8 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 			uint8_t const rx_gi = can->rx_get_index;
 			uint8_t const rx_gi_mod = rx_gi & (SC_BOARD_CAN_RX_FIFO_SIZE-1);
 			uint8_t bytes = sizeof(struct sc_msg_can_rx);
-			CAN_RXF0E_0_Type r0 = can->rx_frames[rx_gi_mod].R0;
-			CAN_RXF0E_1_Type r1 = can->rx_frames[rx_gi_mod].R1;
+			MCANX_RXF0E_0_Type r0 = can->rx_frames[rx_gi_mod].R0;
+			MCANX_RXF0E_1_Type r1 = can->rx_frames[rx_gi_mod].R1;
 			uint8_t can_frame_len = dlc_to_len(r1.bit.DLC);
 
 			SC_DEBUG_ASSERT(rx_pi - can->rx_get_index <= SC_BOARD_CAN_RX_FIFO_SIZE);
@@ -724,9 +724,9 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 	// 					bool rx_ts_ok = delta <= SC_TS_MAX / 4;
 	// 					if (unlikely(!rx_ts_ok)) {
 	// 						taskDISABLE_INTERRUPTS();
-	// 						// SC_BOARD_CAN_init_begin(can);
+	// 						// SC_BOARD_MCANX_init_begin(can);
 	// 						LOG("ch%u rx gi=%u ts=%lx prev=%lx\n", index, rx_gi_mod, ts, rx_ts_last);
-	// 						for (unsigned i = 0; i < CAN_RX_FIFO_SIZE; ++i) {
+	// 						for (unsigned i = 0; i < MCANX_RX_FIFO_SIZE; ++i) {
 	// 							LOG("ch%u rx gi=%u ts=%lx\n", index, i, can->rx_frames[i].ts);
 	// 						}
 
@@ -782,8 +782,8 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 				tx_ptr += sizeof(*msg);
 				result += sizeof(*msg);
 
-				CAN_TXEFE_0_Type t0 = can->tx_frames[tx_gi_mod].T0;
-				CAN_TXEFE_1_Type t1 = can->tx_frames[tx_gi_mod].T1;
+				MCANX_TXEFE_0_Type t0 = can->tx_frames[tx_gi_mod].T0;
+				MCANX_TXEFE_1_Type t1 = can->tx_frames[tx_gi_mod].T1;
 
 				msg->id = SC_MSG_CAN_TXR;
 				msg->len = sizeof(*msg);
@@ -800,9 +800,9 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 	// 					bool tx_ts_ok = delta <= SC_TS_MAX / 4;
 	// 					if (unlikely(!tx_ts_ok)) {
 	// 						taskDISABLE_INTERRUPTS();
-	// 						// SC_BOARD_CAN_init_begin(can);
+	// 						// SC_BOARD_MCANX_init_begin(can);
 	// 						LOG("ch%u tx gi=%u ts=%lx prev=%lx\n", index, tx_gi_mod, ts, tx_ts_last);
-	// 						for (unsigned i = 0; i < SC_BOARD_CAN_hw_tx_fifo_ram_SIZE; ++i) {
+	// 						for (unsigned i = 0; i < SC_BOARD_MCANX_hw_tx_fifo_ram_SIZE; ++i) {
 	// 							LOG("ch%u tx gi=%u ts=%lx\n", index, i, can->tx_frames[i].ts);
 	// 						}
 
@@ -1097,8 +1097,8 @@ SC_RAMFUNC static void can_poll(
 #endif
 			} else {
 				uint8_t const rx_pi_mod = rx_pi % SC_BOARD_CAN_RX_FIFO_SIZE;
-				CAN_RXF0E_0_Type const r0 = can->hw_rx_fifo_ram[hw_rx_gi_mod].R0;
-				CAN_RXF0E_1_Type const r1 = can->hw_rx_fifo_ram[hw_rx_gi_mod].R1;
+				MCANX_RXF0E_0_Type const r0 = can->hw_rx_fifo_ram[hw_rx_gi_mod].R0;
+				MCANX_RXF0E_1_Type const r1 = can->hw_rx_fifo_ram[hw_rx_gi_mod].R1;
 
 				can->rx_frames[rx_pi_mod].R0 = r0;
 				can->rx_frames[rx_pi_mod].R1 = r1;
@@ -1126,7 +1126,7 @@ SC_RAMFUNC static void can_poll(
 		}
 
 		// removes frames from rx fifo
-		can->m_can->RXF0A.reg = CAN_RXF0A_F0AI(hw_rx_gi_mod);
+		can->m_can->RXF0A.reg = MCANX_RXF0A_F0AI(hw_rx_gi_mod);
 
 		// atomic update of rx put index
 		__atomic_store_n(&can->rx_put_index, rx_pi, __ATOMIC_RELEASE);
@@ -1188,7 +1188,7 @@ SC_RAMFUNC static void can_poll(
 		}
 
 		// removes frames from tx fifo
-		can->m_can->TXEFA.reg = CAN_TXEFA_EFAI(hw_tx_gi_mod);
+		can->m_can->TXEFA.reg = MCANX_TXEFA_EFAI(hw_tx_gi_mod);
         // LOG("ch%u poll tx count=%u done\n", index, count);
 
 		// atomic update of tx put index
@@ -1252,5 +1252,5 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 }
 
 
-#endif // SUPERCAN_MCAN
+#endif // SUPERMCANX_MCAN
 
