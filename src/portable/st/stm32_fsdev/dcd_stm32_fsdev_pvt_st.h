@@ -473,16 +473,11 @@ static inline void pcd_set_ep_rx_status(USB_DRD_TypeDef * USBx,  uint32_t bEpNum
   pcd_set_endpoint(USBx, bEpNum, regVal);
 } /* pcd_set_ep_rx_status */
 
-
-
 static inline uint32_t pcd_get_ep_rx_status(USB_TypeDef * USBx,  uint32_t bEpNum)
 {
   uint32_t regVal = pcd_get_endpoint(USBx, bEpNum);
   return (regVal & USB_EPRX_STAT) >> (12u);
 } /* pcd_get_ep_rx_status */
-
-
-
 
 static inline void pcd_set_eptype(USB_TypeDef * USBx, uint32_t bEpNum, uint32_t wType)
 {
@@ -597,6 +592,5 @@ static inline void pcd_clear_tx_dtog(USB_TypeDef * USBx,  uint32_t bEpNum)
 
 // Number of endpoints in hardware
 #define STFSDEV_EP_COUNT (8u)
-
 
 #endif /* PORTABLE_ST_STM32F0_DCD_STM32F0_FSDEV_PVT_ST_H_ */

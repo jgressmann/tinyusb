@@ -104,7 +104,6 @@
  */
 
 #include "tusb_option.h"
-#include "../../../../examples/device/supercan/inc/supercan_debug.h"
 
 #if defined(STM32F102x6) || defined(STM32F102xB) || \
     defined(STM32F103x6) || defined(STM32F103xB) || \
@@ -452,8 +451,6 @@ static void dcd_ep_ctr_tx_handler(uint32_t wIstr)
     return;
   }
 
-  // LOG("pre ctr=")
-
   /* clear int flag */
   pcd_clear_tx_ep_ctr(USB, EPindex);
 
@@ -485,12 +482,9 @@ static void dcd_ep_ctr_rx_handler(uint32_t wIstr)
   {
     return;
   }
-
-  LOG("dcd_ep_ctr_rx_handler count=%u\n", count);
-
+  
   if((EPindex == 0U) && ((wEPRegVal & USB_EP_SETUP) != 0U)) /* Setup packet */
   {
-    LOG("1\n");
     // The setup_received function uses memcpy, so this must first copy the setup data into
     // user memory, to allow for the 32-bit access that memcpy performs.
     TU_ATTR_ALIGNED(4) uint8_t userMemBuf[8];
@@ -498,21 +492,16 @@ static void dcd_ep_ctr_rx_handler(uint32_t wIstr)
     /* Get SETUP Packet*/
     if(count == 8) // Setup packet should always be 8 bytes. If not, ignore it, and try again.
     {
-      LOG("1.1\n");
-      LOG("pre=%08x\n", pcd_get_endpoint(USB, 0));
       // Must reset EP to NAK (in case it had been stalling) (though, maybe too late here)
       pcd_set_ep_rx_status(USB,0u,USB_EP_RX_NAK);
       pcd_set_ep_tx_status(USB,0u,USB_EP_TX_NAK);
-      LOG("post=%08x\n", pcd_get_endpoint(USB, 0));
-      // dcd_read_packet_memory(userMemBuf, *pcd_ep_rx_address_ptr(USB,EPindex), 8);
       dcd_read_packet_memory(userMemBuf, pcd_ep_rx_address_get(USB,EPindex), 8);
-      sc_dump_mem(userMemBuf, sizeof(userMemBuf));
       dcd_event_setup_received(0, (uint8_t*)userMemBuf, true);
     }
   }
   else
   {
-    LOG("2\n");
+    // LOG("2\n");
     // Clear RX CTR interrupt flag
     if(EPindex != 0u)
     {
@@ -529,7 +518,6 @@ static void dcd_ep_ctr_rx_handler(uint32_t wIstr)
       else
 #endif
       {
-        //dcd_read_packet_memory(&(xfer->buffer[xfer->queued_len]), *pcd_ep_rx_address_ptr(USB,EPindex), count);
         dcd_read_packet_memory(&(xfer->buffer[xfer->queued_len]), pcd_ep_rx_address_get(USB,EPindex), count);
       }
 
@@ -590,10 +578,6 @@ void dcd_int_handler(uint8_t rhport) {
   (void) rhport;
 
   uint32_t int_status = USB->ISTR;
-
-  LOG("CNTR=%08x DADDR=%02x ISTR=%08x\n", USB->CNTR, USB->DADDR, int_status);
-
-
   //const uint32_t handled_ints = USB_ISTR_CTR | USB_ISTR_RESET | USB_ISTR_WKUP
   //    | USB_ISTR_SUSP | USB_ISTR_SOF | USB_ISTR_ESOF;
   // unused IRQs: (USB_ISTR_PMAOVR | USB_ISTR_ERR | USB_ISTR_L1REQ )
@@ -678,8 +662,6 @@ void dcd_edpt0_status_complete(uint8_t rhport, tusb_control_request_t const * re
     // Setting new address after the whole request is complete
     reg_clear_bits(&USB->DADDR, USB_DADDR_ADD);
     USB->DADDR = (uint16_t)(USB->DADDR | dev_addr); // leave the enable bit set
-
-    LOG("USB address %u\n", dev_addr);
   }
 }
 
@@ -710,8 +692,6 @@ static uint16_t dcd_pma_alloc(uint8_t ep_addr, size_t length)
   uint8_t const epnum = tu_edpt_number(ep_addr);
   uint8_t const dir   = tu_edpt_dir(ep_addr);
   xfer_ctl_t* epXferCtl = xfer_ctl_ptr(epnum,dir);
-
-  LOG("dcd_pma_alloc ep_addr=%02x len=%zu\n", ep_addr, length);
 
   if(epXferCtl->pma_alloc_size != 0U)
   {
@@ -809,21 +789,16 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
     TU_ASSERT(false);
   }
 
-
   pcd_set_eptype(USB, epnum, wType);
   pcd_set_ep_address(USB, epnum, epnum);
-  uint32_t regVal = pcd_get_endpoint(USB, epnum);
   // Be normal, for now, instead of only accepting zero-byte packets (on control endpoint)
   // or being double-buffered (bulk endpoints)
   pcd_clear_ep_kind(USB,0);
 
   pma_addr = dcd_pma_alloc(p_endpoint_desc->bEndpointAddress, p_endpoint_desc->wMaxPacketSize.size);
 
-
-
   if(dir == TUSB_DIR_IN)
   {
-    // *pcd_ep_tx_address_ptr(USB, epnum) = pma_addr;
     pcd_ep_tx_address_set(USB, epnum, pma_addr);
     pcd_set_ep_tx_cnt(USB, epnum, p_endpoint_desc->wMaxPacketSize.size);
     pcd_clear_tx_dtog(USB, epnum);
@@ -831,21 +806,11 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * p_endpoint_desc
   }
   else
   {
-    // *pcd_ep_rx_address_ptr(USB, epnum) = pma_addr;
     pcd_ep_rx_address_set(USB, epnum, pma_addr);
-    LOG("dcd_edpt_open ep_addr=%02x pma_addr=%03x txbd=%08x txbd*=%08x rxbd=%08x rxbd*=%08x CHEP%uR=%08x\n",
-    p_endpoint_desc->bEndpointAddress, pma_addr,
-    *pcd_ep_base_pma(epnum), pcd_ep_base_pma(epnum), *(pcd_ep_base_pma(epnum)+1), (pcd_ep_base_pma(epnum)+1),
-    epnum, regVal);
     pcd_set_ep_rx_cnt(USB, epnum, p_endpoint_desc->wMaxPacketSize.size);
     pcd_clear_rx_dtog(USB, epnum);
     pcd_set_ep_rx_status(USB, epnum, USB_EP_RX_NAK);
   }
-
-  LOG("dcd_edpt_open ep_addr=%02x pma_addr=%03x txbd=%08x txbd*=%08x rxbd=%08x rxbd*=%08x CHEP%uR=%08x\n",
-    p_endpoint_desc->bEndpointAddress, pma_addr,
-    *pcd_ep_base_pma(epnum), pcd_ep_base_pma(epnum), *(pcd_ep_base_pma(epnum)+1), (pcd_ep_base_pma(epnum)+1),
-    epnum, regVal);
 
   xfer_ctl_ptr(epnum, dir)->max_packet_size = epMaxPktSize;
 
@@ -893,17 +858,16 @@ static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix)
   {
     len = xfer->max_packet_size;
   }
-  // uint16_t oldAddr = *pcd_ep_tx_address_ptr(USB,ep_ix);
 
 #if 0 // TODO support dcd_edpt_xfer_fifo API
   if (xfer->ff)
   {
+  // uint16_t oldAddr = *pcd_ep_tx_address_ptr(USB,ep_ix);
     dcd_write_packet_memory_ff(xfer->ff, oldAddr, len);
   }
   else
 #endif
   {
-    // dcd_write_packet_memory(oldAddr, &(xfer->buffer[xfer->queued_len]), len);
     dcd_write_packet_memory(pcd_ep_tx_address_get(USB,ep_ix), &(xfer->buffer[xfer->queued_len]), len);
   }
   xfer->queued_len = (uint16_t)(xfer->queued_len + len);
@@ -985,8 +949,6 @@ bool dcd_edpt_xfer_fifo (uint8_t rhport, uint8_t ep_addr, tu_fifo_t * ff, uint16
 void dcd_edpt_stall (uint8_t rhport, uint8_t ep_addr)
 {
   (void)rhport;
-
-  LOG("dcd_edpt_stall ep_addr=%02x\n", ep_addr);
 
   if (ep_addr & 0x80)
   { // IN
@@ -1112,9 +1074,6 @@ static bool dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wN
 {
   uintptr_t dstu = (uintptr_t)dst;
   unsigned words = (wNBytes + 3) / 4u;
-
-  LOG("r a=%u b=%u w=%u s=%03x\n", (dstu & 3) == 0, wNBytes, words, src);
-
 
    if (dstu & 3) {
     dcd_read_packet_memory8(dst, src, words);
