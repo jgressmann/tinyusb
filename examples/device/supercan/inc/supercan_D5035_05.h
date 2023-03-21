@@ -57,7 +57,7 @@ SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status);
 // extern char const* sc_board_name(void);
 
 #define sc_board_can_ts_request(index)
-#define sc_board_can_ts_wait(index) 0
+#define sc_board_can_ts_wait(index) (TIM2->CNT)
 
 #include <stm32g0b1xx.h>
 

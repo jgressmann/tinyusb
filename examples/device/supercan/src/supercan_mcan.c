@@ -62,7 +62,7 @@ void mcan_can_init(void)
 
 		can->features = CAN_FEAT_PERM;
 
-		// init bit timings so we can always safelye compute the bit rate (see can_on)
+		// init bit timings so we can always safely compute the bit rate (see can_on)
 		can->nm = sc_board_can_nm_bit_timing_range((uint8_t)i)->min;
 		can->dt = sc_board_can_dt_bit_timing_range((uint8_t)i)->min;
 	}
@@ -332,10 +332,17 @@ static int entry_count[SC_BOARD_CAN_COUNT];
 SC_RAMFUNC void mcan_can_int(uint8_t index)
 {
 #if SUPERCAN_DEBUG
-	int c = __atomic_add_fetch(&entry_count[index], 1, __ATOMIC_ACQ_REL);
+	int c;
+#if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
+	c = __atomic_add_fetch(&entry_count[index], 1, __ATOMIC_ACQ_REL);
+#else
+	taskENTER_CRITICAL();
+	c = ++entry_count[index];
+	taskEXIT_CRITICAL();
+#endif
 	SC_ISR_ASSERT(c == 1);
 #endif
-	//mcan_counter_1MHz_request_current_value();
+
 	sc_board_can_ts_request(index);
 
 	struct mcan_can *can = &mcan_cans[index];
@@ -405,7 +412,13 @@ SC_RAMFUNC void mcan_can_int(uint8_t index)
 		sc_can_notify_task_isr(index, events);
 	}
 #if SUPERCAN_DEBUG
+#if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
 	__atomic_add_fetch(&entry_count[index], -1, __ATOMIC_ACQ_REL);
+#else
+	taskENTER_CRITICAL();
+	--entry_count[index];
+	taskEXIT_CRITICAL();
+#endif
 #endif
 }
 

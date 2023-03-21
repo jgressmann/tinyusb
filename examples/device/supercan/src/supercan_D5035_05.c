@@ -141,7 +141,26 @@ static inline void can_init(void)
 
 static inline void counter_1mhz_init(void)
 {
+	// enable clock
+	RCC->APBENR1 |= RCC_APBENR1_TIM2EN;
 
+	// 1 MHz
+	TIM2->PSC = (CONF_CPU_FREQUENCY / 1000000UL) - 1; /* yes, minus one */
+
+	/* reset value of TIM2->ARR is 0xffffffff which is what we want */
+
+	// // 1 second reload
+	// TIM2->ARR = 1000000UL;
+
+	// TIM2->DIER = TIM_DIER_UIE;
+
+	// NVIC_SetPriority(TIM2_IRQn, SC_ISR_PRIORITY);
+	// NVIC_EnableIRQ(TIM2_IRQn);
+
+	// start timer
+	TIM2->CR1 =
+		TIM_CR1_URS /* only under/overflow, DMA */
+		| TIM_CR1_CEN;
 }
 
 struct led {
@@ -316,20 +335,27 @@ extern uint32_t sc_board_identifier(void)
 	return id;
 }
 
-SC_RAMFUNC void TIM16_FDCAN_IT0_Handler(void)
+SC_RAMFUNC void TIM16_FDCAN_IT0_IRQHandler(void)
 {
-	// LOG("CAN0 int\n");
+	LOG("CAN0 int\n");
 
 	mcan_can_int(0);
 }
 
 
-SC_RAMFUNC void TIM17_FDCAN_IT1_Handler(void)
+SC_RAMFUNC void TIM17_FDCAN_IT1_IRQHandler(void)
 {
-	// LOG("CAN1 int\n");
+	LOG("CAN1 int\n");
 
 	mcan_can_int(1);
 }
 
+// SC_RAMFUNC void TIM2_IRQHandler(void)
+// {
+// 	LOG("SR=%04x\n", TIM2->SR);
+
+// 	// clear interrupts
+// 	TIM2->SR = 0;
+// }
 
 #endif // #if D5035_05
