@@ -11,8 +11,8 @@
 #define USART_BAURATE      115200
 #define BOARD_USART        USART1
 
-const uint32_t GPIO_SPEED_FREQ_HIGH = 0x00000003U;
-const uint32_t GPIO_MODE_AF_PP = 0x00000002U;
+static const uint32_t GPIO_SPEED_FREQ_HIGH = 0x00000003U;
+static const uint32_t GPIO_MODE_AF_PP = 0x00000002U;
 
 //--------------------------------------------------------------------+
 // Forward USB interrupt events to TinyUSB IRQ Handler
@@ -44,7 +44,8 @@ static void clock_init(void)
     | (UINT32_C(16) << RCC_PLLCFGR_PLLN_Pos) /* 256 MHz */
     | (UINT32_C(3) << RCC_PLLCFGR_PLLR_Pos)  /* R = 4, SYSCLK to 64 MHz = Fmax */
     | RCC_PLLCFGR_PLLREN
-    | (UINT32_C(1) << RCC_PLLCFGR_PLLQ_Pos)  /* Q = 2, 128 MHz */
+    //| (UINT32_C(1) << RCC_PLLCFGR_PLLQ_Pos)  /* Q = 2, 128 MHz */
+    | (UINT32_C(3) << RCC_PLLCFGR_PLLQ_Pos)  /* Q = 4, 64 MHz */
     | RCC_PLLCFGR_PLLQEN;
 
   // enable PLL

@@ -57,5 +57,13 @@ __attribute__((noreturn)) extern void sc_board_reset(void)
 	__unreachable();
 }
 
+void same5x_can_init(void)
+{
+	for (size_t j = 0; j < TU_ARRAY_SIZE(mcan_cans); ++j) {
+		struct mcan_can *can = &mcan_cans[j];
+
+		can->m_can->ILE.reg = MCANX_ILE_EINT0;
+	}
+}
 
 #endif // supported board

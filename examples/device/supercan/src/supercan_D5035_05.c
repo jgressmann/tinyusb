@@ -36,14 +36,63 @@
 #define PIN_PB07 MAKE_PIN(1, 7)
 #define PIN_PB12 MAKE_PIN(1, 12)
 
-#define  GPIO_MODE_OUTPUT_PP 0x00000001U
-
+static const uint32_t GPIO_MODE_OUTPUT_PP = 0x00000001U;
+static const uint32_t GPIO_SPEED_FREQ_HIGH = 0x00000003U;
+static const uint32_t GPIO_MODE_AF_PP = 0x00000002U;
 
 
 // controller and hardware specific setup of i/o pins for CAN
 static inline void can_init(void)
 {
-	// PINS, CAN module
+	/* FDCAN2_RX PB0, FDCAN2_TX PB1, FDCAN1_RX PB8, FDCAN1_TX PB9 */
+	const uint32_t GPIO_MODE_AF3_FDCAN = 0x3; // DS13560 Rev 4, p. 58
+
+	// enable clock to GPIO block B
+	RCC->IOPENR |= RCC_IOPENR_GPIOBEN;
+
+	// high speed output
+	GPIOB->OSPEEDR =
+		(GPIOB->OSPEEDR & ~(
+		GPIO_OSPEEDR_OSPEED0
+		| GPIO_OSPEEDR_OSPEED1
+		| GPIO_OSPEEDR_OSPEED8
+		| GPIO_OSPEEDR_OSPEED9))
+		| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED0_Pos)
+		| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED1_Pos)
+		| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED8_Pos)
+		| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED9_Pos);
+
+
+	// alternate function to CAN
+	GPIOB->AFR[0] =
+		(GPIOB->AFR[0] & ~(GPIO_AFRL_AFSEL0 | GPIO_AFRL_AFSEL1))
+		| (GPIO_MODE_AF3_FDCAN << GPIO_AFRL_AFSEL0_Pos)
+		| (GPIO_MODE_AF3_FDCAN << GPIO_AFRL_AFSEL1_Pos);
+	GPIOB->AFR[1] =
+		(GPIOB->AFR[1] & ~(GPIO_AFRH_AFSEL8 | GPIO_AFRH_AFSEL9))
+		| (GPIO_MODE_AF3_FDCAN << GPIO_AFRH_AFSEL8_Pos)
+		| (GPIO_MODE_AF3_FDCAN << GPIO_AFRH_AFSEL9_Pos);
+
+	// switch mode to alternate function
+	GPIOB->MODER =
+		(GPIOB->MODER & ~(
+			GPIO_MODER_MODE0
+			| GPIO_MODER_MODE1
+			| GPIO_MODER_MODE8
+			| GPIO_MODER_MODE9))
+		| (GPIO_MODE_AF_PP << GPIO_MODER_MODE0_Pos)
+		| (GPIO_MODE_AF_PP << GPIO_MODER_MODE1_Pos)
+		| (GPIO_MODE_AF_PP << GPIO_MODER_MODE8_Pos)
+		| (GPIO_MODE_AF_PP << GPIO_MODER_MODE9_Pos);
+
+
+	// set clock to PLL Q
+	RCC->CCIPR2 =
+		(RCC->CCIPR2 & ~(RCC_CCIPR2_FDCANSEL_Msk))
+		| (UINT32_C(1) << RCC_CCIPR2_FDCANSEL_Pos);
+
+	// enable clock
+	RCC->APBENR1 |= RCC_APBENR1_FDCANEN;
 
 	mcan_can_init();
 
@@ -51,12 +100,13 @@ static inline void can_init(void)
 	mcan_cans[1].m_can = (MCanX*)FDCAN2;
 	mcan_cans[0].interrupt_id = TIM16_FDCAN_IT0_IRQn;
 	mcan_cans[1].interrupt_id = TIM17_FDCAN_IT1_IRQn;
-	// mcan_cans[0].led_traffic = CAN0_TRAFFIC_LED;
-	// mcan_cans[1].led_traffic = CAN1_TRAFFIC_LED;
+	mcan_cans[0].led_traffic = CAN0_TRAFFIC_LED;
+	mcan_cans[1].led_traffic = CAN1_TRAFFIC_LED;
 	mcan_cans[0].led_status_green = LED_CAN0_STATUS_GREEN;
 	mcan_cans[1].led_status_green = LED_CAN1_STATUS_GREEN;
 	mcan_cans[0].led_status_red = LED_CAN0_STATUS_RED;
 	mcan_cans[1].led_status_red = LED_CAN1_STATUS_RED;
+
 
 	for (size_t j = 0; j < TU_ARRAY_SIZE(mcan_cans); ++j) {
 		struct mcan_can *can = &mcan_cans[j];
@@ -65,6 +115,20 @@ static inline void can_init(void)
 
 	m_can_init_begin(mcan_cans[0].m_can);
 	m_can_init_begin(mcan_cans[1].m_can);
+
+	/* interrupts,
+	 * map FDCAN1 to TIM16_FDCAN_IT0_Handler,
+	 * FDCAN2 to TIM17_FDCAN_IT1_Handler
+	 */
+
+
+	// map interrupts to line 0, enable line
+	mcan_cans[0].m_can->ILS.reg = 0;
+	mcan_cans[0].m_can->ILE.reg = MCANX_ILE_EINT0;
+
+	// map interrupts to line 1, enable line
+	mcan_cans[1].m_can->ILS.reg = UINT32_C(127);
+	mcan_cans[1].m_can->ILE.reg = MCANX_ILE_EINT1;
 
 	mcan_cans[0].m_can->MRCFG.reg = MCANX_MRCFG_QOS_HIGH;
 	mcan_cans[1].m_can->MRCFG.reg = MCANX_MRCFG_QOS_HIGH;
@@ -252,7 +316,7 @@ extern uint32_t sc_board_identifier(void)
 	return id;
 }
 
-SC_RAMFUNC void CAN0_Handler(void)
+SC_RAMFUNC void TIM16_FDCAN_IT0_Handler(void)
 {
 	// LOG("CAN0 int\n");
 
@@ -260,7 +324,7 @@ SC_RAMFUNC void CAN0_Handler(void)
 }
 
 
-SC_RAMFUNC void CAN1_Handler(void)
+SC_RAMFUNC void TIM17_FDCAN_IT1_Handler(void)
 {
 	// LOG("CAN1 int\n");
 

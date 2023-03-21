@@ -107,6 +107,8 @@ static void can_init_module(void)
 
 	m_can_init_begin(CAN0);
 
+	same5x_can_init();
+
 	CAN0->MRCFG.reg = CAN_MRCFG_QOS_HIGH;
 
 	NVIC_SetPriority(CAN0_IRQn, SC_ISR_PRIORITY);

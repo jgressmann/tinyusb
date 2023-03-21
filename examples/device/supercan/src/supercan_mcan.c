@@ -155,9 +155,6 @@ void mcan_can_configure(uint8_t index)
 	//  | MCANX_RXF0C_F0OM; // FIFO 0 overwrite mode
 	can->RXESC.reg = MCANX_RXESC_RBDS_DATA64 + MCANX_RXESC_F0DS_DATA64;
 
-	// enable interrupt line 0
-	can->ILE.reg = MCANX_ILE_EINT0;
-
 	// wanted interrupts
 	can->IE.reg =
 		//
