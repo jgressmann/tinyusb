@@ -49,6 +49,14 @@ static inline void can_init(void)
 {
 	/* FDCAN2_RX PB0, FDCAN2_TX PB1, FDCAN1_RX PB8, FDCAN1_TX PB9 */
 	const uint32_t GPIO_MODE_AF3_FDCAN = 0x3; // DS13560 Rev 4, p. 58
+	uint8_t* FDCAN1_RAM = SRAMCAN_BASE;
+	uint8_t* FDCAN2_RAM = FDCAN1_RAM + 0x400;
+	const unsigned FLSSA_BASE = 0x0000;
+	const unsigned FLESA_BASE = 0x0070;
+	const unsigned F0SA_BASE = 0x00B0;
+	const unsigned F1SA_BASE = 0x188;
+	const unsigned EFSA_BASE = 0x0260;
+	const unsigned TBSA_BASE = 0x0278;
 
 	// enable clock to GPIO block B
 	RCC->IOPENR |= RCC_IOPENR_GPIOBEN;
@@ -109,6 +117,13 @@ static inline void can_init(void)
 	mcan_cans[1].led_status_green = LED_CAN1_STATUS_GREEN;
 	mcan_cans[0].led_status_red = LED_CAN0_STATUS_RED;
 	mcan_cans[1].led_status_red = LED_CAN1_STATUS_RED;
+	mcan_cans[0].hw_tx_fifo_ram = (struct mcan_tx_fifo_element *)(FDCAN1_RAM + TBSA_BASE);
+	mcan_cans[0].hw_txe_fifo_ram = (struct mcan_txe_fifo_element *)(FDCAN1_RAM + EFSA_BASE);
+	mcan_cans[0].hw_rx_fifo_ram = (struct mcan_rx_fifo_element *)(FDCAN1_RAM + F0SA_BASE);
+	mcan_cans[1].hw_tx_fifo_ram = (struct mcan_tx_fifo_element *)(FDCAN2_RAM + TBSA_BASE);
+	mcan_cans[1].hw_txe_fifo_ram = (struct mcan_txe_fifo_element *)(FDCAN2_RAM + EFSA_BASE);
+	mcan_cans[1].hw_rx_fifo_ram = (struct mcan_rx_fifo_element *)(FDCAN2_RAM + F0SA_BASE);
+
 
 
 	for (size_t j = 0; j < TU_ARRAY_SIZE(mcan_cans); ++j) {

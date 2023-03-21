@@ -1041,13 +1041,9 @@ SC_RAMFUNC static void can_poll(
 	uint8_t count = 0;
 	unsigned rx_lost = 0;
 
-	LOG("ch%u RXF0S=%08x TXEFS=%08x\n", index, can->m_can->RXF0S.reg, can->m_can->TXEFS.reg);
-
-
 	count = can->m_can->RXF0S.bit.F0FL;
 
 	if (count) {
-		LOG("ch%u rxfc=%u\n", index, count);
 // #ifdef SUPERCAN_DEBUG
 // 		uint32_t us = tsc - rx_ts_last[index];
 // 		rx_ts_last[index] = tsc;
