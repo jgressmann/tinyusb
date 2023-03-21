@@ -122,8 +122,8 @@ static void can_init_module(void)
 {
 	mcan_can_init();
 
-	mcan_cans[0].m_can = CAN0;
-	mcan_cans[1].m_can = CAN1;
+	mcan_cans[0].m_can = (MCanX*)CAN0;
+	mcan_cans[1].m_can = (MCanX*)CAN1;
 	mcan_cans[0].interrupt_id = CAN0_IRQn;
 	mcan_cans[1].interrupt_id = CAN1_IRQn;
 	mcan_cans[0].led_traffic = CAN0_TRAFFIC_LED;
@@ -138,8 +138,8 @@ static void can_init_module(void)
 		can->features = CAN_FEAT_PERM;
 	}
 
-	m_can_init_begin(CAN0);
-	m_can_init_begin(CAN1);
+	m_can_init_begin(mcan_cans[0].m_can);
+	m_can_init_begin(mcan_cans[1].m_can);
 
 	same5x_can_init();
 
@@ -197,7 +197,6 @@ static inline void leds_init(void)
 }
 
 #define POWER_LED LED_DEBUG_0
-#define USB_LED LED_DEBUG_3
 
 
 extern void sc_board_led_set(uint8_t index, bool on)

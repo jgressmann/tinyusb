@@ -11,6 +11,8 @@
 #define MCAN_HW_RX_FIFO_SIZE 64
 #define MCAN_HW_TX_FIFO_SIZE 32
 
+#define SKIP_INTEGER_LITERALS
+
 #include <supercan_mcan.h>
 
 

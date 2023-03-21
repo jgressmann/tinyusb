@@ -116,8 +116,8 @@ static inline void can_init(void)
 	m_can_init_begin(mcan_cans[0].m_can);
 	m_can_init_begin(mcan_cans[1].m_can);
 
-	/* interrupts,
-	 * map FDCAN1 to TIM16_FDCAN_IT0_Handler,
+	/* interrupts, map
+	 * FDCAN1 to TIM16_FDCAN_IT0_Handler,
 	 * FDCAN2 to TIM17_FDCAN_IT1_Handler
 	 */
 
@@ -231,8 +231,6 @@ static inline void leds_init(void)
 }
 
 #define POWER_LED LED_DEBUG_0
-#define USB_LED LED_DEBUG_3
-
 
 extern void sc_board_led_set(uint8_t index, bool on)
 {
@@ -337,7 +335,7 @@ extern uint32_t sc_board_identifier(void)
 
 SC_RAMFUNC void TIM16_FDCAN_IT0_IRQHandler(void)
 {
-	LOG("CAN0 int\n");
+	// LOG("CAN0 int\n");
 
 	mcan_can_int(0);
 }
@@ -345,7 +343,7 @@ SC_RAMFUNC void TIM16_FDCAN_IT0_IRQHandler(void)
 
 SC_RAMFUNC void TIM17_FDCAN_IT1_IRQHandler(void)
 {
-	LOG("CAN1 int\n");
+	// LOG("CAN1 int\n");
 
 	mcan_can_int(1);
 }
