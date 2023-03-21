@@ -148,12 +148,12 @@ void mcan_can_configure(uint8_t index)
 	can->TXEFC.reg = MCANX_TXEFC_EFSA((uint32_t) c->hw_txe_fifo_ram) | MCANX_TXEFC_EFS(MCAN_HW_TX_FIFO_SIZE);
 	// rx fifo0
 	can->RXF0C.reg = MCANX_RXF0C_F0SA((uint32_t) c->hw_rx_fifo_ram) | MCANX_RXF0C_F0S(MCAN_HW_RX_FIFO_SIZE);
-#endif
 
 	// configure for max message size
 	can->TXESC.reg = MCANX_TXESC_TBDS_DATA64;
 	//  | MCANX_RXF0C_F0OM; // FIFO 0 overwrite mode
 	can->RXESC.reg = MCANX_RXESC_RBDS_DATA64 + MCANX_RXESC_F0DS_DATA64;
+#endif
 
 	// wanted interrupts
 	can->IE.reg =
@@ -1041,10 +1041,13 @@ SC_RAMFUNC static void can_poll(
 	uint8_t count = 0;
 	unsigned rx_lost = 0;
 
+	LOG("ch%u RXF0S=%08x TXEFS=%08x\n", index, can->m_can->RXF0S.reg, can->m_can->TXEFS.reg);
+
 
 	count = can->m_can->RXF0S.bit.F0FL;
 
 	if (count) {
+		LOG("ch%u rxfc=%u\n", index, count);
 // #ifdef SUPERCAN_DEBUG
 // 		uint32_t us = tsc - rx_ts_last[index];
 // 		rx_ts_last[index] = tsc;

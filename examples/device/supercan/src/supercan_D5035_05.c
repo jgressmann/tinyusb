@@ -16,6 +16,9 @@
 #include <tusb.h>
 #include <hw/bsp/board.h>
 
+#include <m_can.h>
+
+
 
 #define CONF_CPU_FREQUENCY 64000000L
 #define USART_BAUDRATE     115200L
@@ -130,8 +133,8 @@ static inline void can_init(void)
 	mcan_cans[1].m_can->ILS.reg = UINT32_C(127);
 	mcan_cans[1].m_can->ILE.reg = MCANX_ILE_EINT1;
 
-	mcan_cans[0].m_can->MRCFG.reg = MCANX_MRCFG_QOS_HIGH;
-	mcan_cans[1].m_can->MRCFG.reg = MCANX_MRCFG_QOS_HIGH;
+	// mcan_cans[0].m_can->MRCFG.reg = MCANX_MRCFG_QOS_HIGH;
+	// mcan_cans[1].m_can->MRCFG.reg = MCANX_MRCFG_QOS_HIGH;
 
 	NVIC_SetPriority(mcan_cans[0].interrupt_id, SC_ISR_PRIORITY);
 	NVIC_SetPriority(mcan_cans[1].interrupt_id, SC_ISR_PRIORITY);
@@ -343,7 +346,7 @@ SC_RAMFUNC void TIM16_FDCAN_IT0_IRQHandler(void)
 
 SC_RAMFUNC void TIM17_FDCAN_IT1_IRQHandler(void)
 {
-	// LOG("CAN1 int\n");
+	LOG("CAN1 int\n");
 
 	mcan_can_int(1);
 }
