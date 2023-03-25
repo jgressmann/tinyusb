@@ -482,7 +482,7 @@ static void dcd_ep_ctr_rx_handler(uint32_t wIstr)
   {
     return;
   }
-  
+
   if((EPindex == 0U) && ((wEPRegVal & USB_EP_SETUP) != 0U)) /* Setup packet */
   {
     // The setup_received function uses memcpy, so this must first copy the setup data into
@@ -501,7 +501,6 @@ static void dcd_ep_ctr_rx_handler(uint32_t wIstr)
   }
   else
   {
-    // LOG("2\n");
     // Clear RX CTR interrupt flag
     if(EPindex != 0u)
     {
@@ -862,7 +861,7 @@ static void dcd_transmit_packet(xfer_ctl_t * xfer, uint16_t ep_ix)
 #if 0 // TODO support dcd_edpt_xfer_fifo API
   if (xfer->ff)
   {
-  // uint16_t oldAddr = *pcd_ep_tx_address_ptr(USB,ep_ix);
+    // uint16_t oldAddr = *pcd_ep_tx_address_ptr(USB,ep_ix);
     dcd_write_packet_memory_ff(xfer->ff, oldAddr, len);
   }
   else
@@ -1083,6 +1082,7 @@ static bool dcd_read_packet_memory(void *__restrict dst, uint16_t src, size_t wN
 
   return true;
 }
+
 
 #else // #if STM_FSDEV32
 

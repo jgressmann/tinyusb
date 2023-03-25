@@ -37,6 +37,7 @@
 // PMA_LENGTH is PMA buffer size in bytes.
 // On 512-byte devices, access with a stride of two words (use every other 16-bit address)
 // On 1024-byte devices, access with a stride of one word (use every 16-bit address)
+// On 2048-byte devices, access with a stride of one 32-bit word (use every 32-bit address)
 
 #ifndef PORTABLE_ST_STM32F0_DCD_STM32F0_FSDEV_PVT_ST_H_
 #define PORTABLE_ST_STM32F0_DCD_STM32F0_FSDEV_PVT_ST_H_
@@ -119,7 +120,7 @@
   // This includes L1x0, L1x1, L1x2, L4x2 and L4x3, G1x1, G1x3, and G1x4
 #endif
 
-
+/* 32-bit USB? */
 #ifndef STM_FSDEV32
   #define STM_FSDEV32 0
 #endif
@@ -163,7 +164,6 @@ static inline __IO uint32_t* pcd_ep_rx_ptr(USB_TypeDef * USBx, uint32_t bEpNum)
   return pcd_ep_base_pma(bEpNum) + 1;
 }
 
-
 static inline uint16_t pcd_ep_tx_address_get(USB_TypeDef * USBx, uint32_t bEpNum)
 {
   return (uint16_t)*pcd_ep_tx_ptr(USBx, bEpNum);
@@ -196,7 +196,6 @@ static inline void pcd_ep_tx_cnt_set(USB_TypeDef * USBx, uint32_t bEpNum, uint16
 
   *reg_ptr = reg;
 }
-
 
 static inline uint16_t pcd_ep_rx_address_get(USB_TypeDef * USBx, uint32_t bEpNum)
 {
@@ -248,11 +247,12 @@ typedef uint16_t usb_reg_t;
 // Volatile is also needed to prevent the optimizer from changing access to 32-bit (as 32-bit access is forbidden)
 static __IO uint16_t * const pma = (__IO uint16_t*)USB_PMAADDR;
 
-// prototypes
-static inline __IO uint16_t* pcd_ep_rx_cnt_ptr(USB_TypeDef * USBx, uint32_t bEpNum);
-static inline __IO uint16_t* pcd_ep_tx_cnt_ptr(USB_TypeDef * USBx, uint32_t bEpNum);
-static inline void pcd_set_endpoint(USB_TypeDef * USBx, uint32_t bEpNum, uint32_t wRegValue);
-
+/* SetENDPOINT */
+static inline void pcd_set_endpoint(USB_TypeDef * USBx, uint32_t bEpNum, uint32_t wRegValue)
+{
+  __O uint16_t *reg = (__O uint16_t *)((&USBx->EP0R) + bEpNum*2u);
+  *reg = (uint16_t)wRegValue;
+}
 
 /* GetENDPOINT */
 static inline uint16_t pcd_get_endpoint(USB_TypeDef * USBx, uint32_t bEpNum) {
@@ -287,6 +287,47 @@ static inline __IO uint16_t* pcd_ep_rx_cnt_ptr(USB_TypeDef * USBx, uint32_t bEpN
   return pcd_btable_word_ptr(USBx,(bEpNum)*4u + 3u);
 }
 
+static inline uint16_t pcd_ep_tx_address_get(USB_TypeDef * USBx, uint32_t bEpNum)
+{
+  return (uint16_t)*pcd_ep_tx_address_ptr(USBx, bEpNum);
+}
+
+// Pointers to the PMA table entries (using the ARM address space)
+static inline void pcd_ep_tx_address_set(USB_TypeDef * USBx, uint32_t bEpNum, uint16_t addr)
+{
+  *pcd_ep_tx_address_ptr(USBx, bEpNum) = addr;
+}
+
+static inline uint16_t pcd_ep_tx_cnt_get(USB_TypeDef * USBx, uint32_t bEpNum)
+{
+  return *pcd_ep_tx_cnt_ptr(USBx, bEpNum);
+}
+
+static inline void pcd_ep_tx_cnt_set(USB_TypeDef * USBx, uint32_t bEpNum, uint16_t value)
+{
+  *pcd_ep_tx_cnt_ptr(USBx, bEpNum) = value;
+}
+
+static inline uint16_t pcd_ep_rx_address_get(USB_TypeDef * USBx, uint32_t bEpNum)
+{
+  return *pcd_ep_rx_address_ptr(USBx, bEpNum);
+}
+
+// Pointers to the PMA table entries (using the ARM address space)
+static inline void pcd_ep_rx_address_set(USB_TypeDef * USBx, uint32_t bEpNum, uint16_t addr)
+{
+  *pcd_ep_rx_address_ptr(USBx, bEpNum) = addr;
+}
+
+static inline uint16_t pcd_ep_rx_cnt_get(USB_TypeDef * USBx, uint32_t bEpNum)
+{
+  return *pcd_ep_rx_cnt_ptr(USBx, bEpNum);
+}
+
+static inline void pcd_ep_rx_cnt_set(USB_TypeDef * USBx, uint32_t bEpNum, uint16_t value)
+{
+  *pcd_ep_rx_cnt_ptr(USBx, bEpNum) = value;
+}
 
 #endif // CFG_TUSB_MCU == OPT_MCU_STM32G0
 
@@ -311,16 +352,11 @@ static inline __IO uint16_t* pcd_ep_rx_cnt_ptr(USB_TypeDef * USBx, uint32_t bEpN
   */
 static inline uint32_t pcd_get_ep_tx_cnt(USB_TypeDef * USBx, uint32_t bEpNum)
 {
-  // __I uint16_t *regPtr = pcd_ep_tx_cnt_ptr(USBx, bEpNum);
-  // return *regPtr & 0x3ffU;
-
   return pcd_ep_tx_cnt_get(USBx, bEpNum) & 0x3ffU;
 }
 
 static inline uint32_t pcd_get_ep_rx_cnt(USB_TypeDef * USBx, uint32_t bEpNum)
 {
-  // __I uint16_t *regPtr = pcd_ep_rx_cnt_ptr(USBx, bEpNum);
-  // return *regPtr & 0x3ffU;
   return pcd_ep_rx_cnt_get(USBx, bEpNum) & 0x3ffU;
 }
 
@@ -408,17 +444,13 @@ static inline void pcd_set_ep_address(USB_TypeDef * USBx,  uint32_t bEpNum, uint
 
 static inline void pcd_set_ep_tx_cnt(USB_TypeDef * USBx,  uint32_t bEpNum, uint32_t wCount)
 {
-  //*pcd_ep_tx_cnt_ptr(USBx, bEpNum) = (uint16_t)wCount;
   pcd_ep_tx_cnt_set(USBx, bEpNum, wCount);
 }
 
 static inline void pcd_set_ep_rx_cnt(USB_TypeDef * USBx,  uint32_t bEpNum, uint32_t wCount)
 {
-  // __IO uint16_t *pdwReg = pcd_ep_rx_cnt_ptr((USBx),(bEpNum));
-  // pcd_set_ep_cnt_rx_reg(pdwReg, wCount);
   pcd_ep_rx_cnt_set(USBx, bEpNum, pcd_ep_cnt_compute(wCount));
 }
-
 
 /**
   * @brief  sets the status for tx transfer (bits STAT_TX[1:0]).
@@ -427,7 +459,7 @@ static inline void pcd_set_ep_rx_cnt(USB_TypeDef * USBx,  uint32_t bEpNum, uint3
   * @param  wState new state
   * @retval None
   */
-static inline void pcd_set_ep_tx_status(USB_DRD_TypeDef * USBx,  uint32_t bEpNum, uint32_t wState)
+static inline void pcd_set_ep_tx_status(USB_TypeDef * USBx,  uint32_t bEpNum, uint32_t wState)
 {
   uint32_t regVal = pcd_get_endpoint(USBx, bEpNum);
   regVal &= USB_EPTX_DTOGMASK;
@@ -454,7 +486,7 @@ static inline void pcd_set_ep_tx_status(USB_DRD_TypeDef * USBx,  uint32_t bEpNum
   * @retval None
   */
 
-static inline void pcd_set_ep_rx_status(USB_DRD_TypeDef * USBx,  uint32_t bEpNum, uint32_t wState)
+static inline void pcd_set_ep_rx_status(USB_TypeDef * USBx,  uint32_t bEpNum, uint32_t wState)
 {
   uint32_t regVal = pcd_get_endpoint(USBx, bEpNum);
   regVal &= USB_EPRX_DTOGMASK;
