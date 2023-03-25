@@ -12,7 +12,7 @@
 
 
 enum {
-	// software fifo sizes
+	// software fifo sizes (set to largest known M_CAN hardware fifo sizes)
 	SC_BOARD_CAN_TX_FIFO_SIZE = 32,
 	SC_BOARD_CAN_RX_FIFO_SIZE = 64,
 };
@@ -29,7 +29,7 @@ enum {
 	#error Define MCAN_HW_TX_FIFO_SIZE
 #endif
 
-#define MCAN_DEBUG_TXR 0
+#define MCAN_DEBUG_TXR 1
 
 #define TS_LO_MASK ((UINT32_C(1) << M_CAN_TS_COUNTER_BITS) - 1)
 #define TS_HI(ts) ((((uint32_t)(ts)) >> (32 - M_CAN_TS_COUNTER_BITS)) & TS_LO_MASK)
@@ -55,7 +55,7 @@ enum {
 struct mcan_tx_fifo_element {
 	__IO MCANX_TXBE_0_Type T0;
 	__IO MCANX_TXBE_1_Type T1;
-	uint8_t data[CANFD_ELEMENT_DATA_SIZE];
+	__IO uint8_t data[CANFD_ELEMENT_DATA_SIZE];
 };
 
 struct mcan_txe_fifo_element {
@@ -66,20 +66,26 @@ struct mcan_txe_fifo_element {
 struct mcan_rx_fifo_element {
 	__IO MCANX_RXF0E_0_Type R0;
 	__IO MCANX_RXF0E_1_Type R1;
-	uint8_t data[CANFD_ELEMENT_DATA_SIZE];
+	__IO uint8_t data[CANFD_ELEMENT_DATA_SIZE];
 };
 
 struct rx_frame {
-	__IO MCANX_RXF0E_0_Type R0;
-	__IO MCANX_RXF0E_1_Type R1;
-	__IO uint32_t ts;
+	// __IO MCANX_RXF0E_0_Type R0;
+	// __IO MCANX_RXF0E_1_Type R1;
+	// __IO uint32_t ts;
+	MCANX_RXF0E_0_Type R0;
+	MCANX_RXF0E_1_Type R1;
+	uint32_t ts;
 	uint8_t data[CANFD_ELEMENT_DATA_SIZE];
 };
 
 struct tx_frame {
-	__IO MCANX_TXEFE_0_Type T0;
-	__IO MCANX_TXEFE_1_Type T1;
-	__IO uint32_t ts;
+	// __IO MCANX_TXEFE_0_Type T0;
+	// __IO MCANX_TXEFE_1_Type T1;
+	// __IO uint32_t ts;
+	MCANX_TXEFE_0_Type T0;
+	MCANX_TXEFE_1_Type T1;
+	uint32_t ts;
 };
 
 

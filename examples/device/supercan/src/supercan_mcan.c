@@ -622,7 +622,14 @@ extern uint16_t sc_board_can_feat_conf(uint8_t index)
 SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
 {
 	struct mcan_can *can = &mcan_cans[index];
+#if MCAN_HW_TX_FIFO_SIZE == 32
 	bool available = can->m_can->TXFQS.bit.TFQPI - can->m_can->TXFQS.bit.TFGI < MCAN_HW_TX_FIFO_SIZE;
+#else
+	bool available = can->m_can->TXFQS.bit.TFQPI + (can->m_can->TXFQS.bit.TFQPI >= can->m_can->TXFQS.bit.TFGI ? 0 : MCAN_HW_TX_FIFO_SIZE) - can->m_can->TXFQS.bit.TFGI < MCAN_HW_TX_FIFO_SIZE;
+#endif
+
+	// LOG("ch%u TFQPI=%02x TFGI=%02x avail=%u, track id=%u CAN ID=%08x\n", index, can->m_can->TXFQS.bit.TFQPI, can->m_can->TXFQS.bit.TFGI, available, msg->track_id, msg->can_id);
+	// sc_dump_mem(msg->data, dlc_to_len(msg->dlc));
 
 	if (available) {
 		uint32_t id = msg->can_id;
@@ -649,16 +656,33 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 			;
 
 
-		can->hw_tx_fifo_ram[tx_pi_mod].T0 = t0;
-		can->hw_tx_fifo_ram[tx_pi_mod].T1 = t1;
+
 
 		if (likely(!(msg->flags & SC_CAN_FRAME_FLAG_RTR))) {
 			const unsigned can_frame_len = dlc_to_len(msg->dlc);
 
 			if (likely(can_frame_len)) {
-				memcpy(can->hw_tx_fifo_ram[tx_pi_mod].data, msg->data, can_frame_len);
+#if MCAN_MESSAGE_RAM_CONFIGURABLE
+				memcpy((void*)can->hw_tx_fifo_ram[tx_pi_mod].data, msg->data, can_frame_len);
+#else
+// 				uint32_t aligned[16];
+// 				volatile uint32_t* dst32 = (volatile uint32_t*)can->hw_tx_fifo_ram[tx_pi_mod].data;
+
+// 				memcpy(aligned, msg->data, can_frame_len);
+
+// 				unsigned words = (can_frame_len + 3) / 4;
+// 				LOG("words=%u\n", words);
+
+// 				for (unsigned i = 0, e = (can_frame_len + 3) / 4; i < e; ++e) {
+// 					*dst32++ = aligned[i];
+// 				}
+// 				// memcpy((void*)can->hw_tx_fifo_ram[tx_pi_mod].data, aligned, (can_frame_len + 3) / 4);
+#endif
 			}
 		}
+
+		can->hw_tx_fifo_ram[tx_pi_mod].T0 = t0;
+		can->hw_tx_fifo_ram[tx_pi_mod].T1 = t1;
 
 		can->m_can->TXBAR.reg = UINT32_C(1) << tx_pi_mod;
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
@@ -666,6 +690,8 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 
 		can->txr |= UINT32_C(1) << msg->track_id;
 #endif
+	} else {
+		LOG("ch0 no TX space\n", index);
 	}
 
 	return available;
@@ -684,7 +710,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 
 		if (can->rx_get_index != rx_pi) {
 			have_data_to_place = true;
-			__atomic_thread_fence(__ATOMIC_ACQUIRE);
+			// __atomic_thread_fence(__ATOMIC_ACQUIRE);
 
 			uint8_t const rx_gi = can->rx_get_index;
 			uint8_t const rx_gi_mod = rx_gi & (SC_BOARD_CAN_RX_FIFO_SIZE-1);
@@ -775,20 +801,22 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 		uint8_t const tx_pi = __atomic_load_n(&can->tx_put_index, __ATOMIC_ACQUIRE);
 
 		if (can->tx_get_index != tx_pi) {
-			have_data_to_place = true;
-			SC_DEBUG_ASSERT(tx_pi - can->tx_get_index <= MCAN_HW_TX_FIFO_SIZE);
-
 			uint8_t tx_gi = can->tx_get_index;
-			uint8_t tx_gi_mod = tx_gi & (MCAN_HW_TX_FIFO_SIZE-1);
+			uint8_t tx_gi_mod = tx_gi & (SC_BOARD_CAN_TX_FIFO_SIZE-1);
 			struct sc_msg_can_txr *msg = NULL;
+
+
+			have_data_to_place = true;
+			SC_DEBUG_ASSERT(tx_pi - can->tx_get_index <= SC_BOARD_CAN_TX_FIFO_SIZE);
+
+
+
 			if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
-				// LOG("1\n");
-				__atomic_thread_fence(__ATOMIC_ACQUIRE);
+				// __atomic_thread_fence(__ATOMIC_ACQUIRE);
 				done = false;
 
-
 				msg = (struct sc_msg_can_txr *)tx_ptr;
-				// usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*msg);
+
 				tx_ptr += sizeof(*msg);
 				result += sizeof(*msg);
 
@@ -798,6 +826,8 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 				msg->id = SC_MSG_CAN_TXR;
 				msg->len = sizeof(*msg);
 				msg->track_id = t1.bit.MM;
+
+				LOG("ch%u TXR track id=%u @ index %u\n", index, msg->track_id, tx_gi_mod);
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
 				SC_DEBUG_ASSERT(can->txr & (UINT32_C(1) << msg->track_id));
 
@@ -846,10 +876,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 					}
 				}
 
-				// LOG("2\n");
-
-				__atomic_store_n(&can->tx_get_index, tx_gi, __ATOMIC_RELEASE);
-				// LOG("3\n");
+				__atomic_store_n(&can->tx_get_index, tx_gi+1, __ATOMIC_RELEASE);
 			}
 		}
 	}
@@ -1116,7 +1143,7 @@ SC_RAMFUNC static void can_poll(
 					uint8_t can_frame_len = dlc_to_len(r1.bit.DLC);
 
 					if (likely(can_frame_len)) {
-						memcpy(can->rx_frames[rx_pi_mod].data, can->hw_rx_fifo_ram[hw_rx_gi_mod].data, can_frame_len);
+						memcpy(can->rx_frames[rx_pi_mod].data, (void*)can->hw_rx_fifo_ram[hw_rx_gi_mod].data, can_frame_len);
 					}
 				}
 
@@ -1143,7 +1170,10 @@ SC_RAMFUNC static void can_poll(
 
 	count = can->m_can->TXEFS.bit.EFFL;
 
+	LOG("ch%u TX EVs=%u\n", index, count);
+
 	if (count) {
+
 		// reverse loop reconstructs timestamps
 		uint32_t ts = tsc;
 		uint8_t hw_tx_gi_mod = 0;
@@ -1182,7 +1212,7 @@ SC_RAMFUNC static void can_poll(
 				can->tx_frames[tx_pi_mod].T0 = can->hw_txe_fifo_ram[hw_tx_gi_mod].T0;
 				can->tx_frames[tx_pi_mod].T1 = can->hw_txe_fifo_ram[hw_tx_gi_mod].T1;
 				can->tx_frames[tx_pi_mod].ts = tsv[hw_tx_gi_mod];
-				// LOG("ch%u tx place MM %u @ index %u\n", index, can->tx_frames[tx_pi_mod].T1.bit.MM, tx_pi_mod);
+				LOG("ch%u tx place MM %u @ index %u\n", index, can->tx_frames[tx_pi_mod].T1.bit.MM, tx_pi_mod);
 
 				//__atomic_store_n(&can->tx_put_index, target_put_index, __ATOMIC_RELEASE);
 				//++can->tx_put_index;
@@ -1198,7 +1228,7 @@ SC_RAMFUNC static void can_poll(
 
 		// removes frames from tx fifo
 		can->m_can->TXEFA.reg = MCANX_TXEFA_EFAI(hw_tx_gi_mod);
-        // LOG("ch%u poll tx count=%u done\n", index, count);
+		// LOG("ch%u poll tx count=%u done\n", index, count);
 
 		// atomic update of tx put index
 		__atomic_store_n(&can->tx_put_index, tx_pi, __ATOMIC_RELEASE);
