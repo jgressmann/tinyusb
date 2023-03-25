@@ -156,23 +156,25 @@ void mcan_can_configure(uint8_t index)
 #endif
 
 	// wanted interrupts
-	can->IE.reg =
-		//
+	can->IE =
 		0
-		| MCANX_IE_TSWE   // time stamp counter wrap
-		| MCANX_IE_BOE    // bus off
-		| MCANX_IE_EWE    // error warning
-		| MCANX_IE_EPE    // error passive
-		| MCANX_IE_RF0NE  // new message in rx fifo0
-		| MCANX_IE_RF0LE  // message lost b/c fifo0 was full
-		| MCANX_IE_PEAE   // proto error in arbitration phase
-		| MCANX_IE_PEDE   // proto error in data phase
+		| MCANX_IR_TSW    // time stamp counter wrap
+		| MCANX_IR_BO     // bus off
+		| MCANX_IR_EW     // error warning
+		| MCANX_IR_EP     // error passive
+		| MCANX_IR_RF0N   // new message in rx fifo0
+		| MCANX_IR_RF0L   // message lost b/c fifo0 was full
+		| MCANX_IR_PEA    // proto error in arbitration phase
+		| MCANX_IR_PED    // proto error in data phase
 		// | MCANX_IE_ELOE   // error logging overflow
-	 	| MCANX_IE_TEFNE  // new message in tx event fifo
-		| MCANX_IE_MRAFE  // message RAM access failure
-		| MCANX_IE_BEUE   // bit error uncorrected, sets CCCR.INIT
-		| MCANX_IE_BECE   // bit error corrected
-		// | MCANX_IE_RF0WE
+	 	| MCANX_IR_TEFN   // new message in tx event fifo
+		| MCANX_IR_MRAF   // message RAM access failure
+#if defined(MCANX_IR_BEU) && MCANX_IR_BEU
+		| MCANX_IR_BEU    // bit error uncorrected, sets CCCR.INIT
+#endif
+#if defined(MCANX_IR_BEC) && MCANX_IR_BEC
+		| MCANX_IR_BEC    // bit error corrected
+#endif
 	;
 
 	m_can_conf_end(can);
@@ -349,43 +351,47 @@ SC_RAMFUNC void mcan_can_int(uint8_t index)
 
 	uint32_t events = 0;
 
-	// LOG("IE=%08lx IR=%08lx\n", can->m_can->IE.reg, can->m_can->IR.reg);
+	// LOG("IE=%08lx IR=%08lx\n", can->m_can->IE, can->m_can->IR);
 	// bool notify_usb = false;
 
 	// LOG(".");
 
-	MCANX_IR_Type ir = can->m_can->IR;
+	uint32_t ir = can->m_can->IR;
 
 	// clear all interrupts
 	can->m_can->IR = ir;
 
-	if (ir.bit.TSW) {
+	if (ir & MCANX_IR_TSW) {
 		// always notify here to enable the host to keep track of CAN bus time
 		++events;
 	}
 
 
-	if (unlikely(ir.bit.MRAF)) {
-		LOG("CAN%u MRAF\n", index);
+	if (unlikely(ir & MCANX_IR_MRAF)) {
+		LOG("ch%u MRAF\n", index);
 		SC_ISR_ASSERT(false && "MRAF");
 		NVIC_SystemReset();
 	}
 
-	if (unlikely(ir.bit.BEU)) {
-		LOG("CAN%u BEU\n", index);
+#if defined(MCANX_IR_BEU) && MCANX_IR_BEU
+	if (unlikely(ir & MCANX_IR_BEU)) {
+		LOG("ch%u BEU\n", index);
 		SC_ISR_ASSERT(false && "BEU");
 		NVIC_SystemReset();
 	}
+#endif
 
-	if (unlikely(ir.bit.BEC)) {
-		LOG("CAN%u BEC\n", index);
+#if defined(MCANX_IR_BEC) && MCANX_IR_BEC
+	if (unlikely(ir & MCANX_IR_BEC)) {
+		LOG("ch%u BEC\n", index);
 	}
+#endif
 
 	// Do this late to increase likelyhood that the counter
 	// is ready right away.
 	const uint32_t tsc = sc_board_can_ts_wait(index);
 
-	if (unlikely(ir.bit.RF0L)) {
+	if (unlikely(ir & MCANX_IR_RF0L)) {
 		sc_can_status status;
 
 		status.type = SC_CAN_STATUS_FIFO_TYPE_RX_LOST;
@@ -398,14 +404,10 @@ SC_RAMFUNC void mcan_can_int(uint8_t index)
 
 	can_int_update_status(index, &events, tsc);
 
-	if (ir.reg & (MCANX_IR_TEFN | MCANX_IR_RF0N)) {
-
-		// LOG("CAN%u RX/TX\n", index);
+	if (ir & (MCANX_IR_TEFN | MCANX_IR_RF0N)) {
+		// LOG("ch%u RX/TX\n", index);
 		can_poll(index, &events, tsc);
 	}
-
-	// msg->hw_tx_fifo_ram_size = SC_BOARD_MCANX_hw_tx_fifo_ram_SIZE - can->m_can->TXFQS.bit.TFFL;
-	// msg->rx_fifo_size = can->m_can->RXF0S.bit.F0FL;
 
 	if (likely(events)) {
 		// LOG(">");
@@ -552,10 +554,10 @@ static void can_on(uint8_t index)
 
 			can->m_can->TXBAR.reg = UINT32_C(1) << put_index;
 
-			while ((can->m_can->IR.reg & (MCANX_IR_RF0N)) != (MCANX_IR_RF0N));
+			while ((can->m_can->IR & (MCANX_IR_RF0N)) != (MCANX_IR_RF0N));
 
 			// clear interrupts
-			can->m_can->IR.reg = ~0;
+			can->m_can->IR = ~0;
 
 			// LOG("ch%u RXF0S=%x TXFQS=%x TXEFS=%x\n", index, can->m_can->RXF0S.reg, can->m_can->TXFQS.reg, can->m_can->TXEFS.reg);
 
@@ -827,7 +829,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 				msg->len = sizeof(*msg);
 				msg->track_id = t1.bit.MM;
 
-				LOG("ch%u TXR track id=%u @ index %u\n", index, msg->track_id, tx_gi_mod);
+				// LOG("ch%u TXR track id=%u @ index %u\n", index, msg->track_id, tx_gi_mod);
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
 				SC_DEBUG_ASSERT(can->txr & (UINT32_C(1) << msg->track_id));
 
@@ -1170,10 +1172,7 @@ SC_RAMFUNC static void can_poll(
 
 	count = can->m_can->TXEFS.bit.EFFL;
 
-	LOG("ch%u TX EVs=%u\n", index, count);
-
 	if (count) {
-
 		// reverse loop reconstructs timestamps
 		uint32_t ts = tsc;
 		uint8_t hw_tx_gi_mod = 0;
@@ -1212,7 +1211,7 @@ SC_RAMFUNC static void can_poll(
 				can->tx_frames[tx_pi_mod].T0 = can->hw_txe_fifo_ram[hw_tx_gi_mod].T0;
 				can->tx_frames[tx_pi_mod].T1 = can->hw_txe_fifo_ram[hw_tx_gi_mod].T1;
 				can->tx_frames[tx_pi_mod].ts = tsv[hw_tx_gi_mod];
-				LOG("ch%u tx place MM %u @ index %u\n", index, can->tx_frames[tx_pi_mod].T1.bit.MM, tx_pi_mod);
+				// LOG("ch%u tx place MM %u @ index %u\n", index, can->tx_frames[tx_pi_mod].T1.bit.MM, tx_pi_mod);
 
 				//__atomic_store_n(&can->tx_put_index, target_put_index, __ATOMIC_RELEASE);
 				//++can->tx_put_index;

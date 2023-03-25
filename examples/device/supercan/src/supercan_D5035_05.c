@@ -144,11 +144,11 @@ static inline void can_init(void)
 
 
 	// map interrupts to line 0, enable line
-	mcan_cans[0].m_can->ILS.reg = 0;
+	mcan_cans[0].m_can->ILS = 0;
 	mcan_cans[0].m_can->ILE.reg = MCANX_ILE_EINT0;
 
 	// map interrupts to line 1, enable line
-	mcan_cans[1].m_can->ILS.reg = UINT32_C(127);
+	mcan_cans[1].m_can->ILS = UINT32_C(127);
 	mcan_cans[1].m_can->ILE.reg = MCANX_ILE_EINT1;
 
 	// mcan_cans[0].m_can->MRCFG.reg = MCANX_MRCFG_QOS_HIGH;

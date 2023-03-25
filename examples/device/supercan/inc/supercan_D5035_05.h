@@ -66,20 +66,61 @@ SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status);
 #define MCAN_HW_RX_FIFO_SIZE 3
 #define MCAN_HW_TX_FIFO_SIZE 3
 
-#if !(defined(__ASSEMBLY__) || defined(__IAR_SYSTEMS_ASM__))
-typedef volatile       uint32_t RoReg;   /**< Read only 32-bit register (volatile const unsigned int) */
-typedef volatile       uint16_t RoReg16; /**< Read only 16-bit register (volatile const unsigned int) */
-typedef volatile       uint8_t  RoReg8;  /**< Read only  8-bit register (volatile const unsigned int) */
-// typedef volatile       uint32_t WoReg;   /**< Write only 32-bit register (volatile unsigned int) */
-// typedef volatile       uint16_t WoReg16; /**< Write only 16-bit register (volatile unsigned int) */
-// typedef volatile       uint8_t  WoReg8;  /**< Write only  8-bit register (volatile unsigned int) */
-// typedef volatile       uint32_t RwReg;   /**< Read-Write 32-bit register (volatile unsigned int) */
-// typedef volatile       uint16_t RwReg16; /**< Read-Write 16-bit register (volatile unsigned int) */
-// typedef volatile       uint8_t  RwReg8;  /**< Read-Write  8-bit register (volatile unsigned int) */
-#endif
 
 
 #include <supercan_mcan.h>
+
+
+#define MCANX_IR_RF0N_Pos             0            /**< \brief (MCANX_IR) Rx FIFO 0 New Message */
+#define MCANX_IR_RF0N                 (_U_(0x1) << MCANX_IR_RF0N_Pos)
+#define MCANX_IR_RF0F_Pos             1            /**< \brief (MCANX_IR) Rx FIFO 0 Full */
+#define MCANX_IR_RF0F                 (_U_(0x1) << MCANX_IR_RF0F_Pos)
+#define MCANX_IR_RF0L_Pos             2            /**< \brief (MCANX_IR) Rx FIFO 0 Message Lost */
+#define MCANX_IR_RF0L                 (_U_(0x1) << MCANX_IR_RF0L_Pos)
+#define MCANX_IR_RF1N_Pos             3            /**< \brief (MCANX_IR) Rx FIFO 1 New Message */
+#define MCANX_IR_RF1N                 (_U_(0x1) << MCANX_IR_RF1N_Pos)
+#define MCANX_IR_RF1F_Pos             4            /**< \brief (MCANX_IR) Rx FIFO 1 FIFO Full */
+#define MCANX_IR_RF1F                 (_U_(0x1) << MCANX_IR_RF1F_Pos)
+#define MCANX_IR_RF1L_Pos             5            /**< \brief (MCANX_IR) Rx FIFO 1 Message Lost */
+#define MCANX_IR_RF1L                 (_U_(0x1) << MCANX_IR_RF1L_Pos)
+#define MCANX_IR_HPM_Pos              6            /**< \brief (MCANX_IR) High Priority Message */
+#define MCANX_IR_HPM                  (_U_(0x1) << MCANX_IR_HPM_Pos)
+#define MCANX_IR_TC_Pos               7            /**< \brief (MCANX_IR) Timestamp Completed */
+#define MCANX_IR_TC                   (_U_(0x1) << MCANX_IR_TC_Pos)
+#define MCANX_IR_TCF_Pos              8            /**< \brief (MCANX_IR) Transmission Cancellation Finished */
+#define MCANX_IR_TCF                  (_U_(0x1) << MCANX_IR_TCF_Pos)
+#define MCANX_IR_TFE_Pos              9            /**< \brief (MCANX_IR) Tx FIFO Empty */
+#define MCANX_IR_TFE                  (_U_(0x1) << MCANX_IR_TFE_Pos)
+#define MCANX_IR_TEFN_Pos             10           /**< \brief (MCANX_IR) Tx Event FIFO New Entry */
+#define MCANX_IR_TEFN                 (_U_(0x1) << MCANX_IR_TEFN_Pos)
+#define MCANX_IR_TEFF_Pos             11           /**< \brief (MCANX_IR) Tx Event FIFO Full */
+#define MCANX_IR_TEFF                 (_U_(0x1) << MCANX_IR_TEFF_Pos)
+#define MCANX_IR_TEFL_Pos             12           /**< \brief (MCANX_IR) Tx Event FIFO Element Lost */
+#define MCANX_IR_TEFL                 (_U_(0x1) << MCANX_IR_TEFL_Pos)
+#define MCANX_IR_TSW_Pos              13           /**< \brief (MCANX_IR) Timestamp Wraparound */
+#define MCANX_IR_TSW                  (_U_(0x1) << MCANX_IR_TSW_Pos)
+#define MCANX_IR_MRAF_Pos             14           /**< \brief (MCANX_IR) Message RAM Access Failure */
+#define MCANX_IR_MRAF                 (_U_(0x1) << MCANX_IR_MRAF_Pos)
+#define MCANX_IR_TOO_Pos              15           /**< \brief (MCANX_IR) Timeout Occurred */
+#define MCANX_IR_TOO                  (_U_(0x1) << MCANX_IR_TOO_Pos)
+#define MCANX_IR_ELO_Pos              16           /**< \brief (MCANX_IR) Error Logging Overflow */
+#define MCANX_IR_ELO                  (_U_(0x1) << MCANX_IR_ELO_Pos)
+#define MCANX_IR_EP_Pos               17           /**< \brief (MCANX_IR) Error Passive */
+#define MCANX_IR_EP                   (_U_(0x1) << MCANX_IR_EP_Pos)
+#define MCANX_IR_EW_Pos               18           /**< \brief (MCANX_IR) Warning Status */
+#define MCANX_IR_EW                   (_U_(0x1) << MCANX_IR_EW_Pos)
+#define MCANX_IR_BO_Pos               19           /**< \brief (MCANX_IR) Bus_Off Status */
+#define MCANX_IR_BO                   (_U_(0x1) << MCANX_IR_BO_Pos)
+#define MCANX_IR_WDI_Pos              20           /**< \brief (MCANX_IR) Watchdog Interrupt */
+#define MCANX_IR_WDI                  (_U_(0x1) << MCANX_IR_WDI_Pos)
+#define MCANX_IR_PEA_Pos              21           /**< \brief (MCANX_IR) Protocol Error in Arbitration Phase */
+#define MCANX_IR_PEA                  (_U_(0x1) << MCANX_IR_PEA_Pos)
+#define MCANX_IR_PED_Pos              22           /**< \brief (MCANX_IR) Protocol Error in Data Phase */
+#define MCANX_IR_PED                  (_U_(0x1) << MCANX_IR_PED_Pos)
+#define MCANX_IR_ARA_Pos              23           /**< \brief (MCANX_IR) Access to Reserved Address */
+#define MCANX_IR_ARA                  (_U_(0x1) << MCANX_IR_ARA_Pos)
+#define MCANX_IR_MASK                 _U_(0x00FFFFFF) /**< \brief (MCANX_IR) MASK Register */
+
 
 
 struct MCanX {
@@ -100,9 +141,9 @@ struct MCanX {
   __I  MCANX_PSR_Type              PSR;         /**< \brief Offset: 0x44 (R/  32) Protocol Status */
   __IO MCANX_TDCR_Type             TDCR;        /**< \brief Offset: 0x48 (R/W 32) Extended ID Filter Configuration */
        uint8_t                     Reserved2[0x4];
-  __IO MCANX_IR_Type               IR;          /**< \brief Offset: 0x50 (R/W 32) Interrupt */
-  __IO MCANX_IE_Type               IE;          /**< \brief Offset: 0x54 (R/W 32) Interrupt Enable */
-  __IO MCANX_ILS_Type              ILS;         /**< \brief Offset: 0x58 (R/W 32) Interrupt Line Select */
+  __IO uint32_t                    IR;          /**< \brief Offset: 0x50 (R/W 32) Interrupt */
+  __IO uint32_t                    IE;          /**< \brief Offset: 0x54 (R/W 32) Interrupt Enable */
+  __IO uint32_t                    ILS;         /**< \brief Offset: 0x58 (R/W 32) Interrupt Line Select */
   __IO MCANX_ILE_Type              ILE;         /**< \brief Offset: 0x5C (R/W 32) Interrupt Line Enable */
        uint8_t                     Reserved3[0x20];
   __IO MCANX_GFC_Type              GFC;         /**< \brief Offset: 0x80 (R/W 32) Global Filter Configuration */
