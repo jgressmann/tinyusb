@@ -53,9 +53,6 @@ enum {
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status);
 
-// #undef sc_board_name
-// extern char const* sc_board_name(void);
-
 #define sc_board_can_ts_request(index)
 #define sc_board_can_ts_wait(index) (TIM2->CNT)
 
