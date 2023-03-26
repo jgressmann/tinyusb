@@ -657,8 +657,8 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 			| (((msg->flags & SC_CAN_FRAME_FLAG_BRS) == SC_CAN_FRAME_FLAG_BRS) << MCANX_TXBE_1_BRS_Pos)
 			;
 
-
-
+		can->hw_tx_fifo_ram[tx_pi_mod].T0 = t0;
+		can->hw_tx_fifo_ram[tx_pi_mod].T1 = t1;
 
 		if (likely(!(msg->flags & SC_CAN_FRAME_FLAG_RTR))) {
 			const unsigned can_frame_len = dlc_to_len(msg->dlc);
@@ -667,33 +667,32 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 #if MCAN_MESSAGE_RAM_CONFIGURABLE
 				memcpy((void*)can->hw_tx_fifo_ram[tx_pi_mod].data, msg->data, can_frame_len);
 #else
-// 				uint32_t aligned[16];
-// 				volatile uint32_t* dst32 = (volatile uint32_t*)can->hw_tx_fifo_ram[tx_pi_mod].data;
+				// too bad, we have to align :/
+				uint32_t aligned[16];
+				__IO uint32_t* dst = can->hw_tx_fifo_ram[tx_pi_mod].data;
+				uint32_t const* src = aligned;
 
-// 				memcpy(aligned, msg->data, can_frame_len);
+				memcpy(aligned, msg->data, can_frame_len);
 
-// 				unsigned words = (can_frame_len + 3) / 4;
-// 				LOG("words=%u\n", words);
-
-// 				for (unsigned i = 0, e = (can_frame_len + 3) / 4; i < e; ++e) {
-// 					*dst32++ = aligned[i];
-// 				}
-// 				// memcpy((void*)can->hw_tx_fifo_ram[tx_pi_mod].data, aligned, (can_frame_len + 3) / 4);
+				for (unsigned i = 0, e = (can_frame_len + 3) / 4; i < e; ++i) {
+					*dst++ = *src++;
+				}
 #endif
 			}
 		}
 
-		can->hw_tx_fifo_ram[tx_pi_mod].T0 = t0;
-		can->hw_tx_fifo_ram[tx_pi_mod].T1 = t1;
+
 
 		can->m_can->TXBAR.reg = UINT32_C(1) << tx_pi_mod;
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
 		SC_DEBUG_ASSERT(!(can->txr & (UINT32_C(1) << msg->track_id)));
 
 		can->txr |= UINT32_C(1) << msg->track_id;
+
+		LOG("ch%u TXR q %08x\n", index, can->txr);
 #endif
 	} else {
-		LOG("ch0 no TX space\n", index);
+		LOG("ch%u TX no space\n", index);
 	}
 
 	return available;
@@ -834,6 +833,8 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 				SC_DEBUG_ASSERT(can->txr & (UINT32_C(1) << msg->track_id));
 
 				can->txr &= ~(UINT32_C(1) << msg->track_id);
+
+				LOG("ch%u TXR r %08x\n", index, can->txr);
 #endif
 				uint32_t ts = can->tx_frames[tx_gi_mod].ts;
 	// #if SUPERCAN_DEBUG
@@ -1212,6 +1213,7 @@ SC_RAMFUNC static void can_poll(
 				can->tx_frames[tx_pi_mod].T1 = can->hw_txe_fifo_ram[hw_tx_gi_mod].T1;
 				can->tx_frames[tx_pi_mod].ts = tsv[hw_tx_gi_mod];
 				// LOG("ch%u tx place MM %u @ index %u\n", index, can->tx_frames[tx_pi_mod].T1.bit.MM, tx_pi_mod);
+				LOG("ch%u TXR e %08x\n", index, UINT32_C(1) << can->tx_frames[tx_pi_mod].T1.bit.MM);
 
 				//__atomic_store_n(&can->tx_put_index, target_put_index, __ATOMIC_RELEASE);
 				//++can->tx_put_index;

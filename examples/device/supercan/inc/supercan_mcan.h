@@ -37,7 +37,7 @@ enum {
 
 #define SPAM 0
 
-#define CANFD_ELEMENT_DATA_SIZE 64
+#define CANFD_ELEMENT_DATA_SIZE 16
 
 enum {
 	CAN_FEAT_PERM = SC_FEATURE_FLAG_TXR,
@@ -55,7 +55,7 @@ enum {
 struct mcan_tx_fifo_element {
 	__IO MCANX_TXBE_0_Type T0;
 	__IO MCANX_TXBE_1_Type T1;
-	__IO uint8_t data[CANFD_ELEMENT_DATA_SIZE];
+	__IO uint32_t data[CANFD_ELEMENT_DATA_SIZE];
 };
 
 struct mcan_txe_fifo_element {
@@ -66,7 +66,7 @@ struct mcan_txe_fifo_element {
 struct mcan_rx_fifo_element {
 	__IO MCANX_RXF0E_0_Type R0;
 	__IO MCANX_RXF0E_1_Type R1;
-	__IO uint8_t data[CANFD_ELEMENT_DATA_SIZE];
+	__IO uint32_t data[CANFD_ELEMENT_DATA_SIZE];
 };
 
 struct rx_frame {
@@ -76,7 +76,7 @@ struct rx_frame {
 	MCANX_RXF0E_0_Type R0;
 	MCANX_RXF0E_1_Type R1;
 	uint32_t ts;
-	uint8_t data[CANFD_ELEMENT_DATA_SIZE];
+	uint32_t data[CANFD_ELEMENT_DATA_SIZE];
 };
 
 struct tx_frame {
