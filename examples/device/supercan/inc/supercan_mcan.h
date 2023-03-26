@@ -9,11 +9,12 @@
 #include <supercan_mcanx.h>
 
 
+#define _SC_BOARD_CAN_TX_FIFO_SIZE 32
 
 
 enum {
 	// software fifo sizes (set to largest known M_CAN hardware fifo sizes)
-	SC_BOARD_CAN_TX_FIFO_SIZE = 32,
+	SC_BOARD_CAN_TX_FIFO_SIZE = _SC_BOARD_CAN_TX_FIFO_SIZE,
 	SC_BOARD_CAN_RX_FIFO_SIZE = 64,
 };
 
@@ -79,7 +80,7 @@ struct rx_frame {
 	uint32_t data[CANFD_ELEMENT_DATA_SIZE];
 };
 
-struct tx_frame {
+struct txe_frame {
 	// __IO MCANX_TXEFE_0_Type T0;
 	// __IO MCANX_TXEFE_1_Type T1;
 	// __IO uint32_t ts;
@@ -88,6 +89,11 @@ struct tx_frame {
 	uint32_t ts;
 };
 
+struct txq_frame {
+	MCANX_TXEFE_0_Type T0;
+	MCANX_TXEFE_1_Type T1;
+	uint32_t data[CANFD_ELEMENT_DATA_SIZE];
+};
 
 
 struct mcan_can {
@@ -100,8 +106,12 @@ struct mcan_can {
 	struct mcan_txe_fifo_element *hw_txe_fifo_ram;
 	struct mcan_rx_fifo_element *hw_rx_fifo_ram;
 #endif
-	struct rx_frame rx_frames[SC_BOARD_CAN_RX_FIFO_SIZE];
-	struct tx_frame tx_frames[SC_BOARD_CAN_TX_FIFO_SIZE];
+	struct rx_frame rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
+	struct txe_frame txe_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
+#if MCAN_HW_TX_FIFO_SIZE < _SC_BOARD_CAN_TX_FIFO_SIZE
+	// queue frames that don't fit in hardware fifo
+	struct txq_frame tx_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
+#endif
 	sc_can_bit_timing nm;
 	sc_can_bit_timing dt;
 	MCanX *m_can;
@@ -120,8 +130,12 @@ struct mcan_can {
 	uint8_t led_traffic;
 	uint8_t rx_get_index; // NOT an index, uses full range of type
 	uint8_t rx_put_index; // NOT an index, uses full range of type
+	uint8_t txe_get_index; // NOT an index, uses full range of type
+	uint8_t txe_put_index; // NOT an index, uses full range of type
+#if MCAN_HW_TX_FIFO_SIZE < _SC_BOARD_CAN_TX_FIFO_SIZE
 	uint8_t tx_get_index; // NOT an index, uses full range of type
 	uint8_t tx_put_index; // NOT an index, uses full range of type
+#endif
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
 	uint32_t txr; 				// requests from USB, set when in, clear when out
 	volatile uint32_t int_txe;	// expected TXEs, set in USB, cleared in IRQ handler
