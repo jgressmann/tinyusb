@@ -156,8 +156,7 @@ void mcan_can_configure(uint8_t index)
 #endif
 
 	// wanted interrupts
-	can->IE =
-		0
+	can->IE = 0
 		| MCANX_IR_TSW    // time stamp counter wrap
 		| MCANX_IR_BO     // bus off
 		| MCANX_IR_EW     // error warning
@@ -1285,24 +1284,21 @@ SC_RAMFUNC static void can_poll(
 
 			uint8_t tx_pi_mod = tx_pi % SC_BOARD_CAN_TX_FIFO_SIZE;
 
-			//
-			// if (unlikely(target_put_index == can->rx_get_index)) {
-			// 	__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
-			// } else {
-				can->txe_fifo[tx_pi_mod].T0 = can->hw_txe_fifo_ram[hw_tx_gi_mod].T0;
-				can->txe_fifo[tx_pi_mod].T1 = can->hw_txe_fifo_ram[hw_tx_gi_mod].T1;
-				can->txe_fifo[tx_pi_mod].ts = tsv[hw_tx_gi_mod];
-				// LOG("ch%u tx place MM %u @ index %u\n", index, can->txe_fifo[tx_pi_mod].T1.bit.MM, tx_pi_mod);
+			// We only queue to hw TX fifo iff there is space, thus there
+			// is ALWAYS space for TXE.
 
 
-				//__atomic_store_n(&can->txe_put_index, target_put_index, __ATOMIC_RELEASE);
-				//++can->txe_put_index;
-				++tx_pi;
-			// }
+			can->txe_fifo[tx_pi_mod].T0 = can->hw_txe_fifo_ram[hw_tx_gi_mod].T0;
+			can->txe_fifo[tx_pi_mod].T1 = can->hw_txe_fifo_ram[hw_tx_gi_mod].T1;
+			can->txe_fifo[tx_pi_mod].ts = tsv[hw_tx_gi_mod];
+			// LOG("ch%u tx place MM %u @ index %u\n", index, can->txe_fifo[tx_pi_mod].T1.bit.MM, tx_pi_mod);
+
+
+			++tx_pi;
+
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
 
 #if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
-			// LOG("ch%u TXR q %08x\n", index, can->txr);
 			__atomic_and_fetch(&can->int_txe, ~(UINT32_C(1) << can->txe_fifo[tx_pi_mod].T1.bit.MM), __ATOMIC_ACQ_REL);
 #else
 			taskENTER_CRITICAL();
