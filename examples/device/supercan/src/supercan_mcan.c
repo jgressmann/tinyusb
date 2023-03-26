@@ -355,10 +355,6 @@ SC_RAMFUNC void mcan_can_int(uint8_t index)
 
 	// LOG(".");
 
-	for (int i = 0; i < 64000; ++i) {
-		__asm__ __volatile__("nop");
-	}
-
 	uint32_t ir = can->m_can->IR;
 
 	// clear all interrupts
