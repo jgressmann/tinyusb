@@ -356,6 +356,10 @@ SC_RAMFUNC void mcan_can_int(uint8_t index)
 
 	// LOG(".");
 
+	for (int i = 0; i < 64000; ++i) {
+		__asm__ __volatile__("nop");
+	}
+
 	uint32_t ir = can->m_can->IR;
 
 	// clear all interrupts
@@ -424,7 +428,6 @@ SC_RAMFUNC void mcan_can_int(uint8_t index)
 #endif
 }
 
-
 static inline void can_set_state1(MCanX* can, IRQn_Type interrupt_id, bool enabled)
 {
 	if (enabled) {
@@ -444,10 +447,6 @@ static inline void can_set_state1(MCanX* can, IRQn_Type interrupt_id, bool enabl
 		// TXFQS, RXF0S are reset when CCCR.CCE is set (read as 0), DS60001507E-page 1207
 	}
 }
-
-
-
-
 
 static inline void can_reset_task_state_unsafe(uint8_t index)
 {
@@ -477,6 +476,7 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
 	can->txr = 0;
+	can->int_txe = 0;
 #endif
 
 	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
@@ -624,14 +624,8 @@ extern uint16_t sc_board_can_feat_conf(uint8_t index)
 SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
 {
 	struct mcan_can *can = &mcan_cans[index];
-#if MCAN_HW_TX_FIFO_SIZE == 32
-	bool available = can->m_can->TXFQS.bit.TFQPI - can->m_can->TXFQS.bit.TFGI < MCAN_HW_TX_FIFO_SIZE;
-#else
-	bool available = can->m_can->TXFQS.bit.TFQPI + (can->m_can->TXFQS.bit.TFQPI >= can->m_can->TXFQS.bit.TFGI ? 0 : MCAN_HW_TX_FIFO_SIZE) - can->m_can->TXFQS.bit.TFGI < MCAN_HW_TX_FIFO_SIZE;
-#endif
 
-	// LOG("ch%u TFQPI=%02x TFGI=%02x avail=%u, track id=%u CAN ID=%08x\n", index, can->m_can->TXFQS.bit.TFQPI, can->m_can->TXFQS.bit.TFGI, available, msg->track_id, msg->can_id);
-	// sc_dump_mem(msg->data, dlc_to_len(msg->dlc));
+	bool available = (can->m_can->TXFQS.reg & MCANX_TXFQS_TFQF) == 0;
 
 	if (available) {
 		uint32_t id = msg->can_id;
@@ -664,33 +658,49 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 			const unsigned can_frame_len = dlc_to_len(msg->dlc);
 
 			if (likely(can_frame_len)) {
+				if (likely(msg->flags & SC_CAN_FRAME_FLAG_TX4)) {
+					uint32_t const *src = (void const *)&msg->data[3];
+
+					for (unsigned i = 0, e = (can_frame_len + 3) / 4; i < e; ++i) {
+						can->hw_tx_fifo_ram[tx_pi_mod].data[i] = src[i];
+					}
+				} else {
 #if MCAN_MESSAGE_RAM_CONFIGURABLE
-				memcpy((void*)can->hw_tx_fifo_ram[tx_pi_mod].data, msg->data, can_frame_len);
+					memcpy((void*)can->hw_tx_fifo_ram[tx_pi_mod].data, msg->data, can_frame_len);
 #else
-				// too bad, we have to align :/
-				uint32_t aligned[16];
-				__IO uint32_t* dst = can->hw_tx_fifo_ram[tx_pi_mod].data;
-				uint32_t const* src = aligned;
+					// too bad, we have to align :/
+					uint32_t aligned[16];
+					__IO uint32_t* dst = can->hw_tx_fifo_ram[tx_pi_mod].data;
+					uint32_t const* src = aligned;
 
-				memcpy(aligned, msg->data, can_frame_len);
+					memcpy(aligned, msg->data, can_frame_len);
 
-				for (unsigned i = 0, e = (can_frame_len + 3) / 4; i < e; ++i) {
-					*dst++ = *src++;
-				}
+					for (unsigned i = 0, e = (can_frame_len + 3) / 4; i < e; ++i) {
+						*dst++ = *src++;
+					}
 #endif
+				}
 			}
 		}
 
 
-
-		can->m_can->TXBAR.reg = UINT32_C(1) << tx_pi_mod;
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
 		SC_DEBUG_ASSERT(!(can->txr & (UINT32_C(1) << msg->track_id)));
 
 		can->txr |= UINT32_C(1) << msg->track_id;
-
-		LOG("ch%u TXR q %08x\n", index, can->txr);
+		// LOG("ch%u TXR q %08x\n", index, can->txr);
+#if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
+		__atomic_or_fetch(&can->int_txe, UINT32_C(1) << msg->track_id, __ATOMIC_ACQ_REL);
+#else
+		taskENTER_CRITICAL();
+		can->int_txe |= UINT32_C(1) << msg->track_id;
+		taskEXIT_CRITICAL();
 #endif
+
+#endif
+
+		// mark transmission for hardware
+		can->m_can->TXBAR.reg = UINT32_C(1) << tx_pi_mod;
 	} else {
 		LOG("ch%u TX no space\n", index);
 	}
@@ -834,7 +844,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 
 				can->txr &= ~(UINT32_C(1) << msg->track_id);
 
-				LOG("ch%u TXR r %08x\n", index, can->txr);
+				// LOG("ch%u TXR r %08x\n", index, can->txr);
 #endif
 				uint32_t ts = can->tx_frames[tx_gi_mod].ts;
 	// #if SUPERCAN_DEBUG
@@ -1206,6 +1216,8 @@ SC_RAMFUNC static void can_poll(
 			hw_tx_gi_mod = (gio + i) % MCAN_HW_TX_FIFO_SIZE;
 
 			uint8_t tx_pi_mod = tx_pi % SC_BOARD_CAN_TX_FIFO_SIZE;
+
+			//
 			// if (unlikely(target_put_index == can->rx_get_index)) {
 			// 	__atomic_add_fetch(&can->rx_lost, 1, __ATOMIC_ACQ_REL);
 			// } else {
@@ -1213,12 +1225,26 @@ SC_RAMFUNC static void can_poll(
 				can->tx_frames[tx_pi_mod].T1 = can->hw_txe_fifo_ram[hw_tx_gi_mod].T1;
 				can->tx_frames[tx_pi_mod].ts = tsv[hw_tx_gi_mod];
 				// LOG("ch%u tx place MM %u @ index %u\n", index, can->tx_frames[tx_pi_mod].T1.bit.MM, tx_pi_mod);
-				LOG("ch%u TXR e %08x\n", index, UINT32_C(1) << can->tx_frames[tx_pi_mod].T1.bit.MM);
+
 
 				//__atomic_store_n(&can->tx_put_index, target_put_index, __ATOMIC_RELEASE);
 				//++can->tx_put_index;
 				++tx_pi;
 			// }
+#if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
+
+#if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
+			// LOG("ch%u TXR q %08x\n", index, can->txr);
+			__atomic_and_fetch(&can->int_txe, ~(UINT32_C(1) << can->tx_frames[tx_pi_mod].T1.bit.MM), __ATOMIC_ACQ_REL);
+#else
+			taskENTER_CRITICAL();
+			can->int_txe &= ~(UINT32_C(1) << can->tx_frames[tx_pi_mod].T1.bit.MM);
+			taskEXIT_CRITICAL();
+#endif
+
+			// LOG("ch%u TXE %08x\n", index, can->int_txe);
+#endif
+
 
 			// xTaskNotifyGive(can->usb_task_handle);
 			// BaseType_t xHigherPriorityTaskWoken = pdFALSE;

@@ -119,6 +119,7 @@ extern "C" {
 #define SC_CAN_FRAME_FLAG_BRS         0x08 ///< CAN-FD bitrate switching (set zero to transmit at arbitration rate)
 #define SC_CAN_FRAME_FLAG_ESI         0x10 ///< Set to 1 to transmit with active error state
 #define SC_CAN_FRAME_FLAG_DRP         0x20 ///< CAN frame was dropped due to full tx fifo (only received if TXR feature active)
+#define SC_CAN_FRAME_FLAG_TX4         0x40 ///< TX CAN frame data doesn't start at end of struct sc_msg_can_tx but aligned to 4 byte (sizeof(struct sc_msg_can_tx) + 3)
 
 #define SC_CAN_STATUS_ERROR_ACTIVE          0x0
 #define SC_CAN_STATUS_ERROR_WARNING         0x1

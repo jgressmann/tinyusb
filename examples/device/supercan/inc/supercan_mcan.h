@@ -123,7 +123,8 @@ struct mcan_can {
 	uint8_t tx_get_index; // NOT an index, uses full range of type
 	uint8_t tx_put_index; // NOT an index, uses full range of type
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
-	uint32_t txr;
+	uint32_t txr; 				// requests from USB, set when in, clear when out
+	volatile uint32_t int_txe;	// expected TXEs, set in USB, cleared in IRQ handler
 #endif
 };
 
