@@ -218,14 +218,14 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 	if (unlikely((can->int_init_rx_errors | can->int_init_tx_errors) != 0)) {
 		if ((rec > can->int_init_rx_errors) | (tec > can->int_init_tx_errors)) {
 			// the situation is becoming worse, stop the sharade
-			LOG("CAN%u rec/tec init=%u/%u now %u/%u\n", index, can->int_init_rx_errors, can->int_init_tx_errors, rec, tec);
+			LOG("ch%u rec/tec init=%u/%u now %u/%u\n", index, can->int_init_rx_errors, can->int_init_tx_errors, rec, tec);
 			can->int_init_tx_errors = 0;
 			can->int_init_rx_errors = 0;
 		} else if ((rec < 96) & (tec < 96)) {
 			// we have reached faked error active state, stop the sharade
 			can->int_init_tx_errors = 0;
 			can->int_init_rx_errors = 0;
-			LOG("CAN%u end error active fake\n", index);
+			LOG("ch%u end error active fake\n", index);
 		} else {
 			// clear all errors except for bus off
 			current_psr.reg &= MCANX_PSR_BO;
@@ -237,7 +237,7 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 		can->int_prev_tx_errors = tec;
 		can->int_prev_rx_errors = rec;
 
-		// LOG("CAN%u REC=%u TEC=%u\n", index, can->int_prev_rx_errors, can->int_prev_tx_errors);
+		// LOG("ch%u REC=%u TEC=%u\n", index, can->int_prev_rx_errors, can->int_prev_tx_errors);
 
 		status.type = SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS;
 		status.timestamp_us = tsc;
@@ -273,19 +273,19 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 
 		switch (current_bus_state) {
 		case SC_CAN_STATUS_BUS_OFF:
-			LOG("CAN%u bus off\n", index);
+			LOG("ch%u bus off\n", index);
 			break;
 		case SC_CAN_STATUS_ERROR_PASSIVE:
-			LOG("CAN%u error passive\n", index);
+			LOG("ch%u error passive\n", index);
 			break;
 		case SC_CAN_STATUS_ERROR_WARNING:
-			LOG("CAN%u error warning\n", index);
+			LOG("ch%u error warning\n", index);
 			break;
 		case SC_CAN_STATUS_ERROR_ACTIVE:
-			LOG("CAN%u error active\n", index);
+			LOG("ch%u error active\n", index);
 			break;
 		default:
-			LOG("CAN%u unhandled bus state\n", index);
+			LOG("ch%u unhandled bus state\n", index);
 			break;
 		}
 	}
@@ -295,7 +295,7 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 
 	if (unlikely(lec >= MCANX_PSR_LEC_STUFF_Val && lec <= MCANX_PSR_LEC_CRC_Val)) {
 		const bool is_tx_error = current_psr.bit.ACT == MCANX_PSR_ACT_TX_Val;
-		LOG("CAN%u PSR=%08lx prev lec=%x dlec=%x\n", index, current_psr.reg, lec, dlec);
+		LOG("ch%u PSR=%08lx prev lec=%x dlec=%x\n", index, current_psr.reg, lec, dlec);
 
 		can->int_prev_error_ts = tsc;
 
@@ -311,7 +311,7 @@ SC_RAMFUNC static void can_int_update_status(uint8_t index, uint32_t* const even
 
 	if (unlikely(dlec >= MCANX_PSR_DLEC_STUFF_Val && dlec <= MCANX_PSR_DLEC_CRC_Val)) {
 		const bool is_tx_error = current_psr.bit.ACT == MCANX_PSR_ACT_TX_Val;
-		LOG("CAN%u PSR=%08lx prev lec=%x dlec=%x\n", index, current_psr.reg, lec, dlec);
+		LOG("ch%u PSR=%08lx prev lec=%x dlec=%x\n", index, current_psr.reg, lec, dlec);
 
 		can->int_prev_error_ts = tsc;
 
