@@ -8,9 +8,6 @@
 
 #if D5035_05
 
-#include <FreeRTOS.h>
-#include <timers.h>
-
 #include <supercan_debug.h>
 #include <leds.h>
 #include <tusb.h>
