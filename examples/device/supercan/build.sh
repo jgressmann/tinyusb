@@ -28,12 +28,13 @@ echo $commit >$target_dir/supercan/COMMIT
 ###################
 cp -r $pre_built_dir $target_dir/..
 
-############
-# D5035-01 #
-############
 VID=0x1d50
 #PID_RT=0x5035
 PID_DFU=0x5036
+
+############
+# D5035-01 #
+############
 BOOTLOADER_NAME="D5035-01 SuperCAN DFU"
 hw_revs=3
 export BOARD=d5035_01
@@ -165,7 +166,7 @@ If the bootloader is not already running, descend into the bootloader by issuing
 sudo dfu-util -d 1d50:5035,:5036 -e
 \`\`\`
 
-The bootloader version is encoded in the USB descriptor's `bcdDevice` field. For example
+The bootloader version is encoded in the USB descriptor's \`bcdDevice\` field. For example
 
 \`\`\`
 New USB device found, idVendor=1d50, idProduct=5036, bcdDevice= 6.01
@@ -212,6 +213,74 @@ EOF
 done
 unset hw_revs
 
+
+############
+# D5035-05 #
+############
+hw_revs=1
+export BOARD=d5035_05
+
+# make output dirs for hw revs
+for i in $hw_revs; do
+	mkdir -p $target_dir/supercan/$BOARD/0$i
+done
+
+
+# SuperCAN
+project=supercan
+project_dir=$projects_dir/$project
+cd $project_dir
+
+
+for i in $hw_revs; do
+	rm -rf _build
+	make $MAKE_ARGS HWREV=$i APP=1 _build/$BOARD/${project}.hex
+	make $MAKE_ARGS HWREV=$i APP=1 _build/$BOARD/${project}.bin
+	cp _build/$BOARD/${project}.hex $target_dir/supercan/$BOARD/0$i/supercan-app.hex
+	cp _build/$BOARD/${project}.bin $target_dir/supercan/$BOARD/0$i/supercan-app.bin
+
+	# generate J-Link flash script
+	cat >$target_dir/supercan/$BOARD/0$i/supercan-app.jlink <<EOF
+r
+loadfile supercan-app.hex
+r
+go
+exit
+EOF
+
+
+	cat <<EOF >>$target_dir/supercan/$BOARD/0$i/$readme_file
+# SuperCAN Device Firmware
+
+## Content
+
+- supercan-app.bin: binary, flash with debug probe to 0x08000000 or through ST DFU
+- supercan-app.hex: hex, flash with debug probe to 0x08000000
+- supercan-app.jlink: J-Link flash script
+
+## Installation / Update
+
+### Flash with J-Link
+
+\`\`\`bash
+JLinkExe -device STM32G0B1CE -if swd -JTAGConf -1,-1 -speed auto -CommandFile supercan-app.jlink
+\`\`\`
+
+### Update with dfu-util
+
+\`\`\`bash
+sudo dfu-util -e -R -a 0 --dfuse-address 0x08000000 -D supercan-app.bin
+\`\`\`
+
+
+
+EOF
+
+done
+unset hw_revs
+
+
+
 ########################
 # SAM E54 Xplained Pro #
 ########################
@@ -232,10 +301,11 @@ cat <<EOF >$target_dir/supercan/$BOARD/$readme_file
 # SuperCAN Device Firmware
 
 ## Content
-- supercan.bin: binary, flash with debug probe
-- supercan.hex: hex, flash with debug probe
+- supercan.bin: binary, flash with (on-board) debug probe
+- supercan.hex: hex, flash with (on-board) debug probe
 
 ## Installation
+
 ### EDBG
 
 \`\`\`
@@ -411,7 +481,7 @@ If the bootloader is not already running, descend into the bootloader by issuing
 sudo dfu-util -d 1d50:5035,:5036 -e
 \`\`\`
 
-The bootloader version is encoded in the USB descriptor's `bcdDevice` field. For example
+The bootloader version is encoded in the USB descriptor's \`bcdDevice\` field. For example
 
 \`\`\`
 New USB device found, idVendor=1d50, idProduct=5036, bcdDevice= 6.01
@@ -450,12 +520,10 @@ JLinkExe -device ATSAME51J18 -if swd -JTAGConf -1,-1 -speed auto -CommandFile su
 \`\`\`bash
 sudo dfu-util -d 1d50:5035,:5036 -R -D supercan.dfu
 \`\`\`
-
-
-
 EOF
 
 done
+
 
 
 # archive
