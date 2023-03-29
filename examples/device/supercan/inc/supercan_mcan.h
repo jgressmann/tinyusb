@@ -9,6 +9,7 @@
 #include <supercan_mcanx.h>
 
 
+/* need this as macro for #ifdef */
 #define _SC_BOARD_CAN_TX_FIFO_SIZE 32
 
 
@@ -71,9 +72,6 @@ struct mcan_rx_fifo_element {
 };
 
 struct rx_frame {
-	// __IO MCANX_RXF0E_0_Type R0;
-	// __IO MCANX_RXF0E_1_Type R1;
-	// __IO uint32_t ts;
 	MCANX_RXF0E_0_Type R0;
 	MCANX_RXF0E_1_Type R1;
 	uint32_t ts;
@@ -81,9 +79,6 @@ struct rx_frame {
 };
 
 struct txe_frame {
-	// __IO MCANX_TXEFE_0_Type T0;
-	// __IO MCANX_TXEFE_1_Type T1;
-	// __IO uint32_t ts;
 	MCANX_TXEFE_0_Type T0;
 	MCANX_TXEFE_1_Type T1;
 	uint32_t ts;
