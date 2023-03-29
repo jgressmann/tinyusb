@@ -168,5 +168,5 @@ struct MCanX {
 };
 
 
-// (fake) DFU transfer size (page size is 2Ki)
-#define MCU_NVM_PAGE_SIZE 512
+// DFU transfer size is 1Ki in ST bootloader
+#define MCU_NVM_PAGE_SIZE 1024
