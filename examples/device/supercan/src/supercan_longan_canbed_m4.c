@@ -102,10 +102,10 @@ static void can_init_module(void)
 {
 	mcan_can_init();
 
-	mcan_cans[0].m_can = CAN0;
+	mcan_cans[0].m_can = (MCanX*)CAN0;
 	mcan_cans[0].interrupt_id = CAN0_IRQn;
 
-	m_can_init_begin(CAN0);
+	m_can_init_begin(mcan_cans[0].m_can);
 
 	same5x_can_init();
 
