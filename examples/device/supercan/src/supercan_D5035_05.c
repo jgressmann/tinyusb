@@ -125,24 +125,25 @@ static inline void can_init(void)
 	mcan_can_init();
 
 	mcan_cans[0].m_can = (MCanX*)FDCAN1;
-	mcan_cans[1].m_can = (MCanX*)FDCAN2;
 	mcan_cans[0].interrupt_id = TIM16_FDCAN_IT0_IRQn;
-	mcan_cans[1].interrupt_id = TIM17_FDCAN_IT1_IRQn;
 	mcan_cans[0].led_traffic = CAN0_TRAFFIC_LED;
-	mcan_cans[1].led_traffic = CAN1_TRAFFIC_LED;
 	mcan_cans[0].led_status_green = LED_CAN0_STATUS_GREEN;
-	mcan_cans[1].led_status_green = LED_CAN1_STATUS_GREEN;
 	mcan_cans[0].led_status_red = LED_CAN0_STATUS_RED;
-	mcan_cans[1].led_status_red = LED_CAN1_STATUS_RED;
 	mcan_cans[0].hw_tx_fifo_ram = (struct mcan_tx_fifo_element *)(FDCAN1_RAM + TBSA_BASE);
 	mcan_cans[0].hw_txe_fifo_ram = (struct mcan_txe_fifo_element *)(FDCAN1_RAM + EFSA_BASE);
 	mcan_cans[0].hw_rx_fifo_ram = (struct mcan_rx_fifo_element *)(FDCAN1_RAM + F0SA_BASE);
-	mcan_cans[1].hw_tx_fifo_ram = (struct mcan_tx_fifo_element *)(FDCAN2_RAM + TBSA_BASE);
-	mcan_cans[1].hw_txe_fifo_ram = (struct mcan_txe_fifo_element *)(FDCAN2_RAM + EFSA_BASE);
-	mcan_cans[1].hw_rx_fifo_ram = (struct mcan_rx_fifo_element *)(FDCAN2_RAM + F0SA_BASE);
 
 	SC_ASSERT(0x4000B678 == (uintptr_t)mcan_cans[0].hw_tx_fifo_ram);
 	SC_ASSERT(0x4000B660 == (uintptr_t)mcan_cans[0].hw_txe_fifo_ram);
+
+	mcan_cans[1].m_can = (MCanX*)FDCAN2;
+	mcan_cans[1].interrupt_id = TIM17_FDCAN_IT1_IRQn;
+	mcan_cans[1].led_traffic = CAN1_TRAFFIC_LED;
+	mcan_cans[1].led_status_green = LED_CAN1_STATUS_GREEN;
+	mcan_cans[1].led_status_red = LED_CAN1_STATUS_RED;
+	mcan_cans[1].hw_tx_fifo_ram = (struct mcan_tx_fifo_element *)(FDCAN2_RAM + TBSA_BASE);
+	mcan_cans[1].hw_txe_fifo_ram = (struct mcan_txe_fifo_element *)(FDCAN2_RAM + EFSA_BASE);
+	mcan_cans[1].hw_rx_fifo_ram = (struct mcan_rx_fifo_element *)(FDCAN2_RAM + F0SA_BASE);
 
 
 
@@ -375,7 +376,7 @@ extern uint32_t sc_board_identifier(void)
 
 SC_RAMFUNC void TIM16_FDCAN_IT0_IRQHandler(void)
 {
-	// LOG("CAN0 int\n");
+	// LOG("FDCAN_IT0 int\n");
 
 	mcan_can_int(0);
 }
@@ -383,7 +384,7 @@ SC_RAMFUNC void TIM16_FDCAN_IT0_IRQHandler(void)
 
 SC_RAMFUNC void TIM17_FDCAN_IT1_IRQHandler(void)
 {
-	LOG("CAN1 int\n");
+	// LOG("FDCAN_IT1 int\n");
 
 	mcan_can_int(1);
 }
