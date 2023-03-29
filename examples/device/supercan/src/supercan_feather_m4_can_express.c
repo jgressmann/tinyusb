@@ -152,13 +152,13 @@ static void can_init_module(void)
 {
 	mcan_can_init();
 
-	mcan_cans[0].m_can = CAN1;
+	mcan_cans[0].m_can = (MCanX*)CAN1;
 	mcan_cans[0].interrupt_id = CAN1_IRQn;
 	mcan_cans[0].led_traffic = SC_BOARD_DEBUG_DEFAULT;
 	mcan_cans[0].led_status_green = SC_BOARD_PIXEL_GREEN;
 	mcan_cans[0].led_status_red = SC_BOARD_PIXEL_RED;
 
-	m_can_init_begin(CAN1);
+	m_can_init_begin(mcan_cans[0].m_can);
 
 	same5x_can_init();
 
