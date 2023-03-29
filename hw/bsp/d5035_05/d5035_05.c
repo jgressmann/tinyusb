@@ -130,25 +130,11 @@ static inline void usb_init(void)
       | (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED11_Pos)
       | (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED12_Pos);
 
-
-  // // alternate function to USB
-  // GPIOA->AFR[1] =
-  //   (GPIOA->AFR[1] & ~(GPIO_AFRH_AFSEL11 | GPIO_AFRH_AFSEL12))
-  //     | (GPIO_AF14_USB << GPIO_AFRH_AFSEL11_Pos)
-  //     | (GPIO_AF14_USB << GPIO_AFRH_AFSEL12_Pos);
-
-  // // switch mode to alternate function
-  // GPIOA->MODER = (GPIOA->MODER & ~(GPIO_MODER_MODE11 | GPIO_MODER_MODE12)) | (GPIO_MODE_AF_PP << GPIO_MODER_MODE11_Pos) | (GPIO_MODE_AF_PP << GPIO_MODER_MODE12_Pos);
-
-
-
+  // enable USB, seems to also configure GPIO alternative function
   PWR->CR2 |= PWR_CR2_USV;
-  // | PWR_CR2_PVMEN_USB;
-
 
   // enable clock to USB
   RCC->APBENR1 |= RCC_APBENR1_USBEN;
-
 }
 
 static inline void tx_char(uint8_t ch)
