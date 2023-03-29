@@ -167,3 +167,6 @@ struct MCanX {
   __IO uint32_t                    CKDIV;       /**< \brief Offset: 0x100 (R/W 32) FDCAN CFG clock divider register (FDCAN_CKDIV) */
 };
 
+
+// (fake) DFU transfer size (page size is 2Ki)
+#define MCU_NVM_PAGE_SIZE 512

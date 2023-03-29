@@ -59,6 +59,7 @@ CFLAGS += $(SECTION_CFLAGS) -DSTM32F3DISCOVERY -DHAVE_ATOMIC_COMPARE_EXCHANGE=1
 endif
 
 ifeq ($(BOARD),d5035_05)
+INC += $(TOP)/examples/device/superdfu/inc
 CFLAGS += $(SECTION_CFLAGS) -DD5035_05
 endif
 

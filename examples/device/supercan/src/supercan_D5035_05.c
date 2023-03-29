@@ -18,7 +18,8 @@
 
 #include <m_can.h>
 
-
+#include <tusb.h>
+#include <class/dfu/dfu_rt_device.h>
 
 #define CONF_CPU_FREQUENCY 64000000L
 #define USART_BAUDRATE     115200L
@@ -42,6 +43,123 @@
 static const uint32_t GPIO_MODE_OUTPUT_PP = 0x00000001U;
 static const uint32_t GPIO_SPEED_FREQ_HIGH = 0x00000003U;
 static const uint32_t GPIO_MODE_AF_PP = 0x00000002U;
+
+#if CFG_TUD_DFU_RUNTIME
+
+__attribute__((noreturn, section(SC_RAMFUNC_SECTION_NAME))) static inline void start_app_jump(uint32_t addr)
+{
+	// Load the vector table address of the user application into SCB->VTOR register. Make sure the address meets the alignment requirements.
+
+	SCB->VTOR = addr;
+
+	__DSB();
+	__ISB();
+
+
+	// A few device families, like the NXP 4300 series, will also have a "shadow pointer" to the VTOR, which also needs to be updated with the new address. Review the device datasheet to see if one exists.
+	// The final part is to set the MSP to the value found in the user application vector table and then load the PC with the reset vector value of the user application. This can't be done in C, as it is always possible, that the compiler uses the current SP. But that would be gone after setting the new MSP. So, a call to a small assembler function is done.
+
+	uint32_t* base = (uint32_t*)(uintptr_t)addr;
+	// LOG("stack @ %p reset @ %p\n", (void*)base[0], (void*)base[1]);
+
+	__asm__ (
+		"MSR MSP, %0\n"
+		"BX  %1\n"
+		: : "r" (base[0]), "r" (base[1])
+	);
+
+	__unreachable();
+}
+
+
+SC_RAMFUNC void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
+{
+	__disable_irq();
+
+	(void)ms;
+
+	LOG("activating ST bootloader, remove CAN bus connection and replug device after firmware download :)\n\n");
+
+	FLASH->ACR |= FLASH_ACR_PROGEMPTY;
+
+	NVIC_SystemReset();
+
+	// // unlock flash
+	// FLASH->KEYR = 0x45670123;
+	// FLASH->KEYR = 0xCDEF89AB;
+	// // unlock option bytes
+	// FLASH->OPTKEYR = 0x08192A3B;
+	// FLASH->OPTKEYR = 0x4C5D6E7F;
+
+
+
+
+
+
+// (RCC_)
+	RCC->AHBRSTR = 0xffffffff;
+	RCC->APBRSTR1 = 0xffffffff;
+	RCC->APBRSTR2 = 0xffffffff;
+
+	// enable power to SYSCFG
+	RCC->APBENR2 |= RCC_APBENR2_SYSCFGEN;
+
+	LOG("CFGR1=%08x\n", SYSCFG->CFGR1);
+
+	SYSCFG->CFGR1 =
+		(SYSCFG->CFGR1 & ~(SYSCFG_CFGR1_MEM_MODE))
+		| SYSCFG_CFGR1_MEM_MODE_0;
+
+
+	LOG("CFGR1=%08x\n", SYSCFG->CFGR1);
+
+	typedef void (*pFunction)(void);
+	pFunction Jump_To_Application;
+	uint32_t JumpAddress;
+	static uint32_t APP_START_ADDRESS = 0;
+
+
+   /* Get the application stack pointer (First entry in the application vector table) */
+   JumpAddress = (uint32_t) *((__IO uint32_t*)APP_START_ADDRESS);
+
+   /* Get the application entry point (Second entry in the application vector table) */
+   Jump_To_Application = (pFunction) *(__IO uint32_t*) (APP_START_ADDRESS + 4);
+
+   /* Reconfigure vector table offset register to match the application location */
+   SCB->VTOR = JumpAddress;
+
+   /* Set the application stack pointer */
+   __set_MSP(JumpAddress);
+
+   /* Start the application */
+   Jump_To_Application();
+
+
+
+	// start_app_jump(0x1FFF0000);
+	// start_app_jump(0);
+
+	// arm-none-eabi-gcc 4.9.0 does not correctly inline this
+    // MSP function, so we write it out explicitly here.
+    //__set_MSP(*((uint32_t*) 0x00000000));
+    // __ASM volatile ("movs r3, #0\nldr r3, [r3, #0]\nMSR msp, r3\n" : : : "r3", "sp");
+	// // __set_MSP(*((uint32_t*) 0x00000000));
+
+    // ((void (*)(void)) *((uint32_t*) 0x00000004))();
+	// #define PROGRAM_VECTOR_TABLE ((uint32_t *) 0)
+
+
+    // static void (*go_to_app)(void) = 0;
+    // go_to_app = (void (*)(void))(PROGRAM_VECTOR_TABLE[1]);
+    // SCB->VTOR = (uint32_t)PROGRAM_VECTOR_TABLE;
+    // __set_MSP(PROGRAM_VECTOR_TABLE[0]);
+    // __set_PSP(PROGRAM_VECTOR_TABLE[0]);
+    // go_to_app();
+
+
+    while (1);
+}
+#endif // #if CFG_TUD_DFU_RT
 
 
 // controller and hardware specific setup of i/o pins for CAN
@@ -277,6 +395,13 @@ extern void sc_board_init_begin(void)
 {
 	board_init();
 
+	LOG("FLASH_SECR.BOOT_LOCK=%u FLASH_ACR.EMPTY=%u FLASH_OPTR_nBOOT_SEL=%u FLASH_OPTR_nBOOT1=%u FLASH_OPTR_nBOOT0=%u\n",
+		(FLASH->SECR & FLASH_SECR_BOOT_LOCK) == FLASH_SECR_BOOT_LOCK,
+		(FLASH->ACR & FLASH_ACR_PROGEMPTY) == FLASH_ACR_PROGEMPTY,
+		(FLASH->OPTR & FLASH_OPTR_nBOOT_SEL) == FLASH_OPTR_nBOOT_SEL,
+		(FLASH->OPTR & FLASH_OPTR_nBOOT1) == FLASH_OPTR_nBOOT1,
+		(FLASH->OPTR & FLASH_OPTR_nBOOT0) == FLASH_OPTR_nBOOT0);
+
 	leds_init();
 
 	can_init();
@@ -289,11 +414,6 @@ extern void sc_board_init_end(void)
 	led_blink(0, 2000);
 	led_set(POWER_LED, 1);
 }
-
-// extern char const* sc_board_name(void)
-// {
-// 	return SC_BOARD_NAME;
-// }
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
 {

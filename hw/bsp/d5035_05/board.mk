@@ -36,8 +36,6 @@ INC += \
   $(TOP)/$(ST_CMSIS)/Include \
   $(TOP)/hw/bsp/$(BOARD)
 
-  # $(TOP)/$(ST_HAL_DRIVER)/Inc \
-
 
 # For freeRTOS port source
 FREERTOS_PORT = ARM_CM0
@@ -45,9 +43,6 @@ FREERTOS_PORT = ARM_CM0
 # For flash-jlink target
 JLINK_DEVICE = STM32G0B1CE
 
-# # flash target using on-board stlink
-# flash: flash-jlink
-
 # flash target ROM bootloader
 flash: $(BUILD)/$(PROJECT).bin
-	dfu-util -R -a 0 --dfuse-address 0x08000000 -D $<
+	sudo dfu-util -e -R -a 0 --dfuse-address 0x08000000 -D $<
