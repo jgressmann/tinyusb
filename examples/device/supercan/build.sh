@@ -272,6 +272,8 @@ JLinkExe -device STM32G0B1CE -if swd -JTAGConf -1,-1 -speed auto -CommandFile su
 sudo dfu-util -e -R -a 0 --dfuse-address 0x08000000 -D supercan-app.bin
 \`\`\`
 
+You may need to re-plug the device after flashing to get back to the CAN application.
+
 
 
 EOF
