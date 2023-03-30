@@ -39,13 +39,11 @@ static void clock_init(void)
   // configure PLL input to HSE
   RCC->PLLCFGR =
     RCC_PLLCFGR_PLLSRC_HSE
-    // RCC_PLLCFGR_PLLSRC_HSI
     | (UINT32_C(0) << RCC_PLLCFGR_PLLM_Pos) /* no division of input clock (16 MHz) */
-    | (UINT32_C(16) << RCC_PLLCFGR_PLLN_Pos) /* 256 MHz */
-    | (UINT32_C(3) << RCC_PLLCFGR_PLLR_Pos)  /* R = 4, SYSCLK to 64 MHz = Fmax */
+    | (UINT32_C(20) << RCC_PLLCFGR_PLLN_Pos) /* 320 MHz */
+    | (UINT32_C(4) << RCC_PLLCFGR_PLLR_Pos)  /* R = 5, SYSCLK to 64 MHz = Fmax */
     | RCC_PLLCFGR_PLLREN
-    //| (UINT32_C(1) << RCC_PLLCFGR_PLLQ_Pos)  /* Q = 2, 128 MHz */
-    | (UINT32_C(3) << RCC_PLLCFGR_PLLQ_Pos)  /* Q = 4, 64 MHz */
+    | (UINT32_C(3) << RCC_PLLCFGR_PLLQ_Pos)  /* Q = 4, 80 MHz */
     | RCC_PLLCFGR_PLLQEN;
 
   // enable PLL
