@@ -130,9 +130,6 @@ static inline void can_init(void)
 	mcan_cans[0].hw_txe_fifo_ram = (struct mcan_txe_fifo_element *)(FDCAN1_RAM + EFSA_BASE);
 	mcan_cans[0].hw_rx_fifo_ram = (struct mcan_rx_fifo_element *)(FDCAN1_RAM + F0SA_BASE);
 
-	SC_ASSERT(0x4000B678 == (uintptr_t)mcan_cans[0].hw_tx_fifo_ram);
-	SC_ASSERT(0x4000B660 == (uintptr_t)mcan_cans[0].hw_txe_fifo_ram);
-
 	mcan_cans[1].m_can = (MCanX*)FDCAN2;
 	mcan_cans[1].interrupt_id = TIM17_FDCAN_IT1_IRQn;
 	mcan_cans[1].led_traffic = CAN1_TRAFFIC_LED;
@@ -184,6 +181,10 @@ static inline void counter_1mhz_init(void)
 	TIM2->PSC = (CONF_CPU_FREQUENCY / 1000000UL) - 1; /* yes, minus one */
 
 	/* reset value of TIM2->ARR is 0xffffffff which is what we want */
+
+	// clear counter to load prescaler (RM0444 Rev 5 p. 689/1390)
+	TIM2->EGR |= TIM_EGR_UG;
+
 
 	// // 1 second reload
 	// TIM2->ARR = 1000000UL;
