@@ -64,7 +64,7 @@ static inline void can_init(void)
 	/* FDCAN2_RX PB0, FDCAN2_TX PB1, FDCAN1_RX PB8, FDCAN1_TX PB9 */
 	const uint32_t GPIO_MODE_AF3_FDCAN = 0x3; // DS13560 Rev 4, p. 58
 	uint32_t FDCAN1_RAM = SRAMCAN_BASE;
-	uint32_t FDCAN2_RAM = FDCAN1_RAM + 0x400;
+	uint32_t FDCAN2_RAM = FDCAN1_RAM + 0x350;
 	// const unsigned FLSSA_BASE = 0x0000;
 	// const unsigned FLESA_BASE = 0x0070;
 	const unsigned F0SA_BASE = 0x00B0;

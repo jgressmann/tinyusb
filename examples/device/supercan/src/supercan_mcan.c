@@ -342,7 +342,7 @@ SC_RAMFUNC void mcan_can_int(uint8_t index)
 	taskEXIT_CRITICAL();
 #endif
 	SC_ISR_ASSERT(c == 1);
-#endif
+#endif // #if SUPERCAN_DEBUG
 
 	sc_board_can_ts_request(index);
 
@@ -718,8 +718,9 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
 		SC_DEBUG_ASSERT(!(can->txr & (UINT32_C(1) << msg->track_id)));
 
+		// LOG("ch%u TXR q %08x %02x\n", index, can->txr, msg->track_id);
+
 		can->txr |= UINT32_C(1) << msg->track_id;
-		// LOG("ch%u TXR q %08x\n", index, can->txr);
 #if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
 		__atomic_or_fetch(&can->int_txe, UINT32_C(1) << msg->track_id, __ATOMIC_ACQ_REL);
 #else
@@ -887,13 +888,13 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 				msg->len = sizeof(*msg);
 				msg->track_id = t1.bit.MM;
 
-				// LOG("ch%u TXR track id=%u @ index %u\n", index, msg->track_id, tx_gi_mod);
+				// LOG("ch%u TXR track id=%u @ index %u\n", index, msg->track_id, txe_gi_mod);
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
 				SC_DEBUG_ASSERT(can->txr & (UINT32_C(1) << msg->track_id));
 
 				can->txr &= ~(UINT32_C(1) << msg->track_id);
 
-				// LOG("ch%u TXR r %08x\n", index, can->txr);
+				// LOG("ch%u TXR r %08x %02x\n", index, can->txr, msg->track_id);
 #endif
 				uint32_t ts = can->txe_fifo[txe_gi_mod].ts;
 	// #if SUPERCAN_DEBUG
@@ -903,14 +904,14 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 	// 					if (unlikely(!tx_ts_ok)) {
 	// 						taskDISABLE_INTERRUPTS();
 	// 						// SC_BOARD_MCANX_init_begin(can);
-	// 						LOG("ch%u tx gi=%u ts=%lx prev=%lx\n", index, tx_gi_mod, ts, tx_ts_last);
+	// 						LOG("ch%u tx gi=%u ts=%lx prev=%lx\n", index, txe_gi_mod, ts, tx_ts_last);
 	// 						for (unsigned i = 0; i < SC_BOARD_MCANX_hw_tx_fifo_ram_SIZE; ++i) {
 	// 							LOG("ch%u tx gi=%u ts=%lx\n", index, i, can->txe_fifo[i].ts);
 	// 						}
 
 	// 					}
 	// 					SC_ASSERT(tx_ts_ok);
-	// 					// LOG("ch%u tx gi=%u d=%lx\n", index, tx_gi_mod, ts - tx_ts_last);
+	// 					// LOG("ch%u tx gi=%u d=%lx\n", index, txe_gi_mod, ts - tx_ts_last);
 	// 					tx_ts_last = ts;
 	// #endif
 				msg->timestamp_us = ts;
