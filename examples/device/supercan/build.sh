@@ -268,6 +268,8 @@ JLinkExe -device STM32G0B1CE -if swd -JTAGConf -1,-1 -speed auto -CommandFile su
 
 ### Update with dfu-util
 
+NOTE: On Windows you may need to install the device USB driver, e.g. by installing [STM32CubeProgrammer](https://www.st.com/en/development-tools/stm32cubeprog.html).
+
 \`\`\`bash
 sudo dfu-util -e -R -a 0 --dfuse-address 0x08000000 -D supercan-app.bin
 \`\`\`
