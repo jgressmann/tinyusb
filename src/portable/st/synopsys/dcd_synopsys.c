@@ -28,6 +28,9 @@
  */
 
 #include "tusb_option.h"
+#include "../../../examples/device/supercan/inc/supercan_debug.h"
+
+
 
 // Since TinyUSB doesn't use SOF for now, and this interrupt too often (1ms interval)
 // We disable SOF for now until needed later on
@@ -80,6 +83,12 @@
 #define EP_FIFO_SIZE_FS 4096
 #define EP_MAX_HS       9
 #define EP_FIFO_SIZE_HS 4096
+
+// #if BOARD_FS_PHY_ON_HS_CORE
+  #define USB_OTG_FS_PERIPH_BASE USB1_OTG_HS_PERIPH_BASE
+  #define OTG_FS_IRQn OTG_HS_IRQn
+// #endif
+
 
 #elif CFG_TUSB_MCU == OPT_MCU_STM32F7
 #include "stm32f7xx.h"
@@ -179,6 +188,36 @@ static uint16_t ep0_pending[2];                   // Index determines direction 
 // TX FIFO RAM allocation so far in words - RX FIFO size is readily available from usb_otg->GRXFSIZ
 static uint16_t _allocated_fifo_words_tx;         // TX FIFO size in words (IN EPs)
 static bool _out_ep_closed;                       // Flag to check if RX FIFO size needs an update (reduce its size)
+
+//  __IO uint32_t GOTGCTL;              /*!<  USB_OTG Control and Status Register       Address offset: 000h */
+//   __IO uint32_t GOTGINT;              /*!<  USB_OTG Interrupt Register                Address offset: 004h */
+//   __IO uint32_t GAHBCFG;              /*!<  Core AHB Configuration Register           Address offset: 008h */
+//   __IO uint32_t GUSBCFG;              /*!<  Core USB Configuration Register           Address offset: 00Ch */
+//   __IO uint32_t GRSTCTL;              /*!<  Core Reset Register                       Address offset: 010h */
+//   __IO uint32_t GINTSTS;              /*!<  Core Interrupt Register                   Address offset: 014h */
+//   __IO uint32_t GINTMSK;              /*!<  Core Interrupt Mask Register              Address offset: 018h */
+//   __IO uint32_t GRXSTSR;              /*!<  Receive Sts Q Read Register               Address offset: 01Ch */
+//   __IO uint32_t GRXSTSP;              /*!<  Receive Sts Q Read & POP Register         Address offset: 020h */
+//   __IO uint32_t GRXFSIZ;              /*!< Receive FIFO Size Register                 Address offset: 024h */
+//   __IO uint32_t DIEPTXF0_HNPTXFSIZ;   /*!<  EP0 / Non Periodic Tx FIFO Size Register  Address offset: 028h */
+//   __IO uint32_t HNPTXSTS;             /*!<  Non Periodic Tx FIFO/Queue Sts reg        Address offset: 02Ch */
+//   uint32_t Reserved30[2];             /*!< Reserved 030h*/
+//   __IO uint32_t GCCFG;                /*!< General Purpose IO Register                Address offset: 038h */
+//   __IO uint32_t CID;                  /*!< User ID Register                           Address offset: 03Ch */
+//   uint32_t  Reserved40[48];           /*!< Reserved 040h-0FFh */
+//   __IO uint32_t HPTXFSIZ;             /*!< Host Periodic Tx FIFO Size Reg             Address offset: 100h */
+//   __IO uint32_t DIEPTXF[0x0F];        /*!< dev Periodic Transmit FIFO                 Address offset: 0x104 */
+
+
+static inline void dump_regs(void)
+{
+  USB_OTG_GlobalTypeDef * usb_otg = GLOBAL_BASE(rhport);
+  USB_OTG_DeviceTypeDef * dev = DEVICE_BASE(rhport);
+
+
+  LOG("GOTGCTL=%08x GUSBCFG=%08x DCFG=%08x DSTS=%08x\n", usb_otg->GOTGCTL, usb_otg->GUSBCFG, dev->DCFG, dev->DSTS);
+
+}
 
 // Calculate the RX FIFO size according to recommendations from reference manual
 static inline uint16_t calc_rx_ff_size(uint16_t ep_size)
@@ -293,12 +332,15 @@ static void bus_reset(uint8_t rhport)
   out_ep[0].DOEPTSIZ |= (3 << USB_OTG_DOEPTSIZ_STUPCNT_Pos);
 
   usb_otg->GINTMSK |= USB_OTG_GINTMSK_OEPINT | USB_OTG_GINTMSK_IEPINT;
+
+  dump_regs();
 }
 
 // Set turn-around timeout according to link speed
 extern uint32_t SystemCoreClock;
 static void set_turnaround(USB_OTG_GlobalTypeDef * usb_otg, tusb_speed_t speed)
 {
+  LOG("Core clock %lu speed=%u\n", SystemCoreClock, speed);
   usb_otg->GUSBCFG &= ~USB_OTG_GUSBCFG_TRDT;
 
   if ( speed == TUSB_SPEED_HIGH )
@@ -332,6 +374,9 @@ static void set_turnaround(USB_OTG_GlobalTypeDef * usb_otg, tusb_speed_t speed)
     else
       turnaround = 0xFU;
 
+    LOG("turn around %02x\n", turnaround);
+
+    turnaround = 9;
     // Fullspeed depends on MCU clocks, but we will use 0x06 for 32+ Mhz
     usb_otg->GUSBCFG |= (turnaround << USB_OTG_GUSBCFG_TRDT_Pos);
   }
@@ -466,6 +511,8 @@ void dcd_init (uint8_t rhport)
 
   USB_OTG_GlobalTypeDef * usb_otg = GLOBAL_BASE(rhport);
 
+  LOG("dcd_init port=%u\n", rhport);
+
   // No HNP/SRP (no OTG support), program timeout later.
   if ( rhport == 1 )
   {
@@ -551,6 +598,7 @@ void dcd_int_disable (uint8_t rhport)
 
 void dcd_set_address (uint8_t rhport, uint8_t dev_addr)
 {
+
   USB_OTG_DeviceTypeDef * dev = DEVICE_BASE(rhport);
   dev->DCFG = (dev->DCFG & ~USB_OTG_DCFG_DAD_Msk) | (dev_addr << USB_OTG_DCFG_DAD_Pos);
 
@@ -1125,6 +1173,8 @@ void dcd_int_handler(uint8_t rhport)
   USB_OTG_INEndpointTypeDef * in_ep = IN_EP_BASE(rhport);
 
   uint32_t const int_status = usb_otg->GINTSTS & usb_otg->GINTMSK;
+
+  LOG("GINTSTS=%08x GINTSTS'MAK=%08x\n", usb_otg->GINTSTS, int_status);
 
   if(int_status & USB_OTG_GINTSTS_USBRST)
   {
