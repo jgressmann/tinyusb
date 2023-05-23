@@ -84,10 +84,10 @@
 #define EP_MAX_HS       9
 #define EP_FIFO_SIZE_HS 4096
 
-// #if BOARD_FS_PHY_ON_HS_CORE
+#if BOARD_FS_PHY_ON_HS_CORE
   #define USB_OTG_FS_PERIPH_BASE USB1_OTG_HS_PERIPH_BASE
   #define OTG_FS_IRQn OTG_HS_IRQn
-// #endif
+#endif
 
 
 #elif CFG_TUSB_MCU == OPT_MCU_STM32F7
@@ -342,15 +342,12 @@ static void bus_reset(uint8_t rhport)
 extern uint32_t SystemCoreClock;
 static void set_turnaround(USB_OTG_GlobalTypeDef * usb_otg, tusb_speed_t speed)
 {
-  LOG("Core clock %lu speed=%u\n", SystemCoreClock, speed);
   usb_otg->GUSBCFG &= ~USB_OTG_GUSBCFG_TRDT;
 
-  if ( 1 || speed == TUSB_SPEED_HIGH )
+  if ( speed == TUSB_SPEED_HIGH )
   {
     // Use fixed 0x09 for Highspeed
     usb_otg->GUSBCFG |= (0x09 << USB_OTG_GUSBCFG_TRDT_Pos);
-
-    LOG("turn around %02x\n", 0x9);
   }
   else
   {
@@ -378,9 +375,6 @@ static void set_turnaround(USB_OTG_GlobalTypeDef * usb_otg, tusb_speed_t speed)
     else
       turnaround = 0xFU;
 
-    LOG("turn around %02x\n", turnaround);
-
-    turnaround = 9;
     // Fullspeed depends on MCU clocks, but we will use 0x06 for 32+ Mhz
     usb_otg->GUSBCFG |= (turnaround << USB_OTG_GUSBCFG_TRDT_Pos);
   }

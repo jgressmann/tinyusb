@@ -181,6 +181,8 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #	include "supercan_stm32f3discovery.h"
 #elif D5035_05
 #	include "supercan_D5035_05.h"
+#elif STM32H7A3NUCLEO
+#	include "supercan_stm32h7a3nucleo.h"
 #else
 #	pragma GCC warning "unknown board, using dummy CAN implementation"
 #	define SUPERCAN_DUMMY 1
