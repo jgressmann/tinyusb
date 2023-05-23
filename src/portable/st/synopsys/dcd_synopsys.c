@@ -208,7 +208,9 @@ static bool _out_ep_closed;                       // Flag to check if RX FIFO si
 //   __IO uint32_t HPTXFSIZ;             /*!< Host Periodic Tx FIFO Size Reg             Address offset: 100h */
 //   __IO uint32_t DIEPTXF[0x0F];        /*!< dev Periodic Transmit FIFO                 Address offset: 0x104 */
 
-
+#if TUD_OPT_HIGH_SPEED
+#error safdsafd
+#endif
 static inline void dump_regs(void)
 {
   USB_OTG_GlobalTypeDef * usb_otg = GLOBAL_BASE(rhport);
@@ -343,10 +345,12 @@ static void set_turnaround(USB_OTG_GlobalTypeDef * usb_otg, tusb_speed_t speed)
   LOG("Core clock %lu speed=%u\n", SystemCoreClock, speed);
   usb_otg->GUSBCFG &= ~USB_OTG_GUSBCFG_TRDT;
 
-  if ( speed == TUSB_SPEED_HIGH )
+  if ( 1 || speed == TUSB_SPEED_HIGH )
   {
     // Use fixed 0x09 for Highspeed
     usb_otg->GUSBCFG |= (0x09 << USB_OTG_GUSBCFG_TRDT_Pos);
+
+    LOG("turn around %02x\n", 0x9);
   }
   else
   {
@@ -511,8 +515,6 @@ void dcd_init (uint8_t rhport)
 
   USB_OTG_GlobalTypeDef * usb_otg = GLOBAL_BASE(rhport);
 
-  LOG("dcd_init port=%u\n", rhport);
-
   // No HNP/SRP (no OTG support), program timeout later.
   if ( rhport == 1 )
   {
@@ -598,7 +600,6 @@ void dcd_int_disable (uint8_t rhport)
 
 void dcd_set_address (uint8_t rhport, uint8_t dev_addr)
 {
-
   USB_OTG_DeviceTypeDef * dev = DEVICE_BASE(rhport);
   dev->DCFG = (dev->DCFG & ~USB_OTG_DCFG_DAD_Msk) | (dev_addr << USB_OTG_DCFG_DAD_Pos);
 
@@ -1174,8 +1175,6 @@ void dcd_int_handler(uint8_t rhport)
 
   uint32_t const int_status = usb_otg->GINTSTS & usb_otg->GINTMSK;
 
-  LOG("GINTSTS=%08x GINTSTS'MAK=%08x\n", usb_otg->GINTSTS, int_status);
-
   if(int_status & USB_OTG_GINTSTS_USBRST)
   {
     // USBRST is start of reset.
@@ -1223,6 +1222,7 @@ void dcd_int_handler(uint8_t rhport)
     usb_otg->GOTGINT = otg_int;
   }
 
+#if USE_SOF
   if(int_status & USB_OTG_GINTSTS_SOF)
   {
     usb_otg->GINTSTS = USB_OTG_GINTSTS_SOF;
@@ -1232,7 +1232,7 @@ void dcd_int_handler(uint8_t rhport)
 
     dcd_event_bus_signal(rhport, DCD_EVENT_SOF, true);
   }
-
+#endif
   // RxFIFO non-empty interrupt handling.
   if(int_status & USB_OTG_GINTSTS_RXFLVL)
   {

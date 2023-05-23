@@ -23,12 +23,8 @@ CFLAGS += \
   -DBOARD_FS_PHY_ON_HS_CORE=$(FS_PHY_ON_HS_CORE)
 
 ifeq ($(PORT), 1)
-  ifeq ($(FS_PHY_ON_HS_CORE), 0)
-    CFLAGS += -DBOARD_DEVICE_RHPORT_SPEED=OPT_MODE_HIGH_SPEED
-    $(info "PORT1 High Speed")
-  else
-    $(info "PORT1 Full Speed port on High Speed Core")
-  endif
+  CFLAGS += -DBOARD_DEVICE_RHPORT_SPEED=OPT_MODE_HIGH_SPEED
+  $(info "PORT1 High Speed")
 else
   $(info "PORT0 Full Speed")
 endif

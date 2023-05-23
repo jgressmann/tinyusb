@@ -47,8 +47,11 @@
 #define UART_RX_PIN           GPIO_PIN_9
 
 // VBUS Sense detection
-#define OTG_FS_VBUS_SENSE     1
+#define OTG_FS_VBUS_SENSE     0
 #define OTG_HS_VBUS_SENSE     0
+
+
+#define OTG_HS_USE_FS_PHY 1
 
 
 #define USB_OTG_FS            USB_OTG_HS
@@ -107,7 +110,7 @@ static inline void board_stm32h7_clock_init(void)
   RCC_PeriphCLKInitTypeDef RCC_PeriphCLKInitStruct;
 
   RCC_PeriphCLKInitStruct.PeriphClockSelection = RCC_PERIPHCLK_USB;
-  RCC_PeriphCLKInitStruct.UsbClockSelection = RCC_USBCLKSOURCE_PLL;
+  RCC_PeriphCLKInitStruct.UsbClockSelection = RCC_USBCLKSOURCE_HSI48;
   HAL_RCCEx_PeriphCLKConfig(&RCC_PeriphCLKInitStruct);
 }
 

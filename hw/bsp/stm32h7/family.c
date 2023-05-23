@@ -31,6 +31,10 @@
 #include "bsp/board.h"
 #include "board.h"
 
+#ifndef OTG_HS_USE_FS_PHY
+  #define OTG_HS_USE_FS_PHY 0
+#endif
+
 //--------------------------------------------------------------------+
 // Forward USB interrupt events to TinyUSB IRQ Handler
 //--------------------------------------------------------------------+
@@ -40,7 +44,6 @@
 void OTG_FS_IRQHandler(void)
 {
   tud_int_handler(0);
-  board_uart_write("fs\n", -1);
 }
 
 // Despite being call USB2_OTG
@@ -48,19 +51,11 @@ void OTG_FS_IRQHandler(void)
 void OTG_HS_IRQHandler(void)
 {
 #if BOARD_FS_PHY_ON_HS_CORE
-  board_uart_write("hs 0\n", -1);
   tud_int_handler(0);
 #else
-  board_uart_write("hs 1\n", -1);
   tud_int_handler(1);
 #endif
-
 }
-
-// void OTG_HS_EP1_OUT_IRQHandler(void) {}
-// void OTG_HS_EP1_IN_IRQHandler(void) {}
-// void OTG_HS_WKUP_IRQHandler(void) {}
-// void OTG_HS_IRQHandler(void) {}
 
 
 //--------------------------------------------------------------------+
@@ -83,38 +78,9 @@ static inline void uart_send_str(const char* text)
 	}
 }
 
-// static inline void board_led_init(void)
-// {
-//   GPIO_InitTypeDef  GPIO_InitStruct;
-
-//   __HAL_RCC_GPIOB_CLK_ENABLE();
-
-
-//   GPIO_InitStruct.Pin   = LED_PIN;
-//   GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
-//   GPIO_InitStruct.Pull  = GPIO_NOPULL;
-//   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-//   HAL_GPIO_Init(LED_PORT, &GPIO_InitStruct);
-
-
-
-//   // // enable clock to GPIO block B
-//   // RCC->AHB4ENR |= RCC_AHB4ENR_GPIOBEN;
-
-//   // // disable output
-// 	// GPIOB->BSRR = GPIO_BSRR_BR0;
-
-//   // // switch output type is push-pull on reset
-
-//   // // switch mode to output
-//   // GPIOB->MODER = (GPIOB->MODER & ~(GPIO_MODER_MODE0)) | (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE0_Pos);
-// }
-
 void board_init(void)
 {
-  // board_led_init();
   board_stm32h7_clock_init();
-
 
   // Enable All GPIOs clocks
   __HAL_RCC_GPIOA_CLK_ENABLE();
@@ -122,10 +88,12 @@ void board_init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE(); // USB ULPI NXT
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
-  __HAL_RCC_GPIOE_CLK_ENABLE();
+  __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE(); // USB ULPI NXT
+#ifdef __HAL_RCC_GPIOI_CLK_ENABLE
   __HAL_RCC_GPIOI_CLK_ENABLE(); // USB ULPI NXT
+#endif
   __HAL_RCC_GPIOJ_CLK_ENABLE();
 
   // Enable UART Clock
@@ -228,27 +196,6 @@ void board_init(void)
   // Despite being call USB2_OTG
   // OTG_HS is marked as RHPort1 by TinyUSB to be consistent across stm32 port
 
-#if BOARD_FS_PHY_ON_HS_CORE
-  // PA9 VUSB, PA10 ID, PA11 DM, PA12 DP
-
-  // Configure DM DP Pins
-  GPIO_InitStruct.Pin = GPIO_PIN_11 | GPIO_PIN_12;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Alternate = GPIO_AF10_OTG1_HS;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  // This for ID line debug
-  GPIO_InitStruct.Pin = GPIO_PIN_10;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF10_OTG1_HS;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-#else
-
   struct {
     GPIO_TypeDef* port;
     uint32_t pin;
@@ -266,11 +213,9 @@ void board_init(void)
     GPIO_InitStruct.Alternate = GPIO_AF10_OTG2_HS;
     HAL_GPIO_Init(ulpi_pins[i].port, &GPIO_InitStruct);
   }
-  // Enable USB ULPI clock
-  __HAL_RCC_USB1_OTG_HS_ULPI_CLK_ENABLE();
-#endif
 
-  // Enable USB HS clock
+  // Enable USB HS & ULPI Clocks
+  __HAL_RCC_USB1_OTG_HS_ULPI_CLK_ENABLE();
   __HAL_RCC_USB1_OTG_HS_CLK_ENABLE();
 
 #if OTG_HS_VBUS_SENSE
@@ -294,9 +239,6 @@ void board_init(void)
   board_stm32h7_post_init();
 #endif // rhport = 1
 
-  board_led_write(1);
-
-  board_uart_write("Hello, world!\n", -1);
 }
 
 //--------------------------------------------------------------------+
@@ -306,7 +248,6 @@ void board_init(void)
 void board_led_write(bool state)
 {
   HAL_GPIO_WritePin(LED_PORT, LED_PIN, state ? LED_STATE_ON : (1-LED_STATE_ON));
-  // GPIOB->BSRR = UINT32_C(1) << (0 + (!state) * 16);
 }
 
 uint32_t board_button_read(void)
@@ -335,6 +276,7 @@ int board_uart_write(void const * buf, int len)
 volatile uint32_t system_ticks = 0;
 void SysTick_Handler(void)
 {
+  HAL_IncTick();
   system_ticks++;
 }
 
@@ -346,7 +288,7 @@ uint32_t board_millis(void)
 
 void HardFault_Handler(void)
 {
-  asm("bkpt");
+  __asm("BKPT #0\n");
 }
 
 // Required by __libc_init_array in startup code if we are compiling using
