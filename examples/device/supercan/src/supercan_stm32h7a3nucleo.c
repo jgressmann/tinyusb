@@ -11,14 +11,14 @@
 #include <supercan_debug.h>
 #include <leds.h>
 #include <tusb.h>
-#include <hw/bsp/board.h>
+#include <bsp/board.h>
 
 #include <m_can.h>
 
 #include <tusb.h>
 #include <class/dfu/dfu_rt_device.h>
 
-#define CONF_CPU_FREQUENCY 160000000L
+#define CONF_CPU_FREQUENCY 280000000L
 
 
 
@@ -49,77 +49,123 @@ SC_RAMFUNC void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
 
 	LOG("activating ST bootloader, remove CAN bus connection and replug device after firmware download :)\n\n");
 
-	// pretend may flash is empty, flag is held of power-on-reset
+	// pretend may flash is empty, flag is held during power-on-reset
 	FLASH->ACR |= FLASH_ACR_PROGEMPTY;
 
 	NVIC_SystemReset();
 }
 #endif // #if CFG_TUD_DFU_RT
 
+static inline void m_can_can_init_board(struct mcan_can* c)
+{
+	m_can_conf_begin(c->m_can);
+
+
+
+
+
+	// tx fifo
+	c->m_can->TXBC.reg = MCANX_TXBC_TBSA((uint32_t) c->hw_tx_fifo_ram) | MCANX_TXBC_TFQS(MCAN_HW_TX_FIFO_SIZE);
+	// tx event fifo
+	c->m_can->TXEFC.reg = MCANX_TXEFC_EFSA((uint32_t) c->hw_txe_fifo_ram) | MCANX_TXEFC_EFS(MCAN_HW_TX_FIFO_SIZE);
+	// rx fifo0
+	c->m_can->RXF0C.reg = MCANX_RXF0C_F0SA((uint32_t) c->hw_rx_fifo_ram) | MCANX_RXF0C_F0S(MCAN_HW_RX_FIFO_SIZE);
+
+	// configure for max message size
+	c->m_can->TXESC.reg = MCANX_TXESC_TBDS_DATA64;
+	//  | MCANX_RXF0C_F0OM; // FIFO 0 overwrite mode
+	c->m_can->RXESC.reg = MCANX_RXESC_RBDS_DATA64 + MCANX_RXESC_F0DS_DATA64;
+
+	m_can_conf_end(c->m_can);
+
+	LOG("TXBC=%08lx TXEFC=%08lx RXF0C=%08lx TXESC=%08lx RXESC=%08lx\n",
+		c->m_can->TXBC.reg,
+		c->m_can->TXEFC.reg,
+		c->m_can->RXF0C.reg,
+		c->m_can->TXESC.reg,
+		c->m_can->RXESC.reg);
+}
 
 // controller and hardware specific setup of i/o pins for CAN
 static inline void can_init(void)
 {
 	/* FDCAN1_RX PD0, FDCAN1_TX PD1 */
 	const uint32_t GPIO_MODE_AF_FDCAN = 0x9; // DS13195 - Rev 8 page 71/23
-    uint32_t FDCAN1_RAM = SRAMCAN_BASE;
-	uint32_t FDCAN2_RAM = FDCAN1_RAM + 0x1400;
-	// const unsigned FLSSA_BASE = 0x0000;
-	// const unsigned FLESA_BASE = 0x0070;
-	const unsigned F0SA_BASE = 0x00B0;
-	// const unsigned F1SA_BASE = 0x188;
-	const unsigned EFSA_BASE = 0x0260; // 0x4000B660
-	const unsigned TBSA_BASE = 0x0278; // 0x4000B678
 
+	/* CAN RAM Layout:
+	 	- RX fifo (base)
+		- TX fifo
+		- TX event fifo
+	*/
+	uint32_t const FDCAN1_RAM = SRAMCAN_BASE;
+	uint32_t const FDCAN1_RAM_RX_FIFO = FDCAN1_RAM;
+	uint32_t const FDCAN1_RAM_TX_FIFO = FDCAN1_RAM_RX_FIFO + sizeof(struct mcan_rx_fifo_element) * MCAN_HW_RX_FIFO_SIZE;
+	uint32_t const FDCAN1_RAM_TXE_FIFO = FDCAN1_RAM_TX_FIFO + sizeof(struct mcan_tx_fifo_element) * MCAN_HW_TX_FIFO_SIZE;
+
+
+	LOG("FDCAN1 RAM RX=%08lx TX=%08lx TXE=%08lx\n", FDCAN1_RAM_RX_FIFO, FDCAN1_RAM_TX_FIFO, FDCAN1_RAM_TXE_FIFO);
 	// enable clock to GPIO block D
-	RCC->IOPENR |= RCC_IOPENR_GPIODEN;
+	RCC->AHB4ENR |= RCC_AHB4ENR_GPIODEN;
+
 
 	// // high speed output
-	// GPIOB->OSPEEDR =
-	// 	(GPIOB->OSPEEDR & ~(
+	// GPIOD->OSPEEDR =
+	// 	(GPIOD->OSPEEDR & ~(
 	// 	GPIO_OSPEEDR_OSPEED0
-	// 	| GPIO_OSPEEDR_OSPEED1
-	// 	| GPIO_OSPEEDR_OSPEED8
-	// 	| GPIO_OSPEEDR_OSPEED9))
+	// 	| GPIO_OSPEEDR_OSPEED1))
 	// 	| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED0_Pos)
-	// 	| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED1_Pos)
-	// 	| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED8_Pos)
-	// 	| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED9_Pos);
+	// 	| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED1_Pos);
 
 
 	// alternate function to CAN
 	GPIOD->AFR[0] =
 		(GPIOB->AFR[0] & ~(GPIO_AFRL_AFSEL0 | GPIO_AFRL_AFSEL1))
-		| (GPIO_MODE_AF3_FDCAN << GPIO_AFRL_AFSEL0_Pos)
-		| (GPIO_MODE_AF3_FDCAN << GPIO_AFRL_AFSEL1_Pos);
+		| (GPIO_MODE_AF_FDCAN << GPIO_AFRL_AFSEL0_Pos)
+		| (GPIO_MODE_AF_FDCAN << GPIO_AFRL_AFSEL1_Pos);
 
 	// switch mode to alternate function
-	GPIOB->MODER =
-		(GPIOB->MODER & ~(
+	GPIOD->MODER =
+		(GPIOD->MODER & ~(
 			GPIO_MODER_MODE0
 			| GPIO_MODER_MODE1))
 		| (GPIO_MODE_AF_PP << GPIO_MODER_MODE0_Pos)
 		| (GPIO_MODE_AF_PP << GPIO_MODER_MODE1_Pos);
 
 
-	// set clock to PLL Q
-	RCC->CCIPR2 =
-		(RCC->CCIPR2 & ~(RCC_CCIPR2_FDCANSEL_Msk))
-		| (UINT32_C(1) << RCC_CCIPR2_FDCANSEL_Pos);
+	// set clock for FDCAN to PLL2 Q
+	RCC->CDCCIP1R =
+		(RCC->CDCCIP1R &
+		~(RCC_CDCCIP1R_FDCANSEL))
+		| (0x1 << RCC_CDCCIP1R_FDCANSEL_Pos);
 
 	// enable clock
-	RCC->APBENR1 |= RCC_APBENR1_FDCANEN;
+	RCC->APB1HENR |= RCC_APB1HENR_FDCANEN;
+
+	LOG("M_CAN CCU release %lx\n", FDCAN_CCU->CREL);
+
+	//m_can_init_begin(mcan_cans[0].m_can);
+
+	// // setup clock calibration unit (CCU) for bypass
+	// FDCAN_CCU->CCFG = FDCANCCU_CCFG_SWR;
+
+	// // wait for reset
+	// while (FDCAN_CCU->CCFG & FDCANCCU_CCFG_SWR);
+
+	// // set bypass with divider of 1
+	// FDCAN_CCU->CCFG = FDCANCCU_CCFG_BCC;
+	// LOG("CCU CCFG=%08lx\n", FDCAN_CCU->CCFG);
+
 
 	mcan_can_init();
 
 	mcan_cans[0].m_can = (MCanX*)FDCAN1;
 	mcan_cans[0].interrupt_id = FDCAN1_IT0_IRQn;
-	mcan_cans[0].led_traffic = CAN0_TRAFFIC_LED;
+	mcan_cans[0].led_traffic = 0;
 	mcan_cans[0].led_status_green = LED_CAN0_STATUS_GREEN;
 	mcan_cans[0].led_status_red = LED_CAN0_STATUS_RED;
-	mcan_cans[0].hw_tx_fifo_ram = (struct mcan_tx_fifo_element *)(FDCAN1_RAM + TBSA_BASE);
-	mcan_cans[0].hw_txe_fifo_ram = (struct mcan_txe_fifo_element *)(FDCAN1_RAM + EFSA_BASE);
-	mcan_cans[0].hw_rx_fifo_ram = (struct mcan_rx_fifo_element *)(FDCAN1_RAM + F0SA_BASE);
+	mcan_cans[0].hw_tx_fifo_ram = (struct mcan_tx_fifo_element *)(FDCAN1_RAM_TX_FIFO);
+	mcan_cans[0].hw_txe_fifo_ram = (struct mcan_txe_fifo_element *)(FDCAN1_RAM_TXE_FIFO);
+	mcan_cans[0].hw_rx_fifo_ram = (struct mcan_rx_fifo_element *)(FDCAN1_RAM_RX_FIFO);
 
 
 
@@ -130,9 +176,7 @@ static inline void can_init(void)
 
 	m_can_init_begin(mcan_cans[0].m_can);
 
-
-	// mcan_cans[0].m_can->MRCFG.reg = MCANX_MRCFG_QOS_HIGH;
-	// mcan_cans[1].m_can->MRCFG.reg = MCANX_MRCFG_QOS_HIGH;
+	m_can_can_init_board(&mcan_cans[0]);
 
 	NVIC_SetPriority(mcan_cans[0].interrupt_id, SC_ISR_PRIORITY);
 
@@ -142,7 +186,7 @@ static inline void can_init(void)
 static inline void counter_1mhz_init(void)
 {
 	// enable clock
-	RCC->APBENR1 |= RCC_APBENR1_TIM2EN;
+	RCC->APB1LENR |= RCC_APB1LENR_TIM2EN;
 
 	// 1 MHz
 	TIM2->PSC = (CONF_CPU_FREQUENCY / 1000000UL) - 1; /* yes, minus one */
@@ -184,52 +228,32 @@ static const struct led leds[] = {
 
 static inline void leds_init(void)
 {
-	// enable clock to GPIO block A, B
-	RCC->IOPENR |= RCC_IOPENR_GPIOAEN | RCC_IOPENR_GPIOBEN;
+	// enable clock to GPIO block B, E
+	RCC->AHB4ENR |= RCC_AHB4ENR_GPIOBEN | RCC_AHB4ENR_GPIOEEN;
 
 	// disable output
-	GPIOA->BSRR =
-		GPIO_BSRR_BR3 |
-		GPIO_BSRR_BR4 |
-		GPIO_BSRR_BR5 |
-		GPIO_BSRR_BR6;
-
 	GPIOB->BSRR =
-		GPIO_BSRR_BR4 |
-		GPIO_BSRR_BR5 |
-		GPIO_BSRR_BR6 |
-		GPIO_BSRR_BR7 |
-		GPIO_BSRR_BR12;
+		GPIO_BSRR_BR0 |
+		GPIO_BSRR_BR14;
+
+	GPIOE->BSRR =
+		GPIO_BSRR_BR1;
 
   // switch output type is push-pull on reset
 
   // switch mode to output
-  GPIOA->MODER =
-  	(GPIOA->MODER & ~(
-		GPIO_MODER_MODE3 |
-		GPIO_MODER_MODE4 |
-		GPIO_MODER_MODE5 |
-		GPIO_MODER_MODE6))
-	| (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE3_Pos)
-	| (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE4_Pos)
-	| (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE5_Pos)
-	| (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE6_Pos);
-
   GPIOB->MODER =
   	(GPIOB->MODER & ~(
-		GPIO_MODER_MODE4 |
-		GPIO_MODER_MODE5 |
-		GPIO_MODER_MODE6 |
-		GPIO_MODER_MODE7 |
-		GPIO_MODER_MODE12))
-	| (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE4_Pos)
-	| (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE5_Pos)
-	| (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE6_Pos)
-	| (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE7_Pos)
-	| (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE12_Pos);
-}
+		GPIO_MODER_MODE0 |
+		GPIO_MODER_MODE14))
+	| (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE0_Pos)
+	| (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE14_Pos);
 
-#define POWER_LED LED_DEBUG_0
+  GPIOE->MODER =
+  	(GPIOE->MODER & ~(
+		GPIO_MODER_MODE1))
+	| (GPIO_MODE_OUTPUT_PP << GPIO_MODER_MODE1_Pos);
+}
 
 extern void sc_board_led_set(uint8_t index, bool on)
 {
@@ -255,12 +279,12 @@ extern void sc_board_init_begin(void)
 {
 	board_init();
 
-	LOG("FLASH_SECR.BOOT_LOCK=%u FLASH_ACR.EMPTY=%u FLASH_OPTR_nBOOT_SEL=%u FLASH_OPTR_nBOOT1=%u FLASH_OPTR_nBOOT0=%u\n",
-		(FLASH->SECR & FLASH_SECR_BOOT_LOCK) == FLASH_SECR_BOOT_LOCK,
-		(FLASH->ACR & FLASH_ACR_PROGEMPTY) == FLASH_ACR_PROGEMPTY,
-		(FLASH->OPTR & FLASH_OPTR_nBOOT_SEL) == FLASH_OPTR_nBOOT_SEL,
-		(FLASH->OPTR & FLASH_OPTR_nBOOT1) == FLASH_OPTR_nBOOT1,
-		(FLASH->OPTR & FLASH_OPTR_nBOOT0) == FLASH_OPTR_nBOOT0);
+	// LOG("FLASH_SECR.BOOT_LOCK=%u FLASH_ACR.EMPTY=%u FLASH_OPTR_nBOOT_SEL=%u FLASH_OPTR_nBOOT1=%u FLASH_OPTR_nBOOT0=%u\n",
+	// 	(FLASH->SECR & FLASH_SECR_BOOT_LOCK) == FLASH_SECR_BOOT_LOCK,
+	// 	(FLASH->ACR & FLASH_ACR_PROGEMPTY) == FLASH_ACR_PROGEMPTY,
+	// 	(FLASH->OPTR & FLASH_OPTR_nBOOT_SEL) == FLASH_OPTR_nBOOT_SEL,
+	// 	(FLASH->OPTR & FLASH_OPTR_nBOOT1) == FLASH_OPTR_nBOOT1,
+	// 	(FLASH->OPTR & FLASH_OPTR_nBOOT0) == FLASH_OPTR_nBOOT0);
 
 	leds_init();
 
@@ -272,7 +296,6 @@ extern void sc_board_init_begin(void)
 extern void sc_board_init_end(void)
 {
 	led_blink(0, 2000);
-	led_set(POWER_LED, 1);
 }
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
@@ -334,20 +357,36 @@ extern uint32_t sc_board_identifier(void)
 	return id;
 }
 
-SC_RAMFUNC void TIM16_FDCAN_IT0_IRQHandler(void)
+SC_RAMFUNC void FDCAN1_IT0_IRQHandler(void)
 {
-	// LOG("FDCAN_IT0 int\n");
+	LOG("FDCAN1_IT0 int\n");
+
+	mcan_can_int(0);
+}
+
+SC_RAMFUNC void FDCAN1_IT1_IRQHandler(void)
+{
+	LOG("FDCAN1_IT1 int\n");
+
+	mcan_can_int(0);
+}
+
+SC_RAMFUNC void FDCAN2_IT0_IRQHandler(void)
+{
+	LOG("FDCAN2_IT0 int\n");
+
+	mcan_can_int(0);
+}
+
+SC_RAMFUNC void FDCAN2_IT1_IRQHandler(void)
+{
+	LOG("FDCAN2_IT1 int\n");
 
 	mcan_can_int(0);
 }
 
 
-SC_RAMFUNC void TIM17_FDCAN_IT1_IRQHandler(void)
-{
-	// LOG("FDCAN_IT1 int\n");
 
-	mcan_can_int(1);
-}
 
 // SC_RAMFUNC void TIM2_IRQHandler(void)
 // {
@@ -357,4 +396,4 @@ SC_RAMFUNC void TIM17_FDCAN_IT1_IRQHandler(void)
 // 	TIM2->SR = 0;
 // }
 
-#endif // #if D5035_05
+#endif // #if STM32H7A3NUCLEO

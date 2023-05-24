@@ -167,6 +167,10 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #	define D5035_05 0
 #endif
 
+#ifndef STM32H7A3NUCLEO
+#	define STM32H7A3NUCLEO 0
+#endif
+
 #if D5035_01
 #	include "supercan_D5035_01.h"
 #elif SAME54XPLAINEDPRO

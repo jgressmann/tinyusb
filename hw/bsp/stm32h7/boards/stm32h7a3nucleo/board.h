@@ -44,23 +44,25 @@
 //--------------------------------------------------------------------+
 static inline void board_stm32h7_clock_init(void)
 {
-  RCC_ClkInitTypeDef RCC_ClkInitStruct;
-  RCC_OscInitTypeDef RCC_OscInitStruct;
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+  /*AXI clock gating */
+  RCC->CKGAENR = 0xFFFFFFFF;
 
   /* The PWR block is always enabled on the H7 series- there is no clock
      enable. For now, use the default VOS3 scale mode (lowest) and limit clock
      frequencies to avoid potential current draw problems from bus
      power when using the max clock speeds throughout the chip. */
 
-  /* Enable HSE Oscillator and activate PLL1 with HSI as source */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI48|RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_DIV1;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.HSICalibrationValue = 64;
   RCC_OscInitStruct.HSI48State = RCC_HSI48_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 4;
-  RCC_OscInitStruct.PLL.PLLN = 20;
+  RCC_OscInitStruct.PLL.PLLN = 35;
   RCC_OscInitStruct.PLL.PLLP = 2;
   RCC_OscInitStruct.PLL.PLLQ = 3;
   RCC_OscInitStruct.PLL.PLLR = 2;
@@ -80,14 +82,13 @@ static inline void board_stm32h7_clock_init(void)
   RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV2;
   RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV2;
 
-  /* 4 wait states required for 168MHz and VOS3. */
-  HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4);
+  HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_7);
 
   /* Like on F4, on H7, USB's actual peripheral clock and bus clock are
      separate. However, the main system PLL (PLL1) doesn't have a direct
      connection to the USB peripheral clock to generate 48 MHz, so we do this
      dance. This will connect PLL1's Q output to the USB peripheral clock. */
-  RCC_PeriphCLKInitTypeDef RCC_PeriphCLKInitStruct;
+  RCC_PeriphCLKInitTypeDef RCC_PeriphCLKInitStruct = {0};
 
   RCC_PeriphCLKInitStruct.PeriphClockSelection = RCC_PERIPHCLK_USB;
   RCC_PeriphCLKInitStruct.UsbClockSelection = RCC_USBCLKSOURCE_HSI48;
