@@ -18,21 +18,13 @@
 #include <tusb.h>
 #include <class/dfu/dfu_rt_device.h>
 
-#define CONF_CPU_FREQUENCY 280000000L
-
-
 
 #define PORT_SHIFT 4
 #define PIN_MASK 15
 #define MAKE_PIN(port, pin) (((port) << PORT_SHIFT) | (pin))
 
-#define PIN_PA03 MAKE_PIN(0, 3)
-#define PIN_PA04 MAKE_PIN(0, 4)
-#define PIN_PA05 MAKE_PIN(0, 5)
-#define PIN_PA06 MAKE_PIN(0, 6)
-
 #define PIN_PB00 MAKE_PIN(1, 0)
-#define PIN_PB14 MAKE_PIN(1, 4)
+#define PIN_PB14 MAKE_PIN(1, 14)
 
 #define PIN_PE01 MAKE_PIN(4, 1)
 
@@ -59,10 +51,6 @@ SC_RAMFUNC void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
 static inline void m_can_can_init_board(struct mcan_can* c)
 {
 	m_can_conf_begin(c->m_can);
-
-
-
-
 
 	// tx fifo
 	c->m_can->TXBC.reg = MCANX_TXBC_TBSA((uint32_t) c->hw_tx_fifo_ram) | MCANX_TXBC_TFQS(MCAN_HW_TX_FIFO_SIZE);
@@ -104,17 +92,32 @@ static inline void can_init(void)
 
 
 	LOG("FDCAN1 RAM RX=%08lx TX=%08lx TXE=%08lx\n", FDCAN1_RAM_RX_FIFO, FDCAN1_RAM_TX_FIFO, FDCAN1_RAM_TXE_FIFO);
+
+
+	mcan_can_init();
+
+	mcan_cans[0].m_can = (MCanX*)FDCAN1;
+	mcan_cans[0].interrupt_id = FDCAN1_IT0_IRQn;
+	mcan_cans[0].led_traffic = 0;
+	mcan_cans[0].led_status_green = LED_CAN0_STATUS_GREEN;
+	mcan_cans[0].led_status_red = LED_CAN0_STATUS_RED;
+	mcan_cans[0].hw_tx_fifo_ram = (struct mcan_tx_fifo_element *)(FDCAN1_RAM_TX_FIFO);
+	mcan_cans[0].hw_txe_fifo_ram = (struct mcan_txe_fifo_element *)(FDCAN1_RAM_TXE_FIFO);
+	mcan_cans[0].hw_rx_fifo_ram = (struct mcan_rx_fifo_element *)(FDCAN1_RAM_RX_FIFO);
+
+
+
 	// enable clock to GPIO block D
 	RCC->AHB4ENR |= RCC_AHB4ENR_GPIODEN;
 
 
-	// // high speed output
-	// GPIOD->OSPEEDR =
-	// 	(GPIOD->OSPEEDR & ~(
-	// 	GPIO_OSPEEDR_OSPEED0
-	// 	| GPIO_OSPEEDR_OSPEED1))
-	// 	| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED0_Pos)
-	// 	| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED1_Pos);
+	// high speed output
+	GPIOD->OSPEEDR =
+		(GPIOD->OSPEEDR & ~(
+		GPIO_OSPEEDR_OSPEED0
+		| GPIO_OSPEEDR_OSPEED1))
+		| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED0_Pos)
+		| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED1_Pos);
 
 
 	// alternate function to CAN
@@ -132,55 +135,74 @@ static inline void can_init(void)
 		| (GPIO_MODE_AF_PP << GPIO_MODER_MODE1_Pos);
 
 
+
+	// setup PLL2 to provide 80 MHz from 48 Mhz HSI
+	RCC->CR &= ~RCC_CR_PLL2ON;
+
+	RCC->PLLCFGR =
+		(RCC->PLLCFGR & ~(
+			RCC_PLLCFGR_DIVQ2EN
+			| RCC_PLLCFGR_DIVP2EN
+			| RCC_PLLCFGR_DIVR2EN
+			| RCC_PLLCFGR_PLL2RGE
+			| RCC_PLLCFGR_PLL2VCOSEL))
+		| (0x3 << RCC_PLLCFGR_PLL2RGE_Pos); // 8-16 MHz input range
+
+	RCC->PLLCKSELR =
+		(RCC->PLLCKSELR & ~(RCC_PLLCKSELR_DIVM2))
+		| (4 << RCC_PLLCKSELR_DIVM2_Pos); // M=4: 48->16 Mhz
+
+	RCC->PLL2DIVR =
+		(2 << RCC_PLL2DIVR_Q2_Pos) // Q=3
+		| (14 << RCC_PLL2DIVR_N2_Pos) // N=15: 16 * 15 / 3 = 80 MHz
+		;
+
+	// enable PLL2 Q
+	RCC->PLLCFGR |= RCC_PLLCFGR_DIVQ2EN;
+
+	// enable PLL2
+	RCC->CR |= RCC_CR_PLL2ON;
+
 	// set clock for FDCAN to PLL2 Q
 	RCC->CDCCIP1R =
 		(RCC->CDCCIP1R &
 		~(RCC_CDCCIP1R_FDCANSEL))
-		| (0x1 << RCC_CDCCIP1R_FDCANSEL_Pos);
+		| (0x2 << RCC_CDCCIP1R_FDCANSEL_Pos);
 
 	// enable clock
 	RCC->APB1HENR |= RCC_APB1HENR_FDCANEN;
+	RCC->APB1HLPENR |= RCC_APB1HLPENR_FDCANLPEN;
 
 	LOG("M_CAN CCU release %lx\n", FDCAN_CCU->CREL);
 
-	//m_can_init_begin(mcan_cans[0].m_can);
-
-	// // setup clock calibration unit (CCU) for bypass
-	// FDCAN_CCU->CCFG = FDCANCCU_CCFG_SWR;
-
-	// // wait for reset
-	// while (FDCAN_CCU->CCFG & FDCANCCU_CCFG_SWR);
-
-	// // set bypass with divider of 1
-	// FDCAN_CCU->CCFG = FDCANCCU_CCFG_BCC;
-	// LOG("CCU CCFG=%08lx\n", FDCAN_CCU->CCFG);
-
-
-	mcan_can_init();
-
-	mcan_cans[0].m_can = (MCanX*)FDCAN1;
-	mcan_cans[0].interrupt_id = FDCAN1_IT0_IRQn;
-	mcan_cans[0].led_traffic = 0;
-	mcan_cans[0].led_status_green = LED_CAN0_STATUS_GREEN;
-	mcan_cans[0].led_status_red = LED_CAN0_STATUS_RED;
-	mcan_cans[0].hw_tx_fifo_ram = (struct mcan_tx_fifo_element *)(FDCAN1_RAM_TX_FIFO);
-	mcan_cans[0].hw_txe_fifo_ram = (struct mcan_txe_fifo_element *)(FDCAN1_RAM_TXE_FIFO);
-	mcan_cans[0].hw_rx_fifo_ram = (struct mcan_rx_fifo_element *)(FDCAN1_RAM_RX_FIFO);
-
-
-
-	for (size_t j = 0; j < TU_ARRAY_SIZE(mcan_cans); ++j) {
-		struct mcan_can *can = &mcan_cans[j];
-		can->features = CAN_FEAT_PERM;
-	}
-
+	LOG("1\n");
 	m_can_init_begin(mcan_cans[0].m_can);
+	LOG("2\n");
+	m_can_conf_begin(mcan_cans[0].m_can);
+	LOG("2.1\n");
+
+	// setup clock calibration unit (CCU) for bypass
+	FDCAN_CCU->CCFG = FDCANCCU_CCFG_SWR;
+
+	// set bypass with divider of 1
+	FDCAN_CCU->CCFG = FDCANCCU_CCFG_BCC;
+	LOG("CCU CCFG=%08lx\n", FDCAN_CCU->CCFG);
 
 	m_can_can_init_board(&mcan_cans[0]);
 
+
+	m_can_conf_end(mcan_cans[0].m_can);
+	LOG("2.2\n");
+	m_can_init_end(mcan_cans[0].m_can);
+	LOG("3\n");
+
+
+	m_can_init_begin(mcan_cans[0].m_can);
+
+
 	NVIC_SetPriority(mcan_cans[0].interrupt_id, SC_ISR_PRIORITY);
 
-	LOG("M_CAN release %u.%u.%u (%lx)\n", mcan_cans[0].m_can->CREL.bit.REL, mcan_cans[0].m_can->CREL.bit.STEP, mcan_cans[0].m_can->CREL.bit.SUBSTEP, mcan_cans[0].m_can->CREL.reg);
+	LOG("M_CAN CAN release %u.%u.%u (%lx)\n", mcan_cans[0].m_can->CREL.bit.REL, mcan_cans[0].m_can->CREL.bit.STEP, mcan_cans[0].m_can->CREL.bit.SUBSTEP, mcan_cans[0].m_can->CREL.reg);
 }
 
 static inline void counter_1mhz_init(void)
@@ -189,7 +211,7 @@ static inline void counter_1mhz_init(void)
 	RCC->APB1LENR |= RCC_APB1LENR_TIM2EN;
 
 	// 1 MHz
-	TIM2->PSC = (CONF_CPU_FREQUENCY / 1000000UL) - 1; /* yes, minus one */
+	TIM2->PSC = (SystemCoreClock / 1000000UL) - 1; /* yes, minus one */
 
 	/* reset value of TIM2->ARR is 0xffffffff which is what we want */
 
@@ -220,9 +242,9 @@ struct led {
 
 
 static const struct led leds[] = {
-	LED_STATIC_INITIALIZER("debug", PIN_PE01), // board led
-	LED_STATIC_INITIALIZER("can0_green", PIN_PB00),
-	LED_STATIC_INITIALIZER("can0_red", PIN_PB14),
+	LED_STATIC_INITIALIZER("debug", PIN_PE01), // yellow
+	LED_STATIC_INITIALIZER("can0_green", PIN_PB00), // green
+	LED_STATIC_INITIALIZER("can0_red", PIN_PB14), // red
 
 };
 
@@ -239,7 +261,7 @@ static inline void leds_init(void)
 	GPIOE->BSRR =
 		GPIO_BSRR_BR1;
 
-  // switch output type is push-pull on reset
+  // output type is push-pull on reset
 
   // switch mode to output
   GPIOB->MODER =
@@ -370,23 +392,6 @@ SC_RAMFUNC void FDCAN1_IT1_IRQHandler(void)
 
 	mcan_can_int(0);
 }
-
-SC_RAMFUNC void FDCAN2_IT0_IRQHandler(void)
-{
-	LOG("FDCAN2_IT0 int\n");
-
-	mcan_can_int(0);
-}
-
-SC_RAMFUNC void FDCAN2_IT1_IRQHandler(void)
-{
-	LOG("FDCAN2_IT1 int\n");
-
-	mcan_can_int(0);
-}
-
-
-
 
 // SC_RAMFUNC void TIM2_IRQHandler(void)
 // {
