@@ -19,6 +19,9 @@
 #include <string.h>
 #include <tusb.h>
 
+#define MCAN_CAN_GUARD_HDR 0xa5a5a5a5
+#define MCAN_CAN_GUARD_FTR 0x5a5a5a5a
+
 
 static const sc_can_bit_timing_range nm_range = {
 	.min = {
@@ -60,6 +63,15 @@ void mcan_can_init(void)
 	for (size_t i = 0; i < TU_ARRAY_SIZE(mcan_cans); ++i) {
 		struct mcan_can *can = &mcan_cans[i];
 
+#if SUPERCAN_DEBUG
+		for (size_t j = 0; j < TU_ARRAY_SIZE(can->guard_hdr); ++j) {
+			can->guard_hdr[j] = MCAN_CAN_GUARD_HDR;
+		}
+
+		for (size_t j = 0; j < TU_ARRAY_SIZE(can->guard_ftr); ++j) {
+			can->guard_ftr[j] = MCAN_CAN_GUARD_FTR;
+		}
+#endif
 		can->features = CAN_FEAT_PERM;
 
 		// init bit timings so we can always safely compute the bit rate (see can_on)
@@ -1337,6 +1349,9 @@ SC_RAMFUNC static void can_poll(
 		sc_can_status_queue(index, &status);
 		++*events;
 	}
+#if SUPERCAN_DEBUG
+	mcan_can_verify_guard(index);
+#endif
 }
 
 extern sc_can_bit_timing_range const* sc_board_can_nm_bit_timing_range(uint8_t index)
@@ -1382,6 +1397,22 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 
 	can->dt = *bt;
 }
+
+#if SUPERCAN_DEBUG
+SC_RAMFUNC extern void mcan_can_verify_guard(uint8_t index)
+{
+	struct mcan_can *can = &mcan_cans[index];
+
+	for (size_t j = 0; j < TU_ARRAY_SIZE(can->guard_hdr); ++j) {
+		SC_DEBUG_ASSERT(MCAN_CAN_GUARD_HDR == can->guard_hdr[j]);
+	}
+
+	for (size_t j = 0; j < TU_ARRAY_SIZE(can->guard_ftr); ++j) {
+		SC_DEBUG_ASSERT(MCAN_CAN_GUARD_FTR == can->guard_ftr[j]);
+	}
+}
+#endif
+
 
 
 #endif // SUPERMCANX_MCAN

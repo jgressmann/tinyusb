@@ -92,6 +92,9 @@ struct txq_frame {
 
 
 struct mcan_can {
+#if SUPERCAN_DEBUG
+	uint32_t guard_hdr[16];
+#endif
 #if MCAN_MESSAGE_RAM_CONFIGURABLE
 	CFG_TUSB_MEM_ALIGN struct mcan_tx_fifo_element hw_tx_fifo_ram[MCAN_HW_TX_FIFO_SIZE];
 	CFG_TUSB_MEM_ALIGN struct mcan_txe_fifo_element hw_txe_fifo_ram[MCAN_HW_TX_FIFO_SIZE];
@@ -135,6 +138,9 @@ struct mcan_can {
 	uint32_t txr; 				// requests from USB, set when in, clear when out
 	volatile uint32_t int_txe;	// expected TXEs, set in USB, cleared in IRQ handler
 #endif
+#if SUPERCAN_DEBUG
+	uint32_t guard_ftr[16];
+#endif
 };
 
 extern struct mcan_can mcan_cans[SC_BOARD_CAN_COUNT];
@@ -142,3 +148,6 @@ extern struct mcan_can mcan_cans[SC_BOARD_CAN_COUNT];
 extern void mcan_can_init(void);
 extern void mcan_can_configure(uint8_t index);
 SC_RAMFUNC extern void mcan_can_int(uint8_t index);
+#if SUPERCAN_DEBUG
+SC_RAMFUNC extern void mcan_can_verify_guard(uint8_t index);
+#endif
