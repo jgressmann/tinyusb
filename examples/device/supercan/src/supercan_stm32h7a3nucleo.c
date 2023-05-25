@@ -48,34 +48,8 @@ SC_RAMFUNC void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
 }
 #endif // #if CFG_TUD_DFU_RT
 
-static inline void m_can_can_init_board(struct mcan_can* c)
-{
-	m_can_conf_begin(c->m_can);
-
-	// tx fifo
-	c->m_can->TXBC.reg = MCANX_TXBC_TBSA((uint32_t) c->hw_tx_fifo_ram) | MCANX_TXBC_TFQS(MCAN_HW_TX_FIFO_SIZE);
-	// tx event fifo
-	c->m_can->TXEFC.reg = MCANX_TXEFC_EFSA((uint32_t) c->hw_txe_fifo_ram) | MCANX_TXEFC_EFS(MCAN_HW_TX_FIFO_SIZE);
-	// rx fifo0
-	c->m_can->RXF0C.reg = MCANX_RXF0C_F0SA((uint32_t) c->hw_rx_fifo_ram) | MCANX_RXF0C_F0S(MCAN_HW_RX_FIFO_SIZE);
-
-	// configure for max message size
-	c->m_can->TXESC.reg = MCANX_TXESC_TBDS_DATA64;
-	//  | MCANX_RXF0C_F0OM; // FIFO 0 overwrite mode
-	c->m_can->RXESC.reg = MCANX_RXESC_RBDS_DATA64 + MCANX_RXESC_F0DS_DATA64;
-
-	m_can_conf_end(c->m_can);
-
-	LOG("TXBC=%08lx TXEFC=%08lx RXF0C=%08lx TXESC=%08lx RXESC=%08lx\n",
-		c->m_can->TXBC.reg,
-		c->m_can->TXEFC.reg,
-		c->m_can->RXF0C.reg,
-		c->m_can->TXESC.reg,
-		c->m_can->RXESC.reg);
-}
-
 // controller and hardware specific setup of i/o pins for CAN
-static inline void can_init(void)
+static void can_init(void)
 {
 	/* FDCAN1_RX PD0, FDCAN1_TX PD1 */
 	const uint32_t GPIO_MODE_AF_FDCAN = 0x9; // DS13195 - Rev 8 page 71/23
@@ -85,25 +59,25 @@ static inline void can_init(void)
 		- TX fifo
 		- TX event fifo
 	*/
-	uint32_t const FDCAN1_RAM = SRAMCAN_BASE;
-	uint32_t const FDCAN1_RAM_RX_FIFO = FDCAN1_RAM;
-	uint32_t const FDCAN1_RAM_TX_FIFO = FDCAN1_RAM_RX_FIFO + sizeof(struct mcan_rx_fifo_element) * MCAN_HW_RX_FIFO_SIZE;
-	uint32_t const FDCAN1_RAM_TXE_FIFO = FDCAN1_RAM_TX_FIFO + sizeof(struct mcan_tx_fifo_element) * MCAN_HW_TX_FIFO_SIZE;
+	uint32_t const FDCAN1_RX_FIFO_OFFSET = 0;
+	uint32_t const FDCAN1_TX_FIFO_OFFSET = FDCAN1_RX_FIFO_OFFSET + sizeof(struct mcan_rx_fifo_element) * MCAN_HW_RX_FIFO_SIZE;
+	uint32_t const FDCAN1_TXE_FIFO_OFFSET = FDCAN1_TX_FIFO_OFFSET + sizeof(struct mcan_tx_fifo_element) * MCAN_HW_TX_FIFO_SIZE;
+	MCanX* const can0 = (MCanX*)FDCAN1;
 
-
-	LOG("FDCAN1 RAM RX=%08lx TX=%08lx TXE=%08lx\n", FDCAN1_RAM_RX_FIFO, FDCAN1_RAM_TX_FIFO, FDCAN1_RAM_TXE_FIFO);
+	LOG("FDCAN1  offset RX=%08lx TX=%08lx TXE=%08lx\n",
+		FDCAN1_RX_FIFO_OFFSET, FDCAN1_TX_FIFO_OFFSET, FDCAN1_TXE_FIFO_OFFSET);
 
 
 	mcan_can_init();
 
-	mcan_cans[0].m_can = (MCanX*)FDCAN1;
+	mcan_cans[0].m_can = can0;
 	mcan_cans[0].interrupt_id = FDCAN1_IT0_IRQn;
 	mcan_cans[0].led_traffic = 0;
 	mcan_cans[0].led_status_green = LED_CAN0_STATUS_GREEN;
 	mcan_cans[0].led_status_red = LED_CAN0_STATUS_RED;
-	mcan_cans[0].hw_tx_fifo_ram = (struct mcan_tx_fifo_element *)(FDCAN1_RAM_TX_FIFO);
-	mcan_cans[0].hw_txe_fifo_ram = (struct mcan_txe_fifo_element *)(FDCAN1_RAM_TXE_FIFO);
-	mcan_cans[0].hw_rx_fifo_ram = (struct mcan_rx_fifo_element *)(FDCAN1_RAM_RX_FIFO);
+	mcan_cans[0].hw_tx_fifo_ram = (struct mcan_tx_fifo_element *)(SRAMCAN_BASE + FDCAN1_TX_FIFO_OFFSET);
+	mcan_cans[0].hw_txe_fifo_ram = (struct mcan_txe_fifo_element *)(SRAMCAN_BASE + FDCAN1_TXE_FIFO_OFFSET);
+	mcan_cans[0].hw_rx_fifo_ram = (struct mcan_rx_fifo_element *)(SRAMCAN_BASE + FDCAN1_RX_FIFO_OFFSET);
 
 
 
@@ -111,18 +85,18 @@ static inline void can_init(void)
 	RCC->AHB4ENR |= RCC_AHB4ENR_GPIODEN;
 
 
-	// high speed output
-	GPIOD->OSPEEDR =
-		(GPIOD->OSPEEDR & ~(
-		GPIO_OSPEEDR_OSPEED0
-		| GPIO_OSPEEDR_OSPEED1))
-		| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED0_Pos)
-		| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED1_Pos);
+	// // high speed output
+	// GPIOD->OSPEEDR =
+	// 	(GPIOD->OSPEEDR & ~(
+	// 	GPIO_OSPEEDR_OSPEED0
+	// 	| GPIO_OSPEEDR_OSPEED1))
+	// 	| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED0_Pos)
+	// 	| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED1_Pos);
 
 
 	// alternate function to CAN
 	GPIOD->AFR[0] =
-		(GPIOB->AFR[0] & ~(GPIO_AFRL_AFSEL0 | GPIO_AFRL_AFSEL1))
+		(GPIOD->AFR[0] & ~(GPIO_AFRL_AFSEL0 | GPIO_AFRL_AFSEL1))
 		| (GPIO_MODE_AF_FDCAN << GPIO_AFRL_AFSEL0_Pos)
 		| (GPIO_MODE_AF_FDCAN << GPIO_AFRL_AFSEL1_Pos);
 
@@ -176,9 +150,9 @@ static inline void can_init(void)
 	LOG("M_CAN CCU release %lx\n", FDCAN_CCU->CREL);
 
 	LOG("1\n");
-	m_can_init_begin(mcan_cans[0].m_can);
+	m_can_init_begin(can0);
 	LOG("2\n");
-	m_can_conf_begin(mcan_cans[0].m_can);
+	m_can_conf_begin(can0);
 	LOG("2.1\n");
 
 	// setup clock calibration unit (CCU) for bypass
@@ -187,17 +161,30 @@ static inline void can_init(void)
 	// set bypass with divider of 1
 	FDCAN_CCU->CCFG = FDCANCCU_CCFG_BCC;
 	LOG("CCU CCFG=%08lx\n", FDCAN_CCU->CCFG);
+	can0->ILE.reg = MCANX_ILE_EINT0;
 
-	m_can_can_init_board(&mcan_cans[0]);
+	m_can_conf_begin(can0);
+
+	// tx fifo
+	can0->TXBC.reg = MCANX_TXBC_TBSA(FDCAN1_TX_FIFO_OFFSET) | MCANX_TXBC_TFQS(MCAN_HW_TX_FIFO_SIZE);
+	// tx event fifo
+	can0->TXEFC.reg = MCANX_TXEFC_EFSA(FDCAN1_TXE_FIFO_OFFSET) | MCANX_TXEFC_EFS(MCAN_HW_TX_FIFO_SIZE);
+	// rx fifo0
+	can0->RXF0C.reg = MCANX_RXF0C_F0SA(FDCAN1_RX_FIFO_OFFSET) | MCANX_RXF0C_F0S(MCAN_HW_RX_FIFO_SIZE);
+
+	// configure for max message size
+	can0->TXESC.reg = MCANX_TXESC_TBDS_DATA64;
+	//  | MCANX_RXF0C_F0OM; // FIFO 0 overwrite mode
+	can0->RXESC.reg = MCANX_RXESC_RBDS_DATA64 + MCANX_RXESC_F0DS_DATA64;
 
 
-	m_can_conf_end(mcan_cans[0].m_can);
+	m_can_conf_end(can0);
 	LOG("2.2\n");
-	m_can_init_end(mcan_cans[0].m_can);
+	m_can_init_end(can0);
 	LOG("3\n");
 
 
-	m_can_init_begin(mcan_cans[0].m_can);
+	m_can_init_begin(can0);
 
 
 	NVIC_SetPriority(mcan_cans[0].interrupt_id, SC_ISR_PRIORITY);
@@ -245,7 +232,6 @@ static const struct led leds[] = {
 	LED_STATIC_INITIALIZER("debug", PIN_PE01), // yellow
 	LED_STATIC_INITIALIZER("can0_green", PIN_PB00), // green
 	LED_STATIC_INITIALIZER("can0_red", PIN_PB14), // red
-
 };
 
 static inline void leds_init(void)
@@ -281,8 +267,9 @@ extern void sc_board_led_set(uint8_t index, bool on)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(leds));
 
-	unsigned port = leds[index].port_pin_mux >> PORT_SHIFT;
-	unsigned pin = leds[index].port_pin_mux & PIN_MASK;
+	unsigned mux = leds[index].port_pin_mux;
+	unsigned port = mux >> PORT_SHIFT;
+	unsigned pin = mux & PIN_MASK;
 
 	GPIO_TypeDef *gpio = (GPIO_TypeDef *)(GPIOA_BASE + (0x00000400UL * port));
 
@@ -381,14 +368,7 @@ extern uint32_t sc_board_identifier(void)
 
 SC_RAMFUNC void FDCAN1_IT0_IRQHandler(void)
 {
-	LOG("FDCAN1_IT0 int\n");
-
-	mcan_can_int(0);
-}
-
-SC_RAMFUNC void FDCAN1_IT1_IRQHandler(void)
-{
-	LOG("FDCAN1_IT1 int\n");
+	// LOG("FDCAN1_IT0 int\n");
 
 	mcan_can_int(0);
 }

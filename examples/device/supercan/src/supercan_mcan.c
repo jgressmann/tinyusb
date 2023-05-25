@@ -793,10 +793,11 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 
 
 			if ((size_t)(tx_end - tx_ptr) >= bytes) {
-				done = false;
-
 				// LOG("rx %u bytes\n", bytes);
 				struct sc_msg_can_rx *msg = (struct sc_msg_can_rx *)tx_ptr;
+
+				done = false;
+
 				// usb_can->tx_offsets[usb_can->tx_bank] += bytes;
 				tx_ptr += bytes;
 				result += bytes;
@@ -839,6 +840,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 
 				if (r1.bit.FDF) {
 					msg->flags |= SC_CAN_FRAME_FLAG_FDF;
+
 					if (r1.bit.BRS) {
 						msg->flags |= SC_CAN_FRAME_FLAG_BRS;
 					}
@@ -1158,6 +1160,7 @@ SC_RAMFUNC static void can_poll(
 		uint8_t hw_rx_gi_mod = 0;
 		uint8_t rx_pi = 0;
 		uint32_t nmbr_bits, dtbr_bits;
+		struct mcan_rx_fifo_element *rx;
 
 		for (uint8_t i = 0, gio = can->m_can->RXF0S.bit.F0GI; i < count; ++i) {
 			hw_rx_gi_mod = (gio + count - 1 - i) % MCAN_HW_RX_FIFO_SIZE;
@@ -1165,21 +1168,23 @@ SC_RAMFUNC static void can_poll(
 
 			tsv[hw_rx_gi_mod] = ts & SC_TS_MAX;
 
+			rx = &can->hw_rx_fifo_ram[hw_rx_gi_mod];
+
 			can_frame_bits(
-				can->hw_rx_fifo_ram[hw_rx_gi_mod].R0.bit.XTD,
-				can->hw_rx_fifo_ram[hw_rx_gi_mod].R0.bit.RTR,
-				can->hw_rx_fifo_ram[hw_rx_gi_mod].R1.bit.FDF,
-				can->hw_rx_fifo_ram[hw_rx_gi_mod].R1.bit.BRS,
-				can->hw_rx_fifo_ram[hw_rx_gi_mod].R1.bit.DLC,
+				rx->R0.bit.XTD,
+				rx->R0.bit.RTR,
+				rx->R1.bit.FDF,
+				rx->R1.bit.BRS,
+				rx->R1.bit.DLC,
 				&nmbr_bits,
 				&dtbr_bits);
 
 			// LOG("ch%u rx gi=%u xtd=%d rtr=%d fdf=%d brs=%d dlc=%d nmbr_bits=%lu dtbr_bits=%lu ts=%lx data us=%lu\n",
-			// 	index, hw_rx_gi_mod, can->hw_rx_fifo_ram[hw_rx_gi_mod].R0.bit.XTD,
-			// 	can->hw_rx_fifo_ram[hw_rx_gi_mod].R0.bit.RTR,
-			// 	can->hw_rx_fifo_ram[hw_rx_gi_mod].R1.bit.FDF,
-			// 	can->hw_rx_fifo_ram[hw_rx_gi_mod].R1.bit.BRS,
-			// 	can->hw_rx_fifo_ram[hw_rx_gi_mod].R1.bit.DLC, nmbr_bits, dtbr_bits,
+			// 	index, hw_rx_gi_mod, rx->R0.bit.XTD,
+			// 	rx->R0.bit.RTR,
+			// 	rx->R1.bit.FDF,
+			// 	rx->R1.bit.BRS,
+			// 	rx->R1.bit.DLC, nmbr_bits, dtbr_bits,
 			// 	(unsigned long)ts,
 			// 	(unsigned long)((can->dt_us_per_bit_factor_shift8 * dtbr_bits) >> 8));
 
