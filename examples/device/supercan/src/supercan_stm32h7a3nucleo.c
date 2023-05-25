@@ -29,7 +29,6 @@
 #define PIN_PE01 MAKE_PIN(4, 1)
 
 static const uint32_t GPIO_MODE_OUTPUT_PP = 0x00000001U;
-static const uint32_t GPIO_SPEED_FREQ_HIGH = 0x00000003U;
 static const uint32_t GPIO_MODE_AF_PP = 0x00000002U;
 
 #if CFG_TUD_DFU_RUNTIME
@@ -83,15 +82,6 @@ static void can_init(void)
 
 	// enable clock to GPIO block D
 	RCC->AHB4ENR |= RCC_AHB4ENR_GPIODEN;
-
-
-	// // high speed output
-	// GPIOD->OSPEEDR =
-	// 	(GPIOD->OSPEEDR & ~(
-	// 	GPIO_OSPEEDR_OSPEED0
-	// 	| GPIO_OSPEEDR_OSPEED1))
-	// 	| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED0_Pos)
-	// 	| (GPIO_SPEED_FREQ_HIGH << GPIO_OSPEEDR_OSPEED1_Pos);
 
 
 	// alternate function to CAN
