@@ -286,10 +286,11 @@ uint32_t board_millis(void)
 }
 #endif
 
-void HardFault_Handler(void)
-{
-  __asm("BKPT #0\n");
-}
+
+// void HardFault_Handler(void)
+// {
+//   __asm("BKPT #0\n");
+// }
 
 // Required by __libc_init_array in startup code if we are compiling using
 // -nostdlib/-nostartfiles.

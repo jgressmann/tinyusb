@@ -32,6 +32,7 @@ enum {
 #endif
 
 #define MCAN_DEBUG_TXR 1
+#define MCAN_DEBUG_GUARD 1
 
 #define TS_LO_MASK ((UINT32_C(1) << M_CAN_TS_COUNTER_BITS) - 1)
 #define TS_HI(ts) ((((uint32_t)(ts)) >> (32 - M_CAN_TS_COUNTER_BITS)) & TS_LO_MASK)
@@ -71,20 +72,20 @@ struct mcan_rx_fifo_element {
 	__IO uint32_t data[CANFD_ELEMENT_DATA_SIZE];
 };
 
-struct rx_frame {
+struct mcan_rx_frame {
 	MCANX_RXF0E_0_Type R0;
 	MCANX_RXF0E_1_Type R1;
 	uint32_t ts;
 	uint32_t data[CANFD_ELEMENT_DATA_SIZE];
 };
 
-struct txe_frame {
+struct mcan_txe_frame {
 	MCANX_TXEFE_0_Type T0;
 	MCANX_TXEFE_1_Type T1;
 	uint32_t ts;
 };
 
-struct txq_frame {
+struct mcan_txq_frame {
 	MCANX_TXEFE_0_Type T0;
 	MCANX_TXEFE_1_Type T1;
 	uint32_t data[CANFD_ELEMENT_DATA_SIZE];
@@ -92,7 +93,7 @@ struct txq_frame {
 
 
 struct mcan_can {
-#if SUPERCAN_DEBUG
+#if SUPERCAN_DEBUG && MCAN_DEBUG_GUARD
 	uint32_t guard_hdr[16];
 #endif
 #if MCAN_MESSAGE_RAM_CONFIGURABLE
@@ -104,11 +105,11 @@ struct mcan_can {
 	struct mcan_txe_fifo_element *hw_txe_fifo_ram;
 	struct mcan_rx_fifo_element *hw_rx_fifo_ram;
 #endif
-	struct rx_frame rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
-	struct txe_frame txe_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
+	struct mcan_rx_frame rx_fifo[SC_BOARD_CAN_RX_FIFO_SIZE];
+	struct mcan_txe_frame txe_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
 #if MCAN_HW_TX_FIFO_SIZE < _SC_BOARD_CAN_TX_FIFO_SIZE
 	// queue frames that don't fit in hardware fifo
-	struct txq_frame tx_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
+	struct mcan_txq_frame tx_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
 #endif
 	sc_can_bit_timing nm;
 	sc_can_bit_timing dt;
@@ -138,7 +139,7 @@ struct mcan_can {
 	uint32_t txr; 				// requests from USB, set when in, clear when out
 	volatile uint32_t int_txe;	// expected TXEs, set in USB, cleared in IRQ handler
 #endif
-#if SUPERCAN_DEBUG
+#if SUPERCAN_DEBUG && MCAN_DEBUG_GUARD
 	uint32_t guard_ftr[16];
 #endif
 };
@@ -148,6 +149,6 @@ extern struct mcan_can mcan_cans[SC_BOARD_CAN_COUNT];
 extern void mcan_can_init(void);
 extern void mcan_can_configure(uint8_t index);
 SC_RAMFUNC extern void mcan_can_int(uint8_t index);
-#if SUPERCAN_DEBUG
+#if SUPERCAN_DEBUG && MCAN_DEBUG_GUARD
 SC_RAMFUNC extern void mcan_can_verify_guard(uint8_t index);
 #endif

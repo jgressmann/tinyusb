@@ -17,6 +17,7 @@
 
 #include <tusb.h>
 #include <class/dfu/dfu_rt_device.h>
+#include <stm32h7xx_hal.h> // for stm32h7xx_hal_cortex.h to have NVIC_PRIORITYGROUP_4
 
 
 #define PORT_SHIFT 4
@@ -28,11 +29,53 @@
 
 #define PIN_PE01 MAKE_PIN(4, 1)
 
-static const uint32_t GPIO_MODE_OUTPUT_PP = 0x00000001U;
-static const uint32_t GPIO_MODE_AF_PP = 0x00000002U;
-
 #if CFG_TUD_DFU_RUNTIME
-SC_RAMFUNC void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
+
+
+static void JumpToBootloader(void)
+{
+  uint32_t i=0;
+  void (*SysMemBootJump)(void);
+
+  /* Set the address of the entry point to bootloader */
+     volatile uint32_t BootAddr = 0x1FF00000;
+
+  /* Disable all interrupts */
+     __disable_irq();
+
+  /* Disable Systick timer */
+     SysTick->CTRL = 0;
+
+  /* Set the clock to the default state */
+    //  HAL_RCC_DeInit();
+
+  /* Clear Interrupt Enable Register & Interrupt Pending Register */
+     for (i=0;i<5;i++)
+     {
+	  NVIC->ICER[i]=0xFFFFFFFF;
+	  NVIC->ICPR[i]=0xFFFFFFFF;
+     }
+
+  /* Re-enable all interrupts */
+     __enable_irq();
+
+  /* Set up the jump to booloader address + 4 */
+     SysMemBootJump = (void (*)(void)) (*((uint32_t *) ((BootAddr + 4))));
+
+  /* Set the main stack pointer to the bootloader stack */
+     __set_MSP(*(uint32_t *)BootAddr);
+
+  /* Call the function to jump to bootloader location */
+     SysMemBootJump();
+
+  /* Jump is done successfully */
+     while (1)
+     {
+      /* CodeJumpToBootloader should never reach this loop */
+     }
+}
+
+void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
 {
 	__disable_irq();
 
@@ -40,12 +83,62 @@ SC_RAMFUNC void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
 
 	LOG("activating ST bootloader, remove CAN bus connection and replug device after firmware download :)\n\n");
 
-	// pretend may flash is empty, flag is held during power-on-reset
-	FLASH->ACR |= FLASH_ACR_PROGEMPTY;
-
-	NVIC_SystemReset();
+	JumpToBootloader();
 }
 #endif // #if CFG_TUD_DFU_RT
+
+// NOTE: If you are using CMSIS, the registers can also be
+// accessed through CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk
+#define HALT_IF_DEBUGGING()                              \
+  do {                                                   \
+    if ((*(volatile uint32_t *)0xE000EDF0) & (1 << 0)) { \
+      __asm("bkpt 1");                                   \
+    }                                                    \
+} while (0)
+
+typedef struct __attribute__((packed)) ContextStateFrame {
+  uint32_t r0;
+  uint32_t r1;
+  uint32_t r2;
+  uint32_t r3;
+  uint32_t r12;
+  uint32_t lr;
+  uint32_t return_address;
+  uint32_t xpsr;
+} sContextStateFrame;
+
+#define HARDFAULT_HANDLING_ASM(_x)               \
+  __asm volatile(                                \
+      "tst lr, #4 \n"                            \
+      "ite eq \n"                                \
+      "mrseq r0, msp \n"                         \
+      "mrsne r0, psp \n"                         \
+      "b my_fault_handler_c \n"                  \
+                                                 )
+
+// Disable optimizations for this function so "frame" argument
+// does not get optimized away
+__attribute__((optimize("O0")))
+void my_fault_handler_c(sContextStateFrame *frame)
+{
+	(void)frame;
+  // If and only if a debugger is attached, execute a breakpoint
+  // instruction so we can take a look at what triggered the fault
+  HALT_IF_DEBUGGING();
+
+  // Logic for dealing with the exception. Typically:
+  //  - log the fault which occurred for postmortem analysis
+  //  - If the fault is recoverable,
+  //    - clear errors and return back to Thread Mode
+  //  - else
+  //    - reboot system
+  while (1);
+}
+
+void HardFault_Handler(void)
+{
+  HARDFAULT_HANDLING_ASM();
+}
 
 // controller and hardware specific setup of i/o pins for CAN
 static void can_init(void)
@@ -139,13 +232,11 @@ static void can_init(void)
 
 	LOG("M_CAN CCU release %lx\n", FDCAN_CCU->CREL);
 
-	LOG("1\n");
 	m_can_init_begin(can0);
-	LOG("2\n");
 	m_can_conf_begin(can0);
-	LOG("2.1\n");
 
-	// setup clock calibration unit (CCU) for bypass
+	// Setup clock calibration unit (CCU) for bypass.
+	// Must have INIT, CCE set
 	FDCAN_CCU->CCFG = FDCANCCU_CCFG_SWR;
 
 	// set bypass with divider of 1
@@ -153,9 +244,7 @@ static void can_init(void)
 	LOG("CCU CCFG=%08lx\n", FDCAN_CCU->CCFG);
 	can0->ILE.reg = MCANX_ILE_EINT0;
 
-	m_can_conf_begin(can0);
-
-	// tx fifo
+	// tx fifo98
 	can0->TXBC.reg = MCANX_TXBC_TBSA(FDCAN1_TX_FIFO_OFFSET) | MCANX_TXBC_TFQS(MCAN_HW_TX_FIFO_SIZE);
 	// tx event fifo
 	can0->TXEFC.reg = MCANX_TXEFC_EFSA(FDCAN1_TXE_FIFO_OFFSET) | MCANX_TXEFC_EFS(MCAN_HW_TX_FIFO_SIZE);
@@ -169,12 +258,6 @@ static void can_init(void)
 
 
 	m_can_conf_end(can0);
-	LOG("2.2\n");
-	m_can_init_end(can0);
-	LOG("3\n");
-
-
-	m_can_init_begin(can0);
 
 
 	NVIC_SetPriority(mcan_cans[0].interrupt_id, SC_ISR_PRIORITY);
@@ -276,6 +359,7 @@ extern void sc_board_leds_on_unsafe(void)
 
 extern void sc_board_init_begin(void)
 {
+	NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 	board_init();
 
 	// LOG("FLASH_SECR.BOOT_LOCK=%u FLASH_ACR.EMPTY=%u FLASH_OPTR_nBOOT_SEL=%u FLASH_OPTR_nBOOT1=%u FLASH_OPTR_nBOOT0=%u\n",
@@ -295,6 +379,9 @@ extern void sc_board_init_begin(void)
 extern void sc_board_init_end(void)
 {
 	led_blink(0, 2000);
+	NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
+
+	sc_dump_mem(mcan_cans, sizeof(mcan_cans));
 }
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
@@ -363,12 +450,12 @@ SC_RAMFUNC void FDCAN1_IT0_IRQHandler(void)
 	mcan_can_int(0);
 }
 
-// SC_RAMFUNC void TIM2_IRQHandler(void)
-// {
-// 	LOG("SR=%04x\n", TIM2->SR);
+SC_RAMFUNC void TIM2_IRQHandler(void)
+{
+	LOG("SR=%04x\n", TIM2->SR);
 
-// 	// clear interrupts
-// 	TIM2->SR = 0;
-// }
+	// clear interrupts
+	TIM2->SR = 0;
+}
 
 #endif // #if STM32H7A3NUCLEO

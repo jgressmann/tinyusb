@@ -63,7 +63,7 @@ void mcan_can_init(void)
 	for (size_t i = 0; i < TU_ARRAY_SIZE(mcan_cans); ++i) {
 		struct mcan_can *can = &mcan_cans[i];
 
-#if SUPERCAN_DEBUG
+#if SUPERCAN_DEBUG && MCAN_DEBUG_GUARD
 		for (size_t j = 0; j < TU_ARRAY_SIZE(can->guard_hdr); ++j) {
 			can->guard_hdr[j] = MCAN_CAN_GUARD_HDR;
 		}
@@ -648,6 +648,8 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	bool notify_hardware = true;
 	uint8_t tx_pi_mod = can->m_can->TXFQS.bit.TFQPI;
 
+	SC_DEBUG_ASSERT(msg->track_id < SC_BOARD_CAN_TX_FIFO_SIZE);
+
 #if MCAN_HW_TX_FIFO_SIZE < _SC_BOARD_CAN_TX_FIFO_SIZE
 	if (likely(available)) {
 		txe = &can->hw_tx_fifo_ram[tx_pi_mod];
@@ -726,22 +728,30 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 			}
 		}
 
-
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
-		SC_DEBUG_ASSERT(!(can->txr & (UINT32_C(1) << msg->track_id)));
+		{
+			bool track_id_present = can->txr & (UINT32_C(1) << msg->track_id);
 
-		// LOG("ch%u TXR q %08x %02x\n", index, can->txr, msg->track_id);
+			if (unlikely(track_id_present)) {
+				LOG("ch%u track id %u in TXR bitset %08x\n", index, msg->track_id, can->txr);
+			}
 
-		can->txr |= UINT32_C(1) << msg->track_id;
+			SC_DEBUG_ASSERT(!track_id_present);
+
+			// LOG("ch%u TXR q %08x %02x\n", index, can->txr, msg->track_id);
+
+			can->txr |= (UINT32_C(1) << msg->track_id);
+
 #if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
-		__atomic_or_fetch(&can->int_txe, UINT32_C(1) << msg->track_id, __ATOMIC_ACQ_REL);
+			__atomic_or_fetch(&can->int_txe, UINT32_C(1) << msg->track_id, __ATOMIC_ACQ_REL);
 #else
-		taskENTER_CRITICAL();
-		can->int_txe |= UINT32_C(1) << msg->track_id;
-		taskEXIT_CRITICAL();
+			taskENTER_CRITICAL();
+			can->int_txe |= UINT32_C(1) << msg->track_id;
+			taskEXIT_CRITICAL();
+#endif
+		}
 #endif
 
-#endif
 		if (notify_hardware) {
 			// mark transmission for hardware
 			can->m_can->TXBAR.reg = UINT32_C(1) << tx_pi_mod;
@@ -753,7 +763,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	return available;
 }
 
-SC_RAMFUNC static inline bool mcan_tx_try_queue(uint8_t index, struct txq_frame const * txq)
+SC_RAMFUNC static inline bool mcan_tx_try_queue(uint8_t index, struct mcan_txq_frame const * txq)
 {
 	struct mcan_can *can = &mcan_cans[index];
 	bool available = (can->m_can->TXFQS.reg & MCANX_TXFQS_TFQF) == 0;
@@ -887,7 +897,6 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 
 
 			if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
-				// __atomic_thread_fence(__ATOMIC_ACQUIRE);
 				done = false;
 
 				msg = (struct sc_msg_can_txr *)tx_ptr;
@@ -903,6 +912,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 				msg->track_id = t1.bit.MM;
 
 				// LOG("ch%u TXR track id=%u @ index %u\n", index, msg->track_id, txe_gi_mod);
+
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
 				SC_DEBUG_ASSERT(can->txr & (UINT32_C(1) << msg->track_id));
 
@@ -959,7 +969,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 				// try send frames to hw
 				while (can->tx_get_index != can->tx_put_index) {
 					uint8_t tx_gi_mod = can->tx_get_index & (SC_BOARD_CAN_TX_FIFO_SIZE-1);
-					struct txq_frame* txq = &can->tx_fifo[tx_gi_mod];
+					struct mcan_txq_frame* txq = &can->tx_fifo[tx_gi_mod];
 
 					if (mcan_tx_try_queue(index, txq)) {
 						++can->tx_get_index;
@@ -1172,7 +1182,7 @@ SC_RAMFUNC static void can_poll(
 		uint8_t hw_rx_gi_mod = 0;
 		uint8_t rx_pi = 0;
 		uint32_t nmbr_bits, dtbr_bits;
-		struct mcan_rx_fifo_element *rx;
+		struct mcan_rx_fifo_element *rx_get_ptr;
 
 		for (uint8_t i = 0, gio = can->m_can->RXF0S.bit.F0GI; i < count; ++i) {
 			hw_rx_gi_mod = (gio + count - 1 - i) % MCAN_HW_RX_FIFO_SIZE;
@@ -1180,23 +1190,23 @@ SC_RAMFUNC static void can_poll(
 
 			tsv[hw_rx_gi_mod] = ts & SC_TS_MAX;
 
-			rx = &can->hw_rx_fifo_ram[hw_rx_gi_mod];
+			rx_get_ptr = &can->hw_rx_fifo_ram[hw_rx_gi_mod];
 
 			can_frame_bits(
-				rx->R0.bit.XTD,
-				rx->R0.bit.RTR,
-				rx->R1.bit.FDF,
-				rx->R1.bit.BRS,
-				rx->R1.bit.DLC,
+				rx_get_ptr->R0.bit.XTD,
+				rx_get_ptr->R0.bit.RTR,
+				rx_get_ptr->R1.bit.FDF,
+				rx_get_ptr->R1.bit.BRS,
+				rx_get_ptr->R1.bit.DLC,
 				&nmbr_bits,
 				&dtbr_bits);
 
 			// LOG("ch%u rx gi=%u xtd=%d rtr=%d fdf=%d brs=%d dlc=%d nmbr_bits=%lu dtbr_bits=%lu ts=%lx data us=%lu\n",
-			// 	index, hw_rx_gi_mod, rx->R0.bit.XTD,
-			// 	rx->R0.bit.RTR,
-			// 	rx->R1.bit.FDF,
-			// 	rx->R1.bit.BRS,
-			// 	rx->R1.bit.DLC, nmbr_bits, dtbr_bits,
+			// 	index, hw_rx_gi_mod, rx_get_ptr->R0.bit.XTD,
+			// 	rx_get_ptr->R0.bit.RTR,
+			// 	rx_get_ptr->R1.bit.FDF,
+			// 	rx_get_ptr->R1.bit.BRS,
+			// 	rx_get_ptr->R1.bit.DLC, nmbr_bits, dtbr_bits,
 			// 	(unsigned long)ts,
 			// 	(unsigned long)((can->dt_us_per_bit_factor_shift8 * dtbr_bits) >> 8));
 
@@ -1208,6 +1218,7 @@ SC_RAMFUNC static void can_poll(
 
 		for (uint8_t i = 0, gio = can->m_can->RXF0S.bit.F0GI; i < count; ++i) {
 			hw_rx_gi_mod = (gio + i) % MCAN_HW_RX_FIFO_SIZE;
+			rx_get_ptr = &can->hw_rx_fifo_ram[hw_rx_gi_mod];
 
 			uint8_t rx_gi = __atomic_load_n(&can->rx_get_index, __ATOMIC_ACQUIRE);
 			uint8_t used = rx_pi - rx_gi;
@@ -1227,17 +1238,18 @@ SC_RAMFUNC static void can_poll(
 #endif
 			} else {
 				uint8_t const rx_pi_mod = rx_pi % SC_BOARD_CAN_RX_FIFO_SIZE;
-				MCANX_RXF0E_0_Type const r0 = can->hw_rx_fifo_ram[hw_rx_gi_mod].R0;
-				MCANX_RXF0E_1_Type const r1 = can->hw_rx_fifo_ram[hw_rx_gi_mod].R1;
+				struct mcan_rx_frame *rx_put_ptr = &can->rx_fifo[rx_pi_mod];
+				MCANX_RXF0E_0_Type const r0 = rx_get_ptr->R0;
+				MCANX_RXF0E_1_Type const r1 = rx_get_ptr->R1;
 
-				can->rx_fifo[rx_pi_mod].R0 = r0;
-				can->rx_fifo[rx_pi_mod].R1 = r1;
-				can->rx_fifo[rx_pi_mod].ts = tsv[hw_rx_gi_mod];
+				rx_put_ptr->R0 = r0;
+				rx_put_ptr->R1 = r1;
+				rx_put_ptr->ts = tsv[hw_rx_gi_mod];
 				if (likely(!r0.bit.RTR)) {
 					uint8_t can_frame_len = dlc_to_len(r1.bit.DLC);
 
 					if (likely(can_frame_len)) {
-						memcpy(can->rx_fifo[rx_pi_mod].data, (void*)can->hw_rx_fifo_ram[hw_rx_gi_mod].data, can_frame_len);
+						memcpy(rx_put_ptr->data, (void*)rx_get_ptr->data, can_frame_len);
 					}
 				}
 
@@ -1247,7 +1259,7 @@ SC_RAMFUNC static void can_poll(
 				// NOTE: If called outside this function, it is fast enough.
 				// NOTE: Likely because of register / cache thrashing.
 
-				// xTaskNotifyGive(can->usb_task_handle);
+				// xTaskNotifyGive(can->usb_task_hancan->rx_fifo[rx_pi_mod].dle);
 				// BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 				// vTaskNotifyGiveFromISR(can->usb_task_handle, &xHigherPriorityTaskWoken);
 				// portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
@@ -1349,7 +1361,7 @@ SC_RAMFUNC static void can_poll(
 		sc_can_status_queue(index, &status);
 		++*events;
 	}
-#if SUPERCAN_DEBUG
+#if SUPERCAN_DEBUG && MCAN_DEBUG_GUARD
 	mcan_can_verify_guard(index);
 #endif
 }
@@ -1398,7 +1410,7 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 	can->dt = *bt;
 }
 
-#if SUPERCAN_DEBUG
+#if SUPERCAN_DEBUG && MCAN_DEBUG_GUARD
 SC_RAMFUNC extern void mcan_can_verify_guard(uint8_t index)
 {
 	struct mcan_can *can = &mcan_cans[index];

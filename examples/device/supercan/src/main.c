@@ -183,7 +183,6 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 	struct usb_can *can = &usb.can[index];
 	SC_DEBUG_ASSERT(can->tx_bank < 2);
 	SC_DEBUG_ASSERT(can->tx_offsets[can->tx_bank] > 0);
-	// SC_DEBUG_ASSERT(can->tx_offsets[can->tx_bank] <= MSG_BUFFER_SIZE);
 
 	(void)func;
 
@@ -666,6 +665,11 @@ SC_RAMFUNC static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header
 		}
 	}
 
+	if (unlikely(tmsg->track_id >= SC_BOARD_CAN_TX_FIFO_SIZE)) {
+		LOG("ch%u ERROR: SC_MSG_CAN_TX track ID %u out of bounds [0-%u)\n", index, tmsg->track_id, SC_BOARD_CAN_TX_FIFO_SIZE);
+		return;
+	}
+
 	if (unlikely(!sc_board_can_tx_queue(index, tmsg))) {
 		uint8_t *tx_beg = NULL;
 		uint8_t *tx_end = NULL;
@@ -887,6 +891,8 @@ int main(void)
 
 	LOG("vTaskStartScheduler\n");
 	vTaskStartScheduler();
+
+	configASSERT(0);
 
 	LOG("sc_board_reset\n");
 	sc_board_reset();
