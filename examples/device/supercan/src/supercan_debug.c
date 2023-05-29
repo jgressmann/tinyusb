@@ -39,9 +39,16 @@ char sc_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
 
 __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, size_t len)
 {
+	volatile uint32_t* ARM_CM_DHCSR =  ((volatile uint32_t*) 0xE000EDF0UL); /* Cortex M CoreDebug->DHCSR */ \
+
 	taskDISABLE_INTERRUPTS();
 	board_uart_write(msg, len);
 	sc_board_leds_on_unsafe();
+
+	if ( (*ARM_CM_DHCSR) & 1UL ) {  /* Only halt mcu if debugger is attached */
+		__asm("BKPT #0\n"); \
+	}
+
 	while (1);
 }
 

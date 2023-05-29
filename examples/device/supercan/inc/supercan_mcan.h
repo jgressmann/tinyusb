@@ -16,7 +16,7 @@
 enum {
 	// software fifo sizes (set to largest known M_CAN hardware fifo sizes)
 	SC_BOARD_CAN_TX_FIFO_SIZE = _SC_BOARD_CAN_TX_FIFO_SIZE,
-	SC_BOARD_CAN_RX_FIFO_SIZE = 64,
+	SC_BOARD_CAN_RX_FIFO_SIZE = 32,
 };
 
 #ifndef MCAN_MESSAGE_RAM_CONFIGURABLE
@@ -31,8 +31,12 @@ enum {
 	#error Define MCAN_HW_TX_FIFO_SIZE
 #endif
 
+#if MCAN_HW_TX_FIFO_SIZE > MCAN_HW_RX_FIFO_SIZE
+	#error HW TX fifo must not be bigger than RX fifo
+#endif
+
 #define MCAN_DEBUG_TXR 1
-#define MCAN_DEBUG_GUARD 1
+#define MCAN_DEBUG_GUARD 0
 
 #define TS_LO_MASK ((UINT32_C(1) << M_CAN_TS_COUNTER_BITS) - 1)
 #define TS_HI(ts) ((((uint32_t)(ts)) >> (32 - M_CAN_TS_COUNTER_BITS)) & TS_LO_MASK)

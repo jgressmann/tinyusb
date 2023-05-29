@@ -125,7 +125,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 {
 	struct can *can = &cans[index];
 	uint8_t pi = can->txr_put_index;
-	uint8_t gi = __atomic_load_n(&can->txr_get_index, __ATOMIC_ACQUIRE);
+	uint8_t gi = __atomic_load_n(&can->txr_get_index, __ATOMIC_SEQ_CST);
 	uint8_t used = pi - gi;
 	bool available = used < TU_ARRAY_SIZE(can->txr_buffer);
 
@@ -136,7 +136,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 		can->txr_buffer[txr_put_index] = msg->track_id;
 
 		// mark available
-		__atomic_store_n(&can->txr_put_index, pi + 1, __ATOMIC_RELEASE);
+		__atomic_store_n(&can->txr_put_index, pi + 1, __ATOMIC_SEQ_CST);
 
 		LOG("ch%u queued TXR %u\n", index, msg->track_id);
 
@@ -155,7 +155,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 
 	for (bool done = false; !done; ) {
 		done = true;
-		uint8_t txr_pi = __atomic_load_n(&can->txr_put_index, __ATOMIC_ACQUIRE);
+		uint8_t txr_pi = __atomic_load_n(&can->txr_put_index, __ATOMIC_SEQ_CST);
 
 		if (can->txr_get_index != txr_pi) {
 			struct sc_msg_can_txr *txr = NULL;
@@ -179,7 +179,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 				txr->track_id = cans->txr_buffer[txr_get_index];
 				txr->timestamp_us = sc_board_can_ts_wait(index);
 
-				__atomic_store_n(&can->txr_get_index, can->txr_get_index+1, __ATOMIC_RELEASE);
+				__atomic_store_n(&can->txr_get_index, can->txr_get_index+1, __ATOMIC_SEQ_CST);
 
 				LOG("ch%u retrievd TXR %u\n", index, txr->track_id);
 			}

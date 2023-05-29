@@ -28,9 +28,6 @@
  */
 
 #include "tusb_option.h"
-#include "../../../examples/device/supercan/inc/supercan_debug.h"
-
-
 
 // Since TinyUSB doesn't use SOF for now, and this interrupt too often (1ms interval)
 // We disable SOF for now until needed later on
@@ -189,38 +186,6 @@ static uint16_t ep0_pending[2];                   // Index determines direction 
 static uint16_t _allocated_fifo_words_tx;         // TX FIFO size in words (IN EPs)
 static bool _out_ep_closed;                       // Flag to check if RX FIFO size needs an update (reduce its size)
 
-//  __IO uint32_t GOTGCTL;              /*!<  USB_OTG Control and Status Register       Address offset: 000h */
-//   __IO uint32_t GOTGINT;              /*!<  USB_OTG Interrupt Register                Address offset: 004h */
-//   __IO uint32_t GAHBCFG;              /*!<  Core AHB Configuration Register           Address offset: 008h */
-//   __IO uint32_t GUSBCFG;              /*!<  Core USB Configuration Register           Address offset: 00Ch */
-//   __IO uint32_t GRSTCTL;              /*!<  Core Reset Register                       Address offset: 010h */
-//   __IO uint32_t GINTSTS;              /*!<  Core Interrupt Register                   Address offset: 014h */
-//   __IO uint32_t GINTMSK;              /*!<  Core Interrupt Mask Register              Address offset: 018h */
-//   __IO uint32_t GRXSTSR;              /*!<  Receive Sts Q Read Register               Address offset: 01Ch */
-//   __IO uint32_t GRXSTSP;              /*!<  Receive Sts Q Read & POP Register         Address offset: 020h */
-//   __IO uint32_t GRXFSIZ;              /*!< Receive FIFO Size Register                 Address offset: 024h */
-//   __IO uint32_t DIEPTXF0_HNPTXFSIZ;   /*!<  EP0 / Non Periodic Tx FIFO Size Register  Address offset: 028h */
-//   __IO uint32_t HNPTXSTS;             /*!<  Non Periodic Tx FIFO/Queue Sts reg        Address offset: 02Ch */
-//   uint32_t Reserved30[2];             /*!< Reserved 030h*/
-//   __IO uint32_t GCCFG;                /*!< General Purpose IO Register                Address offset: 038h */
-//   __IO uint32_t CID;                  /*!< User ID Register                           Address offset: 03Ch */
-//   uint32_t  Reserved40[48];           /*!< Reserved 040h-0FFh */
-//   __IO uint32_t HPTXFSIZ;             /*!< Host Periodic Tx FIFO Size Reg             Address offset: 100h */
-//   __IO uint32_t DIEPTXF[0x0F];        /*!< dev Periodic Transmit FIFO                 Address offset: 0x104 */
-
-#if TUD_OPT_HIGH_SPEED
-#error safdsafd
-#endif
-static inline void dump_regs(void)
-{
-  USB_OTG_GlobalTypeDef * usb_otg = GLOBAL_BASE(rhport);
-  USB_OTG_DeviceTypeDef * dev = DEVICE_BASE(rhport);
-
-
-  LOG("GOTGCTL=%08x GUSBCFG=%08x DCFG=%08x DSTS=%08x\n", usb_otg->GOTGCTL, usb_otg->GUSBCFG, dev->DCFG, dev->DSTS);
-
-}
-
 // Calculate the RX FIFO size according to recommendations from reference manual
 static inline uint16_t calc_rx_ff_size(uint16_t ep_size)
 {
@@ -334,8 +299,6 @@ static void bus_reset(uint8_t rhport)
   out_ep[0].DOEPTSIZ |= (3 << USB_OTG_DOEPTSIZ_STUPCNT_Pos);
 
   usb_otg->GINTMSK |= USB_OTG_GINTMSK_OEPINT | USB_OTG_GINTMSK_IEPINT;
-
-  dump_regs();
 }
 
 // Set turn-around timeout according to link speed

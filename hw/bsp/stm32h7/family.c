@@ -64,19 +64,40 @@ void OTG_HS_IRQHandler(void)
 
 UART_HandleTypeDef UartHandle;
 
+
+static inline void tx_char(uint8_t ch)
+{
+    UartHandle.Instance->TDR = ch;
+		while((UartHandle.Instance->ISR & UART_FLAG_TXE) != UART_FLAG_TXE);
+}
+
 static inline void uart_send_buffer(uint8_t const *text, size_t len)
 {
-	HAL_UART_Transmit(&UartHandle, (uint8_t*) text, len, 0xffff);
+	for (size_t i = 0; i < len; ++i) {
+    tx_char(text[i]);
+	}
 }
 
 static inline void uart_send_str(const char* text)
 {
 	while (*text) {
-    uint8_t c = *text++;
-
-    uart_send_buffer(&c, 1);
+    tx_char(*text++);
 	}
 }
+
+// static inline void uart_send_buffer(uint8_t const *text, size_t len)
+// {
+// 	HAL_UART_Transmit(&UartHandle, (uint8_t*) text, len, 0xffff);
+// }
+
+// static inline void uart_send_str(const char* text)
+// {
+// 	while (*text) {
+//     uint8_t c = *text++;
+
+//     uart_send_buffer(&c, 1);
+// 	}
+// }
 
 void board_init(void)
 {

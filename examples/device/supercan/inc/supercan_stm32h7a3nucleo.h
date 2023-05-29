@@ -158,6 +158,3 @@ struct MCanX {
   __IO MCANX_TXEFA_Type            TXEFA;       /**< \brief Offset: 0xF8 (R/W 32) Tx Event FIFO Acknowledge */
 };
 
-
-// DFU transfer size is 1Ki in ST bootloader
-#define MCU_NVM_PAGE_SIZE 1024

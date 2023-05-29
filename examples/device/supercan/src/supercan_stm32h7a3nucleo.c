@@ -140,6 +140,16 @@ void HardFault_Handler(void)
   HARDFAULT_HANDLING_ASM();
 }
 
+void BusFault_Handler(void)
+{
+	HARDFAULT_HANDLING_ASM();
+}
+
+void MemMang_Handler(void)
+{
+	HARDFAULT_HANDLING_ASM();
+}
+
 // controller and hardware specific setup of i/o pins for CAN
 static void can_init(void)
 {
@@ -156,7 +166,7 @@ static void can_init(void)
 	uint32_t const FDCAN1_TXE_FIFO_OFFSET = FDCAN1_TX_FIFO_OFFSET + sizeof(struct mcan_tx_fifo_element) * MCAN_HW_TX_FIFO_SIZE;
 	MCanX* const can0 = (MCanX*)FDCAN1;
 
-	LOG("FDCAN1  offset RX=%08lx TX=%08lx TXE=%08lx\n",
+	LOG("FDCAN1 offset RX=%08lx TX=%08lx TXE=%08lx\n",
 		FDCAN1_RX_FIFO_OFFSET, FDCAN1_TX_FIFO_OFFSET, FDCAN1_TXE_FIFO_OFFSET);
 
 
@@ -193,7 +203,7 @@ static void can_init(void)
 
 
 
-	// setup PLL2 to provide 80 MHz from 48 Mhz HSI
+	// setup PLL2 to provide 80 MHz from 64 Mhz HSI
 	RCC->CR &= ~RCC_CR_PLL2ON;
 
 	RCC->PLLCFGR =
@@ -207,7 +217,7 @@ static void can_init(void)
 
 	RCC->PLLCKSELR =
 		(RCC->PLLCKSELR & ~(RCC_PLLCKSELR_DIVM2))
-		| (4 << RCC_PLLCKSELR_DIVM2_Pos); // M=4: 48->16 Mhz
+		| (4 << RCC_PLLCKSELR_DIVM2_Pos); // M=4: 64->16 Mhz
 
 	RCC->PLL2DIVR =
 		(2 << RCC_PLL2DIVR_Q2_Pos) // Q=3
@@ -244,7 +254,7 @@ static void can_init(void)
 	LOG("CCU CCFG=%08lx\n", FDCAN_CCU->CCFG);
 	can0->ILE.reg = MCANX_ILE_EINT0;
 
-	// tx fifo98
+	// tx fifo
 	can0->TXBC.reg = MCANX_TXBC_TBSA(FDCAN1_TX_FIFO_OFFSET) | MCANX_TXBC_TFQS(MCAN_HW_TX_FIFO_SIZE);
 	// tx event fifo
 	can0->TXEFC.reg = MCANX_TXEFC_EFSA(FDCAN1_TXE_FIFO_OFFSET) | MCANX_TXEFC_EFS(MCAN_HW_TX_FIFO_SIZE);
@@ -359,20 +369,12 @@ extern void sc_board_leds_on_unsafe(void)
 
 extern void sc_board_init_begin(void)
 {
-	NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 	board_init();
 
-	// LOG("FLASH_SECR.BOOT_LOCK=%u FLASH_ACR.EMPTY=%u FLASH_OPTR_nBOOT_SEL=%u FLASH_OPTR_nBOOT1=%u FLASH_OPTR_nBOOT0=%u\n",
-	// 	(FLASH->SECR & FLASH_SECR_BOOT_LOCK) == FLASH_SECR_BOOT_LOCK,
-	// 	(FLASH->ACR & FLASH_ACR_PROGEMPTY) == FLASH_ACR_PROGEMPTY,
-	// 	(FLASH->OPTR & FLASH_OPTR_nBOOT_SEL) == FLASH_OPTR_nBOOT_SEL,
-	// 	(FLASH->OPTR & FLASH_OPTR_nBOOT1) == FLASH_OPTR_nBOOT1,
-	// 	(FLASH->OPTR & FLASH_OPTR_nBOOT0) == FLASH_OPTR_nBOOT0);
+	LOG("CPU @ %lu Mhz\n", SystemCoreClock);
 
 	leds_init();
-
 	can_init();
-
 	counter_1mhz_init();
 }
 
@@ -381,7 +383,14 @@ extern void sc_board_init_end(void)
 	led_blink(0, 2000);
 	NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 
-	sc_dump_mem(mcan_cans, sizeof(mcan_cans));
+	// make stores precise
+	*(uint32_t*)0xE000E008=(*(uint32_t*)0xE000E008 | 1<<1);
+	// invalid and disable D$
+	SCB_InvalidateDCache();
+	SCB_DisableDCache();
+
+
+	// sc_dump_mem(mcan_cans, sizeof(mcan_cans));
 }
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)

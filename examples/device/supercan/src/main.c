@@ -104,13 +104,13 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 {
 	struct can *can = &cans[index];
 	uint16_t pi = can->status_put_index;
-	uint16_t gi = __atomic_load_n(&can->status_get_index, __ATOMIC_ACQUIRE);
+	uint16_t gi = __atomic_load_n(&can->status_get_index, __ATOMIC_SEQ_CST);
 	uint16_t used = pi - gi;
 
 	if (likely(used < CAN_STATUS_FIFO_SIZE)) {
 		uint16_t fifo_index = pi & (CAN_STATUS_FIFO_SIZE-1);
 		can->status_fifo[fifo_index] = *status;
-		__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
+		__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_SEQ_CST);
 	} else {
 #if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
 		__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
@@ -130,7 +130,7 @@ static inline void can_state_reset(uint8_t index)
 	can->desync = false;
 	can->tx_dropped = 0;
 	can->rx_lost = 0;
-	__atomic_store_n(&can->status_get_index, __atomic_load_n(&can->status_put_index, __ATOMIC_ACQUIRE), __ATOMIC_RELAXED);
+	__atomic_store_n(&can->status_get_index, __atomic_load_n(&can->status_put_index, __ATOMIC_SEQ_CST), __ATOMIC_RELAXED);
 	__atomic_store_n(&can->int_comm_flags, 0, __ATOMIC_RELAXED);
 
 	usb_can->tx_offsets[0] = 0;
@@ -177,6 +177,50 @@ SC_RAMFUNC static inline bool sc_can_bulk_in_ep_ready(uint8_t index)
 	return 0 == can->tx_offsets[!can->tx_bank];
 }
 
+#if SUPERCAN_DEBUG
+static inline void dump_rx_tx_timestamps(uint8_t index)
+{
+	struct usb_can *can = &usb.can[index];
+	uint8_t const * const sptr = can->tx_buffers[can->tx_bank];
+	uint8_t const * const eptr = sptr + can->tx_offsets[can->tx_bank];
+	uint8_t const *ptr = sptr;
+	unsigned rx_offset = 0;
+	unsigned tx_offset = 0;
+
+	for (; ptr + SC_MSG_HEADER_LEN <= eptr; ) {
+		struct sc_msg_header *hdr = (struct sc_msg_header *)ptr;
+
+		switch (hdr->id) {
+		case SC_MSG_CAN_RX: {
+			struct sc_msg_can_rx const *msg = (struct sc_msg_can_rx const *)hdr;
+
+			LOG("ch%u rx msg index=%02u ts=%08x\n", index, rx_offset, msg->timestamp_us);
+			++rx_offset;
+		} break;
+		}
+
+		ptr += hdr->len;
+	}
+
+	ptr = sptr;
+
+	for (; ptr + SC_MSG_HEADER_LEN <= eptr; ) {
+		struct sc_msg_header *hdr = (struct sc_msg_header *)ptr;
+
+		switch (hdr->id) {
+		case SC_MSG_CAN_TXR: {
+			struct sc_msg_can_txr const *msg = (struct sc_msg_can_txr const *)hdr;
+
+			LOG("ch%u txr msg index=%02u ts=%08x\n", index, tx_offset, msg->timestamp_us);
+			++tx_offset;
+		} break;
+		}
+
+		ptr += hdr->len;
+	}
+}
+#endif
+
 SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 {
 	SC_DEBUG_ASSERT(sc_can_bulk_in_ep_ready(index));
@@ -209,11 +253,9 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 	uint8_t const *eptr = sptr + can->tx_offsets[can->tx_bank];
 	uint8_t const *ptr = sptr;
 
-	// LOG("ch%u %s: chunk %u\n", index, func, i);
-	// sc_dump_mem(data_ptr, data_size);
-
 	for (; ptr + SC_MSG_HEADER_LEN <= eptr; ) {
 		struct sc_msg_header *hdr = (struct sc_msg_header *)ptr;
+
 		if (!hdr->id || !hdr->len) {
 			LOG("ch%u %s msg offset %u zero id/len msg\n", index, func, ptr - sptr);
 			// sc_dump_mem(sptr, eptr - sptr);
@@ -230,7 +272,7 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 		}
 
 		if (ptr + hdr->len > eptr) {
-			LOG("ch%u %s msg offset=%u len=%u exceeds buffer len=%u\n", index, func, ptr - sptr, hdr->len, MSG_BUFFER_SIZE);
+			LOG("ch%u %s msg offset=%u len=%u exceeds buffer len=%u\n", index, func, (unsigned)(ptr - sptr), hdr->len, MSG_BUFFER_SIZE);
 			SC_DEBUG_ASSERT(false);
 			can->tx_offsets[can->tx_bank] = 0;
 			return;
@@ -253,9 +295,12 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 				uint32_t delta = (ts - rx_ts_last) & SC_TS_MAX;
 				bool rx_ts_ok = delta <= SC_TS_MAX / 4;
 				if (unlikely(!rx_ts_ok)) {
+					taskENTER_CRITICAL();
 					LOG("ch%u rx msg index=%u ts=%lx prev=%lx\n", index, rx_offset, ts, rx_ts_last);
+					dump_rx_tx_timestamps(index);
 					SC_ASSERT(false);
 					can->tx_offsets[can->tx_bank] = 0;
+					taskEXIT_CRITICAL();
 					return;
 				}
 			}
@@ -269,9 +314,12 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 				uint32_t delta = (ts - tx_ts_last) & SC_TS_MAX;
 				bool tx_ts_ok = delta <= SC_TS_MAX / 4;
 				if (unlikely(!tx_ts_ok)) {
+					taskENTER_CRITICAL();
 					LOG("ch%u tx msg index=%u ts=%lx prev=%lx\n", index, tx_offset, ts, tx_ts_last);
+					dump_rx_tx_timestamps(index);
 					SC_ASSERT(false);
 					can->tx_offsets[can->tx_bank] = 0;
+					taskEXIT_CRITICAL();
 					return;
 				}
 			}
@@ -650,7 +698,7 @@ SC_RAMFUNC static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header
 	struct can *can = &cans[index];
 	struct usb_can *usb_can = &usb.can[index];
 
-	// LOG("SC_MSG_CAN_TX %lx\n", __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE));
+	// LOG("SC_MSG_CAN_TX %lx\n", __atomic_load_n(&can->sync_tscv, __ATOMIC_SEQ_CST));
 	struct sc_msg_can_tx const *tmsg = (struct sc_msg_can_tx const *)msg;
 	if (unlikely(msg->len < sizeof(*tmsg))) {
 		LOG("ch%u ERROR: SC_MSG_CAN_TX msg too short\n", index);
@@ -738,12 +786,18 @@ SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 	// guard against CAN frames when disabled
 	if (likely(can->enabled)) {
+#if SUPERCAN_DEBUG
+		bool dump = false;
+#endif
 		// process messages
 		while (in_ptr + SC_MSG_HEADER_LEN <= in_end) {
 			struct sc_msg_header const *msg = (struct sc_msg_header const *)in_ptr;
 
 			if (in_ptr + msg->len > in_end) {
 				LOG("ch%u offset=%u len=%u exceeds buffer size=%u\n", index, (unsigned)(in_ptr - in_beg), msg->len, (unsigned)xferred_bytes);
+#if SUPERCAN_DEBUG
+				dump = true;
+#endif
 				break;
 			}
 
@@ -762,12 +816,20 @@ SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 				break;
 
 			default:
-	#if SUPERCAN_DEBUG
-				sc_dump_mem(msg, msg->len);
-	#endif
+#if SUPERCAN_DEBUG
+				LOG("ch%u unknown msg id=%02x len=%02x\n", index, msg->id, msg->len);
+				dump = true;
+#endif
 				break;
 			}
 		}
+
+#if SUPERCAN_DEBUG
+		if (unlikely(dump)) {
+			LOG("msg buffer\n");
+			sc_dump_mem(in_beg, xferred_bytes);
+		}
+#endif
 
 		if (sc_can_bulk_in_ep_ready(index) && usb_can->tx_offsets[usb_can->tx_bank]) {
 			sc_can_bulk_in_submit(index, __func__);
@@ -892,11 +954,12 @@ int main(void)
 	LOG("vTaskStartScheduler\n");
 	vTaskStartScheduler();
 
-	configASSERT(0);
+	__unreachable();
+
+	configASSERT(0 && "should not be reachable");
 
 	LOG("sc_board_reset\n");
 	sc_board_reset();
-
 
 	return 0;
 }
@@ -1331,7 +1394,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 		for (;;) {
 
 			// consume all input
-			__atomic_store_n(&can->rx_get_index, __atomic_load_n(&can->rx_put_index, __ATOMIC_ACQUIRE), __ATOMIC_RELEASE);
+			__atomic_store_n(&can->rx_get_index, __atomic_load_n(&can->rx_put_index, __ATOMIC_SEQ_CST), __ATOMIC_SEQ_CST);
 
 			uint8_t bytes = sizeof(struct sc_msg_can_rx);
 
@@ -1444,19 +1507,6 @@ SC_RAMFUNC static void can_usb_task(void *param)
 					const TickType_t now = xTaskGetTickCount();
 					send_can_status = send_can_status || now - status_ts >= pdMS_TO_TICKS(128); // some boards don't report periodically
 
-		// #if SUPERCAN_DEBUG
-		// 			// loop
-		// 			{
-		// 				uint32_t ts = counter_1MHz_read_sync(index);
-		// 				if (ts - rx_ts_last >= 0x20000000) {
-		// 					rx_ts_last = ts - 0x20000000;
-		// 				}
-
-		// 				if (ts - tx_ts_last >= 0x20000000) {
-		// 					tx_ts_last = ts - 0x20000000;
-		// 				}
-		// 			}
-		// #endif
 					uint8_t * const tx_beg = usb_can->tx_buffers[usb_can->tx_bank];
 					uint8_t * const tx_end = tx_beg + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
 					uint8_t *tx_ptr = tx_beg + usb_can->tx_offsets[usb_can->tx_bank];
@@ -1520,7 +1570,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 						}
 					}
 
-					uint16_t status_put_index = __atomic_load_n(&can->status_put_index, __ATOMIC_ACQUIRE);
+					uint16_t status_put_index = __atomic_load_n(&can->status_put_index, __ATOMIC_SEQ_CST);
 					if (can->status_get_index != status_put_index) {
 						uint16_t fifo_index = can->status_get_index % TU_ARRAY_SIZE(can->status_fifo);
 						sc_can_status *s = &can->status_fifo[fifo_index];
@@ -1596,7 +1646,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 							break;
 						}
 
-						__atomic_store_n(&can->status_get_index, can->status_get_index+1, __ATOMIC_RELEASE);
+						__atomic_store_n(&can->status_get_index, can->status_get_index+1, __ATOMIC_SEQ_CST);
 					}
 
 					retrieved = sc_board_can_retrieve(index, tx_ptr, tx_end);
