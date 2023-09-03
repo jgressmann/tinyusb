@@ -66,7 +66,7 @@ endif
 ifeq ($(BOARD),stm32h7a3nucleo)
 INC += $(TOP)/examples/device/superdfu/inc
 CFLAGS += $(SECTION_CFLAGS) -DSTM32H7A3NUCLEO -DHAVE_ATOMIC_COMPARE_EXCHANGE=1
-LDFLAGS += -Wl,--no-warn-rwx-segment
+# LDFLAGS += -Wl,--no-warn-rwx-segment
 endif
 
 
