@@ -104,13 +104,13 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 {
 	struct can *can = &cans[index];
 	uint16_t pi = can->status_put_index;
-	uint16_t gi = __atomic_load_n(&can->status_get_index, __ATOMIC_SEQ_CST);
+	uint16_t gi = __atomic_load_n(&can->status_get_index, __ATOMIC_ACQUIRE);
 	uint16_t used = pi - gi;
 
 	if (likely(used < CAN_STATUS_FIFO_SIZE)) {
 		uint16_t fifo_index = pi & (CAN_STATUS_FIFO_SIZE-1);
 		can->status_fifo[fifo_index] = *status;
-		__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_SEQ_CST);
+		__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
 	} else {
 #if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
 		__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
@@ -130,7 +130,7 @@ static inline void can_state_reset(uint8_t index)
 	can->desync = false;
 	can->tx_dropped = 0;
 	can->rx_lost = 0;
-	__atomic_store_n(&can->status_get_index, __atomic_load_n(&can->status_put_index, __ATOMIC_SEQ_CST), __ATOMIC_RELAXED);
+	__atomic_store_n(&can->status_get_index, __atomic_load_n(&can->status_put_index, __ATOMIC_ACQUIRE), __ATOMIC_RELAXED);
 	__atomic_store_n(&can->int_comm_flags, 0, __ATOMIC_RELAXED);
 
 	usb_can->tx_offsets[0] = 0;
@@ -698,7 +698,7 @@ SC_RAMFUNC static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header
 	struct can *can = &cans[index];
 	struct usb_can *usb_can = &usb.can[index];
 
-	// LOG("SC_MSG_CAN_TX %lx\n", __atomic_load_n(&can->sync_tscv, __ATOMIC_SEQ_CST));
+	// LOG("SC_MSG_CAN_TX %lx\n", __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE));
 	struct sc_msg_can_tx const *tmsg = (struct sc_msg_can_tx const *)msg;
 	if (unlikely(msg->len < sizeof(*tmsg))) {
 		LOG("ch%u ERROR: SC_MSG_CAN_TX msg too short\n", index);
@@ -1394,7 +1394,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 		for (;;) {
 
 			// consume all input
-			__atomic_store_n(&can->rx_get_index, __atomic_load_n(&can->rx_put_index, __ATOMIC_SEQ_CST), __ATOMIC_SEQ_CST);
+			__atomic_store_n(&can->rx_get_index, __atomic_load_n(&can->rx_put_index, __ATOMIC_ACQUIRE), __ATOMIC_RELEASE);
 
 			uint8_t bytes = sizeof(struct sc_msg_can_rx);
 
@@ -1570,7 +1570,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 						}
 					}
 
-					uint16_t status_put_index = __atomic_load_n(&can->status_put_index, __ATOMIC_SEQ_CST);
+					uint16_t status_put_index = __atomic_load_n(&can->status_put_index, __ATOMIC_ACQUIRE);
 					if (can->status_get_index != status_put_index) {
 						uint16_t fifo_index = can->status_get_index % TU_ARRAY_SIZE(can->status_fifo);
 						sc_can_status *s = &can->status_fifo[fifo_index];
@@ -1646,7 +1646,7 @@ SC_RAMFUNC static void can_usb_task(void *param)
 							break;
 						}
 
-						__atomic_store_n(&can->status_get_index, can->status_get_index+1, __ATOMIC_SEQ_CST);
+						__atomic_store_n(&can->status_get_index, can->status_get_index+1, __ATOMIC_RELEASE);
 					}
 
 					retrieved = sc_board_can_retrieve(index, tx_ptr, tx_end);
