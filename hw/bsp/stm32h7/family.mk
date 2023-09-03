@@ -11,6 +11,7 @@ FS_PHY_ON_HS_CORE ?= 0
 include $(TOP)/$(BOARD_PATH)/board.mk
 
 CFLAGS += \
+-flto \
   -mthumb \
   -mabi=aapcs \
   -mcpu=cortex-m7 \
@@ -20,9 +21,6 @@ CFLAGS += \
   -DCFG_TUSB_MCU=OPT_MCU_STM32H7 \
   -DBOARD_DEVICE_RHPORT_NUM=$(PORT) \
   -DBOARD_FS_PHY_ON_HS_CORE=$(FS_PHY_ON_HS_CORE)
-
-# -flto \
-
 
 ifeq ($(PORT), 1)
   CFLAGS += -DBOARD_DEVICE_RHPORT_SPEED=OPT_MODE_HIGH_SPEED
@@ -53,5 +51,5 @@ INC += \
 	$(TOP)/$(ST_HAL_DRIVER)/Inc
 
 # For freeRTOS port source
-FREERTOS_PORT ?= ARM_CM7/r0p1
+FREERTOS_PORT = ARM_CM7/r0p1
 
