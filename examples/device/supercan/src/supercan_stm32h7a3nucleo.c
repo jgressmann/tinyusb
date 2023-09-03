@@ -16,7 +16,6 @@
 #include <m_can.h>
 
 #include <tusb.h>
-#include <class/dfu/dfu_rt_device.h>
 #include <stm32h7xx_hal.h> // for stm32h7xx_hal_cortex.h to have NVIC_PRIORITYGROUP_4
 
 
@@ -29,63 +28,6 @@
 
 #define PIN_PE01 MAKE_PIN(4, 1)
 
-#if CFG_TUD_DFU_RUNTIME
-
-
-static void JumpToBootloader(void)
-{
-  uint32_t i=0;
-  void (*SysMemBootJump)(void);
-
-  /* Set the address of the entry point to bootloader */
-     volatile uint32_t BootAddr = 0x1FF00000;
-
-  /* Disable all interrupts */
-     __disable_irq();
-
-  /* Disable Systick timer */
-     SysTick->CTRL = 0;
-
-  /* Set the clock to the default state */
-    //  HAL_RCC_DeInit();
-
-  /* Clear Interrupt Enable Register & Interrupt Pending Register */
-     for (i=0;i<5;i++)
-     {
-	  NVIC->ICER[i]=0xFFFFFFFF;
-	  NVIC->ICPR[i]=0xFFFFFFFF;
-     }
-
-  /* Re-enable all interrupts */
-     __enable_irq();
-
-  /* Set up the jump to booloader address + 4 */
-     SysMemBootJump = (void (*)(void)) (*((uint32_t *) ((BootAddr + 4))));
-
-  /* Set the main stack pointer to the bootloader stack */
-     __set_MSP(*(uint32_t *)BootAddr);
-
-  /* Call the function to jump to bootloader location */
-     SysMemBootJump();
-
-  /* Jump is done successfully */
-     while (1)
-     {
-      /* CodeJumpToBootloader should never reach this loop */
-     }
-}
-
-void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
-{
-	__disable_irq();
-
-	(void)ms;
-
-	LOG("activating ST bootloader, remove CAN bus connection and replug device after firmware download :)\n\n");
-
-	JumpToBootloader();
-}
-#endif // #if CFG_TUD_DFU_RT
 
 // NOTE: If you are using CMSIS, the registers can also be
 // accessed through CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk
@@ -382,15 +324,6 @@ extern void sc_board_init_end(void)
 {
 	led_blink(0, 2000);
 	NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
-
-	// make stores precise
-	*(uint32_t*)0xE000E008=(*(uint32_t*)0xE000E008 | 1<<1);
-	// invalid and disable D$
-	SCB_InvalidateDCache();
-	SCB_DisableDCache();
-
-
-	// sc_dump_mem(mcan_cans, sizeof(mcan_cans));
 }
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
