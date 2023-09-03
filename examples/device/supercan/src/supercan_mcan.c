@@ -1304,6 +1304,13 @@ SC_RAMFUNC static void can_poll(
 					uint8_t can_frame_len = dlc_to_len(r1.bit.DLC);
 
 					if (likely(can_frame_len)) {
+
+#if !MCAN_MESSAGE_RAM_CONFIGURABLE
+						// hardware fifo must be accessed using 32bit words (STM32H7A3)
+						if (can_frame_len & 3) {
+							can_frame_len += 4 - (can_frame_len & 3);
+						}
+#endif
 						memcpy(rx_put_ptr->data, (void*)rx_get_ptr->data, can_frame_len);
 					}
 				}
