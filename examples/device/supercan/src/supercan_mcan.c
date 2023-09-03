@@ -503,7 +503,7 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 	can->int_txe = 0;
 #endif
 
-	__atomic_thread_fence(__ATOMIC_SEQ_CST); // int_*
+	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
 }
 
 static inline void can_off(uint8_t index)
@@ -603,7 +603,7 @@ static void can_on(uint8_t index)
 
 	can->int_init_rx_errors = current_ecr.bit.REC;
 	can->int_init_tx_errors = current_ecr.bit.TEC;
-	__atomic_thread_fence(__ATOMIC_SEQ_CST); // int_*
+	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
 
 	can_set_state1(can->m_can, can->interrupt_id, true);
 
@@ -719,9 +719,9 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 						txe->data[i] = src[i];
 					}
 				} else {
-	#if MCAN_MESSAGE_RAM_CONFIGURABLE
+#if MCAN_MESSAGE_RAM_CONFIGURABLE
 					memcpy((void*)txe->data, msg->data, can_frame_len);
-	#else
+#else
 					// too bad, we have to align :/
 					uint32_t aligned[16];
 					__IO uint32_t* dst = txe->data;
@@ -732,7 +732,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 					for (unsigned i = 0, e = (can_frame_len + 3) / 4; i < e; ++i) {
 						*dst++ = *src++;
 					}
-	#endif
+#endif
 				}
 			}
 		}
@@ -808,9 +808,6 @@ static inline void sc_dump_txe_fifo_ts(uint8_t index)
 	}
 }
 
-static int rx_get_index_shadow = -1; // NOT an index, uses full range of type
-static int txe_get_index_shadow = -1; // NOT an index, uses full range of type
-
 
 
 SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t *tx_end)
@@ -826,18 +823,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 	for (bool done = false; !done; ) {
 		done = true;
 
-		uint8_t const rx_pi = __atomic_load_n(&can->rx_put_index, __ATOMIC_SEQ_CST);
-
-		if (rx_get_index_shadow != -1) {
-			if (can->rx_get_index != rx_get_index_shadow) {
-			LOG("gi struct=%u shadow=%d\n", can->rx_get_index, rx_get_index_shadow);
-			}
-			SC_DEBUG_ASSERT(can->rx_get_index == rx_get_index_shadow);
-		}
-
-		// __DMB();
-		// __DSB();
-		// __ISB();
+		uint8_t const rx_pi = __atomic_load_n(&can->rx_put_index, __ATOMIC_ACQUIRE);
 
 		if (can->rx_get_index != rx_pi) {
 			uint8_t const rx_gi = can->rx_get_index;
@@ -923,19 +909,11 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 
 				// LOG("g %02x\n", rx_gi_mod);
 
-				__atomic_store_n(&can->rx_get_index, rx_gi+1, __ATOMIC_SEQ_CST);
+				__atomic_store_n(&can->rx_get_index, rx_gi+1, __ATOMIC_RELEASE);
 			}
 		}
 
-		rx_get_index_shadow = can->rx_get_index;
-
-
-
-		uint8_t const txe_pi = __atomic_load_n(&can->txe_put_index, __ATOMIC_SEQ_CST);
-
-		//__DMB();
-		// __DSB();
-		// __ISB();
+		uint8_t const txe_pi = __atomic_load_n(&can->txe_put_index, __ATOMIC_ACQUIRE);
 
 		if (can->txe_get_index != txe_pi) {
 			uint8_t txe_gi = can->txe_get_index;
@@ -945,13 +923,6 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 
 			have_data_to_place = true;
 			SC_DEBUG_ASSERT(txe_pi - can->txe_get_index <= SC_BOARD_CAN_TX_FIFO_SIZE);
-
-			if (txe_get_index_shadow != -1) {
-				if (can->txe_get_index != txe_get_index_shadow) {
-					LOG("txe gi struct=%u shadow=%d\n", can->txe_get_index, txe_get_index_shadow);
-				}
-				SC_DEBUG_ASSERT(can->txe_get_index == txe_get_index_shadow);
-			}
 
 			if ((size_t)(tx_end - tx_ptr) >= sizeof(*msg)) {
 				done = false;
@@ -1019,9 +990,8 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 					}
 				}
 
-				__atomic_store_n(&can->txe_get_index, txe_gi+1, __ATOMIC_SEQ_CST);
+				__atomic_store_n(&can->txe_get_index, txe_gi+1, __ATOMIC_RELEASE);
 
-				txe_get_index_shadow = can->txe_get_index;
 #if MCAN_HW_TX_FIFO_SIZE < _SC_BOARD_CAN_TX_FIFO_SIZE
 				// try send frames to hw
 				while (can->tx_get_index != can->tx_put_index) {
@@ -1279,7 +1249,7 @@ SC_RAMFUNC static void can_poll(
 			hw_rx_gi_mod = (gio + offset) % MCAN_HW_RX_FIFO_SIZE;
 			rx_get_ptr = &can->hw_rx_fifo_ram[hw_rx_gi_mod];
 
-			uint8_t rx_gi = __atomic_load_n(&can->rx_get_index, __ATOMIC_SEQ_CST);
+			uint8_t rx_gi = __atomic_load_n(&can->rx_get_index, __ATOMIC_ACQUIRE);
 			uint8_t const used = rx_pi - rx_gi;
 			SC_DEBUG_ASSERT(used <= SC_BOARD_CAN_RX_FIFO_SIZE);
 
@@ -1355,7 +1325,7 @@ SC_RAMFUNC static void can_poll(
 
 
 		// atomic update of rx put index
-		__atomic_store_n(&can->rx_put_index, rx_pi, __ATOMIC_SEQ_CST);
+		__atomic_store_n(&can->rx_put_index, rx_pi, __ATOMIC_RELEASE);
 
 		// LOG("r c=%u pi=%02x\n", count, rx_pi);
 	}
@@ -1478,7 +1448,7 @@ SC_RAMFUNC static void can_poll(
 		// __ISB();
 
 		// atomic update of tx put index
-		__atomic_store_n(&can->txe_put_index, txe_pi, __ATOMIC_SEQ_CST);
+		__atomic_store_n(&can->txe_put_index, txe_pi, __ATOMIC_RELEASE);
 
 		txe_prev_pi[index] = txe_pi;
 		// LOG("t c=%u pi=%02x\n", count, tx_pi);
