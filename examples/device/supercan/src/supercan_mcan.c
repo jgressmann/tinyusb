@@ -1304,11 +1304,6 @@ SC_RAMFUNC static void can_poll(
 		// removes frames from rx fifo
 		can->m_can->RXF0A.reg = MCANX_RXF0A_F0AI(hw_rx_gi_mod);
 
-		// __DMB();
-		// __DSB();
-		// __ISB();
-
-
 		// atomic update of rx put index
 		__atomic_store_n(&can->rx_put_index, rx_pi, __ATOMIC_RELEASE);
 
@@ -1416,10 +1411,6 @@ SC_RAMFUNC static void can_poll(
 		// removes frames from tx fifo
 		can->m_can->TXEFA.reg = MCANX_TXEFA_EFAI(hw_txe_gi_mod);
 		// LOG("ch%u poll tx count=%u done\n", index, count);
-
-		// __DMB();
-		// __DSB();
-		// __ISB();
 
 		// atomic update of tx put index
 		__atomic_store_n(&can->txe_put_index, txe_pi, __ATOMIC_RELEASE);
