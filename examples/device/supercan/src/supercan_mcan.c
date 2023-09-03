@@ -20,6 +20,7 @@
 #include <tusb.h>
 
 #define MCAN_CAN_GUARD_HDR 0xa5a5a5a5
+#define MCAN_CAN_GUARD_MID 0xfefefefe
 #define MCAN_CAN_GUARD_FTR 0x5a5a5a5a
 
 
@@ -66,6 +67,10 @@ void mcan_can_init(void)
 #if SUPERCAN_DEBUG && MCAN_DEBUG_GUARD
 		for (size_t j = 0; j < TU_ARRAY_SIZE(can->guard_hdr); ++j) {
 			can->guard_hdr[j] = MCAN_CAN_GUARD_HDR;
+		}
+
+		for (size_t j = 0; j < TU_ARRAY_SIZE(can->guard_fifo); ++j) {
+			can->guard_fifo[j] = MCAN_CAN_GUARD_MID;
 		}
 
 		for (size_t j = 0; j < TU_ARRAY_SIZE(can->guard_ftr); ++j) {
@@ -1545,6 +1550,10 @@ SC_RAMFUNC extern void mcan_can_verify_guard(uint8_t index)
 
 	for (size_t j = 0; j < TU_ARRAY_SIZE(can->guard_hdr); ++j) {
 		SC_DEBUG_ASSERT(MCAN_CAN_GUARD_HDR == can->guard_hdr[j]);
+	}
+
+	for (size_t j = 0; j < TU_ARRAY_SIZE(can->guard_fifo); ++j) {
+		SC_DEBUG_ASSERT(MCAN_CAN_GUARD_MID == can->guard_fifo[j]);
 	}
 
 	for (size_t j = 0; j < TU_ARRAY_SIZE(can->guard_ftr); ++j) {

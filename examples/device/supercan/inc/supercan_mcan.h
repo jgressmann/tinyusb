@@ -115,6 +115,9 @@ struct mcan_can {
 	// queue frames that don't fit in hardware fifo
 	struct mcan_txq_frame tx_fifo[SC_BOARD_CAN_TX_FIFO_SIZE];
 #endif
+#if SUPERCAN_DEBUG && MCAN_DEBUG_GUARD
+	uint32_t guard_fifo[16];
+#endif
 	sc_can_bit_timing nm;
 	sc_can_bit_timing dt;
 	MCanX *m_can;
