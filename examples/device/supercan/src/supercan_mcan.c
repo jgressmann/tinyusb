@@ -1206,9 +1206,6 @@ SC_RAMFUNC static void can_poll(
 		uint8_t rx_pi = 0;
 		uint32_t nmbr_bits, dtbr_bits;
 		struct mcan_rx_fifo_element *rx_get_ptr = NULL;
-#if SUPERCAN_DEBUG
-		uint32_t ts_prev;
-#endif
 
 		for (uint8_t i = 0, gio = can->m_can->RXF0S.bit.F0GI; i < count; ++i) {
 			uint8_t const offset = count - 1 - i;
@@ -1301,19 +1298,7 @@ SC_RAMFUNC static void can_poll(
 				// vTaskNotifyGiveFromISR(can->usb_task_handle, &xHigherPriorityTaskWoken);
 				// portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 				++*events;
-
-// #if SUPERCAN_DEBUG
-// 				if (i > 0) {
-// 					uint32_t delta = (tsv[hw_rx_gi_mod] - ts_prev) & SC_TS_MAX;
-// 					bool rx_ts_ok = delta <= SC_TS_MAX / 4;
-// 					SC_DEBUG_ASSERT(rx_ts_ok);
-// 				}
-// #endif
 			}
-
-#if SUPERCAN_DEBUG
-			ts_prev = tsv[hw_rx_gi_mod];
-#endif
 		}
 
 		// removes frames from rx fifo
@@ -1339,9 +1324,6 @@ SC_RAMFUNC static void can_poll(
 		uint8_t txe_pi = 0;
 		uint32_t const txp = can->m_can->CCCR.bit.TXP * 2;
 		uint32_t nmbr_bits, dtbr_bits;
-#if SUPERCAN_DEBUG
-		uint32_t ts_prev;
-#endif
 
 		for (uint8_t i = 0, gio = can->m_can->TXEFS.bit.EFGI; i < count; ++i) {
 			uint8_t const offset = count - 1 - i;
@@ -1409,14 +1391,6 @@ SC_RAMFUNC static void can_poll(
 			++*events;
 
 #if SUPERCAN_DEBUG
-			// if (i > 0) {
-			// 	uint32_t delta = (tsv[hw_txe_gi_mod] - ts_prev) & SC_TS_MAX;
-			// 	bool tx_ts_ok = delta <= SC_TS_MAX / 4;
-			// 	SC_DEBUG_ASSERT(tx_ts_ok);
-			// }
-
-			// ts_prev = tsv[hw_txe_gi_mod];
-
 			if (txe_any[index]) {
 				uint8_t txe_pi_mod_prev = (txe_pi_mod + (SC_BOARD_CAN_TX_FIFO_SIZE-1)) % SC_BOARD_CAN_TX_FIFO_SIZE;
 				SC_DEBUG_ASSERT(txe_pi_mod_prev < SC_BOARD_CAN_TX_FIFO_SIZE);
