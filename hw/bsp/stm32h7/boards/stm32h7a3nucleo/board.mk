@@ -15,5 +15,5 @@ JLINK_DEVICE = stm32h7a3zi
 flash: flash-stlink
 
 # FreeRTOS recommendation for non r0p1 cores
-FREERTOS_PORT = ARM_CM4F
+FREERTOS_PORT = ARM_CM7/r0p1
 
