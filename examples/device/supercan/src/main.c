@@ -58,7 +58,7 @@ extern void sc_can_log_bit_timing(sc_can_bit_timing const *c, char const* name)
 
 
 // FIX ME: move to struct usb
-static StackType_t usb_device_stack[3*configMINIMAL_SECURE_STACK_SIZE];
+static StackType_t usb_device_stack[(3*configMINIMAL_SECURE_STACK_SIZE)/2];
 static StaticTask_t usb_device_task_mem;
 
 static void tusb_device_task(void* param);
@@ -267,9 +267,7 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 		struct sc_msg_header *hdr = (struct sc_msg_header *)ptr;
 
 		if (!hdr->id || !hdr->len) {
-			break;
 			LOG("ch%u %s msg offset %u zero id/len msg\n", index, func, ptr - sptr);
-			break;
 			// sc_dump_mem(sptr, eptr - sptr);
 			SC_DEBUG_ASSERT(false);
 			can->tx_offsets[can->tx_bank] = 0;
@@ -837,13 +835,13 @@ SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 				break;
 
 			default:
-<<<<<<< HEAD
-				LOG("ch%u offset=%u unhandled message type=%02x size=%u\n", index, (unsigned)(in_ptr - in_beg), msg->len);
 #if SUPERCAN_DEBUG
-				sc_dump_mem(in_beg, xferred_bytes);
+				LOG("ch%u unknown msg id=%02x len=%02x\n", index, msg->id, msg->len);
+				dump = true;
 #endif
 				break;
 			}
+		}
 
 #if SUPERCAN_DEBUG
 		if (unlikely(dump)) {

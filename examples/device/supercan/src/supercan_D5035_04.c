@@ -10,7 +10,7 @@
 
 #include <leds.h>
 #include <tusb.h>
-
+#include <bsp/board.h>
 
 //#include <usb_descriptors.h> // DFU_USB_RESET_TIMEOUT_MS
 

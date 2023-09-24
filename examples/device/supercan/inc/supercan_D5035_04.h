@@ -17,7 +17,7 @@
 #include <gd32c10x.h>
 #include <sections.h>
 #include <FreeRTOS.h>
-
+#include <task.h>
 
 #define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
 #define SC_BOARD_USB_MANUFACTURER_STRING "2guys"

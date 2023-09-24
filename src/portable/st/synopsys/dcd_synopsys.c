@@ -39,7 +39,7 @@
 #define DCD_ST_SYN_TX1_FIFO_SIZE_WORDS  16   // EP1
 #define DCD_ST_SYN_TX2_FIFO_SIZE_WORDS  32   // EP2
 #define DCD_ST_SYN_TX3_FIFO_SIZE_WORDS  0   // EP3
-#define DCD_ST_SYN_CUSTOM_FIFO_SIZES 1
+#define DCD_ST_SYN_CUSTOM_FIFO_SIZES 0
 
 // #if TU_BIG_ENDIAN == TU_BYTE_ORDER
 // # define be32toh(x) x
@@ -789,7 +789,7 @@ void dcd_init (uint8_t rhport)
   usb_otg->GRSTCTL |= USB_OTG_GRSTCTL_CSRST;
   while ((usb_otg->GRSTCTL & USB_OTG_GRSTCTL_CSRST) == USB_OTG_GRSTCTL_CSRST) {}
 
-  // Restart PHY clock//usb_otg->DIEPTXF[epnum-1] = (TX_FIFO_SIZES_WORDS[epnum] << USB_OTG_DIEPTXF_INEPTXFD_Pos) | (TX_FIFO_OFFSETS_WORDS[epnum] << USB_OTG_DIEPTXF_INEPTXSA_Pos);
+  // Restart PHY clock
   *((volatile uint32_t *)(RHPORT_REGS_BASE + USB_OTG_PCGCCTL_BASE)) = 0;
 
   // Clear all interrupts
@@ -908,11 +908,12 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * desc_edpt)
   xfer_ctl_t * xfer = XFER_CTL_BASE(epnum, dir);
   xfer->max_size = desc_edpt->wMaxPacketSize.size;
   xfer->interval = desc_edpt->bInterval;
-
+#if !DCD_ST_SYN_CUSTOM_FIFO_SIZES
+  uint16_t const fifo_size = (desc_edpt->wMaxPacketSize.size + 3) / 4; // Round up to next full word
+#endif
   if(dir == TUSB_DIR_OUT)
   {
 #if !DCD_ST_SYN_CUSTOM_FIFO_SIZES
-    uint16_t const fifo_size = (desc_edpt->wMaxPacketSize.size + 3) / 4; // Round up to next full word
     // Calculate required size of RX FIFO
     uint16_t const sz = calc_rx_ff_size(4*fifo_size);
 
@@ -1468,6 +1469,9 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
           dcd_event_xfer_complete(rhport, n | TUSB_DIR_IN_MASK, xfer->total_len, XFER_RESULT_SUCCESS, true);
         }
       }
+
+      // FIX ME proper
+      // in_ep[n].DIEPINT = USB_OTG_DIEPINT_TOC;
 
       // // XFER FIFO empty
       // if ( (in_ep[n].DIEPINT & USB_OTG_DIEPINT_TXFE)) {
