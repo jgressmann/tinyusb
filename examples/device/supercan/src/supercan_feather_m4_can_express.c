@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2022 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2022-2023 Jean Gressmann <jean@0x42.de>
  *
  */
 
@@ -150,22 +150,17 @@ static inline void can_init_clock(void) // controller and hardware specific setu
 
 static void can_init_module(void)
 {
+	mcan_can_init();
+
+	mcan_cans[0].m_can = (MCanX*)CAN1;
+	mcan_cans[0].interrupt_id = CAN1_IRQn;
+	mcan_cans[0].led_traffic = SC_BOARD_DEBUG_DEFAULT;
+	mcan_cans[0].led_status_green = SC_BOARD_PIXEL_GREEN;
+	mcan_cans[0].led_status_red = SC_BOARD_PIXEL_RED;
+
+	m_can_init_begin(mcan_cans[0].m_can);
+
 	same5x_can_init();
-
-	same5x_cans[0].m_can = CAN1;
-	same5x_cans[0].interrupt_id = CAN1_IRQn;
-	same5x_cans[0].led_traffic = SC_BOARD_DEBUG_DEFAULT;
-	same5x_cans[0].led_status_green = SC_BOARD_PIXEL_GREEN;
-	same5x_cans[0].led_status_red = SC_BOARD_PIXEL_RED;
-
-
-	for (size_t j = 0; j < TU_ARRAY_SIZE(same5x_cans); ++j) {
-		struct same5x_can *can = &same5x_cans[j];
-
-		can->features = CAN_FEAT_PERM;
-	}
-
-	m_can_init_begin(CAN1);
 
 	CAN1->MRCFG.reg = CAN_MRCFG_QOS_HIGH;
 
@@ -357,7 +352,7 @@ extern void sc_board_init_end(void)
 
 SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status)
 {
-	struct same5x_can *can = &same5x_cans[index];
+	struct mcan_can *can = &mcan_cans[index];
 
 	switch (status) {
 	case SC_CAN_LED_STATUS_DISABLED:
@@ -400,7 +395,7 @@ SC_RAMFUNC void CAN1_Handler(void)
 {
 	// LOG("CAN1 int\n");
 
-	same5x_can_int(0);
+	mcan_can_int(0);
 }
 
 SC_RAMFUNC void FREQM_Handler(void)

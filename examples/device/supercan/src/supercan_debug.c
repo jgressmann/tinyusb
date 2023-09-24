@@ -33,35 +33,45 @@
 #	define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
 #endif
 
-#if SUPERCAN_DEBUG && !CFG_TUSB_DEBUG
+#if SUPERCAN_DEBUG
 char sc_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
 #endif
 
 __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, size_t len)
 {
+	volatile uint32_t* ARM_CM_DHCSR =  ((volatile uint32_t*) 0xE000EDF0UL); /* Cortex M CoreDebug->DHCSR */ \
+
 	taskDISABLE_INTERRUPTS();
 	board_uart_write(msg, len);
 	sc_board_leds_on_unsafe();
+
+	if ( (*ARM_CM_DHCSR) & 1UL ) {  /* Only halt mcu if debugger is attached */
+		__asm("BKPT #0\n"); \
+	}
+
 	while (1);
 }
 
 extern void sc_dump_mem(void const * _ptr, size_t count)
 {
-	char buf[8];
+	char buf[16];
+	char prefix[8];
 	int chars = 0;
 	uint8_t const *ptr = (uint8_t const *)_ptr;
+	size_t rows = count / 16;
+	unsigned width = 1;
+
+	while (rows) {
+		rows /= 16;
+		++width;
+	}
+
+	chars = usnprintf(prefix, sizeof(prefix), "%%0%uX  ", width);
 
 	for (size_t i = 0; i < count; i += 16) {
-		// usnprintf doesn't support width or fill
-		chars = usnprintf(buf, sizeof(buf), "%X", (unsigned)i);
-
-		for (int k = chars; k < 3; ++k) {
-			board_uart_write("0", 1);
-		}
+		chars = usnprintf(buf, sizeof(buf), prefix, (unsigned)i);
 
 		board_uart_write(buf, chars);
-		board_uart_write(" ", 1);
-		board_uart_write(" ", 1);
 
 		size_t end = i + 16;
 		if (end > count) {
@@ -69,14 +79,9 @@ extern void sc_dump_mem(void const * _ptr, size_t count)
 		}
 
 		for (size_t j = i; j < end; ++j) {
-			chars = usnprintf(buf, sizeof(buf), "%X", ptr[j]);
-
-			for (int k = chars; k < 2; ++k) {
-				board_uart_write("0", 1);
-			}
+			chars = usnprintf(buf, sizeof(buf), "%02X ", ptr[j]);
 
 			board_uart_write(buf, chars);
-			board_uart_write(" ", 1);
 		}
 
 		board_uart_write("\n", 1);

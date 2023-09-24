@@ -31,6 +31,10 @@
 #include "bsp/board.h"
 #include "board.h"
 
+#ifndef OTG_HS_USE_FS_PHY
+  #define OTG_HS_USE_FS_PHY 0
+#endif
+
 //--------------------------------------------------------------------+
 // Forward USB interrupt events to TinyUSB IRQ Handler
 //--------------------------------------------------------------------+
@@ -46,7 +50,11 @@ void OTG_FS_IRQHandler(void)
 // OTG_HS is marked as RHPort1 by TinyUSB to be consistent across stm32 port
 void OTG_HS_IRQHandler(void)
 {
+#if BOARD_FS_PHY_ON_HS_CORE
+  tud_int_handler(0);
+#else
   tud_int_handler(1);
+#endif
 }
 
 
@@ -55,6 +63,41 @@ void OTG_HS_IRQHandler(void)
 //--------------------------------------------------------------------+
 
 UART_HandleTypeDef UartHandle;
+
+
+static inline void tx_char(uint8_t ch)
+{
+    UartHandle.Instance->TDR = ch;
+		while((UartHandle.Instance->ISR & UART_FLAG_TXE) != UART_FLAG_TXE);
+}
+
+static inline void uart_send_buffer(uint8_t const *text, size_t len)
+{
+	for (size_t i = 0; i < len; ++i) {
+    tx_char(text[i]);
+	}
+}
+
+static inline void uart_send_str(const char* text)
+{
+	while (*text) {
+    tx_char(*text++);
+	}
+}
+
+// static inline void uart_send_buffer(uint8_t const *text, size_t len)
+// {
+// 	HAL_UART_Transmit(&UartHandle, (uint8_t*) text, len, 0xffff);
+// }
+
+// static inline void uart_send_str(const char* text)
+// {
+// 	while (*text) {
+//     uint8_t c = *text++;
+
+//     uart_send_buffer(&c, 1);
+// 	}
+// }
 
 void board_init(void)
 {
@@ -66,10 +109,12 @@ void board_init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE(); // USB ULPI NXT
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
-  __HAL_RCC_GPIOE_CLK_ENABLE();
+  __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE(); // USB ULPI NXT
+#ifdef __HAL_RCC_GPIOI_CLK_ENABLE
   __HAL_RCC_GPIOI_CLK_ENABLE(); // USB ULPI NXT
+#endif
   __HAL_RCC_GPIOJ_CLK_ENABLE();
 
   // Enable UART Clock
@@ -84,10 +129,12 @@ void board_init(void)
   SysTick->CTRL &= ~1U;
 
   // If freeRTOS is used, IRQ priority is limit by max syscall ( smaller is higher )
-  NVIC_SetPriority(OTG_FS_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY );
+#if !BOARD_FS_PHY_ON_HS_CORE
+  // NVIC_SetPriority(OTG_FS_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY );
+#endif
   NVIC_SetPriority(OTG_HS_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY );
 #endif
-  
+
   GPIO_InitTypeDef  GPIO_InitStruct;
 
   // LED
@@ -237,8 +284,12 @@ int board_uart_read(uint8_t* buf, int len)
 
 int board_uart_write(void const * buf, int len)
 {
-  HAL_UART_Transmit(&UartHandle, (uint8_t*) buf, len, 0xffff);
-  return len;
+  if (len < 0) {
+		uart_send_str(buf);
+	} else {
+		uart_send_buffer(buf, len);
+	}
+	return len;
 }
 
 
@@ -246,6 +297,7 @@ int board_uart_write(void const * buf, int len)
 volatile uint32_t system_ticks = 0;
 void SysTick_Handler(void)
 {
+  HAL_IncTick();
   system_ticks++;
 }
 
@@ -255,10 +307,11 @@ uint32_t board_millis(void)
 }
 #endif
 
-void HardFault_Handler(void)
-{
-  asm("bkpt");
-}
+
+// void HardFault_Handler(void)
+// {
+//   __asm("BKPT #0\n");
+// }
 
 // Required by __libc_init_array in startup code if we are compiling using
 // -nostdlib/-nostartfiles.

@@ -5,10 +5,13 @@ DEPS_SUBMODULES += lib/CMSIS_5 hw/mcu/st/cmsis_device_$(ST_FAMILY) hw/mcu/st/stm
 ST_CMSIS = hw/mcu/st/cmsis_device_$(ST_FAMILY)
 ST_HAL_DRIVER = hw/mcu/st/stm32$(ST_FAMILY)xx_hal_driver
 
+PORT ?= 0
+FS_PHY_ON_HS_CORE ?= 0
+
 include $(TOP)/$(BOARD_PATH)/board.mk
 
 CFLAGS += \
-  -flto \
+-flto \
   -mthumb \
   -mabi=aapcs \
   -mcpu=cortex-m7 \
@@ -16,7 +19,8 @@ CFLAGS += \
   -mfpu=fpv5-d16 \
   -nostdlib -nostartfiles \
   -DCFG_TUSB_MCU=OPT_MCU_STM32H7 \
-	-DBOARD_DEVICE_RHPORT_NUM=$(PORT)
+  -DBOARD_DEVICE_RHPORT_NUM=$(PORT) \
+  -DBOARD_FS_PHY_ON_HS_CORE=$(FS_PHY_ON_HS_CORE)
 
 ifeq ($(PORT), 1)
   CFLAGS += -DBOARD_DEVICE_RHPORT_SPEED=OPT_MODE_HIGH_SPEED

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2021-2022 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021-2023 Jean Gressmann <jean@0x42.de>
  *
  */
 
@@ -12,15 +12,17 @@
 #include <sections.h>
 #include <supercan_debug.h>
 
-#define SC_PACKED __packed
+#define SC_PACKED  __attribute__((packed))
 #include <supercan.h>
 
 #include <supercan_version.h>
 
 #include <FreeRTOSConfig.h>
 
-#define SC_TASK_PRIORITY (configLIBRARY_LOWEST_INTERRUPT_PRIORITY-1)
-#define SC_ISR_PRIORITY (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY+1)
+#define SC_TASK_PRIORITY (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY+1)
+#define SC_ISR_PRIORITY configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY
+// #define SC_TASK_PRIORITY (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY+2)
+// #define SC_ISR_PRIORITY (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY+1)
 
 #ifndef likely
 #define likely(x) __builtin_expect(!!(x),1)
@@ -115,7 +117,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 
 
 extern void sc_board_can_reset(uint8_t index);
-// SC_RAMFUNC extern void sc_board_can_status_fill(uint8_t index, struct sc_msg_can_status *msg);
+
 /* retrieve rx / tx / error messages into buffer
  *
  * Callee places messages into the
@@ -139,20 +141,6 @@ SC_RAMFUNC extern void sc_can_notify_task_isr(uint8_t index, uint32_t count);
 extern void sc_can_log_bit_timing(sc_can_bit_timing const *c, char const* name);
 SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *status);
 
-#if defined(D5035_01)
-#	include "supercan_D5035_01.h"
-#elif defined(SAME54XPLAINEDPRO)
-#	include "supercan_same54_xplained_pro.h"
-#elif defined(TEENSY_4X)
-#	include "supercan_teensy_4x.h"
-#elif defined(FEATHER_M4_CAN_EXPRESS)
-#	include "supercan_feather_m4_can_express.h"
-#elif defined(D5035_04)
-#	include "supercan_D5035_04.h"
-#else
-#	error "Unsupported board!"
-#endif
-
 #ifndef D5035_01
 #	define D5035_01 0
 #endif
@@ -169,9 +157,48 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #	define FEATHER_M4_CAN_EXPRESS 0
 #endif
 
+#ifndef LONGAN_CANBED_M4
+#	define LONGAN_CANBED_M4 0
+#endif
+
+#ifndef STM32F3DISCOVERY
+#	define STM32F3DISCOVERY 0
+#endif
+
 #ifndef D5035_04
 #	define D5035_04 0
 #endif
+
+#ifndef D5035_05
+#	define D5035_05 0
+#endif
+
+
+
+#	include "supercan_D5035_01.h"
+#elif SAME54XPLAINEDPRO
+#	include "supercan_same54_xplained_pro.h"
+#elif TEENSY_4X
+#	include "supercan_teensy_4x.h"
+#elif FEATHER_M4_CAN_EXPRESS
+#	include "supercan_feather_m4_can_express.h"
+#elif LONGAN_CANBED_M4
+#	include "supercan_longan_canbed_m4.h"
+#elif STM32F3DISCOVERY
+#	include "supercan_stm32f3discovery.h"
+#elif D5035_05
+#	include "supercan_D5035_05.h"
+#elif STM32H7A3NUCLEO
+#	include "supercan_stm32h7a3nucleo.h"
+#elif defined(D5035_04)
+#	include "supercan_D5035_04.h"
+#else
+#	pragma GCC warning "unknown board, using dummy CAN implementation"
+#	define SUPERCAN_DUMMY 1
+#	include "supercan_dummy.h"
+#endif
+
+
 
 
 SC_RAMFUNC static inline uint32_t sc_bitrate(unsigned brp, unsigned tseg1, unsigned tseg2)

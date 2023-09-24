@@ -42,6 +42,8 @@
  * See http://www.freertos.org/a00110.html.
  *----------------------------------------------------------*/
 
+#include "supercan_debug.h"
+
 // for OPT_MCU_
 #include "bsp/board_mcu.h"
 
@@ -52,13 +54,14 @@ extern int board_uart_write(void const * buf, int len);
 __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, size_t len);
 
 /* Cortex M23/M33 port configuration. */
-#define configENABLE_MPU								        0
-#define configENABLE_FPU								        0
-#define configENABLE_TRUSTZONE					        0
-#define configMINIMAL_SECURE_STACK_SIZE					( 1024 )
+#define configENABLE_MPU                        0
+#define configENABLE_FPU                        0
+#define configENABLE_TRUSTZONE                  0
+#define configMINIMAL_SECURE_STACK_SIZE         ( 1024 )
 
 #define configUSE_PREEMPTION                    1
-#define configUSE_PORT_OPTIMISED_TASK_SELECTION 1 /* NOTE: disable this to debug FreeRTOS crashes */
+ /* NOTE: disable this to debug FreeRTOS crashes */
+#define configUSE_PORT_OPTIMISED_TASK_SELECTION (CFG_TUSB_MCU != OPT_MCU_STM32G0)
 #define configCPU_CLOCK_HZ                      SystemCoreClock
 #if CFG_TUSB_MCU == OPT_MCU_GD32C10X
   #define configSYSTICK_CLOCK_HZ                (configCPU_CLOCK_HZ / 8)
@@ -146,7 +149,7 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, s
 #define configASSERT(x) \
   do { \
     if (__builtin_expect(!(x), 0)) { \
-      sc_assert_failed("FreeRTOS ASSERT FAILED: " #x "\n", sizeof("FreeRTOS ASSERT FAILED: " #x "\n")-1); \
+      SC_ASSERT_FAILED("FreeRTOS ASSERT FAILED: " #x " " __FILE__ ":" SC_DEBUG_STR(__LINE__) "\n"); \
     } \
   } while (0)
 #else

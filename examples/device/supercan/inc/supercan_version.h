@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2021-2022 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021-2023 Jean Gressmann <jean@0x42.de>
  *
  */
 
@@ -11,6 +11,6 @@
 
 #define SUPERCAN_VERSION_MAJOR 0
 #define SUPERCAN_VERSION_MINOR 5
-#define SUPERCAN_VERSION_PATCH 9
+#define SUPERCAN_VERSION_PATCH 11
 
 #define SUPERCAN_VERSION_STR SUPERCAN_STR(SUPERCAN_VERSION_MAJOR) "." SUPERCAN_STR(SUPERCAN_VERSION_MINOR) "." SUPERCAN_STR(SUPERCAN_VERSION_PATCH)

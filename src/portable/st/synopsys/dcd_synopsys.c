@@ -123,6 +123,12 @@
 #define EP_MAX_HS       9
 #define EP_FIFO_SIZE_HS 4096
 
+#if BOARD_FS_PHY_ON_HS_CORE
+  #define USB_OTG_FS_PERIPH_BASE USB1_OTG_HS_PERIPH_BASE
+  #define OTG_FS_IRQn OTG_HS_IRQn
+#endif
+
+
 #elif CFG_TUSB_MCU == OPT_MCU_STM32F7
 #include "stm32f7xx.h"
 #define EP_MAX_FS       6
@@ -1612,33 +1618,6 @@ void dcd_int_handler(uint8_t rhport)
     dcd_event_bus_signal(rhport, DCD_EVENT_SOF, true);
   }
 #endif
-
-  // RxFIFO non-empty interrupt handling.
-  // if(int_status & USB_OTG_GINTSTS_RXFLVL)
-  // {
-  //   // RXFLVL bit is read-only
-
-  //   // Mask out RXFLVL while reading data from FIFO
-  //   usb_otg->GINTMSK &= ~USB_OTG_GINTMSK_RXFLVLM;
-
-  //   // Loop until all available packets were handled
-  //   do
-  //   {
-  //     handle_rxflvl_ints(rhport, out_ep);
-  //   } while(usb_otg->GINTSTS & USB_OTG_GINTSTS_RXFLVL);
-
-  //   // Manage RX FIFO size
-  //   if (_out_ep_closed)
-  //   {
-  //     update_grxfsiz(rhport);
-
-  //     // Disable flag
-  //     _out_ep_closed = false;
-  //   }
-
-  //   usb_otg->GINTMSK |= USB_OTG_GINTMSK_RXFLVLM;
-  // }
-
   // RxFIFO non-empty interrupt handling.
   if(int_status & USB_OTG_GINTSTS_RXFLVL)
   {

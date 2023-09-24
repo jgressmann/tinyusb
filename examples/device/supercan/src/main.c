@@ -58,8 +58,8 @@ extern void sc_can_log_bit_timing(sc_can_bit_timing const *c, char const* name)
 
 
 // FIX ME: move to struct usb
-static StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
-static StaticTask_t usb_device_stack_mem;
+static StackType_t usb_device_stack[3*configMINIMAL_SECURE_STACK_SIZE];
+static StaticTask_t usb_device_task_mem;
 
 static void tusb_device_task(void* param);
 
@@ -95,7 +95,7 @@ static struct usb {
 
 static struct can {
 	sc_can_status status_fifo[CAN_STATUS_FIFO_SIZE];
-	StackType_t usb_task_stack_mem[configMINIMAL_SECURE_STACK_SIZE];
+	StackType_t usb_task_stack_mem[3*configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_task_mem;
 	TaskHandle_t usb_task_handle;
 
@@ -122,7 +122,13 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 		can->status_fifo[fifo_index] = *status;
 		__atomic_store_n(&can->status_put_index, pi + 1, __ATOMIC_RELEASE);
 	} else {
+#if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
 		__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
+#else
+		taskENTER_CRITICAL();
+		can->int_comm_flags |= SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL;
+		taskEXIT_CRITICAL();
+#endif
 	}
 }
 
@@ -181,14 +187,56 @@ SC_RAMFUNC static inline bool sc_can_bulk_in_ep_ready(uint8_t index)
 	return 0 == can->tx_offsets[!can->tx_bank];
 }
 
+#if SUPERCAN_DEBUG
+static inline void dump_rx_tx_timestamps(uint8_t index)
+{
+	struct usb_can *can = &usb.can[index];
+	uint8_t const * const sptr = can->tx_buffers[can->tx_bank];
+	uint8_t const * const eptr = sptr + can->tx_offsets[can->tx_bank];
+	uint8_t const *ptr = sptr;
+	unsigned rx_offset = 0;
+	unsigned tx_offset = 0;
+
+	for (; ptr + SC_MSG_HEADER_LEN <= eptr; ) {
+		struct sc_msg_header *hdr = (struct sc_msg_header *)ptr;
+
+		switch (hdr->id) {
+		case SC_MSG_CAN_RX: {
+			struct sc_msg_can_rx const *msg = (struct sc_msg_can_rx const *)hdr;
+
+			LOG("ch%u rx msg index=%02u ts=%08x\n", index, rx_offset, msg->timestamp_us);
+			++rx_offset;
+		} break;
+		}
+
+		ptr += hdr->len;
+	}
+
+	ptr = sptr;
+
+	for (; ptr + SC_MSG_HEADER_LEN <= eptr; ) {
+		struct sc_msg_header *hdr = (struct sc_msg_header *)ptr;
+
+		switch (hdr->id) {
+		case SC_MSG_CAN_TXR: {
+			struct sc_msg_can_txr const *msg = (struct sc_msg_can_txr const *)hdr;
+
+			LOG("ch%u txr msg index=%02u ts=%08x\n", index, tx_offset, msg->timestamp_us);
+			++tx_offset;
+		} break;
+		}
+
+		ptr += hdr->len;
+	}
+}
+#endif
+
 SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *func)
 {
 	SC_DEBUG_ASSERT(sc_can_bulk_in_ep_ready(index));
 	struct usb_can *can = &usb.can[index];
 	SC_DEBUG_ASSERT(can->tx_bank < 2);
 	SC_DEBUG_ASSERT(can->tx_offsets[can->tx_bank] > 0);
-	SC_DEBUG_ASSERT(can->tx_offsets[can->tx_bank] <= MSG_BUFFER_SIZE);
-	// LOG("ch%u %s enter bytes=%u\n", index, func, can->tx_offsets[can->tx_bank]);
 
 	(void)func;
 
@@ -215,11 +263,9 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 	uint8_t const *eptr = sptr + can->tx_offsets[can->tx_bank];
 	uint8_t const *ptr = sptr;
 
-	// LOG("ch%u %s: chunk %u\n", index, func, i);
-	// sc_dump_mem(data_ptr, data_size);
-
 	for (; ptr + SC_MSG_HEADER_LEN <= eptr; ) {
 		struct sc_msg_header *hdr = (struct sc_msg_header *)ptr;
+
 		if (!hdr->id || !hdr->len) {
 			break;
 			LOG("ch%u %s msg offset %u zero id/len msg\n", index, func, ptr - sptr);
@@ -238,7 +284,7 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 		}
 
 		if (ptr + hdr->len > eptr) {
-			LOG("ch%u %s msg offset=%u len=%u exceeds buffer len=%u\n", index, func, ptr - sptr, hdr->len, MSG_BUFFER_SIZE);
+			LOG("ch%u %s msg offset=%u len=%u exceeds buffer len=%u\n", index, func, (unsigned)(ptr - sptr), hdr->len, MSG_BUFFER_SIZE);
 			SC_DEBUG_ASSERT(false);
 			can->tx_offsets[can->tx_bank] = 0;
 			return;
@@ -261,9 +307,12 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 				uint32_t delta = (ts - rx_ts_last) & SC_TS_MAX;
 				bool rx_ts_ok = delta <= SC_TS_MAX / 4;
 				if (unlikely(!rx_ts_ok)) {
+					taskENTER_CRITICAL();
 					LOG("ch%u rx msg index=%u ts=%lx prev=%lx\n", index, rx_offset, ts, rx_ts_last);
+					dump_rx_tx_timestamps(index);
 					SC_ASSERT(false);
 					can->tx_offsets[can->tx_bank] = 0;
+					taskEXIT_CRITICAL();
 					return;
 				}
 			}
@@ -277,9 +326,12 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 				uint32_t delta = (ts - tx_ts_last) & SC_TS_MAX;
 				bool tx_ts_ok = delta <= SC_TS_MAX / 4;
 				if (unlikely(!tx_ts_ok)) {
+					taskENTER_CRITICAL();
 					LOG("ch%u tx msg index=%u ts=%lx prev=%lx\n", index, tx_offset, ts, tx_ts_last);
+					dump_rx_tx_timestamps(index);
 					SC_ASSERT(false);
 					can->tx_offsets[can->tx_bank] = 0;
+					taskEXIT_CRITICAL();
 					return;
 				}
 			}
@@ -688,6 +740,11 @@ SC_RAMFUNC static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header
 		}
 	}
 
+	if (unlikely(tmsg->track_id >= SC_BOARD_CAN_TX_FIFO_SIZE)) {
+		LOG("ch%u ERROR: SC_MSG_CAN_TX track ID %u out of bounds [0-%u)\n", index, tmsg->track_id, SC_BOARD_CAN_TX_FIFO_SIZE);
+		return;
+	}
+
 	if (unlikely(!sc_board_can_tx_queue(index, tmsg))) {
 		uint8_t *tx_beg = NULL;
 		uint8_t *tx_end = NULL;
@@ -751,6 +808,9 @@ SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 
 	// guard against CAN frames when disabled
 	if (likely(can->enabled)) {
+#if SUPERCAN_DEBUG
+		bool dump = false;
+#endif
 		// process messages
 		while (in_ptr + SC_MSG_HEADER_LEN <= in_end) {
 			struct sc_msg_header const *msg = (struct sc_msg_header const *)in_ptr;
@@ -758,7 +818,7 @@ SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 			if (in_ptr + msg->len > in_end) {
 				LOG("ch%u offset=%u len=%u exceeds buffer size=%u\n", index, (unsigned)(in_ptr - in_beg), msg->len, (unsigned)xferred_bytes);
 #if SUPERCAN_DEBUG
-				sc_dump_mem(in_beg, xferred_bytes);
+				dump = true;
 #endif
 				break;
 			}
@@ -777,13 +837,20 @@ SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 				break;
 
 			default:
+<<<<<<< HEAD
 				LOG("ch%u offset=%u unhandled message type=%02x size=%u\n", index, (unsigned)(in_ptr - in_beg), msg->len);
 #if SUPERCAN_DEBUG
 				sc_dump_mem(in_beg, xferred_bytes);
 #endif
 				break;
 			}
+
+#if SUPERCAN_DEBUG
+		if (unlikely(dump)) {
+			LOG("msg buffer\n");
+			sc_dump_mem(in_beg, xferred_bytes);
 		}
+#endif
 
 		if (sc_can_bulk_in_ep_ready(index) && usb_can->tx_offsets[usb_can->tx_bank]) {
 			sc_can_bulk_in_submit(index, __func__);
@@ -875,11 +942,11 @@ int main(void)
 
 	LOG("led_init\n");
 	led_init();
+
 	LOG("tusb_init\n");
 	tusb_init();
 
-
-	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, SC_TASK_PRIORITY, usb_device_stack, &usb_device_stack_mem);
+	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, SC_TASK_PRIORITY, usb_device_stack, &usb_device_task_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, SC_TASK_PRIORITY, led_task_stack, &led_task_mem);
 
 	usb.cmd[0].pipe = SC_M1_EP_CMD0_BULK_OUT;
@@ -898,16 +965,22 @@ int main(void)
 		can->usb_task_handle = xTaskCreateStatic(&can_usb_task, NULL, TU_ARRAY_SIZE(can->usb_task_stack_mem), (void*)(uintptr_t)i, SC_TASK_PRIORITY, can->usb_task_stack_mem, &can->usb_task_mem);
 	}
 
+
+	LOG("can_usb_disconnect\n");
 	can_usb_disconnect();
 
+	LOG("sc_board_init_end\n");
 	sc_board_init_end();
 
 	LOG("vTaskStartScheduler\n");
 	vTaskStartScheduler();
 
+	__unreachable();
+
+	configASSERT(0 && "should not be reachable");
+
 	LOG("sc_board_reset\n");
 	sc_board_reset();
-
 
 	return 0;
 }
@@ -919,6 +992,8 @@ int main(void)
 SC_RAMFUNC static void tusb_device_task(void* param)
 {
 	(void) param;
+
+
 
 	while (1) {
 		LOG("tud_task\n");
@@ -1395,9 +1470,8 @@ SC_RAMFUNC static void can_usb_task(void *param)
 #else
 SC_RAMFUNC static void can_usb_task(void *param)
 {
-
-
 	const uint8_t index = (uint8_t)(uintptr_t)param;
+
 	SC_ASSERT(index < TU_ARRAY_SIZE(cans));
 	SC_ASSERT(index < TU_ARRAY_SIZE(usb.can));
 
@@ -1459,19 +1533,6 @@ SC_RAMFUNC static void can_usb_task(void *param)
 					const TickType_t now = xTaskGetTickCount();
 					send_can_status = send_can_status || now - status_ts >= pdMS_TO_TICKS(128); // some boards don't report periodically
 
-		// #if SUPERCAN_DEBUG
-		// 			// loop
-		// 			{
-		// 				uint32_t ts = counter_1MHz_read_sync(index);
-		// 				if (ts - rx_ts_last >= 0x20000000) {
-		// 					rx_ts_last = ts - 0x20000000;
-		// 				}
-
-		// 				if (ts - tx_ts_last >= 0x20000000) {
-		// 					tx_ts_last = ts - 0x20000000;
-		// 				}
-		// 			}
-		// #endif
 					uint8_t * const tx_beg = usb_can->tx_buffers[usb_can->tx_bank];
 					uint8_t * const tx_end = tx_beg + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
 					uint8_t *tx_ptr = tx_beg + usb_can->tx_offsets[usb_can->tx_bank];
@@ -1506,7 +1567,14 @@ SC_RAMFUNC static void can_usb_task(void *param)
 							msg->rx_fifo_size = 0;
 							msg->tx_errors = tx_errors;
 							msg->rx_errors = rx_errors;
+#if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
 							msg->flags = __sync_fetch_and_and(&can->int_comm_flags, 0);
+#else
+							taskENTER_CRITICAL();
+							msg->flags = can->int_comm_flags;
+							can->int_comm_flags = 0;
+							taskEXIT_CRITICAL();
+#endif
 
 							if (can->desync) {
 								msg->flags |= SC_CAN_STATUS_FLAG_TXR_DESYNC;

@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020,2023 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -25,9 +25,6 @@
  */
 
 #pragma once
-
-#include <sam.h>
-
 
 #define M_CAN_TS_COUNTER_BITS   16 // mcan_users_manual_v330.pdf p. 14, 60001507E.pdf is wrong
 
@@ -54,27 +51,27 @@
 #define M_CAN_DTBT_TSEG2_MAX         0x10
 #define M_CAN_TDCR_TDCO_MAX          0x7f
 
-static inline void m_can_init_begin(Can *can)
+static inline void m_can_init_begin(MCanX *can)
 {
-    can->CCCR.reg |= CAN_CCCR_INIT; // set CAN-Module to init, reset-default
-	while((can->CCCR.reg & CAN_CCCR_INIT) == 0);
+    can->CCCR.reg |= MCANX_CCCR_INIT; // set CAN-Module to init, reset-default
+	while((can->CCCR.reg & MCANX_CCCR_INIT) == 0);
 }
 
-static inline void m_can_init_end(Can *can)
+static inline void m_can_init_end(MCanX *can)
 {
-    can->CCCR.reg &= ~CAN_CCCR_INIT; // start CAN-Module
-	while(can->CCCR.reg & CAN_CCCR_INIT);
+    can->CCCR.reg &= ~MCANX_CCCR_INIT; // start CAN-Module
+	while(can->CCCR.reg & MCANX_CCCR_INIT);
 }
 
-static inline void m_can_conf_begin(Can *can)
+static inline void m_can_conf_begin(MCanX *can)
 {
-    can->CCCR.reg |= CAN_CCCR_CCE; // set CCE bit to change config
-	while((can->CCCR.reg & CAN_CCCR_CCE) == 0);
+    can->CCCR.reg |= MCANX_CCCR_CCE; // set CCE bit to change config
+	while((can->CCCR.reg & MCANX_CCCR_CCE) == 0);
 }
 
-static inline void m_can_conf_end(Can *can)
+static inline void m_can_conf_end(MCanX *can)
 {
-    can->CCCR.reg &= ~CAN_CCCR_CCE; // clear CCE bit
+    can->CCCR.reg &= ~MCANX_CCCR_CCE; // clear CCE bit
 }
 
 // static inline uint32_t m_can_compute_nbtp(
@@ -168,8 +165,8 @@ static inline void m_can_conf_end(Can *can)
 // 	}
 // }
 
-static inline bool m_can_tx_event_fifo_avail(Can *can)
+static inline bool m_can_tx_event_fifo_avail(MCanX *can)
 {
-	return (can->TXEFS.reg & CAN_TXEFS_EFFL_Msk) != 0;
+	return (can->TXEFS.reg & MCANX_TXEFS_EFFL_Msk) != 0;
 }
 
