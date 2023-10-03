@@ -2,11 +2,11 @@
     \file    main.c
     \brief   CTC is used to trim internal 48MHz RC oscillator with LXTAL clock
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -45,28 +45,26 @@ void ctc_config(void);
 */
 int main(void)
 {
-    /* init LED2*/
+    /* initilize LED2 */
     gd_eval_led_init(LED2);
 
     /* enable IRC48M clock */
-    RCU_ADDCTL |= RCU_ADDCTL_IRC48MEN; 
-    /* wait till IRC48M is ready */
-    while(0 == (RCU_ADDCTL & RCU_ADDCTL_IRC48MSTB)){
+    rcu_osci_on(RCU_IRC48M);
+    /* wait until IRC48M is ready */
+    while(ERROR == rcu_osci_stab_wait(RCU_IRC48M)){
     }
 
-    /* LXTAL clock config */
+    /* configure LXTAL clock */
     rcu_periph_clock_enable(RCU_PMU);
     pmu_backup_write_enable();
 
     /* enable LXTAL clock */
-    RCU_BDCTL |= RCU_BDCTL_LXTALEN;
-    /* wait till LXTAL is ready */
-    while(0 == (RCU_BDCTL & RCU_BDCTL_LXTALSTB)){
+    rcu_osci_on(RCU_LXTAL);
+    /* wait until LXTAL is ready */
+    while(ERROR == rcu_osci_stab_wait(RCU_LXTAL)){
     }
 
-    /* CTC peripheral clock enable */
-    rcu_periph_clock_enable(RCU_CTC);
-    /* CTC config */
+    /* configure CTC */
     ctc_config();
 
     while(1){
@@ -87,18 +85,20 @@ int main(void)
 */
 void ctc_config(void)
 {
-    /* config CTC reference signal source prescaler */
+    /* enable CTC peripheral clock */
+    rcu_periph_clock_enable(RCU_CTC);
+    /* configure CTC reference signal source prescaler */
     ctc_refsource_prescaler_config(CTC_REFSOURCE_PSC_OFF);
     /* select reference signal source */
     ctc_refsource_signal_select(CTC_REFSOURCE_LXTAL);
     /* select reference signal source polarity */
     ctc_refsource_polarity_config(CTC_REFSOURCE_POLARITY_RISING);
-    /* config hardware automatically trim mode */
+    /* configure hardware automatically trim mode */
     ctc_hardware_trim_mode_config(CTC_HARDWARE_TRIM_MODE_ENABLE);
     
-    /* config CTC counter reload value, Fclock/Fref-1 */
+    /* configure CTC counter reload value, Fclock/Fref-1 */
     ctc_counter_reload_value_config(0x05B8);
-    /* config clock trim base limit value, Fclock/Fref*0.0012/2 */
+    /* configure clock trim base limit value, Fclock/Fref*0.0012/2 */
     ctc_clock_limit_value_config(0x0001);
 
     /* CTC counter enable */

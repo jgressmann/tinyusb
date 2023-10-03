@@ -1042,9 +1042,6 @@
       <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\msc\Source\usbd_msc_core.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\msc\Source\usbd_msc_data.c</name>
-    </file>
-    <file>
       <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\msc\Source\usbd_msc_scsi.c</name>
     </file>
   </group>

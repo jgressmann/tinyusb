@@ -1,12 +1,12 @@
 /*!
-    \file     ff_gen_drv.c
-    \brief    FatFs generic low level driver
+    \file    ff_gen_drv.c
+    \brief   FatFs generic low level driver
 
-    \version  2021-05-31, V1.0.0, firmware for GD32 USBFS
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2021, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:

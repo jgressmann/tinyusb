@@ -2,11 +2,11 @@
     \file    gd32c10x_it.h
     \brief   the header file of the ISR
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -56,7 +56,5 @@ void DebugMon_Handler(void);
 void PendSV_Handler(void);
 /* this function handles LVD exception */
 void LVD_IRQHandler(void);
-/* this function handles external lines 10 to 15 interrupt request */
-void EXTI10_15_IRQHandler(void);
 
 #endif /* GD32C10X_IT_H */

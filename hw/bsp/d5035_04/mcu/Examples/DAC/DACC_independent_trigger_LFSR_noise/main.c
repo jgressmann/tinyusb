@@ -2,11 +2,11 @@
     \file    main.c
     \brief   DAC concurrent mode independent trigger with different LFSR demo
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:

@@ -963,13 +963,19 @@
       <name>$PROJ_DIR$\..\src\dfu_fmc.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\src\flash_if.c</name>
+      <name>$PROJ_DIR$\..\src\gd25qxx.c</name>
     </file>
     <file>
       <name>$PROJ_DIR$\..\src\gd32c10x_hw.c</name>
     </file>
     <file>
       <name>$PROJ_DIR$\..\src\gd32c10x_it.c</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\src\inter_flash_if.c</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\src\nor_flash_if.c</name>
     </file>
   </group>
   <group>
@@ -1011,6 +1017,9 @@
       <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_rcu.c</name>
     </file>
     <file>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_spi.c</name>
+    </file>
+    <file>
       <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_timer.c</name>
     </file>
     <file>
@@ -1029,7 +1038,7 @@
       <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\dfu\Source\dfu_core.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\dfu\Source\dfu_mal.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\dfu\Source\dfu_mem.c</name>
     </file>
   </group>
   <group>

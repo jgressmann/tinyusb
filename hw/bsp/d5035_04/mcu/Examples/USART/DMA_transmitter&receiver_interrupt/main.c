@@ -2,11 +2,11 @@
     \file    main.c
     \brief   transmit/receive data using DMA interrupt
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -36,11 +36,12 @@ OF SUCH DAMAGE.
 #include "gd32c10x.h" 
 #include "gd32c10x_eval.h"
   
-#define ARRAYNUM(arr_nanme)      (uint32_t)(sizeof(arr_nanme) / sizeof(*(arr_nanme)))
+#define ARRAYNUM(arr_name)       (uint32_t)(sizeof(arr_name) / sizeof(*(arr_name)))
+#define USART0_DATA_ADDRESS      ((uint32_t)&USART_DATA(USART0))
 
 __IO FlagStatus g_transfer_complete = RESET;
 uint8_t rxbuffer[10];
-uint8_t txbuffer[] = "\n\rUSART DMA interrupt receive and transmit example, please input 10 bytes:\n\r";
+uint8_t txbuffer[] = "\n\rUSART DMA receive and transmit example, please input 10 bytes:\n\r";
 
 void nvic_config(void);
 
@@ -55,7 +56,7 @@ int main(void)
     dma_parameter_struct dma_init_struct;
     /* enable DMA0 clock */
     rcu_periph_clock_enable(RCU_DMA0);
-    /* USART configure */
+    /* initialize USART */
     gd_eval_com_init(EVAL_COM0);
     /*configure DMA0 interrupt*/
     nvic_config();
@@ -64,28 +65,30 @@ int main(void)
     dma_deinit(DMA0, DMA_CH3);
     dma_struct_para_init(&dma_init_struct);
 
-    dma_init_struct.direction = DMA_MEMORY_TO_PERIPHERAL;
-    dma_init_struct.memory_addr = (uint32_t)txbuffer;
-    dma_init_struct.memory_inc = DMA_MEMORY_INCREASE_ENABLE;
+    dma_init_struct.direction    = DMA_MEMORY_TO_PERIPHERAL;
+    dma_init_struct.memory_addr  = (uint32_t)txbuffer;
+    dma_init_struct.memory_inc   = DMA_MEMORY_INCREASE_ENABLE;
     dma_init_struct.memory_width = DMA_MEMORY_WIDTH_8BIT;
-    dma_init_struct.number = ARRAYNUM(txbuffer);
-    dma_init_struct.periph_addr = (uint32_t)&USART_DATA(USART0);
-    dma_init_struct.periph_inc = DMA_PERIPH_INCREASE_DISABLE;
+    dma_init_struct.number       = ARRAYNUM(txbuffer);
+    dma_init_struct.periph_addr  = USART0_DATA_ADDRESS;
+    dma_init_struct.periph_inc   = DMA_PERIPH_INCREASE_DISABLE;
     dma_init_struct.periph_width = DMA_PERIPHERAL_WIDTH_8BIT;
-    dma_init_struct.priority = DMA_PRIORITY_ULTRA_HIGH;
+    dma_init_struct.priority     = DMA_PRIORITY_ULTRA_HIGH;
     dma_init(DMA0, DMA_CH3, &dma_init_struct);
 
     /* initialize DMA0 channel4 */
     dma_deinit(DMA0, DMA_CH4);
-    dma_init_struct.direction = DMA_PERIPHERAL_TO_MEMORY;
-    dma_init_struct.memory_addr = (uint32_t)rxbuffer;
-    dma_init_struct.memory_inc = DMA_MEMORY_INCREASE_ENABLE;
+    dma_struct_para_init(&dma_init_struct);
+
+    dma_init_struct.direction    = DMA_PERIPHERAL_TO_MEMORY;
+    dma_init_struct.memory_addr  = (uint32_t)rxbuffer;
+    dma_init_struct.memory_inc   = DMA_MEMORY_INCREASE_ENABLE;
     dma_init_struct.memory_width = DMA_MEMORY_WIDTH_8BIT;
-    dma_init_struct.number = 10;
-    dma_init_struct.periph_addr = (uint32_t)&USART_DATA(USART0);
-    dma_init_struct.periph_inc = DMA_PERIPH_INCREASE_DISABLE;
-    dma_init_struct.memory_width = DMA_PERIPHERAL_WIDTH_8BIT;
-    dma_init_struct.priority = DMA_PRIORITY_ULTRA_HIGH;
+    dma_init_struct.number       = 10;
+    dma_init_struct.periph_addr  = USART0_DATA_ADDRESS;
+    dma_init_struct.periph_inc   = DMA_PERIPH_INCREASE_DISABLE;
+    dma_init_struct.periph_width = DMA_PERIPHERAL_WIDTH_8BIT;
+    dma_init_struct.priority     = DMA_PRIORITY_ULTRA_HIGH;
     dma_init(DMA0, DMA_CH4, &dma_init_struct);
 
     /* configure DMA mode */
@@ -94,29 +97,33 @@ int main(void)
     dma_circulation_disable(DMA0, DMA_CH4);
     dma_memory_to_memory_disable(DMA0, DMA_CH4);
 
-    /* USART DMA0 enable for reception */
-    usart_dma_receive_config(USART0, USART_DENR_ENABLE);
+    /* enable USART DMA for reception */
+    usart_dma_receive_config(USART0, USART_RECEIVE_DMA_ENABLE);
     /* enable DMA0 channel4 transfer complete interrupt */
     dma_interrupt_enable(DMA0, DMA_CH4, DMA_INT_FTF);
     /* enable DMA0 channel4 */
     dma_channel_enable(DMA0, DMA_CH4);
-    /* USART DMA0 enable for transmission */
-    usart_dma_transmit_config(USART0, USART_DENT_ENABLE);
+    /* enable USART DMA for transmission */
+    usart_dma_transmit_config(USART0, USART_TRANSMIT_DMA_ENABLE);
     /* enable DMA0 channel3 transfer complete interrupt */
     dma_interrupt_enable(DMA0, DMA_CH3, DMA_INT_FTF);
     /* enable DMA0 channel3 */
     dma_channel_enable(DMA0, DMA_CH3);
 
     /* waiting for the transfer to complete*/
-    while(RESET == g_transfer_complete);
+    while(RESET == g_transfer_complete) {
+    }
 
     g_transfer_complete = RESET;
 
     /* waiting for the transfer to complete*/
-    while(RESET == g_transfer_complete);
+    while(RESET == g_transfer_complete) {
+    }
 
     printf("\n\r%s\n\r", rxbuffer);
-    while(1);
+
+    while(1) {
+    }
 }
 
 /*!
@@ -138,3 +145,4 @@ int fputc(int ch, FILE *f)
     while(RESET == usart_flag_get(EVAL_COM0, USART_FLAG_TBE));
     return ch;
 }
+

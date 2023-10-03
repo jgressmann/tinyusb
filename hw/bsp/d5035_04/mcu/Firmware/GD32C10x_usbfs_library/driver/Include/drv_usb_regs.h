@@ -2,11 +2,11 @@
     \file    drv_usb_regs.h
     \brief   USB cell registers definition and handle macros
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -37,7 +37,6 @@ OF SUCH DAMAGE.
 
 #include "usb_conf.h"
 
-#define USBHS_REG_BASE                0x40040000L   /*!< base address of USBHS registers */
 #define USBFS_REG_BASE                0x50000000L   /*!< base address of USBFS registers */
 
 #define USBFS_MAX_TX_FIFOS            15U           /*!< FIFO number */
@@ -46,11 +45,6 @@ OF SUCH DAMAGE.
 #define USBFS_MAX_CHANNEL_COUNT       8U            /*!< USBFS host channel count */
 #define USBFS_MAX_EP_COUNT            4U            /*!< USBFS device endpoint count */
 #define USBFS_MAX_FIFO_WORDLEN        320U          /*!< USBFS max fifo size in words */
-
-#define USBHS_MAX_PACKET_SIZE         512U          /*!< USBHS max packet size */
-#define USBHS_MAX_CHANNEL_COUNT       12U           /*!< USBHS host channel count */
-#define USBHS_MAX_EP_COUNT            6U            /*!< USBHS device endpoint count */
-#define USBHS_MAX_FIFO_WORDLEN        1280U         /*!< USBHS max fifo size in words */
 
 #define USB_DATA_FIFO_OFFSET          0x1000U       /*!< USB data fifo offset */
 #define USB_DATA_FIFO_SIZE            0x1000U       /*!< USB data fifo size */
@@ -122,7 +116,7 @@ typedef struct
     __IO uint32_t HCHINTF;                          /*!< USB host channel interrupt flag register   508h */
     __IO uint32_t HCHINTEN;                         /*!< USB host channel interrupt enable register 50Ch */
     __IO uint32_t HCHLEN;                           /*!< USB host channel transfer length register  510h */
-    __IO uint32_t HCHDMAADDR;                       /*!< USB host channel-x DMA address register    514h*/
+    uint32_t Reserved514;                           /*!< Reserved                                   514h*/
     uint32_t Reserved[2];
 } usb_pr;
 
@@ -157,7 +151,7 @@ typedef struct
     __IO uint32_t DIEPINTF;                         /*!< USB device IN endpoint interrupt flag register  900h + (EpNum * 20h) + 08h */
     uint32_t Reserved0C;                            /*!< Reserved                                        900h + (EpNum * 20h) + 0Ch */
     __IO uint32_t DIEPLEN;                          /*!< USB device IN endpoint transfer length register 900h + (EpNum * 20h) + 10h */
-    __IO uint32_t DIEPDMAADDR;                      /*!< Device IN endpoint-x DMA address register       900h + (EpNum * 20h) + 14h */
+    uint32_t Reserved;                              /*!< Reserved                                        900h + (EpNum * 20h) + 14h */
     __IO uint32_t DIEPTFSTAT;                       /*!< USB device IN endpoint transmit FIFO status register 900h + (EpNum * 20h) + 18h */
 } usb_erin;
 
@@ -168,7 +162,7 @@ typedef struct
     __IO uint32_t DOEPINTF;                         /*!< USB device IN endpoint interrupt flag register  B00h + (EpNum * 20h) + 08h */
     uint32_t Reserved0C;                            /*!< Reserved                                        B00h + (EpNum * 20h) + 0Ch */
     __IO uint32_t DOEPLEN;                          /*!< USB device IN endpoint transfer length register B00h + (EpNum * 20h) + 10h */
-    __IO uint32_t DOEPDMAADDR;                      /*!< Device OUT endpoint-x DMA address register      B00h + (EpNum * 20h) + 0Ch */
+    uint32_t Reserved;                              /*!< Reserved                                        B00h + (EpNum * 20h) + 0Ch */
 } usb_erout;
 
 typedef struct _usb_regs
@@ -208,8 +202,6 @@ typedef struct _usb_regs
 /* global AHB control and status register bits definitions */
 #define GAHBCS_PTXFTH             BIT(8)              /*!< periodic Tx FIFO threshold */
 #define GAHBCS_TXFTH              BIT(7)              /*!< tx FIFO threshold */
-#define GAHBCS_DMAEN              BIT(5)              /*!< DMA function Enable */
-#define GAHBCS_BURST              BITS(1, 4)          /*!< the AHB burst type used by DMA */
 #define GAHBCS_GINTEN             BIT(0)              /*!< global interrupt enable */
 
 /* global USB control and status register bits definitions */
@@ -224,8 +216,6 @@ typedef struct _usb_regs
 #define GUSBCS_TOC                BITS(0, 2)          /*!< timeout calibration */
 
 /* global reset control register bits definitions */
-#define GRSTCTL_DMAIDL            BIT(31)             /*!< DMA idle state */
-#define GRSTCTL_DMABSY            BIT(30)             /*!< DMA busy */
 #define GRSTCTL_TXFNUM            BITS(6, 10)         /*!< tx FIFO number */
 #define GRSTCTL_TXFF              BIT(5)              /*!< tx FIFO flush */
 #define GRSTCTL_RXFF              BIT(4)              /*!< rx FIFO flush */
@@ -406,7 +396,6 @@ typedef struct _usb_regs
 #define HCHINTF_ACK               BIT(5)              /*!< ACK */
 #define HCHINTF_NAK               BIT(4)              /*!< NAK */
 #define HCHINTF_STALL             BIT(3)              /*!< STALL */
-#define HCHINTF_DMAER             BIT(2)              /*!< DMA error */
 #define HCHINTF_CH                BIT(1)              /*!< channel halted */
 #define HCHINTF_TF                BIT(0)              /*!< transfer finished */
 
@@ -419,7 +408,6 @@ typedef struct _usb_regs
 #define HCHINTEN_ACKIE            BIT(5)              /*!< ACK interrupt enable */
 #define HCHINTEN_NAKIE            BIT(4)              /*!< NAK interrupt enable */
 #define HCHINTEN_STALLIE          BIT(3)              /*!< STALL interrupt enable */
-#define HCHINTEN_DMAERIE          BIT(2)              /*!< DMA error interrupt enable */
 #define HCHINTEN_CHIE             BIT(1)              /*!< channel halted interrupt enable */
 #define HCHINTEN_TFIE             BIT(0)              /*!< transfer finished interrupt enable */
 
@@ -429,15 +417,11 @@ typedef struct _usb_regs
 #define HCHLEN_PCNT               BITS(19, 28)        /*!< packet count */
 #define HCHLEN_TLEN               BITS(0, 18)         /*!< transfer length */
 
-/* host channel-x DMA address register bits definitions */
-#define HCHDMAADDR_DMAADDR        BITS(0, 31)         /*!< DMA address */
-
-
 #define PORT_SPEED(x)             (((uint32_t)(x) << 17) & HPCS_PS) /*!< Port speed */
 
-#define PORT_SPEED_HIGH           PORT_SPEED(0U)                             /*!< high speed */
-#define PORT_SPEED_FULL           PORT_SPEED(1U)                             /*!< full speed */
-#define PORT_SPEED_LOW            PORT_SPEED(2U)                             /*!< low speed */
+#define PORT_SPEED_HIGH           PORT_SPEED(0U)                            /*!< high speed */
+#define PORT_SPEED_FULL           PORT_SPEED(1U)                            /*!< full speed */
+#define PORT_SPEED_LOW            PORT_SPEED(2U)                            /*!< low speed */
 
 #define PIPE_CTL_DAR(x)           (((uint32_t)(x) << 22) & HCHCTL_DAR)      /*!< device address */
 #define PIPE_CTL_EPTYPE(x)        (((uint32_t)(x) << 18) & HCHCTL_EPTYPE)   /*!< endpoint type */
@@ -577,12 +561,6 @@ extern const uint32_t PIPE_DPID[2];
 #define DEPLEN_PCNT               BITS(19, 28)        /*!< packet count */
 #define DEPLEN_TLEN               BITS(0, 18)         /*!< transfer length */
 
-/* device IN endpoint-x DMA address register bits definitions */
-#define DIEPDMAADDR_DMAADDR       BITS(0, 31)         /*!< DMA address */
-
-/* device OUT endpoint-x DMA address register bits definitions */
-#define DOEPDMAADDR_DMAADDR       BITS(0, 31)         /*!< DMA address */
-
 /* device IN endpoint-x transmit FIFO status register bits definitions */
 #define DIEPTFSTAT_IEPTFS         BITS(0, 15)         /*!< IN endpoint Tx FIFO space remaining */
 
@@ -606,14 +584,6 @@ extern const uint32_t PIPE_DPID[2];
 #define DPID_DATA2                      1U    /* device endpoint data PID is DATA2 */
 #define DPID_MDATA                      3U    /* device endpoint data PID is MDATA */
 
-#define GAHBCS_DMAINCR(regval)    (GAHBCS_BURST & ((regval) << 1)) /*!< AHB burst type used by DMA*/
-
-#define DMA_INCR0                 GAHBCS_DMAINCR(0U)                /*!< single burst type used by DMA*/
-#define DMA_INCR1                 GAHBCS_DMAINCR(1U)                /*!< 4-beat incrementing burst type used by DMA*/
-#define DMA_INCR4                 GAHBCS_DMAINCR(3U)                /*!< 8-beat incrementing burst type used by DMA*/
-#define DMA_INCR8                 GAHBCS_DMAINCR(5U)                /*!< 16-beat incrementing burst type used by DMA*/
-#define DMA_INCR16                GAHBCS_DMAINCR(7U)                /*!< 32-beat incrementing burst type used by DMA*/
-
 #define DCFG_PFRI(regval)         (DCFG_EOPFT & ((regval) << 11))  /*!< end of periodic frame time configuration */
 
 #define FRAME_INTERVAL_80         DCFG_PFRI(0U)                     /*!< 80% of the frame time */
@@ -621,13 +591,13 @@ extern const uint32_t PIPE_DPID[2];
 #define FRAME_INTERVAL_90         DCFG_PFRI(2U)                     /*!< 90% of the frame time */
 #define FRAME_INTERVAL_95         DCFG_PFRI(3U)                     /*!< 95% of the frame time */
 
-#define DCFG_DEVSPEED(regval)     (DCFG_DS & ((regval) << 0))      /*!< device speed configuration */
+#define DCFG_DEVSPEED(regval)     (DCFG_DS & ((regval) << 0))       /*!< device speed configuration */
 
 #define USB_SPEED_EXP_HIGH        DCFG_DEVSPEED(0U)                 /*!< device external PHY high speed */
 #define USB_SPEED_EXP_FULL        DCFG_DEVSPEED(1U)                 /*!< device external PHY full speed */
 #define USB_SPEED_INP_FULL        DCFG_DEVSPEED(3U)                 /*!< device internal PHY full speed */
 
-#define DEP0_MPL(regval)          (DEP0CTL_MPL & ((regval) << 0))  /*!< maximum packet length configuration */
+#define DEP0_MPL(regval)          (DEP0CTL_MPL & ((regval) << 0))   /*!< maximum packet length configuration */
 
 #define EP0MPL_64                 DEP0_MPL(0U)                      /*!< maximum packet length 64 bytes */
 #define EP0MPL_32                 DEP0_MPL(1U)                      /*!< maximum packet length 32 bytes */

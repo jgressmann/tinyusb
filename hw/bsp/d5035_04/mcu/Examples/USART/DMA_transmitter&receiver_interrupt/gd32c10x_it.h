@@ -2,11 +2,11 @@
     \file    gd32c10x_it.h
     \brief   the header file of the ISR
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -38,23 +38,24 @@ OF SUCH DAMAGE.
 #include "gd32c10x.h"
 
 /* function declarations */
-/* NMI handle function */
+/* this function handles NMI exception */
 void NMI_Handler(void);
-/* HardFault handle function */
+/* this function handles HardFault exception */
 void HardFault_Handler(void);
-/* MemManage handle function */
+/* this function handles MemManage exception */
 void MemManage_Handler(void);
-/* BusFault handle function */
+/* this function handles BusFault exception */
 void BusFault_Handler(void);
-/* UsageFault handle function */
+/* this function handles UsageFault exception */
 void UsageFault_Handler(void);
-/* SVC handle function */
+/* this function handles SVC exception */
 void SVC_Handler(void);
-/* DebugMon handle function */
+/* this function handles DebugMon exception */
 void DebugMon_Handler(void);
-/* PendSV handle function */
+/* this function handles PendSV exception */
 void PendSV_Handler(void);
-/* SysTick handle function */
-void SysTick_Handler(void);
-
+/* this function handles DMA0_Channel3_IRQHandler interrupt */
+void DMA0_Channel3_IRQHandler(void);
+/* this function handles DMA0_Channel4_IRQHandler interrupt */
+void DMA0_Channel4_IRQHandler(void);
 #endif /* GD32C10X_IT_H */

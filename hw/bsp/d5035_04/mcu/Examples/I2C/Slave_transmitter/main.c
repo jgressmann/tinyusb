@@ -1,12 +1,12 @@
 /*!
     \file    main.c
     \brief   slave transmitter
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -33,9 +33,10 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32c10x.h"
+#include <stdio.h>
+#include "gd32c10x_eval.h"
 
 #define I2C_10BIT_ADDRESS      0
-
 #define I2C0_OWN_ADDRESS7      0x82
 #define I2C0_SLAVE_ADDRESS7    0x72
 #define I2C0_OWN_ADDRESS10     0x0322
@@ -55,16 +56,20 @@ void i2c_config(void);
 int main(void)
 {
     int i;
-    
-    /* RCU configure */
+
+    /* initialize LEDs */
+    gd_eval_led_init(LED2);
+    gd_eval_led_init(LED3);
+
+    /* configure RCU */
     rcu_config();
-    /* GPIO configure */
+    /* configure GPIO */
     gpio_config();
-    /* I2C configure */
+    /* configure I2C */
     i2c_config();
 
-    for(i=0; i<16; i++){
-        i2c_transmitter[i] = i+0x80;
+    for(i = 0; i < 16; i++){
+        i2c_transmitter[i] = i + 0x80;
     }
 
 #if I2C_10BIT_ADDRESS
@@ -85,7 +90,7 @@ int main(void)
     /* wait until the transmission data register is empty */
     while(!i2c_flag_get(I2C0, I2C_FLAG_TBE));
 
-    for(i=0;i<16;i++){
+    for(i = 0; i < 16; i++) {
         /* send a data byte */
         i2c_data_transmit(I2C0, i2c_transmitter[i]);
         /* wait until the transmission data register is empty */
@@ -96,7 +101,11 @@ int main(void)
     /* clear the bit of AERR */
     i2c_flag_clear(I2C0, I2C_FLAG_AERR);
 
-    while(1){
+    /* turn on LEDs */
+    gd_eval_led_on(LED2);
+    gd_eval_led_on(LED3);
+
+    while(1) {
     }
 }
 
@@ -135,9 +144,9 @@ void gpio_config(void)
 */
 void i2c_config(void)
 {
-    /* I2C clock configure */
+    /* configure I2C clock */
     i2c_clock_config(I2C0, 400000, I2C_DTCY_2);
-    /* I2C address configure */
+    /* configure I2C address */
 #if I2C_10BIT_ADDRESS
     i2c_mode_addr_config(I2C0, I2C_I2CMODE_ENABLE, I2C_ADDFORMAT_10BITS, I2C0_OWN_ADDRESS10);
 #else

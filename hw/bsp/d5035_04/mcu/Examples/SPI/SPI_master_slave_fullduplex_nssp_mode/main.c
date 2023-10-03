@@ -2,11 +2,11 @@
     \file    main.c
     \brief   SPI master and slave fullduplex communication with nssp mode
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -38,11 +38,10 @@ OF SUCH DAMAGE.
 #define ARRAYSIZE         10
 
 uint8_t spi0_send_array[ARRAYSIZE] = {0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA};
-uint8_t spi1_send_array[ARRAYSIZE] = {0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA};
-uint8_t spi0_receive_array[ARRAYSIZE]; 
-uint8_t spi1_receive_array[ARRAYSIZE];
-ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint8_t length);
-uint32_t send_n = 0, receive_n = 0;
+uint8_t spi2_send_array[ARRAYSIZE] = {0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA};
+uint8_t spi0_receive_array[ARRAYSIZE];
+uint8_t spi2_receive_array[ARRAYSIZE];
+ErrStatus memory_compare(uint8_t *src, uint8_t *dst, uint8_t length);
 
 void rcu_config(void);
 void gpio_config(void);
@@ -61,50 +60,50 @@ int main(void)
     gd_eval_led_init(LED2);
     gd_eval_led_init(LED3);
 
-    /* peripheral clock enable */
+    /* enable peripheral clock */
     rcu_config();
-    /* GPIO configure */
+    /* configure GPIO */
     gpio_config();
-    /* DMA configure */
+    /* configure DMA */
     dma_config();
-    /* SPI configure */
+    /* configure SPI */
     spi_config();
 
+    /* enable SPI NSSP mode */
     spi_nss_output_enable(SPI0);
-    /* SPI NSSP mode enable */
     spi_nssp_mode_enable(SPI0);
 
-    /* SPI enable */
-    spi_enable(SPI1);
+    /* enable SPI */
+    spi_enable(SPI2);
     spi_enable(SPI0);
 
-    /* DMA channel enable */
-    dma_channel_enable(DMA0,DMA_CH1);
-    dma_channel_enable(DMA0,DMA_CH2);
-    dma_channel_enable(DMA0,DMA_CH3);
-    dma_channel_enable(DMA0,DMA_CH4);
+    /* enable DMA channel */
+    dma_channel_enable(DMA0, DMA_CH1);
+    dma_channel_enable(DMA0, DMA_CH2);
+    dma_channel_enable(DMA1, DMA_CH0);
+    dma_channel_enable(DMA1, DMA_CH1);
 
     /* SPI DMA enable */
-    spi_dma_enable(SPI1, SPI_DMA_TRANSMIT);
-    spi_dma_enable(SPI1, SPI_DMA_RECEIVE);
+    spi_dma_enable(SPI2, SPI_DMA_TRANSMIT);
+    spi_dma_enable(SPI2, SPI_DMA_RECEIVE);
     spi_dma_enable(SPI0, SPI_DMA_TRANSMIT);
     spi_dma_enable(SPI0, SPI_DMA_RECEIVE);
 
     /* wait dma transmit complete */
-    while(!dma_flag_get(DMA0,DMA_CH2,DMA_FLAG_FTF));
-    while(!dma_flag_get(DMA0,DMA_CH4,DMA_FLAG_FTF));
-    while(!dma_flag_get(DMA0,DMA_CH3,DMA_FLAG_FTF));
-    while(!dma_flag_get(DMA0,DMA_CH1,DMA_FLAG_FTF));
+    while(!dma_flag_get(DMA0, DMA_CH2, DMA_FLAG_FTF));
+    while(!dma_flag_get(DMA1, DMA_CH1, DMA_FLAG_FTF));
+    while(!dma_flag_get(DMA1, DMA_CH0, DMA_FLAG_FTF));
+    while(!dma_flag_get(DMA0, DMA_CH1, DMA_FLAG_FTF));
 
     /* compare receive data with send data */
-    if(ERROR != memory_compare(spi1_receive_array, spi0_send_array, ARRAYSIZE)){
+    if(ERROR != memory_compare(spi2_receive_array, spi0_send_array, ARRAYSIZE)) {
         gd_eval_led_on(LED2);
-    }else{
+    } else {
         gd_eval_led_off(LED2);
     }
-    if(ERROR != memory_compare(spi0_receive_array, spi1_send_array, ARRAYSIZE)){
+    if(ERROR != memory_compare(spi0_receive_array, spi2_send_array, ARRAYSIZE)) {
         gd_eval_led_on(LED3);
-    }else{
+    } else {
         gd_eval_led_off(LED3);
     }
 
@@ -121,9 +120,12 @@ void rcu_config(void)
 {
     rcu_periph_clock_enable(RCU_GPIOA);
     rcu_periph_clock_enable(RCU_GPIOB);
+    rcu_periph_clock_enable(RCU_GPIOC);
     rcu_periph_clock_enable(RCU_DMA0);
+    rcu_periph_clock_enable(RCU_DMA1);
     rcu_periph_clock_enable(RCU_SPI0);
-    rcu_periph_clock_enable(RCU_SPI1);
+    rcu_periph_clock_enable(RCU_SPI2);
+    rcu_periph_clock_enable(RCU_AF);
 }
 
 /*!
@@ -134,15 +136,23 @@ void rcu_config(void)
 */
 void gpio_config(void)
 {
-    /* SPI0 GPIO config: NSS/PA4, SCK/PA5, MOSI/PA7 */
-    gpio_init(GPIOA, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_7);
-    /* SPI0 GPIO config: MISO/PA6 */
-    gpio_init(GPIOA, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_6);
-    
-    /* SPI1 GPIO config: NSS/PB12, SCK/PB13, MOSI/PB15 */
-    gpio_init(GPIOB, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_12 | GPIO_PIN_13 |GPIO_PIN_15);
-    /* SPI1 GPIO config: MISO/PB14 */
-    gpio_init(GPIOB, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_14);
+    /* JTAG-DP disabled and SW-DP enabled, so SPI0 can use PB3 and PB4 */
+    gpio_pin_remap_config(GPIO_SWJ_SWDPENABLE_REMAP, ENABLE);
+
+    gpio_pin_remap_config(GPIO_SPI0_REMAP, ENABLE);
+    /* SPI0 GPIO config: NSS/PA15, SCK/PB3, MOSI/PB5 */
+    gpio_init(GPIOA, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_15);
+    gpio_init(GPIOB, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_3 | GPIO_PIN_5);
+    /* SPI0 GPIO config: MISO/PB4 */
+    gpio_init(GPIOB, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_4);
+
+    gpio_pin_remap_config(GPIO_SPI2_REMAP, ENABLE);
+    /* SPI2 GPIO config: NSS/PA4 */
+    gpio_init(GPIOA, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_4);
+    /* SPI2 GPIO config: SCK/PC10, MOSI/PC12 */
+    gpio_init(GPIOC, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_10 | GPIO_PIN_12);
+    /* SPI2 GPIO config: MISO/PC11 */
+    gpio_init(GPIOC, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_11);
 }
 
 /*!
@@ -154,11 +164,9 @@ void gpio_config(void)
 void dma_config(void)
 {
     dma_parameter_struct dma_init_struct;
-    
-    /* SPI0 transmit dma config:DMA0,DMA_CH2 */
+
+    /* SPI0 transmit dma config:DMA0-DMA_CH2 */
     dma_deinit(DMA0, DMA_CH2);
-    dma_struct_para_init(&dma_init_struct);
-    
     dma_init_struct.periph_addr  = (uint32_t)&SPI_DATA(SPI0);
     dma_init_struct.memory_addr  = (uint32_t)spi0_send_array;
     dma_init_struct.direction    = DMA_MEMORY_TO_PERIPHERAL;
@@ -173,7 +181,7 @@ void dma_config(void)
     dma_circulation_disable(DMA0, DMA_CH2);
     dma_memory_to_memory_disable(DMA0, DMA_CH2);
 
-    /* SPI0 receive dma config:DMA0,DMA_CH1 */
+    /* SPI0 receive dma config:DMA0-DMA_CH1 */
     dma_deinit(DMA0, DMA_CH1);
     dma_init_struct.periph_addr  = (uint32_t)&SPI_DATA(SPI0);
     dma_init_struct.memory_addr  = (uint32_t)spi0_receive_array;
@@ -184,27 +192,27 @@ void dma_config(void)
     dma_circulation_disable(DMA0, DMA_CH1);
     dma_memory_to_memory_disable(DMA0, DMA_CH1);
 
-    /* SPI1 transmit dma config:DMA0,DMA_CH4 */
-    dma_deinit(DMA0, DMA_CH4);
-    dma_init_struct.periph_addr  = (uint32_t)&SPI_DATA(SPI1);
-    dma_init_struct.memory_addr  = (uint32_t)spi1_send_array;
+    /* SPI2 transmit dma config:DMA1,DMA_CH1 */
+    dma_deinit(DMA1, DMA_CH1);
+    dma_init_struct.periph_addr  = (uint32_t)&SPI_DATA(SPI2);
+    dma_init_struct.memory_addr  = (uint32_t)spi2_send_array;
     dma_init_struct.direction    = DMA_MEMORY_TO_PERIPHERAL;
     dma_init_struct.priority     = DMA_PRIORITY_MEDIUM;
-    dma_init(DMA0, DMA_CH4, &dma_init_struct);
+    dma_init(DMA1, DMA_CH1, &dma_init_struct);
     /* configure DMA mode */
-    dma_circulation_disable(DMA0, DMA_CH4);
-    dma_memory_to_memory_disable(DMA0, DMA_CH4);
+    dma_circulation_disable(DMA1, DMA_CH1);
+    dma_memory_to_memory_disable(DMA1, DMA_CH1);
 
-    /* SPI1 receive dma config:DMA0,DMA_CH3 */
-    dma_deinit(DMA0, DMA_CH3);
-    dma_init_struct.periph_addr  = (uint32_t)&SPI_DATA(SPI1);
-    dma_init_struct.memory_addr  = (uint32_t)spi1_receive_array;
+    /* SPI2 receive dma config:DMA1,DMA_CH0 */
+    dma_deinit(DMA1, DMA_CH0);
+    dma_init_struct.periph_addr  = (uint32_t)&SPI_DATA(SPI2);
+    dma_init_struct.memory_addr  = (uint32_t)spi2_receive_array;
     dma_init_struct.direction    = DMA_PERIPHERAL_TO_MEMORY;
     dma_init_struct.priority     = DMA_PRIORITY_ULTRA_HIGH;
-    dma_init(DMA0, DMA_CH3, &dma_init_struct);
+    dma_init(DMA1, DMA_CH0, &dma_init_struct);
     /* configure DMA mode */
-    dma_circulation_disable(DMA0, DMA_CH3);
-    dma_memory_to_memory_disable(DMA0, DMA_CH3);
+    dma_circulation_disable(DMA1, DMA_CH0);
+    dma_memory_to_memory_disable(DMA1, DMA_CH0);
 }
 
 /*!
@@ -218,7 +226,7 @@ void spi_config(void)
     spi_parameter_struct spi_init_struct;
     /* deinitilize SPI and the parameters */
     spi_i2s_deinit(SPI0);
-    spi_i2s_deinit(SPI1);
+    spi_i2s_deinit(SPI2);
     spi_struct_para_init(&spi_init_struct);
 
     /* SPI0 parameter config */
@@ -227,14 +235,14 @@ void spi_config(void)
     spi_init_struct.frame_size           = SPI_FRAMESIZE_8BIT;
     spi_init_struct.clock_polarity_phase = SPI_CK_PL_HIGH_PH_1EDGE;
     spi_init_struct.nss                  = SPI_NSS_HARD;
-    spi_init_struct.prescale             = SPI_PSC_16;
+    spi_init_struct.prescale             = SPI_PSC_32;
     spi_init_struct.endian               = SPI_ENDIAN_MSB;
     spi_init(SPI0, &spi_init_struct);
 
-    /* SPI1 parameter config */
+    /* SPI2 parameter config */
     spi_init_struct.device_mode = SPI_SLAVE;
     spi_init_struct.nss         = SPI_NSS_HARD;
-    spi_init(SPI1, &spi_init_struct);
+    spi_init(SPI2, &spi_init_struct);
 }
 
 /*!
@@ -245,11 +253,12 @@ void spi_config(void)
     \param[out] none
     \retval     ErrStatus : ERROR or SUCCESS
 */
-ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint8_t length) 
+ErrStatus memory_compare(uint8_t *src, uint8_t *dst, uint8_t length)
 {
-    while(length--){
-        if(*src++ != *dst++)
+    while(length--) {
+        if(*src++ != *dst++) {
             return ERROR;
+        }
     }
     return SUCCESS;
 }

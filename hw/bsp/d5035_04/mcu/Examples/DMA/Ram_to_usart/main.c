@@ -2,11 +2,11 @@
     \file    main.c
     \brief   transfer data from RAM to USART
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -67,7 +67,7 @@ int main(void)
     dma_config();
     
     /* USART DMA enable for transmission */
-    usart_dma_transmit_config(USART0, USART_DENT_ENABLE);
+    usart_dma_transmit_config(USART0, USART_TRANSMIT_DMA_ENABLE);
     
     /* enable DMA transfer complete interrupt */
     dma_interrupt_enable(DMA0, DMA_CH3, DMA_INT_FTF);

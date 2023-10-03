@@ -2,11 +2,11 @@
     \file    usb_conf.h
     \brief   USB core driver basic configuration
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -90,10 +90,10 @@ OF SUCH DAMAGE.
 
 #ifdef USB_FS_CORE
     #define RX_FIFO_FS_SIZE                         128
-    #define TX0_FIFO_FS_SIZE                        64
-    #define TX1_FIFO_FS_SIZE                        128
-    #define TX2_FIFO_FS_SIZE                        0
-    #define TX3_FIFO_FS_SIZE                        0
+    #define TX0_FIFO_FS_SIZE                        32
+    #define TX1_FIFO_FS_SIZE                        96
+    #define TX2_FIFO_FS_SIZE                        32
+    #define TX3_FIFO_FS_SIZE                        32
 #endif /* USB_FS_CORE */
 
 #define USB_SOF_OUTPUT              1
@@ -115,11 +115,7 @@ OF SUCH DAMAGE.
 #define __ALIGN_END
 
 /* __packed keyword used to decrease the data type alignment to 1-byte */
-#if defined (__CC_ARM)         /* ARM Compiler */
-    #define __packed __packed
-#elif defined (__ICCARM__)     /* IAR Compiler */
-    #define __packed __packed
-#elif defined (__GNUC__)       /* GNU Compiler */
+#if defined (__GNUC__)         /* GNU Compiler */
     #ifndef __packed
         #define __packed __attribute__ ((__packed__))
     #endif

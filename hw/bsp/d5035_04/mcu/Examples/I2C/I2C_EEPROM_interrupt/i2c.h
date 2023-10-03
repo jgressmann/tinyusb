@@ -2,11 +2,11 @@
     \file    i2c.h
     \brief   the header file of I2C
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -37,27 +37,16 @@ OF SUCH DAMAGE.
 
 #include "gd32c10x.h"
 
-#define BOARD_I2C                    I2C0
-#define I2C_SCL_GPIO_PIN             GPIO_PIN_6
-#define I2C_SDA_GPIO_PIN             GPIO_PIN_7
-#define I2C_RCU                      RCU_I2C0
-#define I2C_EVENT_IRQ                I2C0_EV_IRQn
-#define I2C_ERROR_IRQ                I2C0_ER_IRQn
-
-#define I2C_SPEED                    400000
-#define I2C_SLAVE_ADDRESS7           0xA0
-#define I2C_PAGE_SIZE                8
-
-typedef enum
-{
-    I2C_SEND_ADDRESS_FIRST=0,
-    I2C_CLEAR_ADDRESS_FLAG_FIRST,
-    I2C_TRANSMIT_WRITE_READ_ADD,
-    I2C_SEND_ADDRESS_SECOND,
-    I2C_CLEAR_ADDRESS_FLAG_SECOND,
-    I2C_TRANSMIT_DATA,
-    I2C_STOP,
-} i2c_process_enum;
+#define I2CX_SLAVE_ADDRESS7     0xA0
+#define I2C_SPEED               400000
+#define I2C_PAGE_SIZE           8
+#define I2CX                    I2C0
+#define RCU_GPIO_I2C            RCU_GPIOB
+#define RCU_I2C                 RCU_I2C0
+#define I2C_SCL_PORT            GPIOB
+#define I2C_SDA_PORT            GPIOB
+#define I2C_SCL_PIN             GPIO_PIN_6
+#define I2C_SDA_PIN             GPIO_PIN_7
 
 extern volatile uint8_t* i2c_write;
 extern volatile uint8_t* i2c_read;
@@ -69,11 +58,11 @@ extern volatile uint8_t  i2c_process_flag;
 /* function declarations */
 /* configure the GPIO ports */
 void gpio_config(void);
-/* configure the I2C interfaces */
+/* configure the I2CX interface */
 void i2c_config(void);
-/* handle I2C event interrupt request */
-void I2C_EventIRQ_Handler(void);
-/* handle I2C error interrupt request */
-void I2C_ErrorIRQ_Handler(void);
+/* handle I2CX event interrupt request */
+void i2cx_event_irq_handler(void);
+/* handle I2CX error interrupt request */
+void i2cx_error_irq_handler(void);
 
 #endif /* I2C_H */

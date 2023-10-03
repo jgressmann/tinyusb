@@ -1064,10 +1064,10 @@
       <name>$PROJ_DIR$\..\src\flash_msd.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\src\gd32e10x_hw.c</name>
+      <name>$PROJ_DIR$\..\src\gd32c10x_hw.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\src\gd32e10x_it.c</name>
+      <name>$PROJ_DIR$\..\src\gd32c10x_it.c</name>
     </file>
     <file>
       <name>$PROJ_DIR$\..\src\usbd_storage_msd.c</name>
@@ -1076,7 +1076,7 @@
   <group>
     <name>CMSIS</name>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\CMSIS\GD\GD32E10x\Source\system_gd32e10x.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\CMSIS\GD\GD32C10x\Source\system_gd32c10x.c</name>
     </file>
   </group>
   <group>
@@ -1086,84 +1086,81 @@
     </file>
   </group>
   <group>
-    <name>GD32E10x_EVAL</name>
+    <name>GD32C10x_EVAL</name>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Utilities\gd32e10x_eval.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Utilities\gd32c10x_eval.c</name>
     </file>
   </group>
   <group>
-    <name>GD32E10x_StdPeriph</name>
+    <name>GD32C10x_StdPeriph</name>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_ctc.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_ctc.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_exti.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_exti.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_fmc.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_fmc.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_gpio.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_gpio.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_misc.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_misc.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_pmu.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_pmu.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_rcu.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_rcu.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_timer.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_timer.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_usart.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_usart.c</name>
     </file>
   </group>
   <group>
     <name>Startup</name>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\CMSIS\GD\GD32E10x\Source\IAR\startup_gd32e10x.s</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\CMSIS\GD\GD32C10x\Source\IAR\startup_gd32c10x.s</name>
     </file>
   </group>
   <group>
     <name>USB_Class</name>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_usbfs_library\device\class\msc\Source\usbd_msc_bbb.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\msc\Source\usbd_msc_bbb.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_usbfs_library\device\class\msc\Source\usbd_msc_core.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\msc\Source\usbd_msc_core.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_usbfs_library\device\class\msc\Source\usbd_msc_data.c</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_usbfs_library\device\class\msc\Source\usbd_msc_scsi.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\msc\Source\usbd_msc_scsi.c</name>
     </file>
   </group>
   <group>
     <name>USB_Device</name>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_usbfs_library\device\core\Source\usbd_core.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\core\Source\usbd_core.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_usbfs_library\device\core\Source\usbd_enum.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\core\Source\usbd_enum.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_usbfs_library\device\core\Source\usbd_transc.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\core\Source\usbd_transc.c</name>
     </file>
   </group>
   <group>
     <name>USB_Drivers</name>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_usbfs_library\driver\Source\drv_usb_core.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\driver\Source\drv_usb_core.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_usbfs_library\driver\Source\drv_usb_dev.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\driver\Source\drv_usb_dev.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32E10x_usbfs_library\driver\Source\drv_usbd_int.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\driver\Source\drv_usbd_int.c</name>
     </file>
   </group>
 </project>

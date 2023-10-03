@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of the WWDGT_delay_feed example
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -40,8 +40,8 @@ and LED2 display a different phenomenon.
 80. In this case the WWDGT timeout is set to 34.9ms(the timeout may varies due to 
 APB1 frequency dispersion), the value in the delay function is set to 26ms, the WWDGT 
 counter can reloaded normally,the LED2 is turn off, LED3 is blinking fast.
-  
+
   If the value in the delay function is not set properly, the WWDGT counter is not 
 reloaded. As a result, the system reset and only the LED2 is remain illuminated.
-  
+
   In this example the system clock is set to 120 MHz , and the APB1 is set to 60MHz.

@@ -2,11 +2,11 @@
     \file    at24cxx.c
     \brief   the read and write function file
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -54,7 +54,7 @@ volatile uint8_t  i2c_process_flag = 0;
     \brief      I2C read and write functions
     \param[in]  none
     \param[out] none
-    \retval     I2C_OK or I2C_FAIL 
+    \retval     I2C_OK or I2C_FAIL
 */
 uint8_t i2c_24c02_test(void)
 {
@@ -63,27 +63,27 @@ uint8_t i2c_24c02_test(void)
     printf("\r\nAT24C02 writing...\r\n");
 
     /* initialize i2c_buffer_write */
-    for(i = 0; i < BUFFER_SIZE; i++){
+    for(i = 0; i < BUFFER_SIZE; i++) {
         i2c_buffer_write[i] = i;
         printf("0x%02X ", i2c_buffer_write[i]);
-        if(15 == i%16){
+        if(15 == i % 16) {
             printf("\r\n");
         }
     }
     /* EEPROM data write */
-    eeprom_buffer_write(i2c_buffer_write,EEP_FIRST_PAGE, BUFFER_SIZE);
+    eeprom_buffer_write_interrupt(i2c_buffer_write, EEP_FIRST_PAGE, BUFFER_SIZE);
     printf("AT24C02 reading...\r\n");
     /* EEPROM data read */
-    eeprom_buffer_read_intrrupt(i2c_buffer_read,EEP_FIRST_PAGE, BUFFER_SIZE);
+    eeprom_buffer_read_interrupt(i2c_buffer_read, EEP_FIRST_PAGE, BUFFER_SIZE);
     /* compare the read buffer and write buffer */
-    for(i = 0; i < BUFFER_SIZE; i++){
-        if(i2c_buffer_read[i] != i2c_buffer_write[i]){
+    for(i = 0; i < BUFFER_SIZE; i++) {
+        if(i2c_buffer_read[i] != i2c_buffer_write[i]) {
             printf("0x%02X ", i2c_buffer_read[i]);
             printf("Err:data read and write aren't matching.\n\r");
             return I2C_FAIL;
         }
         printf("0x%02X ", i2c_buffer_read[i]);
-        if(15 == i%16){
+        if(15 == i % 16) {
             printf("\r\n");
         }
     }
@@ -110,54 +110,62 @@ void i2c_eeprom_init(void)
     \param[out] none
     \retval     none
 */
-void eeprom_buffer_write(uint8_t* p_buffer, uint8_t write_address, uint16_t number_of_byte)
+void eeprom_buffer_write_interrupt(uint8_t* p_buffer, uint8_t write_address, uint16_t number_of_byte)
 {
     uint8_t number_of_page = 0, number_of_single = 0, address = 0, count = 0;
 
     address = write_address % I2C_PAGE_SIZE;
     count = I2C_PAGE_SIZE - address;
-    number_of_page =  number_of_byte / I2C_PAGE_SIZE;
+    number_of_page = number_of_byte / I2C_PAGE_SIZE;
     number_of_single = number_of_byte % I2C_PAGE_SIZE;
 
     i2c_process_flag = 0;
 
     /* if write_address is I2C_PAGE_SIZE aligned  */
-    if(0 == address){
-        while(number_of_page--){
+    if(0 == address) {
+        while(number_of_page--) {
             i2c_nbytes = I2C_PAGE_SIZE;
             i2c_write_dress = write_address;
             i2c_write = p_buffer;
-            eeprom_page_write_intrrupt();
+            /* write data by interrupt */
+            eeprom_page_write_interrupt();
             eeprom_wait_standby_state();
-            write_address += I2C_PAGE_SIZE;
+
+            write_address +=  I2C_PAGE_SIZE;
             p_buffer += I2C_PAGE_SIZE;
         }
 
-        if(0 != number_of_single){
+        if(0 != number_of_single) {
             i2c_nbytes = number_of_single;
             i2c_write_dress = write_address;
             i2c_write = p_buffer;
-            eeprom_page_write_intrrupt();
+
+            /* write data by interrupt */
+            eeprom_page_write_interrupt();
             eeprom_wait_standby_state();
         }
-    }else{
+    } else {
         /* if write_address is not I2C_PAGE_SIZE aligned */
-        if(number_of_byte < count){
+        if(number_of_byte < count) {
             i2c_nbytes = number_of_byte;
             i2c_write_dress = write_address;
             i2c_write = p_buffer;
-            eeprom_page_write_intrrupt();
+
+            /* write data by interrupt */
+            eeprom_page_write_interrupt();
             eeprom_wait_standby_state();
         }else{
             number_of_byte -= count;
-            number_of_page =  number_of_byte / I2C_PAGE_SIZE;
+            number_of_page = number_of_byte / I2C_PAGE_SIZE;
             number_of_single = number_of_byte % I2C_PAGE_SIZE;
 
-            if(0 != count){
+            if(0 != count) {
                 i2c_nbytes = count;
                 i2c_write_dress = write_address;
                 i2c_write = p_buffer;
-                eeprom_page_write_intrrupt();
+
+                /* write data by interrupt */
+                eeprom_page_write_interrupt();
                 eeprom_wait_standby_state();
 
                 write_address += count;
@@ -165,11 +173,13 @@ void eeprom_buffer_write(uint8_t* p_buffer, uint8_t write_address, uint16_t numb
             }
 
             /* write page */
-            while(number_of_page--){
+            while(number_of_page--) {
                 i2c_nbytes = number_of_page;
                 i2c_write_dress = write_address;
                 i2c_write = p_buffer;
-                eeprom_page_write_intrrupt();
+
+                /* write data by interrupt */
+                eeprom_page_write_interrupt();
                 eeprom_wait_standby_state();
 
                 write_address +=  I2C_PAGE_SIZE;
@@ -177,11 +187,13 @@ void eeprom_buffer_write(uint8_t* p_buffer, uint8_t write_address, uint16_t numb
             }
 
             /* write single */
-            if(0 != number_of_single){
+            if(0 != number_of_single) {
                 i2c_nbytes = number_of_page;
                 i2c_write_dress = write_address;
                 i2c_write = p_buffer;
-                eeprom_page_write_intrrupt();
+
+                /* write data by interrupt */
+                eeprom_page_write_interrupt();
                 eeprom_wait_standby_state();
             }
         }
@@ -196,18 +208,18 @@ void eeprom_buffer_write(uint8_t* p_buffer, uint8_t write_address, uint16_t numb
     \param[out] none
     \retval     none
 */
-void eeprom_page_write_intrrupt(void)
+void eeprom_page_write_interrupt(void)
 {
     /* enable the I2C interrupt */
-    i2c_interrupt_enable(BOARD_I2C, I2C_INT_ERR);
-    i2c_interrupt_enable(BOARD_I2C, I2C_INT_EV);
-    i2c_interrupt_enable(BOARD_I2C, I2C_INT_BUF);
+    i2c_interrupt_enable(I2CX, I2C_INT_ERR);
+    i2c_interrupt_enable(I2CX, I2C_INT_EV);
+    i2c_interrupt_enable(I2CX, I2C_INT_BUF);
 
     /* the master waits until the I2C bus is idle */
-    while(i2c_flag_get(BOARD_I2C, I2C_FLAG_I2CBSY));
+    while(i2c_flag_get(I2CX, I2C_FLAG_I2CBSY));
 
     /* the master sends a start condition to I2C bus */
-    i2c_start_on_bus(BOARD_I2C);
+    i2c_start_on_bus(I2CX);
     while((i2c_nbytes > 0));
 }
 
@@ -219,25 +231,26 @@ void eeprom_page_write_intrrupt(void)
     \param[out] none
     \retval     none
 */
-void eeprom_buffer_read_intrrupt(uint8_t* p_buffer, uint8_t read_address, uint16_t number_of_byte)
+void eeprom_buffer_read_interrupt(uint8_t* p_buffer, uint8_t read_address, uint16_t number_of_byte)
 {
     i2c_read=p_buffer;
     i2c_read_dress=read_address;
     i2c_nbytes=number_of_byte;
+    i2c_process_flag = SET;
 
     /* enable the I2C interrupt */
-    i2c_interrupt_enable(BOARD_I2C, I2C_INT_ERR);
-    i2c_interrupt_enable(BOARD_I2C, I2C_INT_EV);
-    i2c_interrupt_enable(BOARD_I2C, I2C_INT_BUF);
+    i2c_interrupt_enable(I2CX, I2C_INT_ERR);
+    i2c_interrupt_enable(I2CX, I2C_INT_EV);
+    i2c_interrupt_enable(I2CX, I2C_INT_BUF);
 
     /* wait until I2C bus is idle */
-    while(i2c_flag_get(BOARD_I2C, I2C_FLAG_I2CBSY));
+    while(i2c_flag_get(I2CX, I2C_FLAG_I2CBSY));
     if(2 == number_of_byte){
-        i2c_ackpos_config(BOARD_I2C,I2C_ACKPOS_NEXT);
+        i2c_ackpos_config(I2CX,I2C_ACKPOS_NEXT);
     }
 
     /* send a start condition to I2C bus */
-    i2c_start_on_bus(BOARD_I2C);
+    i2c_start_on_bus(I2CX);
     while((i2c_nbytes > 0));
 }
 
@@ -253,42 +266,42 @@ void eeprom_wait_standby_state(void)
 
     while(1){
         /* wait until I2C bus is idle */
-        while(i2c_flag_get(BOARD_I2C, I2C_FLAG_I2CBSY));
+        while(i2c_flag_get(I2CX, I2C_FLAG_I2CBSY));
 
         /* send a start condition to I2C bus */
-        i2c_start_on_bus(BOARD_I2C);
+        i2c_start_on_bus(I2CX);
 
         /* wait until SBSEND bit is set */
-        while(!i2c_flag_get(BOARD_I2C, I2C_FLAG_SBSEND));
+        while(!i2c_flag_get(I2CX, I2C_FLAG_SBSEND));
 
         /* send slave address to I2C bus */
-        i2c_master_addressing(BOARD_I2C, eeprom_address, I2C_TRANSMITTER);
+        i2c_master_addressing(I2CX, eeprom_address, I2C_TRANSMITTER);
 
         /* keep looping till the Address is acknowledged or the AE flag is set (address not acknowledged at time) */
         do{
             /* get the current value of the I2C_STAT0 register */
-            val = I2C_STAT0(BOARD_I2C);
+            val = I2C_STAT0(I2CX);
         }while(0 == (val & (I2C_STAT0_ADDSEND | I2C_STAT0_AERR)));
 
         /* check if the ADDSEND flag has been set */
         if(val & I2C_STAT0_ADDSEND){
             /* clear ADDSEND flag */
-            i2c_flag_clear(BOARD_I2C,I2C_FLAG_ADDSEND);
+            i2c_flag_clear(I2CX,I2C_FLAG_ADDSEND);
 
             /* send a stop condition to I2C bus */
-            i2c_stop_on_bus(BOARD_I2C);
+            i2c_stop_on_bus(I2CX);
 
             /* exit the function */
             return ;
         }else{
             /* clear the bit of AE */
-            i2c_flag_clear(BOARD_I2C,I2C_FLAG_AERR);
+            i2c_flag_clear(I2CX,I2C_FLAG_AERR);
         }
 
         /* send a stop condition to I2C bus */
-        i2c_stop_on_bus(BOARD_I2C);
+        i2c_stop_on_bus(I2CX);
 
         /* wait until the stop condition is finished */
-        while(I2C_CTL0(BOARD_I2C) & 0x0200);
+        while(I2C_CTL0(I2C0) & I2C_CTL0_STOP);
     }
 }

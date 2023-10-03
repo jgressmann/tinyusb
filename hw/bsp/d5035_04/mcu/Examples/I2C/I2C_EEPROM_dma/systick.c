@@ -2,11 +2,11 @@
     \file    systick.c
     \brief   the systick configuration file
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -46,9 +46,9 @@ volatile static uint32_t delay;
 void systick_config(void)
 {
     /* setup systick timer for 1000Hz interrupts */
-    if (SysTick_Config(SystemCoreClock / 1000U)){
+    if(SysTick_Config(SystemCoreClock / 1000U)) {
         /* capture error */
-        while (1){
+        while(1) {
         }
     }
     /* configure the systick handler priority */
@@ -65,7 +65,7 @@ void delay_1ms(uint32_t count)
 {
     delay = count;
 
-    while(0U != delay){
+    while(0U != delay) {
     }
 }
 
@@ -77,7 +77,7 @@ void delay_1ms(uint32_t count)
 */
 void delay_decrement(void)
 {
-    if (0U != delay){
+    if(0U != delay) {
         delay--;
     }
 }

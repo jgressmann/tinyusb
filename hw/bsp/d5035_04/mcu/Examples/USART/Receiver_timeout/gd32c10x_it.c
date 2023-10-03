@@ -2,11 +2,11 @@
     \file    gd32c10x_it.c
     \brief   interrupt service routines
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -37,8 +37,8 @@ OF SUCH DAMAGE.
 
 extern uint8_t rxbuffer[64];
 extern uint8_t txbuffer[64];
-extern uint8_t txcount; 
-extern uint16_t rxcount; 
+__IO uint8_t txcount = 0;
+__IO uint16_t rxcount = 0;
 
 /*!
     \brief      this function handles NMI exception
@@ -59,7 +59,8 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
     /* if Hard Fault exception occurs, go to infinite loop */
-    while (1);
+    while(1) {
+    }
 }
 
 /*!
@@ -71,7 +72,8 @@ void HardFault_Handler(void)
 void MemManage_Handler(void)
 {
     /* if Memory Manage exception occurs, go to infinite loop */
-    while (1);
+    while(1) {
+    }
 }
 
 /*!
@@ -83,9 +85,9 @@ void MemManage_Handler(void)
 void BusFault_Handler(void)
 {
     /* if Bus Fault exception occurs, go to infinite loop */
-    while (1);
+    while(1) {
+    }
 }
-
 /*!
     \brief      this function handles UsageFault exception
     \param[in]  none
@@ -95,7 +97,8 @@ void BusFault_Handler(void)
 void UsageFault_Handler(void)
 {
     /* if Usage Fault exception occurs, go to infinite loop */
-    while (1);
+    while(1) {
+    }
 }
 
 /*!
@@ -136,17 +139,17 @@ void PendSV_Handler(void)
 */
 void USART0_IRQHandler(void)
 {
-    if(RESET != usart_interrupt_flag_get(USART0, USART_INT_FLAG_RBNE)){
+    if(RESET != usart_interrupt_flag_get(USART0, USART_INT_FLAG_RBNE)) {
         /* receive data */
         rxbuffer[rxcount++] = usart_data_receive(USART0);
     }
 
-    if(RESET != usart_interrupt_flag_get(USART0, USART_INT_FLAG_TBE)){
+    if(RESET != usart_interrupt_flag_get(USART0, USART_INT_FLAG_TBE)) {
         /* transmit data */
         usart_data_transmit(USART0, txbuffer[txcount++]);
-        if(txcount >= rxcount)
-        {
+        if(txcount >= rxcount) {
             usart_interrupt_disable(USART0, USART_INT_TBE);
         }
     }
 }
+

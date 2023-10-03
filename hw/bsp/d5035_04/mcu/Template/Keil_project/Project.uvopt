@@ -173,8 +173,8 @@
       <Focus>0</Focus>
       <ColumnNumber>0</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>28</TopLine>
-      <CurrentLine>35</CurrentLine>
+      <TopLine>54</TopLine>
+      <CurrentLine>1</CurrentLine>
       <bDave2>0</bDave2>
       <PathWithFileName>..\main.c</PathWithFileName>
       <FilenameWithoutPath>main.c</FilenameWithoutPath>
@@ -227,10 +227,10 @@
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
-      <ColumnNumber>18</ColumnNumber>
+      <ColumnNumber>0</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>25</TopLine>
-      <CurrentLine>36</CurrentLine>
+      <TopLine>735</TopLine>
+      <CurrentLine>752</CurrentLine>
       <bDave2>0</bDave2>
       <PathWithFileName>..\..\Firmware\CMSIS\GD\GD32C10x\Source\system_gd32c10x.c</PathWithFileName>
       <FilenameWithoutPath>system_gd32c10x.c</FilenameWithoutPath>

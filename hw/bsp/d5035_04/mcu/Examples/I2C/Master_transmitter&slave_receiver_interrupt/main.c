@@ -1,12 +1,12 @@
 /*!
     \file    main.c
     \brief   master transmitter slave receiver interrupt
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -34,17 +34,17 @@ OF SUCH DAMAGE.
 
 #include "gd32c10x.h"
 #include <stdio.h>
-#include "I2C_IE.h"
+#include "i2c_ie.h"
 #include "gd32c10x_eval.h"
 
 uint8_t i2c_buffer_transmitter[16];
 uint8_t i2c_buffer_receiver[16];
 
-volatile uint8_t*       i2c_txbuffer;
-volatile uint8_t*       i2c_rxbuffer;
-volatile uint16_t       I2C_nBytes;
-volatile ErrStatus      status;
-volatile ErrStatus state = ERROR;
+volatile uint8_t* i2c_txbuffer;
+volatile uint8_t* i2c_rxbuffer;
+volatile uint16_t i2c_nbytes;
+volatile ErrStatus status;
+__IO ErrStatus state = ERROR;
 
 void rcu_config(void);
 void gpio_config(void);
@@ -61,32 +61,36 @@ ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint16_t length);
 int main(void)
 {
     int i;
-    
-    /* initialize LED2, LED3, as the transfer instruction */
+
+    /* initialize LEDs */
     gd_eval_led_init(LED2);
     gd_eval_led_init(LED3);
+    /* configure RCU */
     rcu_config();
     gpio_config();
+    /* configure I2C */
     i2c_config();
+    /* configure the NVIC */
     i2c_nvic_config();
 
-    for(i=0; i<16; i++){
+    for(i = 0; i < 16; i++){
         i2c_buffer_transmitter[i] = i + 0x80;
     }
-    /* initialize i2c_txbuffer, i2c_rxbuffer, I2C_nBytes and status */
+    /* initialize i2c_txbuffer, i2c_rxbuffer, i2c_nbytes and status */
     i2c_txbuffer = i2c_buffer_transmitter;
     i2c_rxbuffer = i2c_buffer_receiver;
-    I2C_nBytes = 16;
+    i2c_nbytes = 16;
     status = ERROR;
 
     /* enable the I2C0 interrupt */
     i2c_interrupt_enable(I2C0, I2C_INT_ERR);
-    i2c_interrupt_enable(I2C0, I2C_INT_BUF);
     i2c_interrupt_enable(I2C0, I2C_INT_EV);
+    i2c_interrupt_enable(I2C0, I2C_INT_BUF);
+
     /* enable the I2C1 interrupt */
     i2c_interrupt_enable(I2C1, I2C_INT_ERR);
-    i2c_interrupt_enable(I2C1, I2C_INT_BUF);
     i2c_interrupt_enable(I2C1, I2C_INT_EV);
+    i2c_interrupt_enable(I2C1, I2C_INT_BUF);
 
     /* the master waits until the I2C bus is idle */
     while(i2c_flag_get(I2C0, I2C_FLAG_I2CBSY));
@@ -94,7 +98,7 @@ int main(void)
     /* the master sends a start condition to I2C bus */
     i2c_start_on_bus(I2C0);
 
-    while((I2C_nBytes>0));
+    while((i2c_nbytes > 0));
     while(SUCCESS != status);
     /* if the transfer is successfully completed, LED2 and LED3 is on */
     state = memory_compare(i2c_buffer_transmitter, i2c_buffer_receiver, 16);
@@ -105,8 +109,9 @@ int main(void)
     }else{
         /* if failed, LED2 and LED3 are off */
         gd_eval_led_off(LED2);
-        gd_eval_led_off(LED3); 
-    } 
+        gd_eval_led_off(LED3);
+    }
+
     while(1){
     }
 }
@@ -119,7 +124,7 @@ int main(void)
     \param[out] none
     \retval     ErrStatus : ERROR or SUCCESS
 */
-ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint16_t length) 
+ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint16_t length)
 {
     while(length--){
         if(*src++ != *dst++){
@@ -146,7 +151,7 @@ void rcu_config(void)
 }
 
 /*!
-    \brief      configure the GPIO ports.
+    \brief      configure the GPIO ports
     \param[in]  none
     \param[out] none
     \retval     none
@@ -161,23 +166,23 @@ void gpio_config(void)
 }
 
 /*!
-    \brief      configure the I2C0 and I2C1 interfaces..
+    \brief      configure the I2C0 and I2C1 interfaces
     \param[in]  none
     \param[out] none
     \retval     none
 */
 void i2c_config(void)
 {
-    /* I2C clock configure */
+    /* configure I2C clock */
     i2c_clock_config(I2C0, 100000, I2C_DTCY_2);
-    /* I2C address configure */
+    /* configure I2C address */
     i2c_mode_addr_config(I2C0, I2C_I2CMODE_ENABLE, I2C_ADDFORMAT_7BITS, I2C0_SLAVE_ADDRESS7);
     /* enable I2C0 */
     i2c_enable(I2C0);
     /* enable acknowledge */
     i2c_ack_config(I2C0, I2C_ACK_ENABLE);
     i2c_clock_config(I2C1, 100000, I2C_DTCY_2);
-    /* I2C address configure */
+    /* configure I2C address */
     i2c_mode_addr_config(I2C1, I2C_I2CMODE_ENABLE, I2C_ADDFORMAT_7BITS, I2C1_SLAVE_ADDRESS7);
     /* enable I2C1 */
     i2c_enable(I2C1);

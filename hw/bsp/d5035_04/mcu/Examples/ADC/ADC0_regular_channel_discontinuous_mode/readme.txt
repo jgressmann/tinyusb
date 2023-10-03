@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of the ADC0 regular channel discontinuous mode example
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -34,8 +34,8 @@ OF SUCH DAMAGE.
 
   This demo is based on the GD32C103V-EVAL-V1.0 board, it shows how to use the
 ADC discontinuous mode. The ADC is configured in discontinuous mode, group
-length is 8, conversion length is 3, using EXTI11 trigger. Every rising edge
-event of EXTI11 (PA11) converts 3 channels.
+length is 8, conversion length is 3, using EXTI11 trigger. Every falling edge
+event of EXTI11 (PB11) converts 3 channels.
   We can watch array adc_value[] in debug mode or by COM1.
-  Connect PA11 to a KEY2(PA0).
+  Connect PA11 to a K2(PA0).
   

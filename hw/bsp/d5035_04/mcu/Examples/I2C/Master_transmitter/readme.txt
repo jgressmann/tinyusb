@@ -1,12 +1,12 @@
 /*!
     \file    readme.txt
     \brief   description of the master transmitter
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -38,7 +38,8 @@ transmitter, and the SCL line and SDA line of I2C0 interface are controlled by
 the I/O pin PB6 and PB7 respectively.
 
   This demo shows the sending process of the master. And it will send the data 
-in the i2c_transmitter array through I2C0.
+in the i2c_transmitter array through I2C0. If transfer is successfully completed, 
+LED2 and LED3 are on.
 
   The demo doesn't perform the data transfer actually, which is due to no specific 
 slave. In the specific application, we must send the correct slave address, and the 

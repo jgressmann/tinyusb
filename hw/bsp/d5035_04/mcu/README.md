@@ -1,5 +1,5 @@
-Gigadevice Firmare Library version 1.0.2
+Gigadevice Firmare Library version 1.2.0
 
-https://www.gd32mcu.com/en/download/7?kw=GD32C1
+https://www.gd32mcu.com/download/down/document_id/267/path_type/1
 
 

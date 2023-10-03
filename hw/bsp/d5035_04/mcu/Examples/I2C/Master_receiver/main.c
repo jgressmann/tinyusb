@@ -1,12 +1,12 @@
 /*!
     \file    main.c
     \brief   master receiver
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -33,6 +33,8 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32c10x.h"
+#include <stdio.h>
+#include "gd32c10x_eval.h"
 
 #define I2C_10BIT_ADDRESS      0
 
@@ -55,13 +57,19 @@ void i2c_config(void);
 int main(void)
 {
     uint8_t i;
-    uint8_t slave10_first_byte,slave10_second_byte;
-    
-    /* RCU configure */
+#if I2C_10BIT_ADDRESS
+    uint8_t slave10_first_byte, slave10_second_byte;
+#endif
+
+    /* configure USART */
+    gd_eval_com_init(EVAL_COM0);
+    printf("\r\n I2C Start\r\n");
+
+    /* configure RCU */
     rcu_config();
-    /* GPIO configure */
+    /* configure GPIO */
     gpio_config();
-    /* I2C configure */
+    /* configure I2C */
     i2c_config();
 
     /* wait until I2C bus is idle */
@@ -70,9 +78,9 @@ int main(void)
     i2c_start_on_bus(I2C0);
     /* wait until SBSEND bit is set */
     while(!i2c_flag_get(I2C0, I2C_FLAG_SBSEND));
-    
+
 #if I2C_10BIT_ADDRESS
-    slave10_first_byte = (0xF0) | (uint8_t)((I2C0_SLAVE_ADDRESS10 & 0x0300)>>7);
+    slave10_first_byte = (0xF0) | (uint8_t)((I2C0_SLAVE_ADDRESS10 & 0x0300) >> 7);
     /* send slave address first byte to I2C bus */
     i2c_master_addressing(I2C0, slave10_first_byte, I2C_TRANSMITTER);
     /* wait until ADD10SEND bit is set */
@@ -95,12 +103,13 @@ int main(void)
     /* send slave address to I2C bus */
     i2c_master_addressing(I2C0, I2C0_SLAVE_ADDRESS7, I2C_RECEIVER);
 #endif
+
     /* wait until ADDSEND bit is set */
     while(!i2c_flag_get(I2C0, I2C_FLAG_ADDSEND));
     /* clear ADDSEND bit */
     i2c_flag_clear(I2C0, I2C_FLAG_ADDSEND);
 
-    for(i=0; i<16; i++){
+    for(i = 0; i < 16; i++){
         if(13 == i){
             /* wait until the second last data byte is received into the shift register */
             while(!i2c_flag_get(I2C0, I2C_FLAG_BTC));
@@ -114,13 +123,18 @@ int main(void)
     }
     /* send a stop condition to I2C bus */
     i2c_stop_on_bus(I2C0);
-
-    /* wait until stop condition generate */ 
-    while(I2C_CTL0(I2C0)&0x0200);
+    /* wait until stop condition generate */
+    while(I2C_CTL0(I2C0) & I2C_CTL0_STOP);
     /* enable acknowledge */
     i2c_ack_config(I2C0, I2C_ACK_ENABLE);
 
-    while(1){
+    printf("\r\n Receive data: ");
+
+    for(i = 0; i < 16; i++){
+        printf("0x%02X ", i2c_receiver[i]);
+    }
+
+    while(1) {
     }
 }
 
@@ -152,19 +166,27 @@ void gpio_config(void)
 }
 
 /*!
-    \brief      configure the I2C0 and I2C1 interfaces
+    \brief      configure the I2C0 interface
     \param[in]  none
     \param[out] none
     \retval     none
 */
 void i2c_config(void)
 {
-    /* I2C clock configure */
+    /* configure I2C clock */
     i2c_clock_config(I2C0, 400000, I2C_DTCY_2);
-    /* I2C address configure */
+    /* configure I2C address */
     i2c_mode_addr_config(I2C0, I2C_I2CMODE_ENABLE, I2C_ADDFORMAT_7BITS, I2C0_OWN_ADDRESS7);
     /* enable I2C0 */
     i2c_enable(I2C0);
     /* enable acknowledge */
     i2c_ack_config(I2C0, I2C_ACK_ENABLE);
+}
+
+/* retarget the C library printf function to the usart */
+int fputc(int ch, FILE *f)
+{
+    usart_data_transmit(EVAL_COM0, (uint8_t)ch);
+    while (RESET == usart_flag_get(EVAL_COM0, USART_FLAG_TBE));
+    return ch;
 }

@@ -2,11 +2,11 @@
     \file    main.c
     \brief   DAC0 DMA convert demo
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -33,7 +33,6 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32c10x.h"
-#include "systick.h"
 
 #define CONVERT_NUM          (16)
 #define DAC0_R8DH_ADDRESS    (0x40007408)

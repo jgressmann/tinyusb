@@ -2,11 +2,11 @@
     \file    main.c
     \brief   USART printf
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -62,8 +62,9 @@ int main(void)
     usart_transmit_config(USART0, USART_TRANSMIT_ENABLE);
     usart_enable(USART0);
 
-    printf("a usart transmit test example!");
-    while(1);
+    printf("\n\ra usart transmit test example!\n\r");
+    while(1) {
+    }
 }
 
 /* retarget the C library printf function to the USART */

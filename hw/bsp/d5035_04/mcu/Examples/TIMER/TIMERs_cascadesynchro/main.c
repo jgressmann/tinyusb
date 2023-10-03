@@ -2,11 +2,11 @@
     \file    main.c
     \brief   TIMERs cascade synchro demo for gd32c10x
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -70,7 +70,7 @@ void gpio_config(void)
   */
 void timer_config(void)
 {
-    /* timers synchronisation in cascade mode ----------------------------
+    /* timers synchronization in cascade mode ----------------------------
        1/TIMER1 is configured as master timer:
        - PWM mode is used
        - The TIMER1 update event is used as trigger output  

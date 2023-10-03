@@ -2,12 +2,11 @@
     \file    gd32c10x_usb_hw.c
     \brief   this file implements the board support package for the USB host library
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
-    \version 2021-06-22, V1.0.1, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc. 
+    Copyright (c) 2023, GigaDevice Semiconductor Inc. 
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -112,18 +111,8 @@ void usb_rcu_config(void)
         /*  reserved  */
     }
 
-#ifndef USE_IRC48M
     rcu_usb_clock_config(usbfs_prescaler);
-#else
-    /* enable IRC48M clock */
-    rcu_osci_on(RCU_IRC48M);
 
-    /* wait till IRC48M is ready */
-    while (SUCCESS != rcu_osci_stab_wait(RCU_IRC48M)) {
-    }
-
-    rcu_ck48m_clock_config(RCU_CK48MSRC_IRC48M);
-#endif /* USE_IRC48M */
     rcu_periph_clock_enable(RCU_USBFS);
 }
 
@@ -309,32 +298,3 @@ static void hwp_time_set(uint8_t unit)
     /* timer2 enable counter */
     timer_enable(TIMER2);
 }
-
-#ifdef USE_IRC48M
-/*!
-    \brief      configure the CTC peripheral
-    \param[in]  none
-    \param[out] none
-    \retval     none
-*/
-void ctc_config(void)
-{
-    /* configure CTC reference signal source prescaler */
-    ctc_refsource_prescaler_config(CTC_REFSOURCE_PSC_OFF);
-    /* select reference signal source */
-    ctc_refsource_signal_select(CTC_REFSOURCE_USBSOF);
-    /* select reference signal source polarity */
-    ctc_refsource_polarity_config(CTC_REFSOURCE_POLARITY_RISING);
-    /* configure hardware automatically trim mode */
-    ctc_hardware_trim_mode_config(CTC_HARDWARE_TRIM_MODE_ENABLE);
-    
-    /* configure CTC counter reload value, Fclock/Fref-1 */
-    ctc_counter_reload_value_config(0xBB7FU);
-    /* configure clock trim base limit value, Fclock/Fref*0.0012/2 */
-    ctc_clock_limit_value_config(0x1DU);
-
-    /* CTC counter enable */
-    ctc_counter_enable();
-}
-#endif /* USE_IRC48M */
-

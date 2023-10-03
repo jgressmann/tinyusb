@@ -2,11 +2,11 @@
     \file    drv_usb_core.h
     \brief   USB core low level driver header file
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -73,7 +73,6 @@ typedef enum
 typedef enum
 {
     USB_USE_FIFO,                                                       /*!< USB use FIFO transfer mode */
-    USB_USE_DMA                                                         /*!< USB use DMA transfer mode */
 } usb_transfer_mode;
 
 typedef struct
@@ -93,7 +92,7 @@ typedef struct
     uint32_t       base_reg;                                            /*!< base register address */
 } usb_core_basic;
 
-/* static inline function definitions */
+/* static in-line function definitions */
 
 /*!
     \brief      get the global interrupts
@@ -103,7 +102,11 @@ typedef struct
 */
 __STATIC_INLINE uint32_t usb_coreintr_get(usb_core_regs *usb_regs)
 {
-    return usb_regs->gr->GINTEN & usb_regs->gr->GINTF;
+    uint32_t reg_data = usb_regs->gr->GINTEN;
+    
+    reg_data &= usb_regs->gr->GINTF;
+    
+    return reg_data;
 }
 
 /*!

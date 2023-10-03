@@ -2,11 +2,11 @@
     \file    usbd_core.c
     \brief   USB device mode core functions
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -76,7 +76,7 @@ void usbd_init (usb_core_driver *udev, usb_core_enum core, usb_desc *desc, usb_c
 
 #ifndef USE_OTG_MODE
     usb_curmode_set(&udev->regs, DEVICE_MODE);
-#endif
+#endif /* USE_OTG_MODE */
 
     /* initializes device mode */
     (void)usb_devcore_init (udev);
@@ -171,10 +171,6 @@ uint32_t usbd_ep_recev (usb_core_driver *udev, uint8_t ep_addr, uint8_t *pbuf, u
     transc->xfer_len = len;
     transc->xfer_count = 0U;
 
-    if ((uint8_t)USB_USE_DMA == udev->bp.transfer_mode) {
-        transc->dma_addr = (uint32_t)pbuf;
-    }
-
     /* start the transfer */
     (void)usb_transc_outxfer (udev, transc);
 
@@ -201,10 +197,6 @@ uint32_t usbd_ep_send (usb_core_driver *udev, uint8_t ep_addr, uint8_t *pbuf, ui
     transc->xfer_buf = pbuf;
     transc->xfer_len = len;
     transc->xfer_count = 0U;
-
-    if ((uint8_t)USB_USE_DMA == udev->bp.transfer_mode) {
-        transc->dma_addr = (uint32_t)pbuf;
-    }
 
     /* start the transfer */
     (void)usb_transc_inxfer (udev, transc);

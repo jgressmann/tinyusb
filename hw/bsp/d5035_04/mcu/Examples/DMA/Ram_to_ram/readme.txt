@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of DMA ram to ram
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -39,7 +39,7 @@ reception buffer declared in RAM(destination_address1~destination_address4).
 
   The start of transfer is triggered by software. At the end of the transfer, a comparison 
 between the source and destination buffers is done to check that all data have been correctly
-transferred. If DMA channel 1 transfer is successful, light LED2. If DMA channel 2 transfer 
-is successful, light LED3. If DMA channel 3 transfer is successful, light LED4. If DMA channel 
-4 transfer is successful, light LED5. If the transfer is not correct, the corresponding LED is
+transferred. If DMA channel 1 transfer is successful, light LED1. If DMA channel 2 transfer 
+is successful, light LED2. If DMA channel 3 transfer is successful, light LED3. If DMA channel 
+4 transfer is successful, light LED4. If the transfer is not correct, the corresponding LED is
 off.

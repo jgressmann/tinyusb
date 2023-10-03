@@ -1,13 +1,12 @@
 /*!
-    \file    usbh_core.c
+    \file    usbh_msc_core.c
     \brief   USB MSC(mass storage device) class driver
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
-    \version 2021-05-31, V1.0.1, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2021, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -109,7 +108,7 @@ static usbh_status usbh_msc_itf_init (usbh_host *uhost)
         msc_handler.pipe_out = usbh_pipe_allocate(uhost->data, msc_handler.ep_out);
         msc_handler.pipe_in = usbh_pipe_allocate(uhost->data, msc_handler.ep_in);
 
-        usbh_msc_bot_init(uhost);
+        usbh_msc_bbb_init(uhost);
 
         /* open the new channels */
         usbh_pipe_create (uhost->data,

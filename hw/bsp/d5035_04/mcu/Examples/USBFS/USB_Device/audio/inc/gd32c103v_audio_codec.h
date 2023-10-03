@@ -3,11 +3,11 @@
     \brief   This file contains all the functions prototypes for the audio codec
              low layer driver.
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -38,193 +38,92 @@ OF SUCH DAMAGE.
 
 #include "usbd_conf.h"
 
-/* CONFIGURATION: Audio codec driver configuration parameters */
-//#define AUDIO_USE_MACROS
+/* select the interrupt preemption priority and sub-priority for DMA interrupt */
+#define AD_IRQ_PREPRIO               2
+#define AD_IRQ_SUBRIO                0
 
-/* Audio Transfer mode (DMA, Interrupt or Polling) */
-#define AUDIO_MAL_MODE_NORMAL         /* Uncomment this line to enable the audio 
-                                         Transfer using DMA */
-/* #define AUDIO_MAL_MODE_CIRCULAR */ /* Uncomment this line to enable the audio 
-                                         Transfer using DMA */
+/* uncomment the defines below to select if the master clock mode should be enabled or not */
+#define IIS_MCLK_ENABLED
+//#define IIS_MCLK_DISABLED
 
-/* For the DMA modes select the interrupt that will be used */
-/* #define AUDIO_MAL_DMA_IT_TC_EN */  /* Uncomment this line to enable DMA Transfer Complete interrupt */
-/* #define AUDIO_MAL_DMA_IT_HT_EN */  /* Uncomment this line to enable DMA Half Transfer Complete interrupt */
-/* #define AUDIO_MAL_DMA_IT_TE_EN */  /* Uncomment this line to enable DMA Transfer Error interrupt */
-
-/* #define USE_DMA_PAUSE_FEATURE *//* Uncomment this line to enable the use of DMA Pause Feature
-                                 When this define is enabled, the Pause function will
-                                 just pause/resume the DMA without need to reinitialize the
-                                 DMA structure. In this case, the buffer pointer should remain
-                                 available after resume. */
-
-/* Select the interrupt preemption priority and sub-priority for the DMA interrupt */
-#define EVAL_AUDIO_IRQ_PREPRIO           0   /* Select the preemption priority level(0 is the highest) */
-#define EVAL_AUDIO_IRQ_SUBRIO            0   /* Select the sub-priority level (0 is the highest) */
-
-/* Uncomment the following line to use the default Codec_TIMEOUT_UserCallback() 
-   function implemented in gd32FE103v_audio_codec.c file.
-   Codec_TIMEOUT_UserCallback() function is called whenever a timeout condition 
-   occurs during communication (waiting on an event that doesn't occur, bus 
-   errors, busy devices ...). */   
-/* #define USE_DEFAULT_TIMEOUT_CALLBACK */
-
-
-/* OPTIONAL Configuration defines parameters */
-
-/* Uncomment defines below to select standard for audio communication between codec and I2S peripheral */
-//#define I2S_STANDARD_PHILLIPS
-#define I2S_STANDARD_MSB
-//#define I2S_STANDARD_LSB
-
-/* Uncomment the defines below to select if the Master clock mode should be enabled or not */
-#define CODEC_MCLK_ENABLED
-/* #define CODEC_MCLK_DISABLED */
-
-/* Uncomment this line to enable verifying data sent to codec after each write operation */
-/* #define VERIFY_WRITTENDATA */
-
-/* Hardware Configuration defines parameters */
-
+/* hardware configuration defines parameters */
 /* I2S peripheral configuration defines (data and control interface of the audio codec) */
-#define CODEC_I2S                      SPI1
-#define CODEC_I2S_CLK                  RCU_SPI1
-#define CODEC_I2S_ADDRESS              (SPI1+0x0C)
-#define CODEC_I2S_IRQ                  SPI1_IRQn
-#define CODEC_I2S_WS_PIN               GPIO_PIN_12
-#define CODEC_I2S_SCK_PIN              GPIO_PIN_13
-#define CODEC_I2S_SD_PIN               GPIO_PIN_15
-#define CODEC_I2S_MCK_PIN              GPIO_PIN_6
-#define CODEC_I2S_GPIO_CLK             RCU_GPIOB
-#define CODEC_I2S_MCK_CLK              RCU_GPIOC
-#define CODEC_I2S_GPIO                 GPIOB
-#define CODEC_I2S_MCK_GPIO             GPIOC
+#define AD_I2S                       SPI1
+#define AD_I2S_CLK                   RCU_SPI1
+#define AD_I2S_ADDRESS               (SPI1+0x0C)
+#define AD_I2S_IRQ                   SPI1_IRQn
+#define AD_I2S_WS_PIN                GPIO_PIN_12
+#define AD_I2S_SCK_PIN               GPIO_PIN_13
+#define AD_I2S_SD_PIN                GPIO_PIN_15
+#define AD_I2S_MCK_PIN               GPIO_PIN_6
+#define AD_I2S_GPIO_CLK              RCU_GPIOB
+#define AD_I2S_MCK_CLK               RCU_GPIOC
+#define AD_I2S_GPIO                  GPIOB
+#define AD_I2S_MCK_GPIO              GPIOC
 
 /* I2S DMA Stream definitions */
-#define AUDIO_MAL_DMA_CLOCK            RCU_DMA0
-#define AUDIO_MAL_DMA_CHANNEL          DMA_CH4
-#define AUDIO_MAL_DMA_IRQ              DMA0_Channel4_IRQn
-#define AUDIO_MAL_DMA_FLAG_TC          DMA0_FLAG_TC4
-#define AUDIO_MAL_DMA_FLAG_HT          DMA0_FLAG_HT4
-#define AUDIO_MAL_DMA_FLAG_TE          DMA0_FLAG_TE4
-#define AUDIO_MAL_DMA_FLAG_GL          DMA_INT_FLAG_G
-#define AUDIO_MAL_DMA_FLAG_ALL         DMA_INT_FLAG_G
-#define AUDIO_MAL_DMA_PERIPH_DATA_SIZE DMA_PERIPHERALDATASIZE_HALFWORD
-#define AUDIO_MAL_DMA_MEM_DATA_SIZE    DMA_MEMORYDATASIZE_HALFWORD
-#define DMA_MAX_SZE                    0xFFFF
-#define AUDIO_MAL_DMA                  DMA0
+#define AD_DMA_CLOCK                 RCU_DMA0
+#define AD_DMA_CHANNEL               DMA_CH4
+#define AD_DMA_IRQ                   DMA0_Channel4_IRQn
+#define AD_DMA_FLAG_TC               DMA_FLAG_FTF
+#define AD_DMA_FLAG_HT               DMA_FLAG_HTF
+#define AD_DMA_FLAG_TE               DMA_FLAG_ERR
+#define AD_DMA_FLAG_GL               DMA_INT_FLAG_G
+#define AD_DMA_FLAG_ALL              DMA_INT_FLAG_G
+#define AD_DMA                       DMA0
 
-#define Audio_MAL_IRQHandler           DMA0_Channel4_IRQHandler
+#define AD_DMA_IRQHandler            DMA0_Channel4_IRQHandler
 
-/* Maximum Timeout values for flags and events waiting loops. These timeouts are
-   not based on accurate values, they just guarantee that the application will 
-   not remain stuck if the I2C communication is corrupted.
-   You may modify these timeout values depending on CPU frequency and application
-   conditions (interrupts routines ...). */   
-#define CODEC_FLAG_TIMEOUT             ((uint32_t)0x1000)
-#define CODEC_LONG_TIMEOUT             ((uint32_t)(300 * CODEC_FLAG_TIMEOUT))
+/* mask for the bit en of the i2s cfgr register */
+#define I2S_ENABLE_MASK              (0x0400)
 
-/* Audio codec user defines */
+/* audio state */
+typedef enum _audio_status {
+    AD_OK = 0,
+    AD_FAIL,
+} audio_status;
 
-/* codec output device */
-#define OUTPUT_DEVICE_SPEAKER         1
-#define OUTPUT_DEVICE_HEADPHONE       2
-#define OUTPUT_DEVICE_BOTH            3
-#define OUTPUT_DEVICE_AUTO            4
+typedef enum _audio_ctl {
+    AD_PAUSE = 0,
+    AD_RESUME,
+} audio_ctl;
 
-/* volume levels values */
-#define DEFAULT_VOLMIN                0x00U
-#define DEFAULT_VOLMAX                0xFFU
-#define DEFAULT_VOLSTEP               0x04U
+/* audio machine states */
+typedef enum _audio_state {
+    AD_STATE_INACTIVE = 0,
+    AD_STATE_ACTIVE,
+    AD_STATE_PLAYING,
+    AD_STATE_PAUSED,
+    AD_STATE_STOPPED,
+    AD_STATE_ERROR,
+} audio_state_enum;
 
-#define AUDIO_PAUSE                   0U
-#define AUDIO_RESUME                  1U
-
-/* codec power down modes */
-#define CODEC_PDWN_HW                 1U
-#define CODEC_PDWN_SW                 2U
-
-/* mute commands */
-#define AUDIO_MUTE_ON                 1U
-#define AUDIO_MUTE_OFF                0U
-
-#define VOLUME_CONVERT(x)    ((x > 100)? 100:((uint8_t)((x * 255) / 100)))
-#define DMA_MAX(x)           (((x) <= DMA_MAX_SZE)? (x):DMA_MAX_SZE)
+/* audio commands enumeration */
+typedef enum
+{
+    AD_CMD_PLAY = 1U,
+    AD_CMD_PAUSE,
+    AD_CMD_STOP,
+}audio_cmd_enum;
 
 /* function declarations */
-/* generic functions */
-/* configure the audio peripherals */
-uint32_t eval_audio_init (uint16_t output_device, uint8_t volume, uint32_t audio_freq);
-/* de-initializes all the resources used by the codec */
-uint32_t eval_audio_deinit (void);
-/* starts playing audio stream from a data buffer for a determined size */
-uint32_t eval_audio_play (uint16_t* pbuffer, uint32_t size);
-/* eval_audio_pause_resume */
-uint32_t eval_audio_pause_resume (uint32_t cmd, uint32_t addr, uint32_t size);
-/* eval_audio_stop */
-uint32_t eval_audio_stop (uint32_t option);
-/* eval_audio_volume_ctl */
-uint32_t eval_audio_volume_ctl (uint8_t volume);
-/* eval_audio_mute */
-uint32_t eval_audio_mute (uint32_t Command);
-
-/* audio codec functions */
-
-/* high layer codec functions */
-/* initializes the audio codec and all related interfaces */
-uint32_t codec_init (uint16_t output_device, uint8_t volume, uint32_t audio_freq);
-/* restore the audio codec state to default state and free all used resources */
-uint32_t codec_deinit (void);
-/* start the audio codec play feature */
-uint32_t codec_play (void);
-/* pauses and resumes playing on the audio codec */
-uint32_t codec_pause_resume (uint32_t cmd);
-/* stops audio codec playing. it powers down the codec */
-uint32_t codec_stop (uint32_t codec_pdwn_mode);
-/* higher or lower the codec volume level */
-uint32_t codec_volume_ctrl (uint8_t volume);
-/* enables or disables the mute feature on the audio codec */
-uint32_t codec_mute (uint32_t cmd);
-/* switch dynamically (while audio file is played) the output target (speaker or headphone) */
-uint32_t codec_switch_output (uint8_t output);
-
-/* MAL (media access layer) functions */
-/* initializes and prepares the Media to perform audio data transfer from Media to the I2S peripheral */
-void audio_mal_init (void);
+/* initializes the audio codec audio interface (i2s) */
+void codec_audio_interface_init(uint32_t audio_freq);
+/* deinitialize the audio codec audio interface */
+void codec_audio_interface_deinit(void);
+/* initializes IOs used by the audio codec */
+void codec_gpio_init(void);
+/* deinitialize IOs used by the audio codec interface */
+void codec_gpio_deinit(void);
+/* initializes dma to prepare for audio data transfer */
+void codec_i2s_dma_init(void);
 /* restore default state of the used media */
-void audio_mal_deinit (void);
+void codec_i2s_dma_deinit(void);
 /* starts playing audio stream from the audio media */
-void audio_mal_play (uint32_t addr, uint32_t size);
+void audio_play(uint32_t addr, uint32_t size);
 /* pauses or resumes the audio stream playing from the media */
-void audio_mal_pause_resume  (uint32_t cmd, uint32_t addr, uint32_t size);
+void audio_pause_resume(uint32_t cmd, uint32_t addr, uint32_t size);
 /* stops audio stream playing on the used media */
-void audio_mal_stop (void);
+void audio_stop(void);
 
-/* user callbacks: user has to implement these functions in his code if they are needed. */
-
-/* This function is called when the requested data has been completely transferred.
-   In Normal mode (when  the define AUDIO_MAL_MODE_NORMAL is enabled) this function
-   is called at the end of the whole audio file.
-   In circular mode (when  the define AUDIO_MAL_MODE_CIRCULAR is enabled) this 
-   function is called at the end of the current buffer transmission. */
-void eval_audio_transfercomplete_callback(uint32_t pbuffer, uint32_t size);
-
-/* This function is called when half of the requested buffer has been transferred 
-   This callback is useful in Circular mode only (when AUDIO_MAL_MODE_CIRCULAR 
-   define is enabled)*/
-void eval_audio_halftransfer_callback(uint32_t pbuffer, uint32_t size);
-
-/* This function is called when an Interrupt due to transfer error on or peripheral
-   error occurs. */
-void eval_audio_error_callback(void* pdata);
-
-/* Codec_TIMEOUT_UserCallback() function is called whenever a timeout condition 
-   occurs during communication (waiting on an event that doesn't occur, bus 
-   errors, busy devices ...) on the codec control interface (I2C).
-   You can use the default timeout callback implementation by uncommenting the 
-   define USE_DEFAULT_TIMEOUT_CALLBACK in gd32c103v_audio_codec.h file.
-   Typically the user implementation of this callback should reset I2C peripheral
-   and re-initialize communication or in worst case reset all the application. */
-uint32_t codec_timeout_usercallback(void);
- 
 #endif /* GD32C103V_AUDIO_CODEC_H */

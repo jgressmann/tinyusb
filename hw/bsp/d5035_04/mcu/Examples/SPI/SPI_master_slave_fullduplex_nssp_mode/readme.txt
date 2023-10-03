@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of the master and slave fullduplex communication with nssp mode
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -32,11 +32,11 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 OF SUCH DAMAGE.
 */
 
-  This example is based on the GD32C103V-EVAL-V1.0 board, it shows SPI0 and SPI1 fullduplex 
+  This example is based on the GD32C103V-EVAL-V1.0 board, it shows SPI0 and SPI2 fullduplex 
 communication with nssp mode. After the communicate is complete, if the receive data 
 equals to send data, LED2 and LED3 turn on, if not, LED2 and LED3 turn off.
 
-  Connect SPI0 NSS  PIN(PA4) to SPI1 NSS  PIN(PB12)
-  Connect SPI0 SCK  PIN(PA5) to SPI1 SCK  PIN(PB13)
-  Connect SPI0 MISO PIN(PA6) to SPI1 MISO PIN(PB14)
-  Connect SPI0 MOSI PIN(PA7) to SPI1 MOSI PIN(PB15)
+  Connect SPI0 NSS  PIN(PA15) to SPI2 NSS  PIN(PA4)
+  Connect SPI0 SCK  PIN(PB3)  to SPI2 SCK  PIN(PC10)
+  Connect SPI0 MISO PIN(PB4)  to SPI2 MISO PIN(PC11)
+  Connect SPI0 MOSI PIN(PB5)  to SPI2 MOSI PIN(PC12)

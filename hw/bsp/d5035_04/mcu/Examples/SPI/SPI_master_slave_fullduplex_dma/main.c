@@ -2,11 +2,11 @@
     \file    main.c
     \brief   SPI fullduplex communication use DMA 
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -35,7 +35,8 @@ OF SUCH DAMAGE.
 #include "gd32c10x.h"
 #include "gd32c10x_eval.h"
 
-#define ARRAYSIZE         10
+#define SPI_CRC_ENABLE           1
+#define ARRAYSIZE                10
 
 uint8_t spi0_send_array[ARRAYSIZE] = {0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA};
 uint8_t spi2_send_array[ARRAYSIZE] = {0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA};
@@ -62,50 +63,74 @@ int main(void)
     gd_eval_led_init(LED2);
     gd_eval_led_init(LED3);
 
-    /* peripheral clock enable */
+    /* enable peripheral clock */
     rcu_config();
-    /* GPIO configure */
+    /* configure GPIO */
     gpio_config();
-    /* DMA configure */
+    /* configure DMA */
     dma_config();
-    /* SPI configure */
+    /* configure SPI */
     spi_config();
 
-    /* SPI enable */
+    /* enable SPI */
     spi_enable(SPI2);
     spi_enable(SPI0);
 
-    /* DMA channel enable */
+    /* enable DMA channel */
+    /* SPI0_Rx DMA channel */
     dma_channel_enable(DMA0, DMA_CH1);
+    /* SPI0_Tx DMA channel */
     dma_channel_enable(DMA0, DMA_CH2);
+    /* SPI2_Rx DMA channel */
     dma_channel_enable(DMA1, DMA_CH0);
+    /* SPI2_Tx DMA channel */
     dma_channel_enable(DMA1, DMA_CH1);
 
-    /* SPI DMA enable */
+    /* enable SPI DMA */
     spi_dma_enable(SPI2, SPI_DMA_TRANSMIT);
     spi_dma_enable(SPI2, SPI_DMA_RECEIVE);
     spi_dma_enable(SPI0, SPI_DMA_TRANSMIT);
     spi_dma_enable(SPI0, SPI_DMA_RECEIVE);
 
-    /* wait dma transmit complete */
-    while(!dma_flag_get(DMA0, DMA_CH2, DMA_FLAG_FTF));
-    while(!dma_flag_get(DMA1, DMA_CH1, DMA_FLAG_FTF));
-    while(!dma_flag_get(DMA0, DMA_CH1, DMA_FLAG_FTF));
-    while(!dma_flag_get(DMA1, DMA_CH0, DMA_FLAG_FTF));
+    /* wait DMA transmit completed */
+    while(!dma_flag_get(DMA0, DMA_CH2, DMA_FLAG_FTF)) {
+    }
+    while(!dma_flag_get(DMA1, DMA_CH1, DMA_FLAG_FTF)) {
+    }
+    while(!dma_flag_get(DMA0, DMA_CH1, DMA_FLAG_FTF)) {
+    }
+    while(!dma_flag_get(DMA1, DMA_CH0, DMA_FLAG_FTF)) {
+    }
 
-    /* compare receive data with send data */
-    if(ERROR != memory_compare(spi2_receive_array, spi0_send_array, ARRAYSIZE)){
+#if SPI_CRC_ENABLE
+    /* check the CRC error status  */
+    if(SET != spi_i2s_flag_get(SPI0, SPI_FLAG_CRCERR)) {
         gd_eval_led_on(LED2);
-    }else{
+    } else {
         gd_eval_led_off(LED2);
     }
-    if(ERROR != memory_compare(spi0_receive_array, spi2_send_array, ARRAYSIZE)){
+
+    if(SET != spi_i2s_flag_get(SPI2, SPI_FLAG_CRCERR)) {
         gd_eval_led_on(LED3);
-    }else{
+    } else {
         gd_eval_led_off(LED3);
     }
+#else
+    /* compare receive data with send data */
+    if(ERROR != memory_compare(spi2_receive_array, spi0_send_array, ARRAYSIZE)) {
+        gd_eval_led_on(LED2);
+    } else {
+        gd_eval_led_off(LED2);
+    }
+    if(ERROR != memory_compare(spi0_receive_array, spi2_send_array, ARRAYSIZE)) {
+        gd_eval_led_on(LED3);
+    } else {
+        gd_eval_led_off(LED3);
+    }
+#endif /* enable CRC function */
 
-    while(1);
+    while(1) {
+    }
 }
 
 /*!
@@ -136,7 +161,7 @@ void gpio_config(void)
     /* SPI0 GPIO config:SCK/PA5, MISO/PA6, MOSI/PA7 */
     gpio_init(GPIOA, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_5 | GPIO_PIN_7);
     gpio_init(GPIOA, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_6);
-    
+
     /* SPI2 GPIO config:SCK/PC10, MISO/PC11, MOSI/PC12 */
     gpio_pin_remap_config(GPIO_SPI2_REMAP, ENABLE);
     gpio_init(GPIOC, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_10 | GPIO_PIN_12);
@@ -152,11 +177,12 @@ void gpio_config(void)
 void dma_config(void)
 {
     dma_parameter_struct dma_init_struct;
-    
-    /* SPI0 transmit dma config:DMA0,DMA_CH2 */
-    dma_deinit(DMA0, DMA_CH2);
+
     dma_struct_para_init(&dma_init_struct);
-    
+
+    /* configure SPI0 transmit DMA:DMA0-DMA_CH2 */
+    dma_deinit(DMA0, DMA_CH2);
+
     dma_init_struct.periph_addr  = (uint32_t)&SPI_DATA(SPI0);
     dma_init_struct.memory_addr  = (uint32_t)spi0_send_array;
     dma_init_struct.direction    = DMA_MEMORY_TO_PERIPHERAL;
@@ -171,7 +197,17 @@ void dma_config(void)
     dma_circulation_disable(DMA0, DMA_CH2);
     dma_memory_to_memory_disable(DMA0, DMA_CH2);
 
-    /* SPI0 receive dma config:DMA0,DMA_CH1 */
+    /* configure SPI2 transmit DMA: DMA1,DMA_CH1 */
+    dma_deinit(DMA1, DMA_CH1);
+    dma_init_struct.periph_addr  = (uint32_t)&SPI_DATA(SPI2);
+    dma_init_struct.memory_addr  = (uint32_t)spi2_send_array;
+    dma_init_struct.direction    = DMA_MEMORY_TO_PERIPHERAL;
+    dma_init_struct.priority     = DMA_PRIORITY_MEDIUM;
+    dma_init(DMA1, DMA_CH1, &dma_init_struct);
+    /* configure DMA mode */
+    dma_circulation_disable(DMA1, DMA_CH1);
+    dma_memory_to_memory_disable(DMA1, DMA_CH1);
+    /* configure SPI0 receive DMA: DMA0-DMA_CH1 */
     dma_deinit(DMA0, DMA_CH1);
     dma_init_struct.periph_addr  = (uint32_t)&SPI_DATA(SPI0);
     dma_init_struct.memory_addr  = (uint32_t)spi0_receive_array;
@@ -182,23 +218,15 @@ void dma_config(void)
     dma_circulation_disable(DMA0, DMA_CH1);
     dma_memory_to_memory_disable(DMA0, DMA_CH1);
 
-    /* SPI2 transmit dma config:DMA1,DMA_CH1 */
-    dma_deinit(DMA1, DMA_CH1);
-    dma_init_struct.periph_addr  = (uint32_t)&SPI_DATA(SPI2);
-    dma_init_struct.memory_addr  = (uint32_t)spi2_send_array;
-    dma_init_struct.direction    = DMA_MEMORY_TO_PERIPHERAL;
-    dma_init_struct.priority     = DMA_PRIORITY_MEDIUM;
-    dma_init(DMA1, DMA_CH1, &dma_init_struct);
-    /* configure DMA mode */
-    dma_circulation_disable(DMA1, DMA_CH1);
-    dma_memory_to_memory_disable(DMA1, DMA_CH1);
-
-    /* SPI2 receive dma config:DMA1,DMA_CH0 */
+    /* configure SPI2 receive DMA: DMA1,DMA_CH0 */
     dma_deinit(DMA1, DMA_CH0);
     dma_init_struct.periph_addr  = (uint32_t)&SPI_DATA(SPI2);
     dma_init_struct.memory_addr  = (uint32_t)spi2_receive_array;
     dma_init_struct.direction    = DMA_PERIPHERAL_TO_MEMORY;
     dma_init_struct.priority     = DMA_PRIORITY_ULTRA_HIGH;
+#if SPI_CRC_ENABLE
+    dma_init_struct.number       = ARRAYSIZE + 1;
+#endif /* enable CRC function */
     dma_init(DMA1, DMA_CH0, &dma_init_struct);
     /* configure DMA mode */
     dma_circulation_disable(DMA1, DMA_CH0);
@@ -214,12 +242,12 @@ void dma_config(void)
 void spi_config(void)
 {
     spi_parameter_struct spi_init_struct;
-    /* deinitilize SPI and the parameters */
+    /* deinitialize SPI and the parameters */
     spi_i2s_deinit(SPI0);
     spi_i2s_deinit(SPI2);
     spi_struct_para_init(&spi_init_struct);
 
-    /* SPI0 parameter config */
+    /* configure SPI0 parameter */
     spi_init_struct.trans_mode           = SPI_TRANSMODE_FULLDUPLEX;
     spi_init_struct.device_mode          = SPI_MASTER;
     spi_init_struct.frame_size           = SPI_FRAMESIZE_8BIT;
@@ -229,10 +257,19 @@ void spi_config(void)
     spi_init_struct.endian               = SPI_ENDIAN_MSB;
     spi_init(SPI0, &spi_init_struct);
 
-    /* SPI2 parameter config */
+    /* configure SPI2 parameter */
+    spi_init_struct.trans_mode           = SPI_TRANSMODE_FULLDUPLEX;
     spi_init_struct.device_mode = SPI_SLAVE;
     spi_init_struct.nss         = SPI_NSS_SOFT;
     spi_init(SPI2, &spi_init_struct);
+
+#if SPI_CRC_ENABLE
+    /* configure SPI CRC function */
+    spi_crc_polynomial_set(SPI0, 7);
+    spi_crc_polynomial_set(SPI2, 7);
+    spi_crc_on(SPI0);
+    spi_crc_on(SPI2);
+#endif /* enable CRC function */
 }
 
 /*!
@@ -243,11 +280,12 @@ void spi_config(void)
     \param[out] none
     \retval     ErrStatus : ERROR or SUCCESS
 */
-ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint8_t length) 
+ErrStatus memory_compare(uint8_t *src, uint8_t *dst, uint8_t length)
 {
-    while (length--){
-        if (*src++ != *dst++)
+    while(length--) {
+        if(*src++ != *dst++) {
             return ERROR;
+        }
     }
     return SUCCESS;
 }

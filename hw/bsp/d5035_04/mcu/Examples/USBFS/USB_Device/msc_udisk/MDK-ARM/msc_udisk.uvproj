@@ -360,7 +360,7 @@
             <useXO>0</useXO>
             <VariousControls>
               <MiscControls>--c99</MiscControls>
-              <Define>USE_STDPERIPH_DRIVER,USE_USB_FS,GD32C10X  GD32C103V_EVAL  USE_IRC48M</Define>
+              <Define>USE_STDPERIPH_DRIVER,USE_USB_FS,GD32C10X  GD32C103V_EVAL</Define>
               <Undefine></Undefine>
               <IncludePath>..\inc;..\..\..\..\..\Firmware\CMSIS\GD\GD32C10x\Include;..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Include;..\..\..\..\..\Firmware\GD32C10x_usbfs_library\driver\Include;..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\core\Include;..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\msc\Include;..\..\..\..\..\Firmware\GD32C10x_usbfs_library\ustd\common;..\..\..\..\..\Firmware\GD32C10x_usbfs_library\ustd\class\msc;..\..\..\..\..\Utilities</IncludePath>
             </VariousControls>
@@ -559,11 +559,6 @@
               <FileName>usbd_msc_core.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\msc\Source\usbd_msc_core.c</FilePath>
-            </File>
-            <File>
-              <FileName>usbd_msc_data.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\msc\Source\usbd_msc_data.c</FilePath>
             </File>
             <File>
               <FileName>usbd_msc_scsi.c</FileName>

@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of calendar demo
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -38,18 +38,11 @@ the RTC module. In this demo, RTC peripheral is configured to display calendar.
   Select LXTAL as RTC clock source. And the HyperTerminal should be connected to the 
 evaluation board via COM1.
 
-  After start-up, the program checks whether the BKP data register is written in a 
-key value or not. 
+  After start-up, get key value from BKP data register or bit RTCSRC in backup domain 
+control register. If the value is correct, the program will ask to set the time on the Hyperterminal.
+If the value is correct, by the Hyperterminal set time, the calendar will be displayed on the Hyperterminal.
 
-  The register has not yet been programmed when the program is executed for the first 
-time. At this time, the RTC will be configured. The user will be asked to set the date 
-and time on the HyperTerminal. And the calendar will be displayed on the LCD.
-
-  If a power on reset or an external reset occurs, and the BKP domain is not reset. 
-RTC does not need to be configured and the value of the calendar will be continued with 
-the value before reset.
-
-  Press the USER key, all LEDs will be toggle after 10s.
+  The RTC module is in the Backup domain, and is not reset by the system reset.
 
   P2 and P3 must be fitted to the EXMC port.
 

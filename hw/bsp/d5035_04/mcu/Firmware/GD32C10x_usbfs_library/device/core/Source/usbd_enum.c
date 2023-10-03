@@ -2,12 +2,11 @@
     \file    usbd_enum.c
     \brief   USB enumeration function
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
-    \version 2021-09-27, V1.0.1, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -130,7 +129,7 @@ usb_reqsta usbd_vendor_request (usb_core_driver *udev, usb_req *req)
     /* added by user... */
 #ifdef WINUSB_EXEMPT_DRIVER
    usbd_OEM_req(udev, req);
-#endif
+#endif /* WINUSB_EXEMPT_DRIVER */
 
     return REQ_SUPP;
 }
@@ -178,8 +177,8 @@ void int_to_unicode (uint32_t value, uint8_t *pbuf, uint8_t len)
 }
 
 /*!
-    \brief      convert hex 32bits value into unicode char
-    \param[in]  unicode_str: pointer to unicode string
+    \brief      convert hex 32bits value into Unicode char
+    \param[in]  unicode_str: pointer to Unicode string
     \param[out] none
     \retval     none
 */

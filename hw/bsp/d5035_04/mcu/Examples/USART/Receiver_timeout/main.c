@@ -2,11 +2,11 @@
     \file    main.c
     \brief   UASRT receiver timeout
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -38,8 +38,9 @@ OF SUCH DAMAGE.
 
 uint8_t rxbuffer[64];
 uint8_t txbuffer[64];
-uint8_t txcount = 0;
-uint16_t rxcount = 0;
+extern __IO uint8_t txcount;
+extern __IO uint16_t rxcount;
+
 void nvic_config(void);
 
 /*!
@@ -51,28 +52,30 @@ void nvic_config(void);
 int main(void)
 {
     uint32_t i = 0, j = 0;
+
     nvic_config();
     gd_eval_com_init(EVAL_COM0);
     printf("a usart receive timeout test example!");
 
-    while(1){
-        if(0 == rxcount){
+    while(1) {
+        if(0 == rxcount) {
             /* enable the USART receive interrupt */
             usart_interrupt_enable(USART0, USART_INT_RBNE);
-        }else{
+        } else {
             /* enable the USART receive timeout and configure the time of timeout */
             usart_receiver_timeout_enable(USART0);
-            usart_receiver_timeout_threshold_config(USART0, 115200*3);
+            usart_receiver_timeout_threshold_config(USART0, 115200 * 3);
 
-            while(RESET == usart_flag_get(USART0, USART_FLAG_RT));
-            for(i=0; i<rxcount; i++){ 
+            while(RESET == usart_flag_get(USART0, USART_FLAG_RT)) {
+            }
+            for(i = 0; i < rxcount; i++) {
                 txbuffer[i] = rxbuffer[j++];
             }
             /* disable the USART receive interrupt and enable the USART transmit interrupt */
             usart_interrupt_disable(USART0, USART_INT_RBNE);
             usart_interrupt_enable(USART0, USART_INT_TBE);
-
-            while(txcount < rxcount);
+            while(txcount < rxcount) {
+            }
             usart_flag_clear(USART0, USART_FLAG_RT);
             txcount = 0;
             rxcount = 0;
@@ -97,6 +100,8 @@ void nvic_config(void)
 int fputc(int ch, FILE *f)
 {
     usart_data_transmit(EVAL_COM0, (uint8_t)ch);
-    while (RESET == usart_flag_get(EVAL_COM0, USART_FLAG_TBE));
+    while(RESET == usart_flag_get(EVAL_COM0, USART_FLAG_TBE)) {
+    }
     return ch;
 }
+

@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of the can loopback communication demo
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -38,5 +38,5 @@ with the CAN in loopback mode.
   The example first performs a transmission and a reception of a standard data frame by 
 polling at 125 Kbps.If the received frame is successful, the LED2 and LED3 are on. 
 otherwise,the LED4 are ON. 
-    
+
   User can select CAN0 or CAN1 cell using the private defines in main.c.

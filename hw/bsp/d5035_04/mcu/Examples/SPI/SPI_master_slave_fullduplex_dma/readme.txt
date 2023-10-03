@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of the master and slave fullduplex communication use DMA demo
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -33,8 +33,19 @@ OF SUCH DAMAGE.
 */
 
   This example is based on the GD32C103V-EVAL-V1.0 board, it shows SPI0 and SPI2 fullduplex 
-communication using dma mode. After the communication is complete, if the receive data 
-equals to the send data, LED2 and LED3 turn on, if not, LED2 and LED3 turn off.
+communication use DMA mode.
+
+  1.Modify file: example/SPI/SPI_master_slave_fullduplex_dma/main.c, choose to disable
+CRC function.
+  #define SPI_CRC_ENABLE       0
+  After the communicate is completed, if received data equal to the data sent, LED2 and 
+LED3 turn on, if not, LED2 and LED3 turn off.
+
+  2.Modify file: example/SPI/SPI_master_slave_fullduplex_dma/main.c, choose to enable
+CRC function.
+  #define SPI_CRC_ENABLE       1
+  After the communication is completed, if the CRC checking is passed, LED2 and LED3 turn
+on, and if not, LED2 and LED3 turn off.
 
   Connect SPI0 SCK  PIN(PA5) to SPI2 SCK  PIN(PC10).
   Connect SPI0 MISO PIN(PA6) to SPI2 MISO PIN(PC11).

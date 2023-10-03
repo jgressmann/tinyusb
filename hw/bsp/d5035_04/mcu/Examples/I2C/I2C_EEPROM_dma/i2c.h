@@ -2,11 +2,11 @@
     \file    i2c.h
     \brief   the header file of I2C
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -31,19 +31,25 @@ WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWIS
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY 
 OF SUCH DAMAGE.
 */
+
 #ifndef I2C_H
 #define I2C_H
 
 #include "gd32c10x.h"
 
-#define BOARD_I2C              I2C0
-#define I2C_SCL_GPIO_PIN       GPIO_PIN_6
-#define I2C_SDA_GPIO_PIN       GPIO_PIN_7
-#define I2C_RCU                RCU_I2C0
-
-#define I2C_SPEED              400000
-#define I2C_SLAVE_ADDRESS7     0xA0
-#define I2C_PAGE_SIZE          8
+#define I2CX_SLAVE_ADDRESS7     0xA0
+#define I2C_SPEED               400000
+#define I2C_PAGE_SIZE           8
+#define I2CX                    I2C0
+#define RCU_GPIO_I2C            RCU_GPIOB
+#define RCU_I2C                 RCU_I2C0
+#define I2C_SCL_PORT            GPIOB
+#define I2C_SDA_PORT            GPIOB
+#define I2C_SCL_PIN             GPIO_PIN_6
+#define I2C_SDA_PIN             GPIO_PIN_7
+#define I2C_DMA                 DMA0
+#define DMA_TX_CH               DMA_CH5
+#define DMA_RX_CH               DMA_CH6
 
 /* function declarations */
 /* configure the GPIO ports */

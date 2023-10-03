@@ -2,11 +2,11 @@
     \file    rtc.c
     \brief   RTC check and config,time_show and time_adjust function
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -89,7 +89,6 @@ void rtc_configuration(void)
 
     /* enable the RTC second and alarm interrupt*/
     rtc_interrupt_enable(RTC_INT_SECOND);
-    rtc_interrupt_enable(RTC_INT_ALARM);
     /* wait until last write operation on RTC registers has finished */
     rtc_lwoff_wait();
 
@@ -128,7 +127,7 @@ uint32_t calc_days_num_by_date(uint32_t year, uint32_t month, uint32_t day)
 }
 
 /*!
-    \brief      return the time entered by user, using Hyperterminal
+    \brief      return the time entered by user, using Hyper terminal
     \param[in]  none
     \param[out] none
     \retval     current time of RTC counter value

@@ -2,11 +2,11 @@
     \file    gd32c10x_it.c
     \brief   interrupt service routines
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -55,7 +55,8 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
     /* if Hard Fault exception occurs, go to infinite loop */
-    while (1);
+    while(1) {
+    }
 }
 
 /*!
@@ -67,7 +68,8 @@ void HardFault_Handler(void)
 void MemManage_Handler(void)
 {
     /* if Memory Manage exception occurs, go to infinite loop */
-    while (1);
+    while(1) {
+    }
 }
 
 /*!
@@ -79,7 +81,8 @@ void MemManage_Handler(void)
 void BusFault_Handler(void)
 {
     /* if Bus Fault exception occurs, go to infinite loop */
-    while (1);
+    while(1) {
+    }
 }
 
 /*!
@@ -91,7 +94,8 @@ void BusFault_Handler(void)
 void UsageFault_Handler(void)
 {
     /* if Usage Fault exception occurs, go to infinite loop */
-    while (1);
+    while(1) {
+    }
 }
 
 /*!
@@ -125,16 +129,6 @@ void PendSV_Handler(void)
 }
 
 /*!
-    \brief      this function handles SysTick exception
-    \param[in]  none
-    \param[out] none
-    \retval     none
-*/
-void SysTick_Handler(void)
-{
-}
-
-/*!
     \brief      this function handles DMA0_Channel3_IRQHandler interrupt
     \param[in]  none
     \param[out] none
@@ -142,7 +136,7 @@ void SysTick_Handler(void)
 */
 void DMA0_Channel3_IRQHandler(void)
 {
-    if(dma_interrupt_flag_get(DMA0, DMA_CH3, DMA_INT_FLAG_FTF)){     
+    if(dma_interrupt_flag_get(DMA0, DMA_CH3, DMA_INT_FLAG_FTF)) {
         dma_interrupt_flag_clear(DMA0, DMA_CH3, DMA_INT_FLAG_G);
         g_transfer_complete = SET;
     }
@@ -156,7 +150,7 @@ void DMA0_Channel3_IRQHandler(void)
 */
 void DMA0_Channel4_IRQHandler(void)
 {
-    if(dma_interrupt_flag_get(DMA0, DMA_CH4, DMA_INT_FLAG_FTF)){     
+    if(dma_interrupt_flag_get(DMA0, DMA_CH4, DMA_INT_FLAG_FTF)) {
         dma_interrupt_flag_clear(DMA0, DMA_CH4, DMA_INT_FLAG_G);
         g_transfer_complete = SET;
     }

@@ -2,11 +2,11 @@
     \file    main.c
     \brief   USB main routine for MSC device(Udisk)
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc. 
+    Copyright (c) 2023, GigaDevice Semiconductor Inc. 
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -53,17 +53,6 @@ int main(void)
 
     usb_intr_config();
     
-#ifdef USE_IRC48M
-    /* CTC peripheral clock enable */
-    rcu_periph_clock_enable(RCU_CTC);
-
-    /* CTC configure */
-    ctc_config();
-
-    while (ctc_flag_get(CTC_FLAG_CKOK) == RESET) {
-    }
-#endif
-
     while (1) {
     }
 }

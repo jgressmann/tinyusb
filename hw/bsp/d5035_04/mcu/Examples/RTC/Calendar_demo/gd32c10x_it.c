@@ -2,11 +2,11 @@
     \file    gd32c10x_it.c
     \brief   interrupt service routines
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -173,52 +173,5 @@ void RTC_IRQHandler(void)
             rtc_counter_set(reset_value);
             rtc_lwoff_wait();
         }
-    }
-
-    if(RESET != rtc_interrupt_flag_get(RTC_INT_FLAG_ALARM)){
-        /* clear the RTC alarm interrupt flag*/
-        rtc_interrupt_flag_clear(RTC_INT_FLAG_ALARM);
-
-        /* toggle LEDs when the alarm occurs */
-        gd_eval_led_toggle(LED2);
-        gd_eval_led_toggle(LED3);
-        gd_eval_led_toggle(LED4);
-        gd_eval_led_toggle(LED5);
-    }
-}
-
-/*!
-    \brief      this function handles external lines 10 to 15 interrupt request
-    \param[in]  none
-    \param[out] none
-    \retval     none
-*/
-void EXTI10_15_IRQHandler(void)
-{
-    uint32_t current_counter = 0, max_counter = 0, alarm_counter = 0, year = 0;;
-
-    if(RESET != exti_interrupt_flag_get(USER_KEY_EXTI_LINE)){
-        exti_interrupt_flag_clear(USER_KEY_EXTI_LINE);
-
-        current_counter = rtc_counter_get();
-        year = (current_counter >> 25) + MIN_YEAR;
-        max_counter = IS_LEAP_YEAR(year) ? (366 * 24 * 3600) : (365 * 24 * 3600);
-
-        /* calculate the alarm_counter = current_counter + 10 second */
-        if(((current_counter & 0x01FFFFFF) + 10) < max_counter){
-            alarm_counter = current_counter + 10;
-        }else{
-            year++;
-            if(year > MAX_YEAR){
-                year = MIN_YEAR;
-            }
-            
-            alarm_counter = ((year - MIN_YEAR) << 25) + (((current_counter & 0x01FFFFFF) + 10) - max_counter);
-        }
-        
-        /* set the alarm_counter */
-        rtc_lwoff_wait();
-        rtc_alarm_config(alarm_counter);
-        rtc_lwoff_wait();
     }
 }

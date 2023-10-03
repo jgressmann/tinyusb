@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of the standby mode wakeup through wakeup pin demo
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -32,18 +32,8 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 OF SUCH DAMAGE.
 */
 
-  This example is based on the GD32C103V-EVAL-V1.0 board, it shows pmu how to enter standby mode 
-and wakeup it. 
-
-  Connect the CK_OUT0 pin (PA8) to an oscilloscope to monitor the CK_SYS frequency.
-
-  Step 1: When the board is start up, all of the LEDs are on and the oscilloscope shows that 
-the frequency of CK_SYS is 120M Hz.
-
-  Step 2: Press tamper key to enter standby mode. All of the LEDs are off and there is no waveform 
-on the oscilloscope.
-
-  Step 3: Press wakeup key. Mcu will be wakeuped from standby mode and LEDs will be turn on again. 
-When exit from the standby mode, a power-on reset occurs and the mcu will execute instruction code 
-from the 0x00000000 address. So the SystemInit() function will be reconfigured. The oscilloscope 
-shows that the frequency of CK_SYS is 120M Hz.
+  This example is based on the GD32C103V-EVAL-V1.0 board, it shows pmu how to enter standby 
+mode and wakeup it. Press tamper key to enter standby mode, LEDs turn off. When you press 
+wakeup key, mcu will be wakeuped from standby mode, LEDs will be turn on. when exit from
+the standby mode, a power-on reset occurs and the mcu will execute instruction code 
+from the 0x00000000 address.

@@ -2,11 +2,11 @@
     \file    at24cxx.c
     \brief   the read and write function file
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -57,17 +57,17 @@ uint8_t i2c_24c02_test(void)
 
     /* initialize i2c_buffer_write */
     for(i = 0; i < BUFFER_SIZE; i++){
-        i2c_buffer_write[i]=i;
-        printf("0x%02X ",i2c_buffer_write[i]);
+        i2c_buffer_write[i] = i;
+        printf("0x%02X ", i2c_buffer_write[i]);
         if(15 == i%16){
             printf("\r\n");
         }
     }
     /* EEPROM data write */
-    eeprom_buffer_write_timeout(i2c_buffer_write,EEP_FIRST_PAGE, BUFFER_SIZE); 
+    eeprom_buffer_write_timeout(i2c_buffer_write, EEP_FIRST_PAGE, BUFFER_SIZE); 
     printf("AT24C02 reading...\r\n");
     /* EEPROM data read */
-    eeprom_buffer_read_timeout(i2c_buffer_read,EEP_FIRST_PAGE, BUFFER_SIZE); 
+    eeprom_buffer_read_timeout(i2c_buffer_read, EEP_FIRST_PAGE, BUFFER_SIZE); 
     /* compare the read buffer and write buffer */
     for(i = 0; i < BUFFER_SIZE; i++){
         if(i2c_buffer_read[i] != i2c_buffer_write[i]){
@@ -81,7 +81,6 @@ uint8_t i2c_24c02_test(void)
         }
     }
     printf("I2C-AT24C02 test passed!\n\r");
-
     return I2C_OK;
 }
 
@@ -113,12 +112,12 @@ uint8_t eeprom_byte_write_timeout(uint8_t* p_buffer, uint8_t write_address)
         switch(state){
         case I2C_START:
             /* i2c master sends start signal only when the bus is idle */
-            while(i2c_flag_get(BOARD_I2C, I2C_FLAG_I2CBSY) && (timeout < I2C_TIME_OUT)){
+            while(i2c_flag_get(I2CX, I2C_FLAG_I2CBSY) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
-                i2c_start_on_bus(BOARD_I2C);
+                i2c_start_on_bus(I2CX);
                 timeout = 0;
                 state = I2C_SEND_ADDRESS;
             }else{
@@ -130,12 +129,12 @@ uint8_t eeprom_byte_write_timeout(uint8_t* p_buffer, uint8_t write_address)
 
         case I2C_SEND_ADDRESS:
             /* i2c master sends START signal successfully */
-            while((!i2c_flag_get(BOARD_I2C, I2C_FLAG_SBSEND)) && (timeout < I2C_TIME_OUT)){
+            while((!i2c_flag_get(I2CX, I2C_FLAG_SBSEND)) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
-                i2c_master_addressing(BOARD_I2C, eeprom_address, I2C_TRANSMITTER);
+                i2c_master_addressing(I2CX, eeprom_address, I2C_TRANSMITTER);
                 timeout = 0;
                 state = I2C_CLEAR_ADDRESS_FLAG;
             }else{
@@ -147,12 +146,12 @@ uint8_t eeprom_byte_write_timeout(uint8_t* p_buffer, uint8_t write_address)
 
         case I2C_CLEAR_ADDRESS_FLAG:
             /* address flag set means i2c slave sends ACK */
-            while((!i2c_flag_get(BOARD_I2C, I2C_FLAG_ADDSEND)) && (timeout < I2C_TIME_OUT)){
+            while((!i2c_flag_get(I2CX, I2C_FLAG_ADDSEND)) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
-                i2c_flag_clear(BOARD_I2C, I2C_FLAG_ADDSEND);
+                i2c_flag_clear(I2CX, I2C_FLAG_ADDSEND);
                 timeout = 0;
                 state = I2C_TRANSMIT_DATA;
             }else{
@@ -164,13 +163,13 @@ uint8_t eeprom_byte_write_timeout(uint8_t* p_buffer, uint8_t write_address)
 
         case I2C_TRANSMIT_DATA:
             /* wait until the transmit data buffer is empty */
-            while((!i2c_flag_get(BOARD_I2C, I2C_FLAG_TBE)) && (timeout < I2C_TIME_OUT)){
+            while((!i2c_flag_get(I2CX, I2C_FLAG_TBE)) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
                 /* send the EEPROM's internal address to write to : only one byte address */
-                i2c_data_transmit(BOARD_I2C, write_address);
+                i2c_data_transmit(I2CX, write_address);
                 timeout = 0;
             }else{
                 timeout = 0;
@@ -179,13 +178,13 @@ uint8_t eeprom_byte_write_timeout(uint8_t* p_buffer, uint8_t write_address)
             }
 
             /* wait until BTC bit is set */
-            while((!i2c_flag_get(BOARD_I2C, I2C_FLAG_BTC)) && (timeout < I2C_TIME_OUT)){
+            while((!i2c_flag_get(I2CX, I2C_FLAG_BTC)) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
                 /* send the EEPROM's internal address to write to : only one byte address */
-                i2c_data_transmit(BOARD_I2C, *p_buffer); 
+                i2c_data_transmit(I2CX, *p_buffer);
                 timeout = 0;
             }else{
                 timeout = 0;
@@ -194,7 +193,7 @@ uint8_t eeprom_byte_write_timeout(uint8_t* p_buffer, uint8_t write_address)
             }
 
             /* wait until BTC bit is set */
-            while((!i2c_flag_get(BOARD_I2C, I2C_FLAG_BTC)) && (timeout < I2C_TIME_OUT)){
+            while((!i2c_flag_get(I2CX, I2C_FLAG_BTC)) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
@@ -210,9 +209,9 @@ uint8_t eeprom_byte_write_timeout(uint8_t* p_buffer, uint8_t write_address)
 
         case I2C_STOP:
             /* send a stop condition to I2C bus */
-            i2c_stop_on_bus(BOARD_I2C);
+            i2c_stop_on_bus(I2CX);
             /* i2c master sends STOP signal successfully */
-            while((I2C_CTL0(BOARD_I2C) & 0x0200) && (timeout < I2C_TIME_OUT)){
+            while((I2C_CTL0(I2CX) & I2C_CTL0_STOP) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
@@ -257,12 +256,12 @@ uint8_t eeprom_page_write_timeout(uint8_t* p_buffer, uint8_t write_address, uint
         switch(state){
         case I2C_START:
             /* i2c master sends start signal only when the bus is idle */
-            while(i2c_flag_get(BOARD_I2C, I2C_FLAG_I2CBSY)&&(timeout < I2C_TIME_OUT)){
+            while(i2c_flag_get(I2CX, I2C_FLAG_I2CBSY)&&(timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
-                i2c_start_on_bus(BOARD_I2C);
+                i2c_start_on_bus(I2CX);
                 timeout = 0;
                 state = I2C_SEND_ADDRESS;
             }else{
@@ -275,12 +274,12 @@ uint8_t eeprom_page_write_timeout(uint8_t* p_buffer, uint8_t write_address, uint
 
         case I2C_SEND_ADDRESS:
             /* i2c master sends START signal successfully */
-            while((! i2c_flag_get(BOARD_I2C, I2C_FLAG_SBSEND))&&(timeout < I2C_TIME_OUT)){
+            while((! i2c_flag_get(I2CX, I2C_FLAG_SBSEND))&&(timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
-                i2c_master_addressing(BOARD_I2C, eeprom_address, I2C_TRANSMITTER);
+                i2c_master_addressing(I2CX, eeprom_address, I2C_TRANSMITTER);
                 timeout = 0;
                 state = I2C_CLEAR_ADDRESS_FLAG;
             }else{
@@ -292,12 +291,12 @@ uint8_t eeprom_page_write_timeout(uint8_t* p_buffer, uint8_t write_address, uint
 
         case I2C_CLEAR_ADDRESS_FLAG:
             /* address flag set means i2c slave sends ACK */
-            while((! i2c_flag_get(BOARD_I2C, I2C_FLAG_ADDSEND)) && (timeout < I2C_TIME_OUT)){
+            while((! i2c_flag_get(I2CX, I2C_FLAG_ADDSEND)) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
-                i2c_flag_clear(BOARD_I2C, I2C_FLAG_ADDSEND);
+                i2c_flag_clear(I2CX, I2C_FLAG_ADDSEND);
                 timeout = 0;
                 state = I2C_TRANSMIT_DATA;
             }else{
@@ -309,13 +308,13 @@ uint8_t eeprom_page_write_timeout(uint8_t* p_buffer, uint8_t write_address, uint
 
         case I2C_TRANSMIT_DATA:
             /* wait until the transmit data buffer is empty */
-            while((!i2c_flag_get(BOARD_I2C, I2C_FLAG_TBE)) && (timeout < I2C_TIME_OUT)){
+            while((!i2c_flag_get(I2CX, I2C_FLAG_TBE)) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
                 /* send the EEPROM's internal address to write to : only one byte address */
-                i2c_data_transmit(BOARD_I2C, write_address);
+                i2c_data_transmit(I2CX, write_address);
                 timeout = 0;
             }else{
                 timeout = 0;
@@ -324,7 +323,7 @@ uint8_t eeprom_page_write_timeout(uint8_t* p_buffer, uint8_t write_address, uint
             }
 
             /* wait until BTC bit is set */
-            while((!i2c_flag_get(BOARD_I2C, I2C_FLAG_BTC)) && (timeout < I2C_TIME_OUT)){
+            while((!i2c_flag_get(I2CX, I2C_FLAG_BTC)) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
@@ -337,13 +336,13 @@ uint8_t eeprom_page_write_timeout(uint8_t* p_buffer, uint8_t write_address, uint
             }
 
             while(number_of_byte--){
-                i2c_data_transmit(BOARD_I2C, *p_buffer);
+                i2c_data_transmit(I2CX, *p_buffer);
 
                 /* point to the next byte to be written */
                 p_buffer++;
 
                 /* wait until BTC bit is set */
-                while((!i2c_flag_get(BOARD_I2C, I2C_FLAG_BTC)) && (timeout < I2C_TIME_OUT)){
+                while((!i2c_flag_get(I2CX, I2C_FLAG_BTC)) && (timeout < I2C_TIME_OUT)){
                     timeout++;
                 }
 
@@ -362,10 +361,10 @@ uint8_t eeprom_page_write_timeout(uint8_t* p_buffer, uint8_t write_address, uint
 
         case I2C_STOP:
             /* send a stop condition to I2C bus */
-            i2c_stop_on_bus(BOARD_I2C);
+            i2c_stop_on_bus(I2CX);
 
             /* i2c master sends STOP signal successfully */
-            while((I2C_CTL0(BOARD_I2C) & 0x0200) && (timeout < I2C_TIME_OUT)){
+            while((I2C_CTL0(I2CX) & I2C_CTL0_STOP) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
@@ -476,14 +475,14 @@ uint8_t eeprom_buffer_read_timeout(uint8_t* p_buffer, uint8_t read_address, uint
         case I2C_START:
             if(RESET == read_cycle){
                 /* i2c master sends start signal only when the bus is idle */
-                while(i2c_flag_get(BOARD_I2C, I2C_FLAG_I2CBSY) && (timeout < I2C_TIME_OUT)){
+                while(i2c_flag_get(I2CX, I2C_FLAG_I2CBSY) && (timeout < I2C_TIME_OUT)){
                     timeout++;
                 }
 
                 if(timeout < I2C_TIME_OUT){
                     /* whether to send ACK or not for the next byte */
                     if(2 == number_of_byte){
-                        i2c_ackpos_config(BOARD_I2C,I2C_ACKPOS_NEXT);
+                        i2c_ackpos_config(I2CX, I2C_ACKPOS_NEXT);
                     }
                 }else{
                     i2c_bus_reset();
@@ -494,26 +493,29 @@ uint8_t eeprom_buffer_read_timeout(uint8_t* p_buffer, uint8_t read_address, uint
             }
 
             /* send the start signal */
-            i2c_start_on_bus(BOARD_I2C);
+            i2c_start_on_bus(I2CX);
             timeout = 0;
             state = I2C_SEND_ADDRESS;
             break;
 
         case I2C_SEND_ADDRESS:
             /* i2c master sends START signal successfully */
-            while((!i2c_flag_get(BOARD_I2C, I2C_FLAG_SBSEND)) && (timeout < I2C_TIME_OUT)){
+            while((!i2c_flag_get(I2CX, I2C_FLAG_SBSEND)) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
                 if(RESET == read_cycle){
-                    i2c_master_addressing(BOARD_I2C, eeprom_address, I2C_TRANSMITTER);
-                    state   = I2C_CLEAR_ADDRESS_FLAG;
+                    i2c_master_addressing(I2CX, eeprom_address, I2C_TRANSMITTER);
+                    state = I2C_CLEAR_ADDRESS_FLAG;
                 }else{
-                    i2c_master_addressing(BOARD_I2C, eeprom_address, I2C_RECEIVER);
+                    i2c_master_addressing(I2CX, eeprom_address, I2C_RECEIVER);
                     if(number_of_byte < 3){
                         /* disable acknowledge */
-                        i2c_ack_config(BOARD_I2C,I2C_ACK_DISABLE);
+                        i2c_ack_config(I2CX,I2C_ACK_DISABLE);
+                    }else{
+                        /* enable acknowledge */
+                        i2c_ack_config(I2CX, I2C_ACK_ENABLE);
                     }
                     state = I2C_CLEAR_ADDRESS_FLAG;
                 }
@@ -521,22 +523,22 @@ uint8_t eeprom_buffer_read_timeout(uint8_t* p_buffer, uint8_t read_address, uint
             }else{
                 timeout = 0;
                 state = I2C_START;
-                read_cycle=0;
+                read_cycle = 0;
                 printf("i2c master sends start signal timeout in READ!\n");
             }
             break;
 
         case I2C_CLEAR_ADDRESS_FLAG:
             /* address flag set means i2c slave sends ACK */
-            while((!i2c_flag_get(BOARD_I2C, I2C_FLAG_ADDSEND)) && (timeout < I2C_TIME_OUT)){
+            while((!i2c_flag_get(I2CX, I2C_FLAG_ADDSEND)) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
-                i2c_flag_clear(BOARD_I2C, I2C_FLAG_ADDSEND);
+                i2c_flag_clear(I2CX, I2C_FLAG_ADDSEND);
                 if((SET == read_cycle) && (1 == number_of_byte)){
                     /* send a stop condition to I2C bus */
-                    i2c_stop_on_bus(BOARD_I2C);
+                    i2c_stop_on_bus(I2CX);
                 }
 
                 timeout = 0;
@@ -544,7 +546,7 @@ uint8_t eeprom_buffer_read_timeout(uint8_t* p_buffer, uint8_t read_address, uint
             }else{
                 timeout = 0;
                 state = I2C_START;
-                read_cycle=0;
+                read_cycle = 0;
                 printf("i2c master clears address flag timeout in READ!\n");
             }
             break;
@@ -552,23 +554,23 @@ uint8_t eeprom_buffer_read_timeout(uint8_t* p_buffer, uint8_t read_address, uint
         case I2C_TRANSMIT_DATA:
             if(RESET == read_cycle){
                 /* wait until the transmit data buffer is empty */
-                while((! i2c_flag_get(BOARD_I2C, I2C_FLAG_TBE)) && (timeout < I2C_TIME_OUT)){
+                while((! i2c_flag_get(I2CX, I2C_FLAG_TBE)) && (timeout < I2C_TIME_OUT)){
                     timeout++;
                 }
 
                 if(timeout < I2C_TIME_OUT){
                     /* send the EEPROM's internal address to write to : only one byte address */
-                    i2c_data_transmit(BOARD_I2C, read_address);
+                    i2c_data_transmit(I2CX, read_address);
                     timeout = 0;
                 }else{
                     timeout = 0;
                     state = I2C_START;
-                    read_cycle=0;
+                    read_cycle = 0;
                     printf("i2c master wait data buffer is empty timeout in READ!\n");
                 }
 
                 /* wait until BTC bit is set */
-                while((!i2c_flag_get(BOARD_I2C, I2C_FLAG_BTC)) && (timeout < I2C_TIME_OUT)){
+                while((!i2c_flag_get(I2CX, I2C_FLAG_BTC)) && (timeout < I2C_TIME_OUT)){
                     timeout++;
                 }
 
@@ -588,25 +590,25 @@ uint8_t eeprom_buffer_read_timeout(uint8_t* p_buffer, uint8_t read_address, uint
 
                     if(3 == number_of_byte){
                         /* wait until BTC bit is set */
-                        while(!i2c_flag_get(BOARD_I2C, I2C_FLAG_BTC));
+                        while(!i2c_flag_get(I2CX, I2C_FLAG_BTC));
                         /* disable acknowledge */
-                        i2c_ack_config(BOARD_I2C,I2C_ACK_DISABLE);
+                        i2c_ack_config(I2CX, I2C_ACK_DISABLE);
                     }
 
                     if(2 == number_of_byte){
                         /* wait until BTC bit is set */
-                        while(!i2c_flag_get(BOARD_I2C, I2C_FLAG_BTC));
+                        while(!i2c_flag_get(I2CX, I2C_FLAG_BTC));
                         /* send a stop condition to I2C bus */
-                        i2c_stop_on_bus(BOARD_I2C);
+                        i2c_stop_on_bus(I2CX);
                     }
 
                     /* wait until RBNE bit is set */
-                    if(i2c_flag_get(BOARD_I2C, I2C_FLAG_RBNE)){
+                    if(i2c_flag_get(I2CX, I2C_FLAG_RBNE)){
                         /* read a byte from the EEPROM */
-                        *p_buffer = i2c_data_receive(BOARD_I2C);
-            
+                        *p_buffer = i2c_data_receive(I2CX);
+
                         /* point to the next location where the byte read will be saved */
-                        p_buffer++; 
+                        p_buffer++;
 
                         /* decrement the read bytes counter */
                         number_of_byte--;
@@ -628,7 +630,7 @@ uint8_t eeprom_buffer_read_timeout(uint8_t* p_buffer, uint8_t read_address, uint
 
         case I2C_STOP:
             /* i2c master sends STOP signal successfully */
-            while((I2C_CTL0(BOARD_I2C) & 0x0200) && (timeout < I2C_TIME_OUT)){
+            while((I2C_CTL0(I2CX) & I2C_CTL0_STOP) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
@@ -663,9 +665,8 @@ uint8_t eeprom_buffer_read_timeout(uint8_t* p_buffer, uint8_t read_address, uint
     \param[out] none
     \retval     none
 */
-uint8_t eeprom_wait_standby_state_timeout()
+uint8_t eeprom_wait_standby_state_timeout(void)
 {
-    __IO uint32_t val = 0;
     uint8_t state = I2C_START;
     uint16_t timeout = 0;
     uint8_t i2c_timeout_flag = 0;
@@ -674,30 +675,30 @@ uint8_t eeprom_wait_standby_state_timeout()
         switch(state){
         case I2C_START:
             /* i2c master sends start signal only when the bus is idle */
-            while(i2c_flag_get(BOARD_I2C, I2C_FLAG_I2CBSY) && (timeout < I2C_TIME_OUT)){
+            while(i2c_flag_get(I2CX, I2C_FLAG_I2CBSY) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
-                i2c_start_on_bus(BOARD_I2C);
+                i2c_start_on_bus(I2CX);
                 timeout = 0;
                 state = I2C_SEND_ADDRESS;
             }else{
                 i2c_bus_reset();
                 timeout = 0;
                 state = I2C_START;
-                printf("i2c bus is busy!\n");
+                printf("i2c bus is busy in EEPROM standby!\n");
             }
             break;
 
         case I2C_SEND_ADDRESS:
             /* i2c master sends START signal successfully */
-            while((!i2c_flag_get(BOARD_I2C, I2C_FLAG_SBSEND)) && (timeout < I2C_TIME_OUT)){
+            while((!i2c_flag_get(I2CX, I2C_FLAG_SBSEND)) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
-                i2c_master_addressing(BOARD_I2C, eeprom_address, I2C_TRANSMITTER);
+                i2c_master_addressing(I2CX, eeprom_address, I2C_TRANSMITTER);
                 timeout = 0;
                 state = I2C_CLEAR_ADDRESS_FLAG;
             }else{
@@ -708,24 +709,24 @@ uint8_t eeprom_wait_standby_state_timeout()
             break;
 
         case I2C_CLEAR_ADDRESS_FLAG:
-            while((!((i2c_flag_get(BOARD_I2C, I2C_FLAG_ADDSEND)) || ( i2c_flag_get(BOARD_I2C, I2C_FLAG_AERR)))) && (timeout < I2C_TIME_OUT)){
+            while((!((i2c_flag_get(I2CX, I2C_FLAG_ADDSEND)) || ( i2c_flag_get(I2CX, I2C_FLAG_AERR)))) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
             if(timeout < I2C_TIME_OUT){
-                if(i2c_flag_get(BOARD_I2C, I2C_FLAG_ADDSEND)){
-                    i2c_flag_clear(BOARD_I2C, I2C_FLAG_ADDSEND);
+                if(i2c_flag_get(I2CX, I2C_FLAG_ADDSEND)){
+                    i2c_flag_clear(I2CX, I2C_FLAG_ADDSEND);
                     timeout = 0;
 
                     /* send a stop condition to I2C bus */
-                    i2c_stop_on_bus(BOARD_I2C);
+                    i2c_stop_on_bus(I2CX);
                     i2c_timeout_flag = I2C_OK;
 
                     /* exit the function */
                     return I2C_END;
                 }else{
-                    /* clear the bit of AE */
-                    i2c_flag_clear(BOARD_I2C,I2C_FLAG_AERR);
+                    /* clear the bit of AERR */
+                    i2c_flag_clear(I2CX, I2C_FLAG_AERR);
                     timeout = 0;
                     state = I2C_STOP;
                 }
@@ -738,10 +739,10 @@ uint8_t eeprom_wait_standby_state_timeout()
 
         case I2C_STOP:
             /* send a stop condition to I2C bus */
-            i2c_stop_on_bus(BOARD_I2C);
+            i2c_stop_on_bus(I2CX);
 
             /* i2c master sends STOP signal successfully */
-            while((I2C_CTL0(BOARD_I2C)&0x0200) && (timeout < I2C_TIME_OUT)){
+            while((I2C_CTL0(I2CX) & I2C_CTL0_STOP) && (timeout < I2C_TIME_OUT)){
                 timeout++;
             }
 
@@ -758,7 +759,7 @@ uint8_t eeprom_wait_standby_state_timeout()
         default:
             state = I2C_START;
             timeout = 0;
-            printf("i2c master sends start signal end in EEPROM standby!.\n");
+            printf("i2c master sends start signal end in EEPROM standby!\n");
             break;
         }
     }

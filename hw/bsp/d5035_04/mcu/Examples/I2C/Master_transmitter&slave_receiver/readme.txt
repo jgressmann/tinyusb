@@ -1,12 +1,12 @@
 /*!
     \file    readme.txt
     \brief   description of the master transmitter and slave receiver
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -33,8 +33,8 @@ OF SUCH DAMAGE.
 */
 
   This demo is based on the GD32C103V-EVAL-V1.0 board, it shows the I2C programming mode in master 
-transmitter mode and slave receiving mode. In this demo,I2C0 is operated as master transmitter
-,I2C1 is operated as slave receiver and the SCL line and SDA line of I2C interface are controlled 
+transmitter mode and slave receiving mode. In this demo,I2C0 is operated as master transmitter, 
+I2C1 is operated as slave receiver and the SCL line and SDA line of I2C interface are controlled 
 by the I/O pin PB10 and PB11(or PB6 and PB7) respectively.
 
   This demo shows the sending data process of the master and the receiving data process of the slave.

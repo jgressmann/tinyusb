@@ -1,12 +1,12 @@
 /*!
     \file    main.c
     \brief   master transmitter slave receiver through DMA
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -36,12 +36,12 @@ OF SUCH DAMAGE.
 #include <stdio.h>
 #include "gd32c10x_eval.h"
 
-#define I2C0_SLAVE_ADDRESS7    0x82
-#define I2C1_SLAVE_ADDRESS7    0x72
+#define I2C0_SLAVE_ADDRESS7      0x82
+#define I2C1_SLAVE_ADDRESS7      0x72
 #define ARRAYNUM(arr_nanme)      (uint32_t)(sizeof(arr_nanme) / sizeof(*(arr_nanme)))
-#define I2C0_DATA_ADDRESS        0x40005410
-#define I2C1_DATA_ADDRESS        0x40005810
-#define BUFFER_SIZE             (ARRAYNUM(i2c0_buff_tx)-1)
+#define I2C0_DATA_ADDRESS        (uint32_t)&I2C_DATA(I2C0)
+#define I2C1_DATA_ADDRESS        (uint32_t)&I2C_DATA(I2C1)
+#define BUFFER_SIZE              (ARRAYNUM(i2c0_buff_tx)-1)
 
 uint8_t i2c0_buff_tx[] = "I2C DMA test";
 uint8_t i2c1_buff_rx[BUFFER_SIZE];
@@ -61,11 +61,15 @@ ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint16_t length);
 int main(void)
 {
     dma_parameter_struct dma_init_struct;
-    
+
+    /* initialize LEDs */
     gd_eval_led_init(LED2);
     gd_eval_led_init(LED3);
+    /* configure RCU */
     rcu_config();
+    /* configure GPIO */
     gpio_config();
+    /* configure I2C */
     i2c_config();
 
     /* initialize DMA channel4 */
@@ -90,7 +94,7 @@ int main(void)
     dma_init_struct.periph_addr = I2C0_DATA_ADDRESS;
     dma_init_struct.priority = DMA_PRIORITY_HIGH;
     dma_init(DMA0, DMA_CH5, &dma_init_struct);
-    
+
     /* wait until I2C bus is idle */
     while(i2c_flag_get(I2C0, I2C_FLAG_I2CBSY));
 
@@ -109,11 +113,11 @@ int main(void)
     /* clear ADDSEND bit */
     i2c_flag_clear(I2C0, I2C_FLAG_ADDSEND);
     i2c_flag_clear(I2C1, I2C_FLAG_ADDSEND);
-    
+
     /* enable I2C1 DMA */
-    i2c_dma_enable(I2C1, I2C_DMA_ON);
+    i2c_dma_config(I2C1, I2C_DMA_ON);
     /* enable I2C0 DMA */
-    i2c_dma_enable(I2C0, I2C_DMA_ON);
+    i2c_dma_config(I2C0, I2C_DMA_ON);
     /* enable DMA0 channel4 */
     dma_channel_enable(DMA0, DMA_CH4);
     /* enable DMA0 channel5 */
@@ -127,7 +131,7 @@ int main(void)
     /* send a stop condition to I2C bus*/
     i2c_stop_on_bus(I2C0);
     /* wait until stop condition generate */
-    while(I2C_CTL0(I2C0)&0x0200);
+    while(I2C_CTL0(I2C0) & I2C_CTL0_STOP);
     while(!i2c_flag_get(I2C1, I2C_FLAG_STPDET));
     /* clear the STPDET bit */
     i2c_enable(I2C1);
@@ -139,7 +143,9 @@ int main(void)
         gd_eval_led_off(LED2);
         gd_eval_led_off(LED3); 
     }
-    while(1);
+
+    while(1){
+    }
 }
 
 /*!
@@ -152,8 +158,8 @@ int main(void)
 */
 ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint16_t length) 
 {
-    while(length--){
-        if(*src++ != *dst++){
+    while(length--) {
+        if(*src++ != *dst++) {
             return ERROR;
         }
     }

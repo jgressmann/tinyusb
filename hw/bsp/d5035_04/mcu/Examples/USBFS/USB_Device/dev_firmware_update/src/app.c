@@ -2,11 +2,11 @@
     \file    app.c
     \brief   USB main routine for HID device(USB keyboard)
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc. 
+    Copyright (c) 2023, GigaDevice Semiconductor Inc. 
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -37,6 +37,10 @@ OF SUCH DAMAGE.
 
 usb_core_driver usb_dfu_dev;
 
+#define SRAM_SIZE  REG16(0x1ffff7e2)*1024
+#define SRAM_START_ADDRESS  SRAM_BASE
+#define SRAM_END_ADDRESS    SRAM_BASE+SRAM_SIZE
+
 /*!
     \brief      main routine will construct a USB keyboard
     \param[in]  none
@@ -47,13 +51,14 @@ int main(void)
 {
     app_func application;
     uint32_t app_addr;
+    uint32_t sram_sect = REG32(APP_LOADED_ADDR);
 
     /* configure tamper key to run firmware */
     gd_eval_key_init(KEY_TAMPER, KEY_MODE_GPIO);
 
     if(1U == gd_eval_key_state_get(KEY_TAMPER)){
         /* test if user code is programmed starting from address 0x08008000 */
-        if (0x20000000U == ((*(__IO uint32_t*)APP_LOADED_ADDR) & 0x2FFE0000U)) {
+        if ((sram_sect > SRAM_START_ADDRESS)&&((sram_sect < SRAM_END_ADDRESS))) {
             app_addr = *(__IO uint32_t*) (APP_LOADED_ADDR + 4U);
             application = (app_func) app_addr;
 
@@ -73,20 +78,9 @@ int main(void)
     usbd_init(&usb_dfu_dev, USB_CORE_ENUM_FS, &dfu_desc, &dfu_class);
 
     usb_intr_config();
-    
-#ifdef USE_IRC48M
-    /* CTC peripheral clock enable */
-    rcu_periph_clock_enable(RCU_CTC);
-
-    /* CTC configure */
-    ctc_config();
-
-    while (ctc_flag_get(CTC_FLAG_CKOK) == RESET) {
-    }
-#endif
 
     /* check if USB device is enumerated successfully */
-    while (usb_dfu_dev.dev.cur_status != USBD_CONFIGURED) {
+    while (USBD_CONFIGURED != usb_dfu_dev.dev.cur_status) {
     }
 
     while (1) {

@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of the USB DFU device demo
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc. 
+    Copyright (c) 2023, GigaDevice Semiconductor Inc. 
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -32,7 +32,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 OF SUCH DAMAGE.
 */
 
-  This demo is based on the GD32C103V-EVAL-V1.0 board,it presents the implementation 
+  This demo is based on the GD32C103V-EVAL board,it presents the implementation 
 of a device firmware upgrade (DFU) capability in the GD32 USB device.
 
   It follows the DFU class specification defined by the USB Implementers Forum for 
@@ -41,18 +41,24 @@ reprogramming an application through USBFS.
   The DFU principle is particularly well suited to USBFS applications that 
 need to be reprogrammed in the field.
 
-  To test the demo, you need a configuration hex image or bin image . The hex image 
-and the bin image should set application address at 0x8004000. You can refer to 
-"../Utilities/Binary/DFU_Images" folder and use the hex images and bin images in it.
+  The supported memorys of this example are the internal flash memory, the external 
+nand flash memory and the external nor flash memory.
 
-  You need install the corresponding GD DFU Driver with your PC operation system. 
+  To test the demo, the internal flash is used as an example:
 
-  Once the configuration *.hex image is generated, it can be downloaded into 
-internal flash memory using the GD tool "GD MCU DFU Tool" available for download 
-from www.gd32mcu.com.
+  Step 1: User need a configuration hex image or bin image. The hex image and the bin image 
+should set application address at APP_LOADED_ADDR in the internal flash memory.
 
-  The GD tool "GD MCU DFU Tool" also can operate the option Byte.
+  Step 2: User need install the corresponding GD DFU Driver with your PC operation system. 
 
-  The supported memory for this example is the internal flash memory, you can also
-add a new memory interface if you have external memory.
+  Step 3: Once the configuration *.hex image is generated, it can be downloaded into the 
+internal flash memory or the external falsh memory using the GD tool "GD32 MCU DFUEx Tool
+" available for download from http://www.gd32mcu.com/cn/download.
+
+  The GD tool "GD32AllInOneProgrammer" can operate the option Byte in the internal flash.
+
+  Step 4: After each device reset, hold down the TAMPER key on the GD32C103V-EVAL board into app 
+routine in the internal flash.
+
+
 

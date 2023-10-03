@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of the low voltage detector demo
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -32,12 +32,8 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 OF SUCH DAMAGE.
 */
 
-  This example is based on the GD32C103V-EVAL-V1.0 board, it shows how to use low voltage detector.
-
-  If VDD/VDDA is higher or lower than the LVD threshold, then a lvd event will occur. The event
+  This example is based on the GD32C103V-EVAL-V1.0 board, it shows how to use low voltage detector. 
+If VDD/VDDA is higher or lower than the LVD threshold, then a LVD event will occur. The event
 is internally connected to the EXTI line 16 and can generate an interrupt if enabled through
-the EXTI registers. Use external power connect 3.3v pin and GND pin of the board , adjust 
-voltage higher or lower than the LVD threshold 3.1v, LED2 will toggle.
-
-  Then press the user key to reconfigure the LVD threshold to 2.6v. Adjust voltage like before, 
-LED2 will toggle depending on whether the voltage is higher than 2.6v or not.
+the EXTI registers. Use external power connect 3.3v pin and GND pin of the board, adjust 
+voltage higher or lower than the LVD threshold 2.9v, LED2 will toggle.

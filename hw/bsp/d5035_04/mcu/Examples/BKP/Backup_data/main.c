@@ -2,11 +2,11 @@
     \file    main.c
     \brief   backup data register
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -71,8 +71,8 @@ int main(void)
 */
 void led_config(void)
 {
+    gd_eval_led_init(LED1);
     gd_eval_led_init(LED2);
-    gd_eval_led_init(LED3);
 }
 
 /*!
@@ -100,8 +100,8 @@ void backup_register_write_and_check(void)
     /* check if backup data registers has been written */
     if(0x00 == check_backup_register(DATA)){
         /* backup data registers values are correct */
-        /* turn on LED2 */
-        gd_eval_led_on(LED2);
+        /* turn on LED1 */
+        gd_eval_led_on(LED1);
     }else{
         /* enable the peripheral clock */
         rcu_config();
@@ -112,8 +112,8 @@ void backup_register_write_and_check(void)
         /* backup data registers values are not correct or they have not been written */
         /* write data to backup data registers */
         write_backup_register(DATA);
-        /* turn on LED3 */
-        gd_eval_led_on(LED3);
+        /* turn on LED2 */
+        gd_eval_led_on(LED2);
     }
 }
 

@@ -2,11 +2,11 @@
     \file    main.c
     \brief   USART IrDA transmitter and receiver
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -127,9 +127,9 @@ int main(void)
         gd_eval_led_on(LED2);
         gd_eval_led_on(LED3);
     }else{
-        /* if failed, LED4 and LED5 are on */
-        gd_eval_led_on(LED4);
-        gd_eval_led_on(LED5); 
+        /* if failed, LED2 and LED3 are on */
+        gd_eval_led_off(LED2);
+        gd_eval_led_off(LED3); 
     }
     while(1){
     }
@@ -150,11 +150,11 @@ void usart_nvic_config(void)
 
 /*!
     \brief      memory compare function
-    \param[in]  src : source data
-    \param[in]  dst : destination data
-    \param[in]  length : the compare data length
+    \param[in]  src: source data
+    \param[in]  dst: destination data
+    \param[in]  length: the compare data length
     \param[out] none
-    \retval     ErrStatus : ERROR or SUCCESS
+    \retval     ErrStatus: ERROR or SUCCESS
 */
 ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint16_t length) 
 {

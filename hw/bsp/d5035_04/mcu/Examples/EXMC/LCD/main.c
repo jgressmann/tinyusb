@@ -2,11 +2,11 @@
     \file    main.c
     \brief   LCD test demo
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -71,7 +71,8 @@ void draw_picture(void)
     /* clear the LCD screen */
     lcd_clear(WHITE);    
     /* draw the picture of Gigadevice logo */
-    lcd_picture_draw(40,100,40+160-1,100+87-1,(uint16_t *)(picture + BMP_HEADSIZE));
+    lcd_picture_draw(60,100,60+120-1,100+95-1,(uint16_t *)(picture + BMP_HEADSIZE));
+
     /* draw a rectangle */
     lcd_rectangle_draw(10,10,230,310,BLUE);
 

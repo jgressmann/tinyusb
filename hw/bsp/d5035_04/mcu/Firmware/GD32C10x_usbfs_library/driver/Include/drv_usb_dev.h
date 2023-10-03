@@ -2,11 +2,11 @@
     \file    drv_usb_dev.h
     \brief   USB device low level driver header file
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -96,8 +96,6 @@ typedef struct
     uint32_t       xfer_count;                                          /*!< transmit buffer count */
 
     uint32_t       remain_len;                                          /*!< remain packet length */
-
-    uint32_t       dma_addr;                                            /*!< DMA address */
 } usb_transc;
 
 typedef struct _usb_core_driver usb_dev;
@@ -153,7 +151,7 @@ typedef struct _usb_core_driver
     usb_perp_dev       dev;                                     /*!< USB peripheral device */
 } usb_core_driver;
 
-/* static inline function definitions */
+/* static in-line function definitions */
 
 /*!
     \brief      configure the USB device to be disconnected

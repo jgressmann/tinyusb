@@ -360,7 +360,7 @@
             <useXO>0</useXO>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>USE_STDPERIPH_DRIVER,GD32C10X,GD32C103V_EVAL</Define>
+              <Define>USE_STDPERIPH_DRIVER,GD32C10X</Define>
               <Undefine></Undefine>
               <IncludePath>..\;..\..\Firmware\CMSIS;..\..\Firmware\CMSIS\GD\GD32C10x\Include;..\..\Firmware\GD32C10x_standard_peripheral\Include;..\..\Utilities;..\..\Utilities\LCD_Commom</IncludePath>
             </VariousControls>

@@ -2,11 +2,11 @@
     \file    usbd_enum.h
     \brief   USB enumeration definitions
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -57,11 +57,7 @@ enum _str_index
     STR_IDX_SERIAL                = 0x3U,  /* serial string index */
     STR_IDX_CONFIG                = 0x4U,  /* configuration string index */
     STR_IDX_ITF                   = 0x5U,  /* interface string index */
-#ifndef WINUSB_EXEMPT_DRIVER
-    STR_IDX_MAX                   = 0x6U,  /* string maximum index */
-#else
     STR_IDX_MAX                   = 0xEFU, /* string maximum index */
-#endif /* WINUSB_EXEMPT_DRIVER */
 };
 
 typedef enum _usb_pwrsta {
@@ -97,7 +93,7 @@ usb_reqsta usbd_class_request (usb_core_driver *udev, usb_req *req);
 usb_reqsta usbd_vendor_request (usb_core_driver *udev, usb_req *req);
 /* handle USB enumeration error */
 void usbd_enum_error (usb_core_driver *udev, usb_req *req);
-/* convert hex 32bits value into unicode char */
+/* convert hex 32bits value into Unicode char */
 void int_to_unicode (uint32_t value, uint8_t *pbuf, uint8_t len);
 /* get serial string */
 void serial_string_get (uint16_t *unicode_str);

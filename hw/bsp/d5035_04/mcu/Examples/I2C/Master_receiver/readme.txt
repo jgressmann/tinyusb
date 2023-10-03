@@ -1,12 +1,12 @@
 /*!
     \file    readme.txt
     \brief   description of the master receiver
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -44,6 +44,7 @@ the received data in the i2c_receiver array.
 specific slave.In the specific application, we must send the correct slave 
 address, and the master and the slave may need to be connected by the jumper 
 if necessary. When the macro I2C_10BIT_ADDRESS is 1, I2C communicate in 10 bit
-addressing mode, otherwise, I2C communicate in 7 bit addressing mode.
+addressing mode, otherwise, I2C communicate in 7 bit addressing mode. When the 
+data is received completely, the received data will be printed by COM0.
 
-  P4 must be fitted.
+  JP5 must be fitted to the USART0 port.  JP5, JP6 must be fitted to the USART0 port.

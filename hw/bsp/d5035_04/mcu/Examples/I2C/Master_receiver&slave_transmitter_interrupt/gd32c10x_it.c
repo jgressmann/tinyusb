@@ -1,12 +1,12 @@
 /*!
     \file    gd32c10x_it.h
     \brief   the header file of the ISR
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -33,7 +33,7 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32c10x_it.h"
-#include "I2C_IE.h"
+#include "i2c_ie.h"
 
 /*!
     \brief      this function handles NMI exception
@@ -54,7 +54,8 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
     /* if Hard Fault exception occurs, go to infinite loop */
-    while (1);
+    while(1) {
+    }
 }
 
 /*!
@@ -66,7 +67,8 @@ void HardFault_Handler(void)
 void MemManage_Handler(void)
 {
     /* if Memory Manage exception occurs, go to infinite loop */
-    while (1);
+    while(1) {
+    }
 }
 
 /*!
@@ -78,7 +80,8 @@ void MemManage_Handler(void)
 void BusFault_Handler(void)
 {
     /* if Bus Fault exception occurs, go to infinite loop */
-    while (1);
+    while(1) {
+    }
 }
 
 /*!
@@ -90,7 +93,8 @@ void BusFault_Handler(void)
 void UsageFault_Handler(void)
 {
     /* if Usage Fault exception occurs, go to infinite loop */
-    while (1);
+    while(1) {
+    }
 }
 
 /*!
@@ -131,7 +135,7 @@ void PendSV_Handler(void)
 */
 void I2C0_EV_IRQHandler(void)
 {
-    I2C0_EventIRQ_Handler();
+    i2c0_event_irq_handler();
 }
 
 /*!
@@ -142,7 +146,7 @@ void I2C0_EV_IRQHandler(void)
 */
 void I2C0_ER_IRQHandler(void)
 {
-    I2C0_ErrorIRQ_Handler();
+    i2c0_error_irq_handler();
 }
 
 /*!
@@ -153,7 +157,7 @@ void I2C0_ER_IRQHandler(void)
 */
 void I2C1_EV_IRQHandler(void)
 {
-    I2C1_EventIRQ_Handler();
+    i2c1_event_irq_handler();
 }
 
 /*!
@@ -164,5 +168,5 @@ void I2C1_EV_IRQHandler(void)
 */
 void I2C1_ER_IRQHandler(void)
 {
-    I2C1_ErrorIRQ_Handler();
+    i2c1_error_irq_handler();
 }

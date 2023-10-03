@@ -2,11 +2,11 @@
     \file    gd32c10x_eval.h
     \brief   definitions for GD32C10X_EVAL's leds, keys and COM ports hardware resources
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -44,17 +44,19 @@ OF SUCH DAMAGE.
 /* exported types */
 typedef enum 
 {
-    LED2 = 0,
-    LED3 = 1,
-    LED4 = 2,
-    LED5 = 3
+    LED1 = 0,
+    LED2 = 1,
+    LED3 = 2,
+    LED4 = 3,
+    LED_MAX
 } led_typedef_enum;
 
 typedef enum 
 {
     KEY_WAKEUP = 0,
     KEY_TAMPER = 1,
-    KEY_USER   = 2
+    KEY_USER   = 2,
+    KEY_MAX
 } key_typedef_enum;
 
 typedef enum 
@@ -64,23 +66,21 @@ typedef enum
 } keymode_typedef_enum;
 
 /* eval board low layer led */
-#define LEDn                             4U
+#define LED1_PIN                         GPIO_PIN_0
+#define LED1_GPIO_PORT                   GPIOC
+#define LED1_GPIO_CLK                    RCU_GPIOC
 
-#define LED2_PIN                         GPIO_PIN_0
+#define LED2_PIN                         GPIO_PIN_2
 #define LED2_GPIO_PORT                   GPIOC
 #define LED2_GPIO_CLK                    RCU_GPIOC
-  
-#define LED3_PIN                         GPIO_PIN_2
-#define LED3_GPIO_PORT                   GPIOC
-#define LED3_GPIO_CLK                    RCU_GPIOC
-  
-#define LED4_PIN                         GPIO_PIN_0
+
+#define LED3_PIN                         GPIO_PIN_0
+#define LED3_GPIO_PORT                   GPIOE
+#define LED3_GPIO_CLK                    RCU_GPIOE
+
+#define LED4_PIN                         GPIO_PIN_1
 #define LED4_GPIO_PORT                   GPIOE
 #define LED4_GPIO_CLK                    RCU_GPIOE
-  
-#define LED5_PIN                         GPIO_PIN_1
-#define LED5_GPIO_PORT                   GPIOE
-#define LED5_GPIO_CLK                    RCU_GPIOE
 
 #define COMn                             2U
 
@@ -98,7 +98,6 @@ typedef enum
 #define EVAL_COM1_GPIO_PORT              GPIOA
 #define EVAL_COM1_GPIO_CLK               RCU_GPIOA
 
-#define KEYn                             3U
 
 /* wakeup push-button */
 #define WAKEUP_KEY_PIN                   GPIO_PIN_0

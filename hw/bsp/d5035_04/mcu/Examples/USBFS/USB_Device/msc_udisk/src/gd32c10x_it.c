@@ -1,12 +1,12 @@
 /*!
-    \file  gd32c10x_it.c
-    \brief main interrupt service routines
+    \file    gd32c10x_it.c
+    \brief   main interrupt service routines
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc. 
+    Copyright (c) 2023, GigaDevice Semiconductor Inc. 
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -169,7 +169,7 @@ void USBFS_WKUP_IRQHandler(void)
 
         rcu_periph_clock_enable(RCU_USBFS);
 
-         usb_clock_active(&msc_udisk);
+        usb_clock_active(&msc_udisk);
     }
 
     exti_interrupt_flag_clear(EXTI_18);

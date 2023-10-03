@@ -2,12 +2,11 @@
     \file    custom_hid_core.c
     \brief   custom HID class driver
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
-    \version 2021-06-22, V1.0.1, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -449,9 +448,9 @@ static uint8_t custom_hid_data_out (usb_dev *udev, uint8_t ep_num)
     switch (hid->data[0]){
     case 0x11U:
         if (RESET != hid->data[1]) {
-            gd_eval_led_on(LED5);
+            gd_eval_led_on(LED1);
         } else {
-            gd_eval_led_off(LED5);
+            gd_eval_led_off(LED1);
         }
         break;
 

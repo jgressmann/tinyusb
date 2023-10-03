@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of the DMA flash to ram example
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -45,4 +45,4 @@ embedded SRAM memory by DMA0 Channel 0. The transfer is started by enabling the 
 At the end of the transfer, a Transfer Complete interrupt is generated since it
 is enabled. A comparison between the FLASH memory and embedded SRAM memory is done to
 check that all data have been correctly transferred. If the result of comparison is passed,
-LED2 to LED5 light up. Otherwise LED2 and LED4 light up.
+LED1 to LED4 light up. Otherwise LED2 and LED4 light up.

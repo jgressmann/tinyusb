@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of using the I2C bus to write and read EEPROM by DMA
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -35,7 +35,7 @@ OF SUCH DAMAGE.
   This demo is based on the GD32C103V-EVAL-V1.0 board. It describes a 
 communication method between I2C bus and EEPROM with timeout and bus 
 release function. The communication use DMA to transmit and receive data. 
-The access result will be printed by COM0 on GD32C103V-EVAL board.
+The access result will be printed by COM0.
 
   Procedures sequentially writes 256 bytes of data to the EEPROM from the 0x00 
 address, and then the program sequentially reads 256 bytes of data from the 

@@ -2,11 +2,11 @@
     \file    gd32c10x_lcd_eval.h
     \brief   LCD driver header file
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -212,7 +212,7 @@ void lcd_gram_write_prepare(void);
 void lcd_gram_write(uint16_t rgb_code);
 /* read data from GRAM */
 uint16_t lcd_gram_read(void);
-/* set the curson of LCD */
+/* set the cursor of LCD */
 void lcd_cursor_set(uint16_t x,uint16_t y);
 /* clear the LCD screen to the specified color */
 void lcd_clear(uint16_t color);
@@ -224,6 +224,8 @@ uint16_t lcd_point_get(uint16_t x,uint16_t y);
 void lcd_windows_set(uint16_t start_x,uint16_t start_y,uint16_t end_x,uint16_t end_y);
 /* draw a horizontal line on LCD screen */
 void lcd_hline_draw(uint16_t x,uint16_t start_y,uint16_t end_y,uint16_t color,uint16_t width);
+/* draw a vertical line on LCD screen */
+void lcd_vline_draw(uint16_t start_x,uint16_t end_x,uint16_t y,uint16_t color,uint16_t width);
 /* draw a rectangle according to the specified position and color */
 void lcd_rectangle_draw(uint16_t start_x,uint16_t start_y,uint16_t end_x,uint16_t end_y,uint16_t point);
 /* fill the specified color to a rectangle */

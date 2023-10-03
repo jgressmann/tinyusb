@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of the backup data demo
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -38,13 +38,13 @@ when VDD is switched off, its contents will not be lost if a battery is connecte
 to the VBAT pin.
 
   After every power-down and power-up operation, it checks whether value in the 
-backup data registers is correct or not. If yes, LED2 is on, otherwise LED3 is on.
+backup data registers is correct or not. If yes, LED1 is on, otherwise LED2 is on.
 
-  Condition 1: Connect JP0 to Vmcu(+3v3). LED3 will be on when the board is powered up. 
-Then execute a power-down and power-up operation, the light which is on is still LED3.
+  Condition 1: Connect JP0 to Vmcu(+3v3). LED2 will be on when the board is powered up. 
+Then execute a power-down and power-up operation, the light which is on is still LED2.
 
   Condition 2: Install a battery in BT1 and change JP0 connected to Vbat before the 
-board is powered up. LED3 will be on when the board is powered up. Then execute a 
-power-down and power-up operation, the light which is on will be LED2.
+board is powered up. LED2 will be on when the board is powered up. Then execute a 
+power-down and power-up operation, the light which is on will be LED1.
 
   BT1 should have a 3.3V battery, JP0 can change the VBAT source.  

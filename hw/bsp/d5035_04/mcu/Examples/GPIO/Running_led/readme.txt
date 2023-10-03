@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of running led example
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -33,8 +33,8 @@ OF SUCH DAMAGE.
 */
 
   This example is based on the GD32C103V-EVAL board, it provides a description
-of Running_led. After system start-up, firstly, LED2 on, then, LED3 on, four
+of Running_led. After system start-up, firstly, LED1 on, then, LED2 on, four
 LEDs can light periodically.
 
-  On the GD32C103V-EVAL board,LED2 connected to PC0, LED3 connected to PC2, LED4
-connected to PE0, LED5 connected to PE1.
+  On the GD32C103V-EVAL board,LED1 connected to PC0, LED2 connected to PC2, LED3
+connected to PE0, LED4 connected to PE1.

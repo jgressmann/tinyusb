@@ -41,11 +41,11 @@
         </option>
         <option>
           <name>MemOverride</name>
-          <state>1</state>
+          <state>0</state>
         </option>
         <option>
           <name>MemFile</name>
-          <state>$TOOLKIT_DIR$\CONFIG\debugger\GD\GD32E103xB.ddf</state>
+          <state>$TOOLKIT_DIR$\CONFIG\debugger\GD\GD32C103xB.ddf</state>
         </option>
         <option>
           <name>RunToEnable</name>

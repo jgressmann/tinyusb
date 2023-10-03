@@ -1,12 +1,12 @@
 /*!
     \file    readme.txt
     \brief   description of the master transmitter and slave receiver interrupt
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -42,7 +42,6 @@ respectively. The SCL and SDA of I2C1 are controlled by the pin PB10 and PB11 re
 to the I2C0, and it will store the data received by I2C1 in the i2c_buffer_receiver
 array. If transfer is successfully completed, LED2 and LED3 are on. 
 
-  We should use the jumper to connect the PB6 and PB10. The PB7 and PB11 are 
-connected as well.
+  We should use the jumper to connect the PB6 and PB10. The PB7 and PB11 are connected as well.
 
   P4 must be fitted.

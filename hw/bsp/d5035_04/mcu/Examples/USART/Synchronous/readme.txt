@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   USART synchronous
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -36,9 +36,9 @@ OF SUCH DAMAGE.
 communication between USART0 (Synchronous mode) and SPI0. First, USART0
 transmits a series of data to SPI0, then SPI0 transmits a series of data 
 to USART0. Compare the transmitted data and the received data. If the 
-data transmitted from USART0 and received by SPI0 are the same, LED2 and
-LED4 will be on, otherwise off. If the data transmitted from SPI0 and 
-received by USART0 are the same, LED3 and LED5 will be on, otherwise off.
+data transmitted from USART0 and received by SPI0 are the same, LED1 and
+LED2 will be on, otherwise off. If the data transmitted from SPI0 and 
+received by USART0 are the same, LED3 and LED4 will be on, otherwise off.
 
   connect SPI0 SCK  pin(PA5) TO USART0_CK  pin(PA8)
   connect SPI0 MISO pin(PA6) TO USART0_RX  pin(PA10)

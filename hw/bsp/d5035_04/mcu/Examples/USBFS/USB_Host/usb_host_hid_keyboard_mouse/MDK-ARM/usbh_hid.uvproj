@@ -344,7 +344,7 @@
           </ArmAdsMisc>
           <Cads>
             <interw>1</interw>
-            <Optim>4</Optim>
+            <Optim>1</Optim>
             <oTime>0</oTime>
             <SplitLS>0</SplitLS>
             <OneElfS>1</OneElfS>
@@ -571,19 +571,9 @@
               <FilePath>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\host\class\hid\Source\usbh_hid_core.c</FilePath>
             </File>
             <File>
-              <FileName>usbh_hid_keybd.c</FileName>
+              <FileName>usbh_standard_hid.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\host\class\hid\Source\usbh_hid_keybd.c</FilePath>
-            </File>
-            <File>
-              <FileName>usbh_hid_mouse.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\host\class\hid\Source\usbh_hid_mouse.c</FilePath>
-            </File>
-            <File>
-              <FileName>usbh_hid_parser.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\host\class\hid\Source\usbh_hid_parser.c</FilePath>
+              <FilePath>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\host\class\hid\Source\usbh_standard_hid.c</FilePath>
             </File>
           </Files>
         </Group>

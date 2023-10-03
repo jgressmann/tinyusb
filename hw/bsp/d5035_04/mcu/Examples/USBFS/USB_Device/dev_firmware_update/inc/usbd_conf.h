@@ -2,11 +2,11 @@
     \file    usbd_conf.h
     \brief   the header file of USB device configuration
 
-    \version 2020-12-31, V2.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -36,12 +36,19 @@ OF SUCH DAMAGE.
 #define __USBD_CONF_H
 
 #include "usb_conf.h"
+#include "dfu_mem.h"
+#include "nor_flash_if.h"
+#include "inter_flash_if.h"
 
-#define USBD_CFG_MAX_NUM              1
-#define USBD_ITF_MAX_NUM              1
-#define USB_STR_DESC_MAX_SIZE         64
+#define USBD_CFG_MAX_NUM              1U
+#define USBD_ITF_MAX_NUM              1U
+#define USB_STR_DESC_MAX_SIZE         64U
 
-#define USBD_DFU_INTERFACE            0
+#define DFU_MAX_ALT_ITF_NUM           3
+#define STR_IDX_ALT_ITF0              5
+#define STR_IDX_ALT_ITF1              6
+#define STR_IDX_ALT_ITF2              7
+#define USBD_DFU_INTERFACE            0U
 
 /* USB feature -- Self Powered */
 //#define USBD_SELF_POWERED
@@ -52,16 +59,16 @@ OF SUCH DAMAGE.
 //#define USBD_DYNAMIC_DESCRIPTOR_CHANGE_ENABLED
 
 /* Maximum number of supported media (Flash) */
-#define MAX_USED_MEMORY_MEDIA        1
+#define MAX_USED_MEMORY_MEDIA        2U
 
-#define USB_STRING_COUNT             6
+#define USB_STRING_COUNT             6U
 
 /* DFU maximum data packet size */
-#define TRANSFER_SIZE                2048
+#define TRANSFER_SIZE                2048U
 
 /* memory address from where user application will be loaded, which represents 
-   the DFU code protected against write and erase operations.*/
-#define APP_LOADED_ADDR              0x08004000U
+   the dfu code protected against write and erase operations.*/
+#define APP_LOADED_ADDR              0x08008000U
 
 /* Make sure the corresponding memory where the DFU code should not be loaded
    cannot be erased or overwritten by DFU application. */

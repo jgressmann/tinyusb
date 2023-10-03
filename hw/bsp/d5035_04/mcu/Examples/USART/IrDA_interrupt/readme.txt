@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of the USART IrDA communication
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -36,8 +36,8 @@ OF SUCH DAMAGE.
 with USART2 in IrDA mode.
 
   The txbuffer is sent by USART1. USART2 receives data and stores in rxbuffer. If the data 
-received by USART2 is equal to txbuffer, LED2 and LED3 will be turned on. Otherwise, LED4 and
-LED5 will be turned on.
+received by USART2 is equal to txbuffer, LED2 and LED3 will be turned on. Otherwise, LED2 and
+LED3 will be turned off.
 
   JP16 and JP15 must be fitted. Unplug jumper cap conneted to PA2, PA3, PB10 and PB11 such as
 JP13, JP14 and JP20.

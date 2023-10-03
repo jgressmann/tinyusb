@@ -1045,13 +1045,7 @@
       <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\host\class\hid\Source\usbh_hid_core.c</name>
     </file>
     <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\host\class\hid\Source\usbh_hid_keybd.c</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\host\class\hid\Source\usbh_hid_mouse.c</name>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\host\class\hid\Source\usbh_hid_parser.c</name>
+      <name>$PROJ_DIR$\..\..\..\..\..\Firmware\GD32C10x_usbfs_library\host\class\hid\Source\usbh_standard_hid.c</name>
     </file>
   </group>
   <group>

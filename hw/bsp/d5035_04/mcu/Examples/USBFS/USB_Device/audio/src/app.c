@@ -2,11 +2,11 @@
     \file    app.c
     \brief   USB main routine for Audio device
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -36,21 +36,19 @@ OF SUCH DAMAGE.
 #include "audio_core.h"
 #include "audio_out_itf.h"
 
-#ifdef USE_USB_AUDIO_MICPHONE
+#ifdef USE_USB_AD_MICPHONE
     #include "wave_data.h"
-#endif
+
+    volatile uint32_t count_data = 0;
+#endif /* USE_USB_AD_MICPHONE */
 
 usb_core_driver usb_audio;
 
-#ifdef USE_USB_AUDIO_MICPHONE
-    volatile uint32_t count_data = 0;
-#endif
-
 /*!
-    \brief      main routine will construct a USB keyboard
+    \brief      main routine will construct a USB audio device
     \param[in]  none
     \param[out] none
-    \retval     none
+    \retval     int
 */
 int main(void)
 {
@@ -61,28 +59,17 @@ int main(void)
     usbd_init (&usb_audio, USB_CORE_ENUM_FS, &audio_desc, &usbd_audio_cb);
 
     usb_intr_config();
-    
-#ifdef USE_IRC48M
-    /* CTC peripheral clock enable */
-    rcu_periph_clock_enable(RCU_CTC);
-
-    /* CTC configure */
-    ctc_config();
-
-    while (ctc_flag_get(CTC_FLAG_CKOK) == RESET) {
-    }
-#endif
 
     while(usb_audio.dev.cur_status != USBD_CONFIGURED);
 
-#ifdef USE_USB_AUDIO_MICPHONE
+#ifdef USE_USB_AD_MICPHONE
     for(__IO uint32_t i = 0; i < 2000; i++){
         for(__IO uint32_t j = 0; j < 10000; j++);
     }
 
-    usbd_ep_send(&usb_audio, AUDIO_IN_EP, (uint8_t*)wavetestdata, MIC_IN_PACKET);
+    usbd_ep_send(&usb_audio, AD_IN_EP, (uint8_t*)wavetestdata, MIC_IN_PACKET);
     count_data = MIC_IN_PACKET;
-#endif
+#endif  /* USE_USB_AD_MICPHONE */
 
     /* Main loop */
     while (1) {

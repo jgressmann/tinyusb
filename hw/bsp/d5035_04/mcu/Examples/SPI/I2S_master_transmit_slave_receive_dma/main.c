@@ -1,34 +1,34 @@
 /*!
     \file    main.c
-    \brief   I2S master send and slave receive communication use DMA 
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \brief   I2S master send and slave receive communication use DMA
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
-    Redistribution and use in source and binary forms, with or without modification, 
+    Redistribution and use in source and binary forms, with or without modification,
 are permitted provided that the following conditions are met:
 
-    1. Redistributions of source code must retain the above copyright notice, this 
+    1. Redistributions of source code must retain the above copyright notice, this
        list of conditions and the following disclaimer.
-    2. Redistributions in binary form must reproduce the above copyright notice, 
-       this list of conditions and the following disclaimer in the documentation 
+    2. Redistributions in binary form must reproduce the above copyright notice,
+       this list of conditions and the following disclaimer in the documentation
        and/or other materials provided with the distribution.
-    3. Neither the name of the copyright holder nor the names of its contributors 
-       may be used to endorse or promote products derived from this software without 
+    3. Neither the name of the copyright holder nor the names of its contributors
+       may be used to endorse or promote products derived from this software without
        specific prior written permission.
 
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" 
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
-IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, 
-INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT 
-NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR 
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
-WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
-ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY 
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
 OF SUCH DAMAGE.
 */
 
@@ -38,8 +38,8 @@ OF SUCH DAMAGE.
 #define ARRAYSIZE         10
 
 uint8_t spi1_send_array[ARRAYSIZE] = {0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA};
-uint8_t spi2_receive_array[ARRAYSIZE]; 
-ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint8_t length);
+uint8_t spi2_receive_array[ARRAYSIZE];
+ErrStatus memory_compare(uint8_t *src, uint8_t *dst, uint8_t length);
 uint32_t send_n = 0, receive_n = 0;
 
 void rcu_config(void);
@@ -58,13 +58,13 @@ int main(void)
     /* initialize the LED */
     gd_eval_led_init(LED2);
 
-    /* peripheral clock enable */
+    /* enable peripheral clock */
     rcu_config();
-    /* GPIO configure */
+    /* configure GPIO */
     gpio_config();
-    /* DMA configure */
+    /* configure DMA */
     dma_config();
-    /* SPI configure */
+    /* configure SPI */
     spi_config();
 
     /* SPI enable */
@@ -72,8 +72,8 @@ int main(void)
     i2s_enable(SPI1);
 
     /* DMA channel enable */
-    dma_channel_enable(DMA0,DMA_CH4);
-    dma_channel_enable(DMA1,DMA_CH0);
+    dma_channel_enable(DMA0, DMA_CH4);
+    dma_channel_enable(DMA1, DMA_CH0);
 
     /* SPI DMA enable */
     spi_dma_enable(SPI2, SPI_DMA_RECEIVE);
@@ -84,9 +84,9 @@ int main(void)
     while(!dma_flag_get(DMA1, DMA_CH0, DMA_FLAG_FTF));
 
     /* compare receive data with send data */
-    if(ERROR != memory_compare(spi2_receive_array, spi1_send_array, ARRAYSIZE)){
+    if(ERROR != memory_compare(spi2_receive_array, spi1_send_array, ARRAYSIZE)) {
         gd_eval_led_on(LED2);
-    }else{
+    } else {
         gd_eval_led_off(LED2);
     }
 
@@ -103,7 +103,7 @@ void rcu_config(void)
 {
     rcu_pll2_config(RCU_PLL2_MUL8);
     rcu_osci_on(RCU_PLL2_CK);
-    while((RCU_CTL & RCU_CTL_PLL2STB) == 0){
+    while((RCU_CTL & RCU_CTL_PLL2STB) == 0) {
     }
     rcu_i2s1_clock_config(RCU_I2S1SRC_CKPLL2_MUL2);
     rcu_i2s2_clock_config(RCU_I2S2SRC_CKPLL2_MUL2);
@@ -125,7 +125,7 @@ void rcu_config(void)
 void gpio_config(void)
 {
     /* I2S1 GPIO config: I2S1_WS/PB12, I2S1_CK/PB13, I2S_SD/PB15 */
-    gpio_init(GPIOB, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_12 | GPIO_PIN_13 |GPIO_PIN_15);
+    gpio_init(GPIOB, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_15);
 
     /* I2S2 GPIO config: I2S2_WS/PA15, I2S2_CK/PB3, I2S2_SD/PB5 */
     gpio_init(GPIOB, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_3 | GPIO_PIN_5);
@@ -141,11 +141,11 @@ void gpio_config(void)
 void dma_config(void)
 {
     dma_parameter_struct dma_init_struct;
-    
-    /* SPI1 transmit dma config: DMA0,DMA_CH4  */
+
+    /* SPI1 transmit dma config: DMA0,DMA_CH4 */
     dma_deinit(DMA0, DMA_CH4);
     dma_struct_para_init(&dma_init_struct);
-    
+
     dma_init_struct.periph_addr  = (uint32_t)&SPI_DATA(SPI1);
     dma_init_struct.memory_addr  = (uint32_t)spi1_send_array;
     dma_init_struct.direction    = DMA_MEMORY_TO_PERIPHERAL;
@@ -162,7 +162,7 @@ void dma_config(void)
 
     /* SPI2 receive dma config: DMA1-DMA_CH0 */
     dma_deinit(DMA1, DMA_CH0);
-    
+
     dma_init_struct.periph_addr  = (uint32_t)&SPI_DATA(SPI2);
     dma_init_struct.memory_addr  = (uint32_t)spi2_receive_array;
     dma_init_struct.direction    = DMA_PERIPHERAL_TO_MEMORY;
@@ -186,7 +186,7 @@ void spi_config(void)
 
     i2s_init(SPI1, I2S_MODE_MASTERTX, I2S_STD_PHILLIPS, I2S_CKPL_LOW);
     i2s_psc_config(SPI1, I2S_AUDIOSAMPLE_11K, I2S_FRAMEFORMAT_DT16B_CH16B, I2S_MCKOUT_DISABLE);
-    
+
     i2s_init(SPI2, I2S_MODE_SLAVERX, I2S_STD_PHILLIPS, I2S_CKPL_LOW);
     i2s_psc_config(SPI2, I2S_AUDIOSAMPLE_11K, I2S_FRAMEFORMAT_DT16B_CH16B, I2S_MCKOUT_DISABLE);
 }
@@ -199,11 +199,12 @@ void spi_config(void)
     \param[out] none
     \retval     ErrStatus: ERROR or SUCCESS
 */
-ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint8_t length) 
+ErrStatus memory_compare(uint8_t *src, uint8_t *dst, uint8_t length)
 {
-    while (length--){
-        if (*src++ != *dst++)
+    while(length--) {
+        if(*src++ != *dst++) {
             return ERROR;
+        }
     }
     return SUCCESS;
 }

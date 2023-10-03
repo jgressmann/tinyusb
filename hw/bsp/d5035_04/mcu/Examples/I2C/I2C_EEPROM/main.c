@@ -2,11 +2,11 @@
     \file    main.c
     \brief   use the I2C bus to write and read EEPROM
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -45,26 +45,6 @@ void led_turn_on(uint8_t led_number);
 void led_config(void);
 
 /*!
-    \brief      configure the LEDs
-    \param[in]  none
-    \param[out] none
-    \retval     none
-*/
-void led_config(void)
-{
-    gd_eval_led_init(LED2);
-    gd_eval_led_init(LED3);
-    gd_eval_led_init(LED4);
-    gd_eval_led_init(LED5);
-
-    /* turn off LED2,LED3,LED4,LED5 */
-    gd_eval_led_off(LED2);
-    gd_eval_led_off(LED3);
-    gd_eval_led_off(LED4);
-    gd_eval_led_off(LED5);
-}
-
-/*!
     \brief      main function
     \param[in]  none
     \param[out] none
@@ -77,11 +57,9 @@ int main(void)
 
     /* configure LEDs */
     led_config();
-    
+
     /* configure USART */
     gd_eval_com_init(EVAL_COM0);
-
-    delay_1ms(500);
 
     printf("I2C-24C02 configured....\n\r");
 
@@ -100,10 +78,10 @@ int main(void)
     if(I2C_OK == i2c_24c02_test()){
         while(1){
            /* turn off all LEDs */
+           gd_eval_led_off(LED1);
            gd_eval_led_off(LED2);
            gd_eval_led_off(LED3);
            gd_eval_led_off(LED4);
-           gd_eval_led_off(LED5);
            /* turn on a LED */
            led_turn_on(count%4);
            count++;
@@ -115,12 +93,13 @@ int main(void)
     }
 
     /* turn on all LEDs */
+    gd_eval_led_on(LED1);
     gd_eval_led_on(LED2);
     gd_eval_led_on(LED3);
     gd_eval_led_on(LED4);
-    gd_eval_led_on(LED5);
 
-    while(1);
+    while(1){
+    }
 }
 
 /*!
@@ -133,34 +112,54 @@ void led_turn_on(uint8_t led_number)
 {
     switch(led_number){
     case 0:
-      gd_eval_led_on(LED2);
+      gd_eval_led_on(LED1);
       break;
 
     case 1:
-      gd_eval_led_on(LED3);
+      gd_eval_led_on(LED2);
       break;
 
     case 2:
-      gd_eval_led_on(LED4);
+      gd_eval_led_on(LED3);
       break;
 
     case 3:
-      gd_eval_led_on(LED5);
+      gd_eval_led_on(LED4);
       break;
 
     default:
+      gd_eval_led_on(LED1);
       gd_eval_led_on(LED2);
       gd_eval_led_on(LED3);
       gd_eval_led_on(LED4);
-      gd_eval_led_on(LED5);
       break;
     }
+}
+
+/*!
+    \brief      configure the LEDs
+    \param[in]  none
+    \param[out] none
+    \retval     none
+*/
+void led_config(void)
+{
+    gd_eval_led_init(LED1);
+    gd_eval_led_init(LED2);
+    gd_eval_led_init(LED3);
+    gd_eval_led_init(LED4);
+
+    /* turn off LED1,LED2,LED3,LED4 */
+    gd_eval_led_off(LED1);
+    gd_eval_led_off(LED2);
+    gd_eval_led_off(LED3);
+    gd_eval_led_off(LED4);
 }
 
 /* retarget the C library printf function to the usart */
 int fputc(int ch, FILE *f)
 {
     usart_data_transmit(EVAL_COM0, (uint8_t)ch);
-    while (RESET == usart_flag_get(EVAL_COM0, USART_FLAG_TBE));
+    while(RESET == usart_flag_get(EVAL_COM0, USART_FLAG_TBE));
     return ch;
 }

@@ -2,11 +2,11 @@
     \file    main.c
     \brief   ADC0 EXTI trigger regular and inserted channel
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -101,6 +101,7 @@ void rcu_config(void)
     rcu_periph_clock_enable(RCU_GPIOA);
     /* enable GPIOB clock */
     rcu_periph_clock_enable(RCU_GPIOB);
+    rcu_periph_clock_enable(RCU_AF);
     /* enable ADC0 clock */
     rcu_periph_clock_enable(RCU_ADC0);
     /* config ADC clock */
@@ -123,7 +124,7 @@ void gpio_config(void)
     gpio_init(GPIOA, GPIO_MODE_AIN, GPIO_OSPEED_MAX, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3);
     gpio_init(GPIOA, GPIO_MODE_AIN, GPIO_OSPEED_MAX, GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7);
     /* config the GPIO as floating input mode, for EXTI */
-    gpio_init(GPIOA, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_11);
+    gpio_init(GPIOB, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_11);
     gpio_init(GPIOB, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_15);
 }
 
@@ -184,7 +185,7 @@ void adc_config(void)
     adc_deinit(ADC0);
     /* ADC mode config */
     adc_mode_config(ADC_MODE_FREE);
-    /* ADC continous function enable */
+    /* ADC continuous function enable */
     adc_special_function_config(ADC0, ADC_SCAN_MODE, ENABLE);
     /* ADC data alignment config */
     adc_data_alignment_config(ADC0, ADC_DATAALIGN_RIGHT);
@@ -237,12 +238,12 @@ void exti_config(void)
     /* connect EXTI line to GPIO pin for inserted group */
     gpio_exti_source_select(GPIO_PORT_SOURCE_GPIOB, GPIO_PIN_SOURCE_15);
     /* configure EXTI line for inserted group */
-    exti_init(EXTI_15, EXTI_EVENT, EXTI_TRIG_RISING);
+    exti_init(EXTI_15, EXTI_EVENT, EXTI_TRIG_FALLING);
     
     /* connect EXTI line to GPIO pin for inserted group */
-    gpio_exti_source_select(GPIO_PORT_SOURCE_GPIOA, GPIO_PIN_SOURCE_11);
+    gpio_exti_source_select(GPIO_PORT_SOURCE_GPIOB, GPIO_PIN_SOURCE_11);
     /* configure EXTI line for inserted group */
-    exti_init(EXTI_11, EXTI_EVENT, EXTI_TRIG_RISING);
+    exti_init(EXTI_11, EXTI_EVENT, EXTI_TRIG_FALLING);
 }
 
 /* retarget the C library printf function to the USART */

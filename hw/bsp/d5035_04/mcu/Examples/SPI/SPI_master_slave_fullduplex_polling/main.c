@@ -2,11 +2,11 @@
     \file    main.c
     \brief   SPI fullduplex communication use polling mode
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -35,18 +35,20 @@ OF SUCH DAMAGE.
 #include "gd32c10x.h"
 #include "gd32c10x_eval.h"
 
-#define ARRAYSIZE         10
+#define SPI_CRC_ENABLE           1
+#define ARRAYSIZE                10
 
-uint32_t send_n = 0, receive_n = 0;
 uint8_t spi0_send_array[ARRAYSIZE] = {0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA};
 uint8_t spi2_send_array[ARRAYSIZE] = {0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA};
-uint8_t spi0_receive_array[ARRAYSIZE]; 
+uint8_t spi0_receive_array[ARRAYSIZE];
 uint8_t spi2_receive_array[ARRAYSIZE];
-ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint8_t length);
+uint32_t send_n = 0, receive_n = 0;
+uint32_t crc_value1 = 0, crc_value2 = 0;
 
 void rcu_config(void);
 void gpio_config(void);
 void spi_config(void);
+ErrStatus memory_compare(uint8_t *src, uint8_t *dst, uint8_t length);
 
 /*!
     \brief      main function
@@ -59,42 +61,111 @@ int main(void)
     /* initialize the LEDs */
     gd_eval_led_init(LED2);
     gd_eval_led_init(LED3);
-    /* peripheral clock enable */
+    /* enable peripheral clock */
     rcu_config();
-    /* GPIO configure */
+    /* configure GPIO */
     gpio_config();
-    /* SPI configure */
+    /* configure SPI */
     spi_config();
-    /* SPI enable */
+    /* enable SPI */
     spi_enable(SPI2);
     spi_enable(SPI0);
 
-    /* wait for transmit complete */
-    while(send_n < ARRAYSIZE){
-        while(RESET == spi_i2s_flag_get(SPI2, SPI_FLAG_TBE));
+#if SPI_CRC_ENABLE
+    /* wait for transmit completed */
+    while(send_n < ARRAYSIZE) {
+        while(RESET == spi_i2s_flag_get(SPI2, SPI_FLAG_TBE)) {
+        }
         spi_i2s_data_transmit(SPI2, spi2_send_array[send_n]);
-        while(RESET == spi_i2s_flag_get(SPI0, SPI_FLAG_TBE));
+        while(RESET == spi_i2s_flag_get(SPI0, SPI_FLAG_TBE)) {
+        }
         spi_i2s_data_transmit(SPI0, spi0_send_array[send_n++]);
-        while(RESET == spi_i2s_flag_get(SPI2, SPI_FLAG_RBNE));
+        while(RESET == spi_i2s_flag_get(SPI2, SPI_FLAG_RBNE)) {
+        }
         spi2_receive_array[receive_n] = spi_i2s_data_receive(SPI2);
-        while(RESET == spi_i2s_flag_get(SPI0, SPI_FLAG_RBNE));
+        while(RESET == spi_i2s_flag_get(SPI0, SPI_FLAG_RBNE)) {
+        }
+        spi0_receive_array[receive_n++] = spi_i2s_data_receive(SPI0);
+    }
+
+    /* send the last data */
+    while(RESET == spi_i2s_flag_get(SPI2, SPI_FLAG_TBE)) {
+    }
+    spi_i2s_data_transmit(SPI2, spi2_send_array[send_n]);
+
+    while(RESET == spi_i2s_flag_get(SPI0, SPI_FLAG_TBE)) {
+    }
+    spi_i2s_data_transmit(SPI0, spi0_send_array[send_n++]);
+
+    /* send the CRC value */
+    spi_crc_next(SPI2);
+    spi_crc_next(SPI0);
+
+    /* receive the last data */
+    while(RESET == spi_i2s_flag_get(SPI0, SPI_FLAG_RBNE)) {
+    }
+    spi0_receive_array[receive_n] = spi_i2s_data_receive(SPI0);
+
+    while(RESET == spi_i2s_flag_get(SPI2, SPI_FLAG_RBNE)) {
+    }
+    spi2_receive_array[receive_n++] = spi_i2s_data_receive(SPI2);
+
+    /* receive the CRC value */
+    while(RESET == spi_i2s_flag_get(SPI0, SPI_FLAG_RBNE)) {
+    }
+    while(RESET == spi_i2s_flag_get(SPI2, SPI_FLAG_RBNE)) {
+    }
+    crc_value1 = spi_i2s_data_receive(SPI0);
+    crc_value2 = spi_i2s_data_receive(SPI2);
+
+    /* check the CRC error status  */
+    if(SET != spi_i2s_flag_get(SPI0, SPI_FLAG_CRCERR)) {
+        gd_eval_led_on(LED2);
+    } else {
+        gd_eval_led_off(LED2);
+    }
+
+    if(SET != spi_i2s_flag_get(SPI2, SPI_FLAG_CRCERR)) {
+        gd_eval_led_on(LED3);
+    } else {
+        gd_eval_led_off(LED3);
+    }
+#else
+    /* wait for transmit completed */
+    while(send_n < ARRAYSIZE) {
+        while(RESET == spi_i2s_flag_get(SPI2, SPI_FLAG_TBE)) {
+        }
+        spi_i2s_data_transmit(SPI2, spi2_send_array[send_n]);
+
+        while(RESET == spi_i2s_flag_get(SPI0, SPI_FLAG_TBE)) {
+        }
+        spi_i2s_data_transmit(SPI0, spi0_send_array[send_n++]);
+
+        while(RESET == spi_i2s_flag_get(SPI2, SPI_FLAG_RBNE)) {
+        }
+        spi2_receive_array[receive_n] = spi_i2s_data_receive(SPI2);
+
+        while(RESET == spi_i2s_flag_get(SPI0, SPI_FLAG_RBNE)) {
+        }
         spi0_receive_array[receive_n++] = spi_i2s_data_receive(SPI0);
     }
 
     /* compare receive data with send data */
-    if(ERROR != memory_compare(spi2_receive_array, spi0_send_array, ARRAYSIZE)){
+    if(ERROR != memory_compare(spi2_receive_array, spi0_send_array, ARRAYSIZE)) {
         gd_eval_led_on(LED2);
-    }else{
+    } else {
         gd_eval_led_off(LED2);
     }
 
-    if(ERROR != memory_compare(spi0_receive_array, spi2_send_array, ARRAYSIZE)){
+    if(ERROR != memory_compare(spi0_receive_array, spi2_send_array, ARRAYSIZE)) {
         gd_eval_led_on(LED3);
-    }else{
+    } else {
         gd_eval_led_off(LED3);
     }
+#endif /* enable CRC function */
 
-    while(1);
+    while(1) {
+    }
 }
 
 /*!
@@ -120,11 +191,11 @@ void rcu_config(void)
 */
 void gpio_config(void)
 {
-    /* SPI0 GPIO config:SCK/PA5, MISO/PA6, MOSI/PA7 */
+    /* configure SPI0 GPIO: SCK/PA5, MISO/PA6, MOSI/PA7 */
     gpio_init(GPIOA, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_5 | GPIO_PIN_7);
     gpio_init(GPIOA, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_6);
-    
-    /* SPI2 GPIO config:SCK/PC10, MISO/PC11, MOSI/PC12 */
+
+    /* configure SPI2 GPIO: SCK/PC10, MISO/PC11, MOSI/PC12 */
     gpio_pin_remap_config(GPIO_SPI2_REMAP, ENABLE);
     gpio_init(GPIOC, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_10 | GPIO_PIN_12);
     gpio_init(GPIOC, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_11);
@@ -144,20 +215,28 @@ void spi_config(void)
     spi_i2s_deinit(SPI2);
     spi_struct_para_init(&spi_init_struct);
 
-    /* SPI0 parameter config */
+    /* configure SPI0 parameter */
     spi_init_struct.trans_mode           = SPI_TRANSMODE_FULLDUPLEX;
     spi_init_struct.device_mode          = SPI_MASTER;
     spi_init_struct.frame_size           = SPI_FRAMESIZE_8BIT;
     spi_init_struct.clock_polarity_phase = SPI_CK_PL_HIGH_PH_2EDGE;
     spi_init_struct.nss                  = SPI_NSS_SOFT;
-    spi_init_struct.prescale             = SPI_PSC_8;
+    spi_init_struct.prescale             = SPI_PSC_32;
     spi_init_struct.endian               = SPI_ENDIAN_MSB;
     spi_init(SPI0, &spi_init_struct);
 
-    /* SPI2 parameter config */
+    /* configure SPI2 parameter */
     spi_init_struct.device_mode = SPI_SLAVE;
     spi_init_struct.nss         = SPI_NSS_SOFT;
     spi_init(SPI2, &spi_init_struct);
+
+#if SPI_CRC_ENABLE
+    /* configure SPI CRC function */
+    spi_crc_polynomial_set(SPI0, 7);
+    spi_crc_polynomial_set(SPI2, 7);
+    spi_crc_on(SPI0);
+    spi_crc_on(SPI2);
+#endif /* enable CRC function */
 }
 
 /*!
@@ -168,11 +247,12 @@ void spi_config(void)
     \param[out] none
     \retval     ErrStatus: ERROR or SUCCESS
 */
-ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint8_t length) 
+ErrStatus memory_compare(uint8_t *src, uint8_t *dst, uint8_t length)
 {
-    while (length--){
-        if (*src++ != *dst++)
+    while(length--) {
+        if(*src++ != *dst++) {
             return ERROR;
+        }
     }
     return SUCCESS;
 }

@@ -2,11 +2,11 @@
     \file    main.c
     \brief   master send and slave receive data use interrupt mode 
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -40,7 +40,7 @@ OF SUCH DAMAGE.
 uint32_t send_n = 0, receive_n = 0;
 uint8_t spi0_send_array[ARRAYSIZE] = {0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA};
 uint8_t spi2_receive_array[ARRAYSIZE];
-ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint8_t length);
+ErrStatus memory_compare(uint8_t *src, uint8_t *dst, uint8_t length);
 
 void rcu_config(void);
 void gpio_config(void);
@@ -57,22 +57,22 @@ int main(void)
     /* initialize the LED */
     gd_eval_led_init(LED2);
 
-    /* NVIC configure */
+    /* configure NVIC */
     nvic_priority_group_set(NVIC_PRIGROUP_PRE1_SUB3);
-    nvic_irq_enable(SPI0_IRQn,1,1);
-    nvic_irq_enable(SPI2_IRQn,0,1);
+    nvic_irq_enable(SPI0_IRQn, 1, 1);
+    nvic_irq_enable(SPI2_IRQn, 0, 1);
 
-    /* peripheral clock enable */
+    /* enable peripheral clock */
     rcu_config();
-    /* GPIO configure */
+    /* configure GPIO */
     gpio_config();
-    /* SPI configure */
+    /* configure SPI */
     spi_config();
-    /* SPI interrupt enable */
+    /* enable SPI interrupt */
     spi_i2s_interrupt_enable(SPI0, SPI_I2S_INT_TBE);
     spi_i2s_interrupt_enable(SPI2, SPI_I2S_INT_RBNE);
 
-    /* SPI enable */
+    /* enable SPI */
     spi_enable(SPI2);
     spi_enable(SPI0);
 
@@ -80,14 +80,14 @@ int main(void)
     while(receive_n < ARRAYSIZE);
 
     /* compare receive data with send data */
-    if(memory_compare(spi2_receive_array, spi0_send_array, ARRAYSIZE)){
+    if(memory_compare(spi2_receive_array, spi0_send_array, ARRAYSIZE)) {
         gd_eval_led_on(LED2);
-    }else{
+    } else {
         gd_eval_led_off(LED2);
     }
 
     while(1);
-   
+
 }
 
 /*!
@@ -115,10 +115,10 @@ void gpio_config(void)
 {
     /* SPI0 GPIO config:SCK/PA5, MOSI/PA7 */
     gpio_init(GPIOA, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_5 | GPIO_PIN_7);
-    
+
     /* SPI2 GPIO config:SCK/PC10, MISO/PC11 */
     gpio_pin_remap_config(GPIO_SPI2_REMAP, ENABLE);
-    gpio_init(GPIOC, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_10 |GPIO_PIN_11);
+    gpio_init(GPIOC, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_10 | GPIO_PIN_11);
 }
 
 /*!
@@ -130,7 +130,7 @@ void gpio_config(void)
 void spi_config(void)
 {
     spi_parameter_struct  spi_init_struct;
-    /* deinitilize SPI and the parameters */
+    /* deinitialize SPI and the parameters */
     spi_i2s_deinit(SPI0);
     spi_i2s_deinit(SPI2);
     spi_struct_para_init(&spi_init_struct);
@@ -160,11 +160,12 @@ void spi_config(void)
     \param[out] none
     \retval     ErrStatus: ERROR or SUCCESS
 */
-ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint8_t length) 
+ErrStatus memory_compare(uint8_t *src, uint8_t *dst, uint8_t length)
 {
-    while (length--){
-        if (*src++ != *dst++)
+    while(length--) {
+        if(*src++ != *dst++) {
             return ERROR;
+        }
     }
     return SUCCESS;
 }

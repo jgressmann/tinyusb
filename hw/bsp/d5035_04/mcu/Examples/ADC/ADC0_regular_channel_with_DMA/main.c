@@ -2,11 +2,11 @@
     \file    main.c
     \brief   ADC0 regular channel with DMA
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -161,7 +161,7 @@ void adc_config(void)
     adc_deinit(ADC0);
     /* ADC mode config */
     adc_mode_config(ADC_MODE_FREE);
-    /* ADC contineous function enable */
+    /* ADC continuous function enable */
     adc_special_function_config(ADC0, ADC_CONTINUOUS_MODE, ENABLE);
     /* ADC scan mode disable */
     adc_special_function_config(ADC0, ADC_SCAN_MODE, ENABLE);

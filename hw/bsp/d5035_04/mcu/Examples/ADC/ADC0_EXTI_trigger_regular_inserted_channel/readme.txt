@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of the ADC0 EXTI trigger regular and inserted channel
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -38,8 +38,8 @@ regular and inserted group channels using EXTI external trigger.
 event of EXTI15 (PB15) will trigger ADC to convert all the channels in the 
 inserted group.When all inserted group channels are converted, EOIC Interrupt
 will be generated.The inserted datas are print by USART. 
-  The regular group length is 4. Every rising edge event of EXTI11 (PA11) 
+  The regular group length is 4. Every rising edge event of EXTI11 (PB11) 
 converts 4 channels and DMA can be used to transfer the converted data.
    We can watch array adc_value[]/inserted_data[] in debug mode or by COM1.
-   Connect PB15 to KEY2(PA0).Connect PA11 to KEY3(PC13).
+   Connect PB15 to K2(PA0).Connect PB11 to K3(PC13).
  

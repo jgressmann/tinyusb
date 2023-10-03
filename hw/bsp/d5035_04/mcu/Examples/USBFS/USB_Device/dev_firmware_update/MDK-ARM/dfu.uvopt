@@ -131,7 +131,7 @@
         <SetRegEntry>
           <Number>0</Number>
           <Key>JL2CM3</Key>
-          <Name>-U59400616 -O78 -S0 -A0 -C0 -JU1 -JI127.0.0.1 -JP0 -RST0 -N00("ARM CoreSight SW-DP") -D00(1BA01477) -L00(0) -TO18 -TC10000000 -TP21 -TDS8007 -TDT0 -TDC1F -TIEFFFFFFFF -TIP8 -TB1 -TFE0 -FO31 -FD20000000 -FC800 -FN1 -FF0GD32E10x -FS08000000 -FL020000</Name>
+          <Name>-U59521323 -O78 -S0 -A0 -C0 -JU1 -JI127.0.0.1 -JP0 -RST0 -N00("ARM CoreSight SW-DP") -D00(2BA01477) -L00(0) -TO18 -TC10000000 -TP21 -TDS8007 -TDT0 -TDC1F -TIEFFFFFFFF -TIP8 -TB1 -TFE0 -FO31 -FD20000000 -FC800 -FN1 -FF0GD32E10x -FS08000000 -FL020000</Name>
         </SetRegEntry>
         <SetRegEntry>
           <Number>0</Number>
@@ -139,7 +139,24 @@
           <Name>-O207 -S0 -C0 -FO7 -FD20000000 -FC800 -FN1 -FF0GD32E10x-FS08000000 -FL020000)</Name>
         </SetRegEntry>
       </TargetDriverDllRegistry>
-      <Breakpoint/>
+      <Breakpoint>
+        <Bp>
+          <Number>0</Number>
+          <Type>0</Type>
+          <LineNumber>91</LineNumber>
+          <EnabledFlag>1</EnabledFlag>
+          <Address>134224834</Address>
+          <ByteObject>0</ByteObject>
+          <HtxType>0</HtxType>
+          <ManyObjects>0</ManyObjects>
+          <SizeOfObject>0</SizeOfObject>
+          <BreakByAccess>0</BreakByAccess>
+          <BreakIfRCount>1</BreakIfRCount>
+          <Filename>..\src\gd25qxx.c</Filename>
+          <ExecCommand></ExecCommand>
+          <Expression>\\dfu\../src/gd25qxx.c\91</Expression>
+        </Bp>
+      </Breakpoint>
       <WatchWindow1>
         <Ww>
           <count>0</count>
@@ -215,10 +232,10 @@
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
-      <ColumnNumber>54</ColumnNumber>
+      <ColumnNumber>25</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
       <TopLine>44</TopLine>
-      <CurrentLine>56</CurrentLine>
+      <CurrentLine>52</CurrentLine>
       <bDave2>0</bDave2>
       <PathWithFileName>..\src\app.c</PathWithFileName>
       <FilenameWithoutPath>app.c</FilenameWithoutPath>
@@ -231,13 +248,13 @@
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
-      <ColumnNumber>29</ColumnNumber>
+      <ColumnNumber>1</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>174</TopLine>
-      <CurrentLine>201</CurrentLine>
+      <TopLine>14</TopLine>
+      <CurrentLine>109</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\src\flash_if.c</PathWithFileName>
-      <FilenameWithoutPath>flash_if.c</FilenameWithoutPath>
+      <PathWithFileName>..\src\gd32c10x_hw.c</PathWithFileName>
+      <FilenameWithoutPath>gd32c10x_hw.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -252,8 +269,8 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\src\gd32e10x_hw.c</PathWithFileName>
-      <FilenameWithoutPath>gd32e10x_hw.c</FilenameWithoutPath>
+      <PathWithFileName>..\src\gd32c10x_it.c</PathWithFileName>
+      <FilenameWithoutPath>gd32c10x_it.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -265,11 +282,11 @@
       <Focus>0</Focus>
       <ColumnNumber>0</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>0</TopLine>
-      <CurrentLine>0</CurrentLine>
+      <TopLine>218</TopLine>
+      <CurrentLine>235</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\src\gd32e10x_it.c</PathWithFileName>
-      <FilenameWithoutPath>gd32e10x_it.c</FilenameWithoutPath>
+      <PathWithFileName>..\src\dfu_fmc.c</PathWithFileName>
+      <FilenameWithoutPath>dfu_fmc.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -279,13 +296,45 @@
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
-      <ColumnNumber>43</ColumnNumber>
+      <ColumnNumber>0</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>54</TopLine>
-      <CurrentLine>57</CurrentLine>
+      <TopLine>73</TopLine>
+      <CurrentLine>92</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\src\dfu_fmc.c</PathWithFileName>
-      <FilenameWithoutPath>dfu_fmc.c</FilenameWithoutPath>
+      <PathWithFileName>..\src\gd25qxx.c</PathWithFileName>
+      <FilenameWithoutPath>gd25qxx.c</FilenameWithoutPath>
+      <RteFlg>0</RteFlg>
+      <bShared>0</bShared>
+    </File>
+    <File>
+      <GroupNumber>1</GroupNumber>
+      <FileNumber>6</FileNumber>
+      <FileType>1</FileType>
+      <tvExp>0</tvExp>
+      <Focus>0</Focus>
+      <ColumnNumber>18</ColumnNumber>
+      <tvExpOptDlg>0</tvExpOptDlg>
+      <TopLine>126</TopLine>
+      <CurrentLine>149</CurrentLine>
+      <bDave2>0</bDave2>
+      <PathWithFileName>..\src\inter_flash_if.c</PathWithFileName>
+      <FilenameWithoutPath>inter_flash_if.c</FilenameWithoutPath>
+      <RteFlg>0</RteFlg>
+      <bShared>0</bShared>
+    </File>
+    <File>
+      <GroupNumber>1</GroupNumber>
+      <FileNumber>7</FileNumber>
+      <FileType>1</FileType>
+      <tvExp>0</tvExp>
+      <Focus>0</Focus>
+      <ColumnNumber>0</ColumnNumber>
+      <tvExpOptDlg>0</tvExpOptDlg>
+      <TopLine>61</TopLine>
+      <CurrentLine>73</CurrentLine>
+      <bDave2>0</bDave2>
+      <PathWithFileName>..\src\nor_flash_if.c</PathWithFileName>
+      <FilenameWithoutPath>nor_flash_if.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -299,46 +348,6 @@
     <RteFlg>0</RteFlg>
     <File>
       <GroupNumber>2</GroupNumber>
-      <FileNumber>6</FileNumber>
-      <FileType>1</FileType>
-      <tvExp>0</tvExp>
-      <Focus>0</Focus>
-      <ColumnNumber>0</ColumnNumber>
-      <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>0</TopLine>
-      <CurrentLine>0</CurrentLine>
-      <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\CMSIS\GD\GD32E10x\Source\system_gd32e10x.c</PathWithFileName>
-      <FilenameWithoutPath>system_gd32e10x.c</FilenameWithoutPath>
-      <RteFlg>0</RteFlg>
-      <bShared>0</bShared>
-    </File>
-  </Group>
-
-  <Group>
-    <GroupName>GD32E10x_Peripherals</GroupName>
-    <tvExp>0</tvExp>
-    <tvExpOptDlg>0</tvExpOptDlg>
-    <cbSel>0</cbSel>
-    <RteFlg>0</RteFlg>
-    <File>
-      <GroupNumber>3</GroupNumber>
-      <FileNumber>7</FileNumber>
-      <FileType>1</FileType>
-      <tvExp>0</tvExp>
-      <Focus>0</Focus>
-      <ColumnNumber>0</ColumnNumber>
-      <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>0</TopLine>
-      <CurrentLine>0</CurrentLine>
-      <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_dma.c</PathWithFileName>
-      <FilenameWithoutPath>gd32e10x_dma.c</FilenameWithoutPath>
-      <RteFlg>0</RteFlg>
-      <bShared>0</bShared>
-    </File>
-    <File>
-      <GroupNumber>3</GroupNumber>
       <FileNumber>8</FileNumber>
       <FileType>1</FileType>
       <tvExp>0</tvExp>
@@ -348,11 +357,19 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_exti.c</PathWithFileName>
-      <FilenameWithoutPath>gd32e10x_exti.c</FilenameWithoutPath>
+      <PathWithFileName>..\..\..\..\..\Firmware\CMSIS\GD\GD32C10x\Source\system_gd32c10x.c</PathWithFileName>
+      <FilenameWithoutPath>system_gd32c10x.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
+  </Group>
+
+  <Group>
+    <GroupName>GD32C10x_Peripherals</GroupName>
+    <tvExp>0</tvExp>
+    <tvExpOptDlg>0</tvExpOptDlg>
+    <cbSel>0</cbSel>
+    <RteFlg>0</RteFlg>
     <File>
       <GroupNumber>3</GroupNumber>
       <FileNumber>9</FileNumber>
@@ -364,8 +381,8 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_misc.c</PathWithFileName>
-      <FilenameWithoutPath>gd32e10x_misc.c</FilenameWithoutPath>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_dma.c</PathWithFileName>
+      <FilenameWithoutPath>gd32c10x_dma.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -380,8 +397,8 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_pmu.c</PathWithFileName>
-      <FilenameWithoutPath>gd32e10x_pmu.c</FilenameWithoutPath>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_exti.c</PathWithFileName>
+      <FilenameWithoutPath>gd32c10x_exti.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -396,8 +413,8 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_rcu.c</PathWithFileName>
-      <FilenameWithoutPath>gd32e10x_rcu.c</FilenameWithoutPath>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_misc.c</PathWithFileName>
+      <FilenameWithoutPath>gd32c10x_misc.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -412,8 +429,8 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_timer.c</PathWithFileName>
-      <FilenameWithoutPath>gd32e10x_timer.c</FilenameWithoutPath>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_pmu.c</PathWithFileName>
+      <FilenameWithoutPath>gd32c10x_pmu.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -428,8 +445,8 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_usart.c</PathWithFileName>
-      <FilenameWithoutPath>gd32e10x_usart.c</FilenameWithoutPath>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_rcu.c</PathWithFileName>
+      <FilenameWithoutPath>gd32c10x_rcu.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -444,8 +461,8 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_gpio.c</PathWithFileName>
-      <FilenameWithoutPath>gd32e10x_gpio.c</FilenameWithoutPath>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_timer.c</PathWithFileName>
+      <FilenameWithoutPath>gd32c10x_timer.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -460,21 +477,13 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_standard_peripheral\Source\gd32e10x_ctc.c</PathWithFileName>
-      <FilenameWithoutPath>gd32e10x_ctc.c</FilenameWithoutPath>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_usart.c</PathWithFileName>
+      <FilenameWithoutPath>gd32c10x_usart.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
-  </Group>
-
-  <Group>
-    <GroupName>GD32E10x_EVAL</GroupName>
-    <tvExp>0</tvExp>
-    <tvExpOptDlg>0</tvExpOptDlg>
-    <cbSel>0</cbSel>
-    <RteFlg>0</RteFlg>
     <File>
-      <GroupNumber>4</GroupNumber>
+      <GroupNumber>3</GroupNumber>
       <FileNumber>16</FileNumber>
       <FileType>1</FileType>
       <tvExp>0</tvExp>
@@ -484,8 +493,64 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Utilities\gd32e10x_eval.c</PathWithFileName>
-      <FilenameWithoutPath>gd32e10x_eval.c</FilenameWithoutPath>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_gpio.c</PathWithFileName>
+      <FilenameWithoutPath>gd32c10x_gpio.c</FilenameWithoutPath>
+      <RteFlg>0</RteFlg>
+      <bShared>0</bShared>
+    </File>
+    <File>
+      <GroupNumber>3</GroupNumber>
+      <FileNumber>17</FileNumber>
+      <FileType>1</FileType>
+      <tvExp>0</tvExp>
+      <Focus>0</Focus>
+      <ColumnNumber>0</ColumnNumber>
+      <tvExpOptDlg>0</tvExpOptDlg>
+      <TopLine>0</TopLine>
+      <CurrentLine>0</CurrentLine>
+      <bDave2>0</bDave2>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_ctc.c</PathWithFileName>
+      <FilenameWithoutPath>gd32c10x_ctc.c</FilenameWithoutPath>
+      <RteFlg>0</RteFlg>
+      <bShared>0</bShared>
+    </File>
+    <File>
+      <GroupNumber>3</GroupNumber>
+      <FileNumber>18</FileNumber>
+      <FileType>1</FileType>
+      <tvExp>0</tvExp>
+      <Focus>0</Focus>
+      <ColumnNumber>0</ColumnNumber>
+      <tvExpOptDlg>0</tvExpOptDlg>
+      <TopLine>486</TopLine>
+      <CurrentLine>492</CurrentLine>
+      <bDave2>0</bDave2>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_spi.c</PathWithFileName>
+      <FilenameWithoutPath>gd32c10x_spi.c</FilenameWithoutPath>
+      <RteFlg>0</RteFlg>
+      <bShared>0</bShared>
+    </File>
+  </Group>
+
+  <Group>
+    <GroupName>GD32C10x_EVAL</GroupName>
+    <tvExp>0</tvExp>
+    <tvExpOptDlg>0</tvExpOptDlg>
+    <cbSel>0</cbSel>
+    <RteFlg>0</RteFlg>
+    <File>
+      <GroupNumber>4</GroupNumber>
+      <FileNumber>19</FileNumber>
+      <FileType>1</FileType>
+      <tvExp>0</tvExp>
+      <Focus>0</Focus>
+      <ColumnNumber>0</ColumnNumber>
+      <tvExpOptDlg>0</tvExpOptDlg>
+      <TopLine>0</TopLine>
+      <CurrentLine>0</CurrentLine>
+      <bDave2>0</bDave2>
+      <PathWithFileName>..\..\..\..\..\Utilities\gd32c10x_eval.c</PathWithFileName>
+      <FilenameWithoutPath>gd32c10x_eval.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -499,7 +564,7 @@
     <RteFlg>0</RteFlg>
     <File>
       <GroupNumber>5</GroupNumber>
-      <FileNumber>17</FileNumber>
+      <FileNumber>20</FileNumber>
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
@@ -508,14 +573,14 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_usbfs_library\driver\Source\drv_usb_core.c</PathWithFileName>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\driver\Source\drv_usb_core.c</PathWithFileName>
       <FilenameWithoutPath>drv_usb_core.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
     <File>
       <GroupNumber>5</GroupNumber>
-      <FileNumber>18</FileNumber>
+      <FileNumber>21</FileNumber>
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
@@ -524,14 +589,14 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_usbfs_library\driver\Source\drv_usb_dev.c</PathWithFileName>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\driver\Source\drv_usb_dev.c</PathWithFileName>
       <FilenameWithoutPath>drv_usb_dev.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
     <File>
       <GroupNumber>5</GroupNumber>
-      <FileNumber>19</FileNumber>
+      <FileNumber>22</FileNumber>
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
@@ -540,7 +605,7 @@
       <TopLine>0</TopLine>
       <CurrentLine>0</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_usbfs_library\driver\Source\drv_usbd_int.c</PathWithFileName>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\driver\Source\drv_usbd_int.c</PathWithFileName>
       <FilenameWithoutPath>drv_usbd_int.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
@@ -555,48 +620,48 @@
     <RteFlg>0</RteFlg>
     <File>
       <GroupNumber>6</GroupNumber>
-      <FileNumber>20</FileNumber>
+      <FileNumber>23</FileNumber>
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
       <ColumnNumber>0</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>0</TopLine>
-      <CurrentLine>0</CurrentLine>
+      <TopLine>88</TopLine>
+      <CurrentLine>1</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_usbfs_library\device\core\Source\usbd_core.c</PathWithFileName>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\core\Source\usbd_core.c</PathWithFileName>
       <FilenameWithoutPath>usbd_core.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
     <File>
       <GroupNumber>6</GroupNumber>
-      <FileNumber>21</FileNumber>
+      <FileNumber>24</FileNumber>
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
-      <ColumnNumber>0</ColumnNumber>
+      <ColumnNumber>49</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>0</TopLine>
-      <CurrentLine>0</CurrentLine>
+      <TopLine>506</TopLine>
+      <CurrentLine>522</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_usbfs_library\device\core\Source\usbd_enum.c</PathWithFileName>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\core\Source\usbd_enum.c</PathWithFileName>
       <FilenameWithoutPath>usbd_enum.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
     <File>
       <GroupNumber>6</GroupNumber>
-      <FileNumber>22</FileNumber>
+      <FileNumber>25</FileNumber>
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
-      <ColumnNumber>0</ColumnNumber>
+      <ColumnNumber>15</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>0</TopLine>
-      <CurrentLine>0</CurrentLine>
+      <TopLine>113</TopLine>
+      <CurrentLine>124</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_usbfs_library\device\core\Source\usbd_transc.c</PathWithFileName>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\core\Source\usbd_transc.c</PathWithFileName>
       <FilenameWithoutPath>usbd_transc.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
@@ -611,33 +676,33 @@
     <RteFlg>0</RteFlg>
     <File>
       <GroupNumber>7</GroupNumber>
-      <FileNumber>23</FileNumber>
+      <FileNumber>26</FileNumber>
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
       <ColumnNumber>0</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>502</TopLine>
-      <CurrentLine>515</CurrentLine>
+      <TopLine>266</TopLine>
+      <CurrentLine>271</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_usbfs_library\device\class\dfu\Source\dfu_core.c</PathWithFileName>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\dfu\Source\dfu_core.c</PathWithFileName>
       <FilenameWithoutPath>dfu_core.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
     <File>
       <GroupNumber>7</GroupNumber>
-      <FileNumber>24</FileNumber>
+      <FileNumber>27</FileNumber>
       <FileType>1</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
-      <ColumnNumber>0</ColumnNumber>
+      <ColumnNumber>58</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>0</TopLine>
-      <CurrentLine>0</CurrentLine>
+      <TopLine>68</TopLine>
+      <CurrentLine>74</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\GD32E10x_usbfs_library\device\class\dfu\Source\dfu_mal.c</PathWithFileName>
-      <FilenameWithoutPath>dfu_mal.c</FilenameWithoutPath>
+      <PathWithFileName>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\dfu\Source\dfu_mem.c</PathWithFileName>
+      <FilenameWithoutPath>dfu_mem.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -651,17 +716,17 @@
     <RteFlg>0</RteFlg>
     <File>
       <GroupNumber>8</GroupNumber>
-      <FileNumber>25</FileNumber>
+      <FileNumber>28</FileNumber>
       <FileType>2</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>
       <ColumnNumber>0</ColumnNumber>
       <tvExpOptDlg>0</tvExpOptDlg>
-      <TopLine>0</TopLine>
-      <CurrentLine>0</CurrentLine>
+      <TopLine>156</TopLine>
+      <CurrentLine>165</CurrentLine>
       <bDave2>0</bDave2>
-      <PathWithFileName>..\..\..\..\..\Firmware\CMSIS\GD\GD32E10x\Source\ARM\startup_gd32e10x.s</PathWithFileName>
-      <FilenameWithoutPath>startup_gd32e10x.s</FilenameWithoutPath>
+      <PathWithFileName>..\..\..\..\..\Firmware\CMSIS\GD\GD32C10x\Source\ARM\startup_gd32c10x.s</PathWithFileName>
+      <FilenameWithoutPath>startup_gd32c10x.s</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -675,7 +740,7 @@
     <RteFlg>0</RteFlg>
     <File>
       <GroupNumber>9</GroupNumber>
-      <FileNumber>26</FileNumber>
+      <FileNumber>29</FileNumber>
       <FileType>5</FileType>
       <tvExp>0</tvExp>
       <Focus>0</Focus>

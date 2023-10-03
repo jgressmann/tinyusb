@@ -1,12 +1,12 @@
 /*!
     \file    main.c
     \brief   master transmitter slave receiver
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -36,8 +36,8 @@ OF SUCH DAMAGE.
 #include <stdio.h>
 #include "gd32c10x_eval.h"
 
-#define I2C0_SLAVE_ADDRESS7    0x82
-#define I2C1_SLAVE_ADDRESS7    0x72
+#define I2C0_SLAVE_ADDRESS7      0x82
+#define I2C1_SLAVE_ADDRESS7      0x72
 
 uint8_t i2c_transmitter[16];
 uint8_t i2c_receiver[16];
@@ -57,14 +57,19 @@ ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint16_t length);
 int main(void)
 {
     int i;
+
+    /* initialize LEDs */
     gd_eval_led_init(LED2);
     gd_eval_led_init(LED3);
+    /* configure RCU */
     rcu_config();
+    /* configure GPIO */
     gpio_config();
+    /* configure I2C */
     i2c_config();
 
-    for(i = 0; i < 16;i++){
-        i2c_transmitter[i]=i+0x80;
+    for(i = 0; i < 16; i++){
+        i2c_transmitter[i] = i + 0x80;
     }
 
     /* wait until I2C bus is idle */
@@ -85,9 +90,9 @@ int main(void)
     /* clear ADDSEND bit */
     i2c_flag_clear(I2C0, I2C_FLAG_ADDSEND);
     i2c_flag_clear(I2C1, I2C_FLAG_ADDSEND);
-    for(i=0; i<16;i++){
+    for(i = 0; i < 16; i++){
         /* send a data byte */
-        i2c_data_transmit(I2C0,i2c_transmitter[i]);
+        i2c_data_transmit(I2C0, i2c_transmitter[i]);
         /* wait until the transmission data register is empty*/
         while(!i2c_flag_get(I2C0, I2C_FLAG_TBE));
         /* wait until the RBNE bit is set */
@@ -97,31 +102,33 @@ int main(void)
     }
     /* send a stop condition to I2C bus*/
     i2c_stop_on_bus(I2C0);
-    /* wait until stop condition generate */ 
-    while(I2C_CTL0(I2C0)&0x0200);
+    /* wait until stop condition generate */
+    while(I2C_CTL0(I2C0) & I2C_CTL0_STOP);
     while(!i2c_flag_get(I2C1, I2C_FLAG_STPDET));
     /* clear the STPDET bit */
     i2c_enable(I2C1);
-    state = memory_compare(i2c_transmitter, i2c_receiver,16);
+    state = memory_compare(i2c_transmitter, i2c_receiver, 16);
     if(SUCCESS == state){
         gd_eval_led_on(LED2);
         gd_eval_led_on(LED3);
     }else{
         gd_eval_led_off(LED2);
-        gd_eval_led_off(LED3); 
+        gd_eval_led_off(LED3);
     }
-    while(1);
+
+    while(1){
+    }
 }
 
 /*!
     \brief      memory compare function
-    \param[in]  src : source data
-    \param[in]  dst : destination data
-    \param[in]  length : the compare data length
+    \param[in]  src: source data
+    \param[in]  dst: destination data
+    \param[in]  length: the compare data length
     \param[out] none
-    \retval     ErrStatus : ERROR or SUCCESS
+    \retval     ErrStatus: ERROR or SUCCESS
 */
-ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint16_t length) 
+ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint16_t length)
 {
     while(length--){
         if(*src++ != *dst++){
@@ -148,7 +155,7 @@ void rcu_config(void)
 }
 
 /*!
-    \brief      configure the GPIO ports.
+    \brief      configure the GPIO ports
     \param[in]  none
     \param[out] none
     \retval     none

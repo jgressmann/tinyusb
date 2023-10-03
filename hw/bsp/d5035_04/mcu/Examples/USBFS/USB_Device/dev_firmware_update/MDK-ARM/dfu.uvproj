@@ -360,7 +360,7 @@
             <useXO>0</useXO>
             <VariousControls>
               <MiscControls>--c99</MiscControls>
-              <Define>USE_STDPERIPH_DRIVER,USE_USB_FS,GD32C10X GD32C103V_EVAL USE_IRC48M</Define>
+              <Define>USE_STDPERIPH_DRIVER,USE_USB_FS,GD32C10X GD32C103V_EVAL</Define>
               <Undefine></Undefine>
               <IncludePath>..\inc;..\..\..\..\..\Firmware\CMSIS\GD\GD32C10x\Include;..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Include;..\..\..\..\..\Firmware\GD32C10x_usbfs_library\driver\Include;..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\core\Include;..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\dfu\Include;..\..\..\..\..\Firmware\GD32C10x_usbfs_library\ustd\common;..\..\..\..\..\Utilities</IncludePath>
             </VariousControls>
@@ -411,11 +411,6 @@
               <FilePath>..\src\app.c</FilePath>
             </File>
             <File>
-              <FileName>flash_if.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\src\flash_if.c</FilePath>
-            </File>
-            <File>
               <FileName>gd32c10x_hw.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\src\gd32c10x_hw.c</FilePath>
@@ -429,6 +424,21 @@
               <FileName>dfu_fmc.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\src\dfu_fmc.c</FilePath>
+            </File>
+            <File>
+              <FileName>gd25qxx.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\src\gd25qxx.c</FilePath>
+            </File>
+            <File>
+              <FileName>inter_flash_if.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\src\inter_flash_if.c</FilePath>
+            </File>
+            <File>
+              <FileName>nor_flash_if.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\src\nor_flash_if.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -489,6 +499,11 @@
               <FileName>gd32c10x_ctc.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_ctc.c</FilePath>
+            </File>
+            <File>
+              <FileName>gd32c10x_spi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\..\..\Firmware\GD32C10x_standard_peripheral\Source\gd32c10x_spi.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -551,9 +566,9 @@
               <FilePath>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\dfu\Source\dfu_core.c</FilePath>
             </File>
             <File>
-              <FileName>dfu_mal.c</FileName>
+              <FileName>dfu_mem.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\dfu\Source\dfu_mal.c</FilePath>
+              <FilePath>..\..\..\..\..\Firmware\GD32C10x_usbfs_library\device\class\dfu\Source\dfu_mem.c</FilePath>
             </File>
           </Files>
         </Group>

@@ -2,11 +2,11 @@
     \file    main.c
     \brief   RTC calendar 
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -41,7 +41,6 @@ OF SUCH DAMAGE.
 
 #define BACKUP_DATA   (0xABCD)
 
-void led_config(void);
 void rtc_process(void);
 
 /*!
@@ -54,12 +53,6 @@ int main(void)
 {
     /* COM1 config */
     gd_eval_com_init(EVAL_COM1);
-
-    /* LEDs config */
-    led_config();
-
-    /* configure the user key */
-    gd_eval_key_init(KEY_USER, KEY_MODE_EXTI);
 
     /* NVIC config */
     nvic_configuration();
@@ -87,20 +80,6 @@ int main(void)
 }
 
 /*!
-    \brief      configure leds
-    \param[in]  none
-    \param[out] none
-    \retval     none
-*/
-void led_config(void)
-{
-    gd_eval_led_init(LED2);
-    gd_eval_led_init(LED3);
-    gd_eval_led_init(LED4);
-    gd_eval_led_init(LED5);
-}
-
-/*!
     \brief      different processes depending on the backup data to display calendar on LCD
     \param[in]  none
     \param[out] none
@@ -108,11 +87,17 @@ void led_config(void)
 */
 void rtc_process(void)
 {
+    uint32_t rtcsrc_flag = 0;
+
     printf("\r\n This is a RTC demo......" );
 
-    if(bkp_data_read(BKP_DATA_0) != BACKUP_DATA){
+    /* get RTC clock entry selection */
+    rtcsrc_flag = GET_BITS(RCU_BDCTL, 8, 9);
+
+    if((bkp_data_read(BKP_DATA_0) != BACKUP_DATA) || (0U == rtcsrc_flag)){
         /* backup data register value is not correct or not yet programmed
-        (when the first time the program is executed) */
+        or RTC clock source is not configured (when the first time the program
+        is executed or data in RCU_BDCTL is lost due to Vbat feeding) */
         printf("\r\n RTC has not been configured yet....");
 
         /* RTC configuration */
@@ -120,7 +105,7 @@ void rtc_process(void)
 
         printf("\r\n start the RTC configuration....");
 
-        /* adjust time by values entred by the user on the hyperterminal */
+        /* adjust time by values entered by the user on the hyper terminal */
         time_adjust();
 
         bkp_data_write(BKP_DATA_0, BACKUP_DATA);
@@ -143,7 +128,6 @@ void rtc_process(void)
         rtc_lwoff_wait();
         /* enable the RTC second and alarm interrupt*/
         rtc_interrupt_enable(RTC_INT_SECOND);
-        rtc_interrupt_enable(RTC_INT_ALARM);
         /* wait until last write operation on RTC registers has finished */
         rtc_lwoff_wait();
     }

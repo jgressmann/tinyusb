@@ -2,11 +2,11 @@
     \file    main.c
     \brief   ADC0 ADC1 regular parallel
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -198,7 +198,7 @@ void adc_config(void)
     adc_deinit(ADC1);
     /* ADC mode config */
     adc_mode_config(ADC_DAUL_REGULAL_PARALLEL); 
-    /* ADC continous function enable */
+    /* ADC continuous function enable */
     adc_special_function_config(ADC0, ADC_SCAN_MODE, ENABLE); 
     adc_special_function_config(ADC1, ADC_SCAN_MODE, ENABLE);
     /* ADC data alignment config */

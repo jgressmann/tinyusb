@@ -1,12 +1,12 @@
 /*!
     \file    readme.txt
     \brief   description of the master receiver two bytes
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -43,6 +43,7 @@ the received data in the i2c_receiver array.
   This demo doesn't perform the data transfer actually, which is due to no 
 specific slave.In the specific application, we must send the correct slave 
 address, and the master and the slave may need to be connected by the jumper 
-if necessary.
+if necessary. When the data is received completely, the received data will be 
+printed by COM0.
 
-  P4 must be fitted.
+  P4 must be fitted to the I2C port. JP5, JP6 must be fitted to the USART0 port.

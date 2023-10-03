@@ -1,12 +1,12 @@
 /*!
     \file    main.c
     \brief   master receiver and slave transmitter interrupt
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -33,16 +33,16 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32c10x.h"
-#include "I2C_IE.h"
+#include "i2c_ie.h"
 #include "gd32c10x_eval.h"
 
 uint8_t i2c_buffer_transmitter[16];
 uint8_t i2c_buffer_receiver[16];
 
-volatile uint8_t*       i2c_txbuffer;
-volatile uint8_t*       i2c_rxbuffer;
-volatile uint16_t       I2C_nBytes;
-volatile ErrStatus      status;
+volatile uint8_t* i2c_txbuffer;
+volatile uint8_t* i2c_rxbuffer;
+volatile uint16_t i2c_nbytes;
+volatile ErrStatus status;
 ErrStatus state = ERROR;
 
 void rcu_config(void);
@@ -60,34 +60,39 @@ ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint16_t length);
 int main(void)
 {
     int i;
-    
-    /* initialize LED2, LED3, as the transfer instruction */
+
+    /* initialize LEDs */
     gd_eval_led_init(LED2);
     gd_eval_led_init(LED3);
+    /* configure RCU */
     rcu_config();
+    /* configure GPIO */
     gpio_config();
+    /* configure I2C */
     i2c_config();
+    /* configure the NVIC */
     i2c_nvic_config();
 
-    for(i=0; i<16; i++){
+    for(i = 0; i < 16; i++){
         i2c_buffer_transmitter[i] = i + 0x80;
     }
-     /* initialize i2c_txbuffer, i2c_rxbuffer, I2C_nBytes and status */
+    /* initialize i2c_txbuffer, i2c_rxbuffer, i2c_nbytes and status */
     i2c_txbuffer = i2c_buffer_transmitter;
     i2c_rxbuffer = i2c_buffer_receiver;
-    I2C_nBytes = 16;
+    i2c_nbytes = 16;
     status = ERROR;
-    
+
     /* enable the I2C0 interrupt */
     i2c_interrupt_enable(I2C0, I2C_INT_ERR);
     i2c_interrupt_enable(I2C0, I2C_INT_BUF);
     i2c_interrupt_enable(I2C0, I2C_INT_EV);
+
     /* enable the I2C1 interrupt */
     i2c_interrupt_enable(I2C1, I2C_INT_ERR);
     i2c_interrupt_enable(I2C1, I2C_INT_BUF);
     i2c_interrupt_enable(I2C1, I2C_INT_EV);
-    
-    if(2 == I2C_nBytes){
+
+    if(2 == i2c_nbytes) {
         /* send ACK for the next byte */
         i2c_ackpos_config(I2C0, I2C_ACKPOS_NEXT);
     }
@@ -95,8 +100,8 @@ int main(void)
     while(i2c_flag_get(I2C0, I2C_FLAG_I2CBSY));
     /* the master sends a start condition to I2C bus */
     i2c_start_on_bus(I2C0);
-    
-    while(I2C_nBytes>0);
+
+    while(i2c_nbytes > 0);
     while(SUCCESS != status);
     /* if the transfer is successfully completed, LED2 and LED3 is on */
     state = memory_compare(i2c_buffer_transmitter, i2c_buffer_receiver, 16);
@@ -107,24 +112,25 @@ int main(void)
     }else{
         /* if failed, LED2 and LED3 are off */
         gd_eval_led_off(LED2);
-        gd_eval_led_off(LED3); 
-    } 
-    while(1)
-    {}
+        gd_eval_led_off(LED3);
+    }
+
+    while(1){
+    }
 }
 
 /*!
     \brief      memory compare function
-    \param[in]  src : source data
-    \param[in]  dst : destination data
-    \param[in]  length : the compare data length
+    \param[in]  src: source data
+    \param[in]  dst: destination data
+    \param[in]  length: the compare data length
     \param[out] none
-    \retval     ErrStatus : ERROR or SUCCESS
+    \retval     ErrStatus: ERROR or SUCCESS
 */
-ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint16_t length) 
+ErrStatus memory_compare(uint8_t* src, uint8_t* dst, uint16_t length)
 {
-    while(length--){
-        if(*src++ != *dst++){
+    while(length--) {
+        if(*src++ != *dst++) {
             return ERROR;
         }
     }

@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of the deepsleep wakeup through exti demo
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -32,21 +32,8 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 OF SUCH DAMAGE.
 */
 
-
   This example is based on the GD32C103V-EVAL-V1.0 board, it shows pmu how to enter deepsleep 
-mode and wakeup it.
-
-  Connect the CK_OUT0 pin (PA8) to an oscilloscope to monitor the CK_SYS frequency.
-
-  Step 1: When the board is start up, LEDs spark quickly and the oscilloscope shows that 
-the frequency of CK_SYS is 120M Hz.
-
-  Step 2: Press wakeup key to enter deepsleep mode. LEDs stop flashing and there is no waveform 
-on the oscilloscope.
-
-  Step 3: Press tamper key to generate an exti interrupt, mcu will be wakeuped from deepsleep 
-mode. LEDs spark again, but the LEDs spark slowly, because IRC8M is the system clock source 
-at this moment. The oscilloscope shows that the frequency of CK_SYS is 8M Hz.
-
-  Step 4: Press user key to reinitialize the system clock. LEDs will spark quickly and the 
-oscilloscope shows that the frequency of CK_SYS is 120M Hz.
+mode and wakeup it. Press wakeup key to enter deepsleep mode, led stop flashing. When 
+you press tamper key to generate an exti interrupt, mcu will be wakeuped from deepsleep 
+mode, led sparks again. But the led sparks slower, because at this time IRC8M is the system 
+clock.

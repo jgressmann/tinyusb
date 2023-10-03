@@ -2,12 +2,11 @@
     \file    gd32c10x_can.c
     \brief   CAN driver
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
-    \version 2021-05-31, V1.0.1, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2021, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification,
 are permitted provided that the following conditions are met:
@@ -38,51 +37,8 @@ OF SUCH DAMAGE.
 
 #define CAN_ERROR_HANDLE(s)         do{}while(1)
 
-/* BS1[6:0] + BS2[4:0] */
-#define DEV_CAN_BT_SEG_MAX          158u
-#define DEV_CAN_BT_SEG_MIN          3u
-
-/* BS1[3:0] + BS2[2:0] */
-#define DEV_CAN_FD_BT_SEG_MAX       22u
-#define DEV_CAN_FD_BT_SEG_MIN       3u
-
-/* CAN related register mask */
-#define DEV_CAN_FD_BS1_MASK         0x000F0000U
-#define DEV_CAN_FD_BS2_MASK         0x00700000U
-#define DEV_CAN_BAUDPSC_MASK        0x000003FFU
-#define DEV_CAN_SJW_MASK            0x1F000000U
-#define DEV_CAN_FD_SJW_MASK         0x07000000U
 /* This table can be used to calculate data length in FD mode */
 const uint8_t g_can_fdlength_table[] = {12, 16, 20, 24, 32, 48, 64};
-/* This table can be used to calculate bit time: timing_pts{BS1[3:0], BS2[2:0]} */
-static const uint32_t timing_pts[23][2] = {
-    {0x0, 0x0},      /* 2, 50% */
-    {0x1, 0x0},      /* 3, 67% */
-    {0x2, 0x0},      /* 4, 75% */
-    {0x3, 0x0},      /* 5, 80% */
-    {0x3, 0x1},      /* 6, 67% */
-    {0x4, 0x1},      /* 7, 71% */
-    {0x5, 0x1},      /* 8, 75% */
-    {0x6, 0x1},      /* 9, 78% */
-    {0x6, 0x2},      /* 10, 70% */
-    {0x7, 0x2},      /* 11, 73% */
-    {0x8, 0x2},      /* 12, 75% */
-    {0x9, 0x2},      /* 13, 77% */
-    {0x9, 0x3},      /* 14, 71% */
-    {0xA, 0x3},      /* 15, 73% */
-    {0xB, 0x3},      /* 16, 75% */
-    {0xC, 0x3},      /* 17, 76% */
-    {0xD, 0x3},      /* 18, 78% */
-    {0xD, 0x4},      /* 19, 74% */
-    {0xE, 0x4},      /* 20, 75% */
-    {0xF, 0x4},      /* 21, 76% */
-    {0xF, 0x5},      /* 22, 73% */
-    {0xF, 0x6},      /* 23, 70% */
-    {0xF, 0x7},      /* 24, 67% */
-};
-
-static unsigned int dev_can_baudrate_set(uint32_t freq);
-static unsigned int dev_can_fd_baudrate_set(uint32_t freq);
 
 /*!
     \brief      deinitialize CAN
@@ -93,10 +49,10 @@ static unsigned int dev_can_fd_baudrate_set(uint32_t freq);
 */
 void can_deinit(uint32_t can_periph)
 {
-    if(CAN0 == can_periph){
+    if(CAN0 == can_periph) {
         rcu_periph_reset_enable(RCU_CAN0RST);
         rcu_periph_reset_disable(RCU_CAN0RST);
-    }else{
+    } else {
         rcu_periph_reset_enable(RCU_CAN1RST);
         rcu_periph_reset_disable(RCU_CAN1RST);
     }
@@ -115,96 +71,96 @@ void can_deinit(uint32_t can_periph)
     \param[out] none
     \retval     none
 */
-void can_struct_para_init(can_struct_type_enum type, void* p_struct)
+void can_struct_para_init(can_struct_type_enum type, void *p_struct)
 {
     uint8_t i;
-    
-    if(NULL == p_struct){
+
+    if(NULL == p_struct) {
         CAN_ERROR_HANDLE("struct parameter can not be NULL \r\n");
     }
 
     /* get type of the struct */
-    switch(type){
-        /* used for can_init() */
-        case CAN_INIT_STRUCT:
-            ((can_parameter_struct*)p_struct)->auto_bus_off_recovery = DISABLE;
-            ((can_parameter_struct*)p_struct)->auto_retrans = DISABLE;
-            ((can_parameter_struct*)p_struct)->auto_wake_up = DISABLE;
-            ((can_parameter_struct*)p_struct)->prescaler = 0x0400U;
-            ((can_parameter_struct*)p_struct)->rec_fifo_overwrite = DISABLE;
-            ((can_parameter_struct*)p_struct)->resync_jump_width = CAN_BT_SJW_1TQ;
-            ((can_parameter_struct*)p_struct)->time_segment_1 = CAN_BT_BS1_3TQ;
-            ((can_parameter_struct*)p_struct)->time_segment_2 = CAN_BT_BS2_1TQ;
-            ((can_parameter_struct*)p_struct)->time_triggered = DISABLE;
-            ((can_parameter_struct*)p_struct)->trans_fifo_order = DISABLE;
-            ((can_parameter_struct*)p_struct)->working_mode = CAN_NORMAL_MODE;
+    switch(type) {
+    /* used for can_init() */
+    case CAN_INIT_STRUCT:
+        ((can_parameter_struct *)p_struct)->auto_bus_off_recovery = DISABLE;
+        ((can_parameter_struct *)p_struct)->auto_retrans = DISABLE;
+        ((can_parameter_struct *)p_struct)->auto_wake_up = DISABLE;
+        ((can_parameter_struct *)p_struct)->prescaler = 0x0400U;
+        ((can_parameter_struct *)p_struct)->rec_fifo_overwrite = DISABLE;
+        ((can_parameter_struct *)p_struct)->resync_jump_width = CAN_BT_SJW_1TQ;
+        ((can_parameter_struct *)p_struct)->time_segment_1 = CAN_BT_BS1_3TQ;
+        ((can_parameter_struct *)p_struct)->time_segment_2 = CAN_BT_BS2_1TQ;
+        ((can_parameter_struct *)p_struct)->time_triggered = DISABLE;
+        ((can_parameter_struct *)p_struct)->trans_fifo_order = DISABLE;
+        ((can_parameter_struct *)p_struct)->working_mode = CAN_NORMAL_MODE;
 
-            break;
-        /* used for can_filter_init() */
-        case CAN_FILTER_STRUCT:
-            ((can_filter_parameter_struct*)p_struct)->filter_bits = CAN_FILTERBITS_32BIT;
-            ((can_filter_parameter_struct*)p_struct)->filter_enable = DISABLE;
-            ((can_filter_parameter_struct*)p_struct)->filter_fifo_number = CAN_FIFO0;
-            ((can_filter_parameter_struct*)p_struct)->filter_list_high = 0x0000U;
-            ((can_filter_parameter_struct*)p_struct)->filter_list_low = 0x0000U;
-            ((can_filter_parameter_struct*)p_struct)->filter_mask_high = 0x0000U;
-            ((can_filter_parameter_struct*)p_struct)->filter_mask_low = 0x0000U;
-            ((can_filter_parameter_struct*)p_struct)->filter_mode = CAN_FILTERMODE_MASK;
-            ((can_filter_parameter_struct*)p_struct)->filter_number = 0U;
+        break;
+    /* used for can_filter_init() */
+    case CAN_FILTER_STRUCT:
+        ((can_filter_parameter_struct *)p_struct)->filter_bits = CAN_FILTERBITS_32BIT;
+        ((can_filter_parameter_struct *)p_struct)->filter_enable = DISABLE;
+        ((can_filter_parameter_struct *)p_struct)->filter_fifo_number = CAN_FIFO0;
+        ((can_filter_parameter_struct *)p_struct)->filter_list_high = 0x0000U;
+        ((can_filter_parameter_struct *)p_struct)->filter_list_low = 0x0000U;
+        ((can_filter_parameter_struct *)p_struct)->filter_mask_high = 0x0000U;
+        ((can_filter_parameter_struct *)p_struct)->filter_mask_low = 0x0000U;
+        ((can_filter_parameter_struct *)p_struct)->filter_mode = CAN_FILTERMODE_MASK;
+        ((can_filter_parameter_struct *)p_struct)->filter_number = 0U;
 
-            break;
-        /* used for can_fd_init() */
-        case CAN_FD_FRAME_STRUCT:
-            ((can_fdframe_struct*)p_struct)->data_prescaler = 0x0400U;
-            ((can_fdframe_struct*)p_struct)->data_resync_jump_width = 1U - 1U;
-            ((can_fdframe_struct*)p_struct)->data_time_segment_1 = 3U - 1U;
-            ((can_fdframe_struct*)p_struct)->data_time_segment_2 = 2U - 1U;
-            ((can_fdframe_struct*)p_struct)->delay_compensation = DISABLE;
-            ((can_fdframe_struct*)p_struct)->esi_mode = CAN_ESIMOD_HARDWARE;
-            ((can_fdframe_struct*)p_struct)->excp_event_detect = ENABLE;
-            ((can_fdframe_struct*)p_struct)->fd_frame = DISABLE;
-            ((can_fdframe_struct*)p_struct)->iso_bosch = CAN_FDMOD_ISO;
-            ((can_fdframe_struct*)p_struct)->p_delay_compensation = 0U;
+        break;
+    /* used for can_fd_init() */
+    case CAN_FD_FRAME_STRUCT:
+        ((can_fdframe_struct *)p_struct)->data_prescaler = 0x0400U;
+        ((can_fdframe_struct *)p_struct)->data_resync_jump_width = 1U - 1U;
+        ((can_fdframe_struct *)p_struct)->data_time_segment_1 = 3U - 1U;
+        ((can_fdframe_struct *)p_struct)->data_time_segment_2 = 2U - 1U;
+        ((can_fdframe_struct *)p_struct)->delay_compensation = DISABLE;
+        ((can_fdframe_struct *)p_struct)->esi_mode = CAN_ESIMOD_HARDWARE;
+        ((can_fdframe_struct *)p_struct)->excp_event_detect = ENABLE;
+        ((can_fdframe_struct *)p_struct)->fd_frame = DISABLE;
+        ((can_fdframe_struct *)p_struct)->iso_bosch = CAN_FDMOD_ISO;
+        ((can_fdframe_struct *)p_struct)->p_delay_compensation = 0U;
 
-            break;
-        /* used for can_message_transmit() */
-        case CAN_TX_MESSAGE_STRUCT:
-            ((can_trasnmit_message_struct*)p_struct)->fd_brs = CAN_BRS_DISABLE;
-            ((can_trasnmit_message_struct*)p_struct)->fd_esi = CAN_ESI_DOMINANT;
-            ((can_trasnmit_message_struct*)p_struct)->fd_flag = CAN_FDF_CLASSIC;
+        break;
+    /* used for can_message_transmit() */
+    case CAN_TX_MESSAGE_STRUCT:
+        ((can_trasnmit_message_struct *)p_struct)->fd_brs = CAN_BRS_DISABLE;
+        ((can_trasnmit_message_struct *)p_struct)->fd_esi = CAN_ESI_DOMINANT;
+        ((can_trasnmit_message_struct *)p_struct)->fd_flag = CAN_FDF_CLASSIC;
 
-            for(i = 0U; i < 64U; i++){
-                ((can_trasnmit_message_struct*)p_struct)->tx_data[i] = 0U;
-            }
+        for(i = 0U; i < 64U; i++) {
+            ((can_trasnmit_message_struct *)p_struct)->tx_data[i] = 0U;
+        }
 
-            ((can_trasnmit_message_struct*)p_struct)->tx_dlen = 0u;
-            ((can_trasnmit_message_struct*)p_struct)->tx_efid = 0U;
-            ((can_trasnmit_message_struct*)p_struct)->tx_ff = (uint8_t)CAN_FF_STANDARD;
-            ((can_trasnmit_message_struct*)p_struct)->tx_ft = (uint8_t)CAN_FT_DATA;
-            ((can_trasnmit_message_struct*)p_struct)->tx_sfid = 0U;
+        ((can_trasnmit_message_struct *)p_struct)->tx_dlen = 0u;
+        ((can_trasnmit_message_struct *)p_struct)->tx_efid = 0U;
+        ((can_trasnmit_message_struct *)p_struct)->tx_ff = (uint8_t)CAN_FF_STANDARD;
+        ((can_trasnmit_message_struct *)p_struct)->tx_ft = (uint8_t)CAN_FT_DATA;
+        ((can_trasnmit_message_struct *)p_struct)->tx_sfid = 0U;
 
-            break;
-        /* used for can_message_receive() */
-        case CAN_RX_MESSAGE_STRUCT:
-            ((can_receive_message_struct*)p_struct)->fd_brs = CAN_BRS_DISABLE;
-            ((can_receive_message_struct*)p_struct)->fd_esi = CAN_ESI_DOMINANT;
-            ((can_receive_message_struct*)p_struct)->fd_flag = CAN_FDF_CLASSIC;
+        break;
+    /* used for can_message_receive() */
+    case CAN_RX_MESSAGE_STRUCT:
+        ((can_receive_message_struct *)p_struct)->fd_brs = CAN_BRS_DISABLE;
+        ((can_receive_message_struct *)p_struct)->fd_esi = CAN_ESI_DOMINANT;
+        ((can_receive_message_struct *)p_struct)->fd_flag = CAN_FDF_CLASSIC;
 
-            for(i = 0U; i < 64U; i++){
-                ((can_receive_message_struct*)p_struct)->rx_data[i] = 0U;
-            }
+        for(i = 0U; i < 64U; i++) {
+            ((can_receive_message_struct *)p_struct)->rx_data[i] = 0U;
+        }
 
-            ((can_receive_message_struct*)p_struct)->rx_dlen = 0U;
-            ((can_receive_message_struct*)p_struct)->rx_efid = 0U;
-            ((can_receive_message_struct*)p_struct)->rx_ff = (uint8_t)CAN_FF_STANDARD;
-            ((can_receive_message_struct*)p_struct)->rx_fi = 0U;
-            ((can_receive_message_struct*)p_struct)->rx_ft = (uint8_t)CAN_FT_DATA;
-            ((can_receive_message_struct*)p_struct)->rx_sfid = 0U;
+        ((can_receive_message_struct *)p_struct)->rx_dlen = 0U;
+        ((can_receive_message_struct *)p_struct)->rx_efid = 0U;
+        ((can_receive_message_struct *)p_struct)->rx_ff = (uint8_t)CAN_FF_STANDARD;
+        ((can_receive_message_struct *)p_struct)->rx_fi = 0U;
+        ((can_receive_message_struct *)p_struct)->rx_ft = (uint8_t)CAN_FT_DATA;
+        ((can_receive_message_struct *)p_struct)->rx_sfid = 0U;
 
-            break;
+        break;
 
-        default:
-            CAN_ERROR_HANDLE("parameter is invalid \r\n");
+    default:
+        CAN_ERROR_HANDLE("parameter is invalid \r\n");
     }
 }
 
@@ -227,7 +183,7 @@ void can_struct_para_init(can_struct_type_enum type, void* p_struct)
     \param[out] none
     \retval     ErrStatus: SUCCESS or ERROR
 */
-ErrStatus can_init(uint32_t can_periph, can_parameter_struct* can_parameter_init)
+ErrStatus can_init(uint32_t can_periph, can_parameter_struct *can_parameter_init)
 {
     uint32_t timeout = CAN_TIMEOUT;
     ErrStatus flag = ERROR;
@@ -238,16 +194,16 @@ ErrStatus can_init(uint32_t can_periph, can_parameter_struct* can_parameter_init
     /* enable initialize mode */
     CAN_CTL(can_periph) |= CAN_CTL_IWMOD;
     /* wait ACK */
-    while((CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)) && (0U != timeout)){
+    while((CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)) && (0U != timeout)) {
         timeout--;
     }
     /* check initialize working success */
-    if(CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)){
+    if(CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)) {
         flag = ERROR;
-    }else{
+    } else {
         /* set the bit timing register */
         fdctl_status = CAN_FDCTL(can_periph);
-        if(CAN_FDCTL_FDEN != (fdctl_status&CAN_FDCTL_FDEN)){
+        if(CAN_FDCTL_FDEN != (fdctl_status & CAN_FDCTL_FDEN)) {
             /* CAN FD disable, should first enable, then write */
             fdctl_status = fdctl_status | CAN_FDCTL_FDEN;
             CAN_FDCTL(can_periph) = fdctl_status;
@@ -258,60 +214,60 @@ ErrStatus can_init(uint32_t can_periph, can_parameter_struct* can_parameter_init
                                   BT_BAUDPSC(((uint32_t)(can_parameter_init->prescaler) - 1U)));
             fdctl_status = fdctl_status & (~CAN_FDCTL_FDEN);
             CAN_FDCTL(can_periph) = fdctl_status;
-        }else{
-           /* CAN FD enable */
-           CAN_BT(can_periph) = (BT_MODE((uint32_t)can_parameter_init->working_mode) | \
-                                 BT_SJW((uint32_t)can_parameter_init->resync_jump_width) | \
-                                 BT_BS1((uint32_t)can_parameter_init->time_segment_1) | \
-                                 BT_BS2((uint32_t)can_parameter_init->time_segment_2) | \
-                                 BT_BAUDPSC(((uint32_t)(can_parameter_init->prescaler) - 1U)));
+        } else {
+            /* CAN FD enable */
+            CAN_BT(can_periph) = (BT_MODE((uint32_t)can_parameter_init->working_mode) | \
+                                  BT_SJW((uint32_t)can_parameter_init->resync_jump_width) | \
+                                  BT_BS1((uint32_t)can_parameter_init->time_segment_1) | \
+                                  BT_BS2((uint32_t)can_parameter_init->time_segment_2) | \
+                                  BT_BAUDPSC(((uint32_t)(can_parameter_init->prescaler) - 1U)));
         }
 
         /* time trigger communication mode */
-        if(ENABLE == can_parameter_init->time_triggered){
+        if(ENABLE == can_parameter_init->time_triggered) {
             CAN_CTL(can_periph) |= CAN_CTL_TTC;
-        }else{
+        } else {
             CAN_CTL(can_periph) &= ~CAN_CTL_TTC;
         }
         /* automatic bus-off management */
-        if(ENABLE == can_parameter_init->auto_bus_off_recovery){
+        if(ENABLE == can_parameter_init->auto_bus_off_recovery) {
             CAN_CTL(can_periph) |= CAN_CTL_ABOR;
-        }else{
+        } else {
             CAN_CTL(can_periph) &= ~CAN_CTL_ABOR;
         }
         /* automatic wakeup mode */
-        if(ENABLE == can_parameter_init->auto_wake_up){
+        if(ENABLE == can_parameter_init->auto_wake_up) {
             CAN_CTL(can_periph) |= CAN_CTL_AWU;
-        }else{
+        } else {
             CAN_CTL(can_periph) &= ~CAN_CTL_AWU;
         }
         /* automatic retransmission mode */
-        if(ENABLE == can_parameter_init->auto_retrans){
+        if(ENABLE == can_parameter_init->auto_retrans) {
             CAN_CTL(can_periph) &= ~CAN_CTL_ARD;
-        }else{
+        } else {
             CAN_CTL(can_periph) |= CAN_CTL_ARD;
         }
         /* receive fifo overwrite mode */
-        if(ENABLE == can_parameter_init->rec_fifo_overwrite){
+        if(ENABLE == can_parameter_init->rec_fifo_overwrite) {
             CAN_CTL(can_periph) &= ~CAN_CTL_RFOD;
-        }else{
+        } else {
             CAN_CTL(can_periph) |= CAN_CTL_RFOD;
         }
         /* transmit fifo order */
-        if(ENABLE == can_parameter_init->trans_fifo_order){
+        if(ENABLE == can_parameter_init->trans_fifo_order) {
             CAN_CTL(can_periph) |= CAN_CTL_TFO;
-        }else{
+        } else {
             CAN_CTL(can_periph) &= ~CAN_CTL_TFO;
         }
         /* disable initialize mode */
         CAN_CTL(can_periph) &= ~CAN_CTL_IWMOD;
         timeout = CAN_TIMEOUT;
         /* wait the ACK */
-        while((CAN_STAT_IWS == (CAN_STAT(can_periph) & CAN_STAT_IWS)) && (0U != timeout)){
+        while((CAN_STAT_IWS == (CAN_STAT(can_periph) & CAN_STAT_IWS)) && (0U != timeout)) {
             timeout--;
         }
         /* check exit initialize mode */
-        if(0U != timeout){
+        if(0U != timeout) {
             flag = SUCCESS;
         }
     }
@@ -340,13 +296,13 @@ ErrStatus can_init(uint32_t can_periph, can_parameter_struct* can_parameter_init
     \param[out] none
     \retval     ErrStatus: SUCCESS or ERROR
 */
-ErrStatus can_fd_init(uint32_t can_periph, can_fdframe_struct* can_fdframe_init)
+ErrStatus can_fd_init(uint32_t can_periph, can_fdframe_struct *can_fdframe_init)
 {
     uint32_t timeout = CAN_TIMEOUT;
     uint32_t tempreg = 0U;
 
     /* check null pointer */
-    if(0 == can_fdframe_init){
+    if(0 == can_fdframe_init) {
         return ERROR;
     }
     /* disable sleep mode */
@@ -354,13 +310,13 @@ ErrStatus can_fd_init(uint32_t can_periph, can_fdframe_struct* can_fdframe_init)
     /* enable initialize mode */
     CAN_CTL(can_periph) |= CAN_CTL_IWMOD;
     /* wait ACK */
-    while((CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)) && (0U != timeout)){
+    while((CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)) && (0U != timeout)) {
         timeout--;
     }
     /* check initialize working success */
-    if(CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)){
+    if(CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)) {
         return ERROR;
-    }else{
+    } else {
         /* set the data bit timing register */
         CAN_DBT(can_periph) = (BT_DSJW((uint32_t)can_fdframe_init->data_resync_jump_width) | \
                                BT_DBS1((uint32_t)can_fdframe_init->data_time_segment_1) | \
@@ -370,31 +326,32 @@ ErrStatus can_fd_init(uint32_t can_periph, can_fdframe_struct* can_fdframe_init)
         tempreg = can_fdframe_init->esi_mode | can_fdframe_init->iso_bosch;
 
         /* Protocol exception event detection */
-        if(ENABLE == can_fdframe_init->excp_event_detect){
+        if(ENABLE == can_fdframe_init->excp_event_detect) {
             tempreg &= ~CAN_FDCTL_PRED;
-        }else{
+        } else {
             tempreg |= CAN_FDCTL_PRED;
         }
 
         /* Transmitter delay compensation mode */
-        if(ENABLE == can_fdframe_init->delay_compensation){
+        if(ENABLE == can_fdframe_init->delay_compensation) {
             tempreg |= CAN_FDCTL_TDCEN;
             /* p_delay_compensation pointer should be config when TDC mode is enabled */
-            if(0 != can_fdframe_init->p_delay_compensation){
+            if(0 != can_fdframe_init->p_delay_compensation) {
                 tempreg |= (can_fdframe_init->p_delay_compensation->tdc_mode & CAN_FDCTL_TDCMOD);
-                CAN_FDTDC(can_periph) = (FDTDC_TDCF(can_fdframe_init->p_delay_compensation->tdc_filter) | FDTDC_TDCO(can_fdframe_init->p_delay_compensation->tdc_offset));
-            }else{
+                CAN_FDTDC(can_periph) = (FDTDC_TDCF(can_fdframe_init->p_delay_compensation->tdc_filter) | FDTDC_TDCO(
+                                             can_fdframe_init->p_delay_compensation->tdc_offset));
+            } else {
                 return ERROR;
             }
-        }else{
+        } else {
             /* Transmitter delay compensation mode is disabled */
             tempreg &= ~CAN_FDCTL_TDCEN;
         }
 
         /* FD operation mode */
-        if(ENABLE == can_fdframe_init->fd_frame){
+        if(ENABLE == can_fdframe_init->fd_frame) {
             tempreg |= CAN_FDCTL_FDEN;
-        }else{
+        } else {
             tempreg &= ~CAN_FDCTL_FDEN;
         }
         CAN_FDCTL(can_periph) = tempreg;
@@ -403,11 +360,11 @@ ErrStatus can_fd_init(uint32_t can_periph, can_fdframe_struct* can_fdframe_init)
         CAN_CTL(can_periph) &= ~CAN_CTL_IWMOD;
         timeout = CAN_TIMEOUT;
         /* wait the ACK */
-        while((CAN_STAT_IWS == (CAN_STAT(can_periph) & CAN_STAT_IWS)) && (0U != timeout)){
+        while((CAN_STAT_IWS == (CAN_STAT(can_periph) & CAN_STAT_IWS)) && (0U != timeout)) {
             timeout--;
         }
         /* check exit initialize mode */
-        if(0U == timeout){
+        if(0U == timeout) {
             return ERROR;
         }
     }
@@ -430,7 +387,7 @@ ErrStatus can_fd_init(uint32_t can_periph, can_fdframe_struct* can_fdframe_init)
     \param[out] none
     \retval     none
 */
-void can_filter_init(can_filter_parameter_struct* can_filter_parameter_init)
+void can_filter_init(can_filter_parameter_struct *can_filter_parameter_init)
 {
     uint32_t val = 0U;
 
@@ -441,52 +398,52 @@ void can_filter_init(can_filter_parameter_struct* can_filter_parameter_init)
     CAN_FW(CAN0) &= ~(uint32_t)val;
 
     /* filter 16 bits */
-    if(CAN_FILTERBITS_16BIT == can_filter_parameter_init->filter_bits){
+    if(CAN_FILTERBITS_16BIT == can_filter_parameter_init->filter_bits) {
         /* set filter 16 bits */
         CAN_FSCFG(CAN0) &= ~(uint32_t)val;
         /* first 16 bits list and first 16 bits mask or first 16 bits list and second 16 bits list */
         CAN_FDATA0(CAN0, can_filter_parameter_init->filter_number) = \
-                                FDATA_MASK_HIGH((can_filter_parameter_init->filter_mask_low) & CAN_FILTER_MASK_16BITS) | \
-                                FDATA_MASK_LOW((can_filter_parameter_init->filter_list_low) & CAN_FILTER_MASK_16BITS);
+                FDATA_MASK_HIGH((can_filter_parameter_init->filter_mask_low) & CAN_FILTER_MASK_16BITS) | \
+                FDATA_MASK_LOW((can_filter_parameter_init->filter_list_low) & CAN_FILTER_MASK_16BITS);
         /* second 16 bits list and second 16 bits mask or third 16 bits list and fourth 16 bits list */
         CAN_FDATA1(CAN0, can_filter_parameter_init->filter_number) = \
-                                FDATA_MASK_HIGH((can_filter_parameter_init->filter_mask_high) & CAN_FILTER_MASK_16BITS) | \
-                                FDATA_MASK_LOW((can_filter_parameter_init->filter_list_high) & CAN_FILTER_MASK_16BITS);
+                FDATA_MASK_HIGH((can_filter_parameter_init->filter_mask_high) & CAN_FILTER_MASK_16BITS) | \
+                FDATA_MASK_LOW((can_filter_parameter_init->filter_list_high) & CAN_FILTER_MASK_16BITS);
     }
     /* filter 32 bits */
-    if(CAN_FILTERBITS_32BIT == can_filter_parameter_init->filter_bits){
+    if(CAN_FILTERBITS_32BIT == can_filter_parameter_init->filter_bits) {
         /* set filter 32 bits */
         CAN_FSCFG(CAN0) |= (uint32_t)val;
         /* 32 bits list or first 32 bits list */
         CAN_FDATA0(CAN0, can_filter_parameter_init->filter_number) = \
-                                FDATA_MASK_HIGH((can_filter_parameter_init->filter_list_high) & CAN_FILTER_MASK_16BITS) |
-                                FDATA_MASK_LOW((can_filter_parameter_init->filter_list_low) & CAN_FILTER_MASK_16BITS);
+                FDATA_MASK_HIGH((can_filter_parameter_init->filter_list_high) & CAN_FILTER_MASK_16BITS) |
+                FDATA_MASK_LOW((can_filter_parameter_init->filter_list_low) & CAN_FILTER_MASK_16BITS);
         /* 32 bits mask or second 32 bits list */
         CAN_FDATA1(CAN0, can_filter_parameter_init->filter_number) = \
-                                FDATA_MASK_HIGH((can_filter_parameter_init->filter_mask_high) & CAN_FILTER_MASK_16BITS) |
-                                FDATA_MASK_LOW((can_filter_parameter_init->filter_mask_low) & CAN_FILTER_MASK_16BITS);
+                FDATA_MASK_HIGH((can_filter_parameter_init->filter_mask_high) & CAN_FILTER_MASK_16BITS) |
+                FDATA_MASK_LOW((can_filter_parameter_init->filter_mask_low) & CAN_FILTER_MASK_16BITS);
     }
 
     /* filter mode */
-    if(CAN_FILTERMODE_MASK == can_filter_parameter_init->filter_mode){
+    if(CAN_FILTERMODE_MASK == can_filter_parameter_init->filter_mode) {
         /* mask mode */
         CAN_FMCFG(CAN0) &= ~(uint32_t)val;
-    }else{
+    } else {
         /* list mode */
         CAN_FMCFG(CAN0) |= (uint32_t)val;
     }
 
     /* filter FIFO */
-    if(CAN_FIFO0 == (can_filter_parameter_init->filter_fifo_number)){
+    if(CAN_FIFO0 == (can_filter_parameter_init->filter_fifo_number)) {
         /* FIFO0 */
         CAN_FAFIFO(CAN0) &= ~(uint32_t)val;
-    }else{
+    } else {
         /* FIFO1 */
         CAN_FAFIFO(CAN0) |= (uint32_t)val;
     }
 
     /* filter working */
-    if(ENABLE == can_filter_parameter_init->filter_enable){
+    if(ENABLE == can_filter_parameter_init->filter_enable) {
 
         CAN_FW(CAN0) |= (uint32_t)val;
     }
@@ -501,7 +458,7 @@ void can_filter_init(can_filter_parameter_struct* can_filter_parameter_init)
       \arg        0x00000000 - 0x1FFFFFFF
     \param[in]  mask: extended(11-bits) or standard(29-bits) identifier mask
       \arg        0x00000000 - 0x1FFFFFFF
-    \param[in]  format_fifo: format and fifo states
+    \param[in]  format_fifo: format and FIFO states
                 only one parameter can be selected which is shown as below:
       \arg        CAN_STANDARD_FIFO0
       \arg        CAN_STANDARD_FIFO1
@@ -525,137 +482,64 @@ void can_filter_mask_mode_init(uint32_t id, uint32_t mask, can_format_fifo_enum 
     can_filter.filter_bits = CAN_FILTERBITS_32BIT;
     can_filter.filter_enable = ENABLE;
 
-    switch(format_fifo){
-        /* standard FIFO 0 */
-        case CAN_STANDARD_FIFO0:
-            can_filter.filter_fifo_number = CAN_FIFO0;
-            /* configure SFID[10:0] */
-            can_filter.filter_list_high = (uint16_t)id << 5;
-            can_filter.filter_list_low = 0x0000U;
-            /* configure SFID[10:0] mask */
-            can_filter.filter_mask_high = (uint16_t)mask << 5;
-            /* both data and remote frames can be received */
-            can_filter.filter_mask_low = 0x0000U;
+    switch(format_fifo) {
+    /* standard FIFO 0 */
+    case CAN_STANDARD_FIFO0:
+        can_filter.filter_fifo_number = CAN_FIFO0;
+        /* configure SFID[10:0] */
+        can_filter.filter_list_high = (uint16_t)id << 5;
+        can_filter.filter_list_low = 0x0000U;
+        /* configure SFID[10:0] mask */
+        can_filter.filter_mask_high = (uint16_t)mask << 5;
+        /* both data and remote frames can be received */
+        can_filter.filter_mask_low = (uint16_t)(1U << 2U);
 
-            break;
-        /* standard FIFO 1 */
-        case CAN_STANDARD_FIFO1:
-            can_filter.filter_fifo_number = CAN_FIFO1;
-            /* configure SFID[10:0] */
-            can_filter.filter_list_high = (uint16_t)id << 5;
-            can_filter.filter_list_low =  0x0000U;
-            /* configure SFID[10:0] mask */
-            can_filter.filter_mask_high = (uint16_t)mask << 5;
-            /* both data and remote frames can be received */
-            can_filter.filter_mask_low = 0x0000U;
+        break;
+    /* standard FIFO 1 */
+    case CAN_STANDARD_FIFO1:
+        can_filter.filter_fifo_number = CAN_FIFO1;
+        /* configure SFID[10:0] */
+        can_filter.filter_list_high = (uint16_t)id << 5;
+        can_filter.filter_list_low =  0x0000U;
+        /* configure SFID[10:0] mask */
+        can_filter.filter_mask_high = (uint16_t)mask << 5;
+        /* both data and remote frames can be received */
+        can_filter.filter_mask_low = (uint16_t)(1U << 2U);
 
-            break;
-        /* extended FIFO 0 */
-        case CAN_EXTENDED_FIFO0:
-            can_filter.filter_fifo_number = CAN_FIFO0;
-            /* configure EFID[28:13] */
-            can_filter.filter_list_high = (uint16_t)(id >> 13);
-            /* configure EFID[12:0] and frame format bit set */
-            can_filter.filter_list_low = ((uint16_t)(id << 3)) | (1U << 2);
-            /* configure EFID[28:13] mask */
-            can_filter.filter_mask_high = (uint16_t)(mask >> 13);
-            /* configure EFID[12:0] and frame format bit mask */
-            /* both data and remote frames can be received */
-            can_filter.filter_mask_low = ((uint16_t)(mask << 3)) | (1U << 2);
+        break;
+    /* extended FIFO 0 */
+    case CAN_EXTENDED_FIFO0:
+        can_filter.filter_fifo_number = CAN_FIFO0;
+        /* configure EFID[28:13] */
+        can_filter.filter_list_high = (uint16_t)(id >> 13);
+        /* configure EFID[12:0] and frame format bit set */
+        can_filter.filter_list_low = ((uint16_t)(id << 3)) | (1U << 2);
+        /* configure EFID[28:13] mask */
+        can_filter.filter_mask_high = (uint16_t)(mask >> 13);
+        /* configure EFID[12:0] and frame format bit mask */
+        /* both data and remote frames can be received */
+        can_filter.filter_mask_low = ((uint16_t)(mask << 3)) | (1U << 2);
 
-            break;
-        /* extended FIFO 1 */
-        case CAN_EXTENDED_FIFO1:
-            can_filter.filter_fifo_number = CAN_FIFO1;
-            /* configure EFID[28:13] */
-            can_filter.filter_list_high = (uint16_t)(id >> 13);
-            /* configure EFID[12:0] and frame format bit set */
-            can_filter.filter_list_low = ((uint16_t)(id << 3)) | (1U << 2);
-            /* configure EFID[28:13] mask */
-            can_filter.filter_mask_high = (uint16_t)(mask >> 13);
-            /* configure EFID[12:0] and frame format bit mask */
-            /* both data and remote frames can be received */
-            can_filter.filter_mask_low = ((uint16_t)(mask << 3)) | (1U << 2);
+        break;
+    /* extended FIFO 1 */
+    case CAN_EXTENDED_FIFO1:
+        can_filter.filter_fifo_number = CAN_FIFO1;
+        /* configure EFID[28:13] */
+        can_filter.filter_list_high = (uint16_t)(id >> 13);
+        /* configure EFID[12:0] and frame format bit set */
+        can_filter.filter_list_low = ((uint16_t)(id << 3)) | (1U << 2);
+        /* configure EFID[28:13] mask */
+        can_filter.filter_mask_high = (uint16_t)(mask >> 13);
+        /* configure EFID[12:0] and frame format bit mask */
+        /* both data and remote frames can be received */
+        can_filter.filter_mask_low = ((uint16_t)(mask << 3)) | (1U << 2);
 
-            break;
-        default:
-            CAN_ERROR_HANDLE("parameter is invalid \r\n");
+        break;
+    default:
+        CAN_ERROR_HANDLE("parameter is invalid \r\n");
     }
 
     can_filter_init(&can_filter);
-}
-
-/*!
-    \brief      CAN baud rate configure in classic mode
-                  Note: this function can use to reconfigure the baud rate of CAN, but when consider the problem of bit time,
-                can_init function is more recommend
-    \param[in]  can_periph
-      \arg        CANx(x=0,1)
-    \param[in]  hz: frequency, range from 1 to 1000000 Hz
-    \param[out] none
-    \retval     ErrStatus: SUCCESS or ERROR
-*/
-ErrStatus can_frequency_set(uint32_t can_periph, uint32_t hz)
-{
-    ErrStatus reval = SUCCESS;
-    uint32_t reg_temp;
-    uint32_t fdctl_status;
-    /* The maximum baud rate support to 1M  */
-    if(hz <= 1000000U) {
-        if(SUCCESS == can_working_mode_set(can_periph, CAN_MODE_INITIALIZE)){
-            reg_temp = CAN_BT(can_periph);
-            reg_temp &= (CAN_BT_LCMOD | CAN_BT_SCMOD);
-            fdctl_status = CAN_FDCTL(can_periph);
-            if(CAN_FDCTL_FDEN != (fdctl_status&CAN_FDCTL_FDEN)){
-                /* CAN FD disable, should first enable, then write */
-                fdctl_status = fdctl_status | CAN_FDCTL_FDEN;
-                CAN_FDCTL(can_periph) = fdctl_status;
-                CAN_BT(can_periph) = reg_temp | dev_can_baudrate_set(hz);
-                fdctl_status = fdctl_status & (~CAN_FDCTL_FDEN);
-                CAN_FDCTL(can_periph) = fdctl_status;
-            }else{
-                /* CAN FD enable */
-                CAN_BT(can_periph) = reg_temp | dev_can_baudrate_set(hz);
-            }
-        }else {
-            reval = ERROR;
-        }
-
-        if(SUCCESS != can_working_mode_set(can_periph, CAN_MODE_NORMAL)){
-            reval = ERROR;
-        }
-    }else{
-        reval = ERROR;
-    }
-
-    return reval;
-}
-
-/*!
-    \brief      CAN baud rate configure in FD mode
-                  Note: this function can use to reconfigure the baud rate of CAN FD, but when consider the problem of bit time,
-                can_fd_init function is more recommend
-    \param[in]  can_periph
-      \arg        CANx(x=0,1)
-    \param[in]  hz: frequency
-    \param[out] none
-    \retval     ErrStatus: SUCCESS or ERROR
-*/
-ErrStatus can_fd_frequency_set(uint32_t can_periph, uint32_t hz)
-{
-    ErrStatus reval = SUCCESS;
-
-    if(SUCCESS == can_working_mode_set(can_periph, CAN_MODE_INITIALIZE)){
-        CAN_DBT(can_periph) = dev_can_fd_baudrate_set(hz);
-    }else {
-        reval = ERROR;
-    }
-
-    if(SUCCESS != can_working_mode_set(can_periph, CAN_MODE_NORMAL)){
-        reval = ERROR;
-    }
-
-    return reval;
 }
 
 /*!
@@ -676,20 +560,20 @@ ErrStatus can_monitor_mode_set(uint32_t can_periph, uint8_t mode)
     ErrStatus reval = SUCCESS;
     uint32_t timeout = CAN_TIMEOUT;
 
-    if(mode == (mode & CAN_SILENT_LOOPBACK_MODE)){
+    if(mode == (mode & CAN_SILENT_LOOPBACK_MODE)) {
         /* disable sleep mode */
         CAN_CTL(can_periph) &= (~(uint32_t)CAN_CTL_SLPWMOD);
         /* set initialize mode */
         CAN_CTL(can_periph) |= (uint8_t)CAN_CTL_IWMOD;
         /* wait the acknowledge */
         timeout = CAN_TIMEOUT;
-        while((CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)) && (0U != timeout)){
+        while((CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)) && (0U != timeout)) {
             timeout--;
         }
 
-        if(CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)){
+        if(CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)) {
             reval = ERROR;
-        }else{
+        } else {
             CAN_BT(can_periph) &= ~BT_MODE(3);
             CAN_BT(can_periph) |= BT_MODE(mode);
 
@@ -697,14 +581,14 @@ ErrStatus can_monitor_mode_set(uint32_t can_periph, uint8_t mode)
             /* enter normal mode */
             CAN_CTL(can_periph) &= ~(uint32_t)(CAN_CTL_SLPWMOD | CAN_CTL_IWMOD);
             /* wait the acknowledge */
-            while((0U != (CAN_STAT(can_periph) & (CAN_STAT_IWS | CAN_STAT_SLPWS))) && (0U != timeout)){
+            while((0U != (CAN_STAT(can_periph) & (CAN_STAT_IWS | CAN_STAT_SLPWS))) && (0U != timeout)) {
                 timeout--;
             }
-            if(0U != (CAN_STAT(can_periph) & (CAN_STAT_IWS | CAN_STAT_SLPWS))){
+            if(0U != (CAN_STAT(can_periph) & (CAN_STAT_IWS | CAN_STAT_SLPWS))) {
                 reval = ERROR;
             }
         }
-    }else{
+    } else {
         reval = ERROR;
     }
 
@@ -765,9 +649,9 @@ void can_debug_freeze_enable(uint32_t can_periph)
 {
     /* set DFZ bit */
     CAN_CTL(can_periph) |= CAN_CTL_DFZ;
-    if(CAN0 == can_periph){
+    if(CAN0 == can_periph) {
         dbg_periph_enable(DBG_CAN0_HOLD);
-    }else{
+    } else {
         dbg_periph_enable(DBG_CAN1_HOLD);
     }
 }
@@ -784,9 +668,9 @@ void can_debug_freeze_disable(uint32_t can_periph)
     /* set DFZ bit */
     CAN_CTL(can_periph) &= ~CAN_CTL_DFZ;
 
-    if(CAN0 == can_periph){
+    if(CAN0 == can_periph) {
         dbg_periph_disable(DBG_CAN0_HOLD);
-    }else{
+    } else {
         dbg_periph_disable(DBG_CAN1_HOLD);
     }
 }
@@ -805,7 +689,7 @@ void can_time_trigger_mode_enable(uint32_t can_periph)
     /* enable the tcc mode */
     CAN_CTL(can_periph) |= CAN_CTL_TTC;
     /* enable time stamp */
-    for(mailbox_number = 0U; mailbox_number < 3U; mailbox_number++){
+    for(mailbox_number = 0U; mailbox_number < 3U; mailbox_number++) {
         CAN_TMP(can_periph, mailbox_number) |= CAN_TMP_TSEN;
     }
 }
@@ -824,7 +708,7 @@ void can_time_trigger_mode_disable(uint32_t can_periph)
     /* disable the TCC mode */
     CAN_CTL(can_periph) &= ~CAN_CTL_TTC;
     /* reset TSEN bits */
-    for(mailbox_number = 0U; mailbox_number < 3U; mailbox_number++){
+    for(mailbox_number = 0U; mailbox_number < 3U; mailbox_number++) {
         CAN_TMP(can_periph, mailbox_number) &= ~CAN_TMP_TSEN;
     }
 }
@@ -843,7 +727,7 @@ void can_time_trigger_mode_disable(uint32_t can_periph)
     \param[out] none
     \retval     mailbox_number
 */
-uint8_t can_message_transmit(uint32_t can_periph, can_trasnmit_message_struct* transmit_message)
+uint8_t can_message_transmit(uint32_t can_periph, can_trasnmit_message_struct *transmit_message)
 {
     uint8_t mailbox_number = CAN_MAILBOX0;
     uint8_t i = 0U;
@@ -853,88 +737,88 @@ uint8_t can_message_transmit(uint32_t can_periph, can_trasnmit_message_struct* t
     uint32_t reg_temp = 0U;
 
     /* select one empty mailbox */
-    if(CAN_TSTAT_TME0 == (CAN_TSTAT(can_periph)&CAN_TSTAT_TME0)){
+    if(CAN_TSTAT_TME0 == (CAN_TSTAT(can_periph)&CAN_TSTAT_TME0)) {
         mailbox_number = CAN_MAILBOX0;
-    }else if(CAN_TSTAT_TME1 == (CAN_TSTAT(can_periph)&CAN_TSTAT_TME1)){
+    } else if(CAN_TSTAT_TME1 == (CAN_TSTAT(can_periph)&CAN_TSTAT_TME1)) {
         mailbox_number = CAN_MAILBOX1;
-    }else if(CAN_TSTAT_TME2 == (CAN_TSTAT(can_periph)&CAN_TSTAT_TME2)){
+    } else if(CAN_TSTAT_TME2 == (CAN_TSTAT(can_periph)&CAN_TSTAT_TME2)) {
         mailbox_number = CAN_MAILBOX2;
-    }else{
+    } else {
         mailbox_number = CAN_NOMAILBOX;
     }
     /* return no mailbox empty */
-    if(CAN_NOMAILBOX == mailbox_number){
+    if(CAN_NOMAILBOX == mailbox_number) {
         return CAN_NOMAILBOX;
     }
 
     CAN_TMI(can_periph, mailbox_number) &= CAN_TMI_TEN;
-    if(CAN_FF_STANDARD == transmit_message->tx_ff){
+    if(CAN_FF_STANDARD == transmit_message->tx_ff) {
         /* set transmit mailbox standard identifier */
         CAN_TMI(can_periph, mailbox_number) |= (uint32_t)(TMI_SFID(transmit_message->tx_sfid) | \
-                                                transmit_message->tx_ft);
-    }else{
+                                               transmit_message->tx_ft);
+    } else {
         /* set transmit mailbox extended identifier */
         CAN_TMI(can_periph, mailbox_number) |= (uint32_t)(TMI_EFID(transmit_message->tx_efid) | \
-                                                transmit_message->tx_ff | \
-                                                transmit_message->tx_ft);
+                                               transmit_message->tx_ff | \
+                                               transmit_message->tx_ft);
     }
 
-    if(CAN_FDF_CLASSIC == transmit_message->fd_flag){
+    if(CAN_FDF_CLASSIC == transmit_message->fd_flag) {
         /* set the data length */
-        CAN_TMP(can_periph, mailbox_number) &= ~(CAN_TMP_DLENC|CAN_TMP_ESI|CAN_TMP_BRS|CAN_TMP_FDF);
+        CAN_TMP(can_periph, mailbox_number) &= ~(CAN_TMP_DLENC | CAN_TMP_ESI | CAN_TMP_BRS | CAN_TMP_FDF);
         CAN_TMP(can_periph, mailbox_number) |= transmit_message->tx_dlen;
         /* set the data */
         CAN_TMDATA0(can_periph, mailbox_number) = TMDATA0_DB3(transmit_message->tx_data[3]) | \
-                                                  TMDATA0_DB2(transmit_message->tx_data[2]) | \
-                                                  TMDATA0_DB1(transmit_message->tx_data[1]) | \
-                                                  TMDATA0_DB0(transmit_message->tx_data[0]);
+                TMDATA0_DB2(transmit_message->tx_data[2]) | \
+                TMDATA0_DB1(transmit_message->tx_data[1]) | \
+                TMDATA0_DB0(transmit_message->tx_data[0]);
         CAN_TMDATA1(can_periph, mailbox_number) = TMDATA1_DB7(transmit_message->tx_data[7]) | \
-                                                  TMDATA1_DB6(transmit_message->tx_data[6]) | \
-                                                  TMDATA1_DB5(transmit_message->tx_data[5]) | \
-                                                  TMDATA1_DB4(transmit_message->tx_data[4]);
-    }else{
+                TMDATA1_DB6(transmit_message->tx_data[6]) | \
+                TMDATA1_DB5(transmit_message->tx_data[5]) | \
+                TMDATA1_DB4(transmit_message->tx_data[4]);
+    } else {
         canfd_en = CAN_FDCTL(can_periph) & CAN_FDCTL_FDEN;
         /* check FD function has been enabled */
-        if(canfd_en){
-            if(transmit_message->tx_dlen <= 8U){
+        if(canfd_en) {
+            if(transmit_message->tx_dlen <= 8U) {
                 /* set the data length */
                 reg_temp |= transmit_message->tx_dlen;
-            }else{
+            } else {
                 /* data length greater than 8 */
-                for(i = 0U; i < 7U; i++){
-                    if(transmit_message->tx_dlen == g_can_fdlength_table[i]){
+                for(i = 0U; i < 7U; i++) {
+                    if(transmit_message->tx_dlen == g_can_fdlength_table[i]) {
                         hit = 1U;
                         break;
                     }
                 }
                 /* data length is valid */
-                if(1U == hit){
-                   reg_temp |= 9U + i;
-                }else{
+                if(1U == hit) {
+                    reg_temp |= 9U + i;
+                } else {
                     CAN_ERROR_HANDLE("dlen is invalid \r\n");
                 }
             }
             reg_temp |= (((uint32_t)transmit_message->fd_brs << 5U) | ((uint32_t)transmit_message->fd_esi << 4U) | ((uint32_t)transmit_message->fd_flag << 7U));
             CAN_TMP(can_periph, mailbox_number) = reg_temp;
-            
+
             /* set the data */
             i = transmit_message->tx_dlen / 4U;
-            
+
             /* data length is 5-7 need send 2 word */
-            if((1U==i) && (4U!=transmit_message->tx_dlen)){
+            if((1U == i) && (4U != transmit_message->tx_dlen)) {
                 i++;
             }
             p_temp = (uint32_t)transmit_message->tx_data;
-            if((0U==i)){
+            if((0U == i)) {
                 CAN_TMDATA0(can_periph, mailbox_number) = *(uint32_t *)p_temp;
-            }else{
-                for(; i>0U; i--){
+            } else {
+                for(; i > 0U; i--) {
                     CAN_TMDATA0(can_periph, mailbox_number) = *(uint32_t *)p_temp;
                     p_temp = ((uint32_t)((uint32_t)p_temp + 4U));
                 }
             }
-            
-        }else{
+
+        } else {
             CAN_ERROR_HANDLE("CAN FD function disabled \r\n");
         }
     }
@@ -961,7 +845,7 @@ can_transmit_state_enum can_transmit_states(uint32_t can_periph, uint8_t mailbox
     uint32_t val = 0U;
 
     /* check selected mailbox state */
-    switch(mailbox_number){
+    switch(mailbox_number) {
     /* mailbox0 */
     case CAN_MAILBOX0:
         val = CAN_TSTAT(can_periph) & (CAN_TSTAT_MTF0 | CAN_TSTAT_MTFNERR0 | CAN_TSTAT_TME0);
@@ -979,24 +863,24 @@ can_transmit_state_enum can_transmit_states(uint32_t can_periph, uint8_t mailbox
         break;
     }
 
-    switch(val){
-        /* transmit pending */
-    case (CAN_STATE_PENDING):
+    switch(val) {
+    /* transmit pending */
+    case(CAN_STATE_PENDING):
         state = CAN_TRANSMIT_PENDING;
         break;
-        /* mailbox0 transmit succeeded */
-    case (CAN_TSTAT_MTF0 | CAN_TSTAT_MTFNERR0 | CAN_TSTAT_TME0):
+    /* mailbox0 transmit succeeded */
+    case(CAN_TSTAT_MTF0 | CAN_TSTAT_MTFNERR0 | CAN_TSTAT_TME0):
         state = CAN_TRANSMIT_OK;
         break;
-        /* mailbox1 transmit succeeded */
-    case (CAN_TSTAT_MTF1 | CAN_TSTAT_MTFNERR1 | CAN_TSTAT_TME1):
+    /* mailbox1 transmit succeeded */
+    case(CAN_TSTAT_MTF1 | CAN_TSTAT_MTFNERR1 | CAN_TSTAT_TME1):
         state = CAN_TRANSMIT_OK;
         break;
-        /* mailbox2 transmit succeeded */
-    case (CAN_TSTAT_MTF2 | CAN_TSTAT_MTFNERR2 | CAN_TSTAT_TME2):
+    /* mailbox2 transmit succeeded */
+    case(CAN_TSTAT_MTF2 | CAN_TSTAT_MTFNERR2 | CAN_TSTAT_TME2):
         state = CAN_TRANSMIT_OK;
         break;
-        /* transmit failed */
+    /* transmit failed */
     default:
         state = CAN_TRANSMIT_FAILED;
         break;
@@ -1016,19 +900,19 @@ can_transmit_state_enum can_transmit_states(uint32_t can_periph, uint8_t mailbox
 */
 void can_transmission_stop(uint32_t can_periph, uint8_t mailbox_number)
 {
-    if(CAN_MAILBOX0 == mailbox_number){
+    if(CAN_MAILBOX0 == mailbox_number) {
         CAN_TSTAT(can_periph) |= CAN_TSTAT_MST0;
-        while(CAN_TSTAT_MST0 == (CAN_TSTAT(can_periph) & CAN_TSTAT_MST0)){
+        while(CAN_TSTAT_MST0 == (CAN_TSTAT(can_periph) & CAN_TSTAT_MST0)) {
         }
-    }else if(CAN_MAILBOX1 == mailbox_number){
+    } else if(CAN_MAILBOX1 == mailbox_number) {
         CAN_TSTAT(can_periph) |= CAN_TSTAT_MST1;
-        while(CAN_TSTAT_MST1 == (CAN_TSTAT(can_periph) & CAN_TSTAT_MST1)){
+        while(CAN_TSTAT_MST1 == (CAN_TSTAT(can_periph) & CAN_TSTAT_MST1)) {
         }
-    }else if(CAN_MAILBOX2 == mailbox_number){
+    } else if(CAN_MAILBOX2 == mailbox_number) {
         CAN_TSTAT(can_periph) |= CAN_TSTAT_MST2;
-        while(CAN_TSTAT_MST2 == (CAN_TSTAT(can_periph) & CAN_TSTAT_MST2)){
+        while(CAN_TSTAT_MST2 == (CAN_TSTAT(can_periph) & CAN_TSTAT_MST2)) {
         }
-    }else{
+    } else {
         /* illegal parameters */
     }
 }
@@ -1049,7 +933,7 @@ void can_transmission_stop(uint32_t can_periph, uint8_t mailbox_number)
       \arg        rx_fi: 0 - 27
     \retval     none
 */
-void can_message_receive(uint32_t can_periph, uint8_t fifo_number, can_receive_message_struct* receive_message)
+void can_message_receive(uint32_t can_periph, uint8_t fifo_number, can_receive_message_struct *receive_message)
 {
     uint32_t canfd_en = 0U;
     volatile uint32_t p_temp;
@@ -1059,10 +943,10 @@ void can_message_receive(uint32_t can_periph, uint8_t fifo_number, can_receive_m
 
     /* get the frame format */
     receive_message->rx_ff = (uint8_t)(CAN_RFIFOMI_FF & CAN_RFIFOMI(can_periph, fifo_number));
-    if(CAN_FF_STANDARD == receive_message->rx_ff){
+    if(CAN_FF_STANDARD == receive_message->rx_ff) {
         /* get standard identifier */
         receive_message->rx_sfid = (uint32_t)(GET_RFIFOMI_SFID(CAN_RFIFOMI(can_periph, fifo_number)));
-    }else{
+    } else {
         /* get extended identifier */
         receive_message->rx_efid = (uint32_t)(GET_RFIFOMI_EFID(CAN_RFIFOMI(can_periph, fifo_number)));
     }
@@ -1071,11 +955,11 @@ void can_message_receive(uint32_t can_periph, uint8_t fifo_number, can_receive_m
     receive_message->rx_ft = (uint8_t)(CAN_RFIFOMI_FT & CAN_RFIFOMI(can_periph, fifo_number));
     /* filtering index */
     receive_message->rx_fi = (uint8_t)(GET_RFIFOMP_FI(CAN_RFIFOMP(can_periph, fifo_number)));
-    receive_message->fd_flag = (uint8_t)((CAN_RFIFOMP_FDF & CAN_RFIFOMP(can_periph, fifo_number))>>7);
+    receive_message->fd_flag = (uint8_t)((CAN_RFIFOMP_FDF & CAN_RFIFOMP(can_periph, fifo_number)) >> 7);
 
     canfd_en = CAN_FDCTL(can_periph) & CAN_FDCTL_FDEN;
-    if(!canfd_en){
-        if(CAN_FDF_CLASSIC == receive_message->fd_flag){
+    if(!canfd_en) {
+        if(CAN_FDF_CLASSIC == receive_message->fd_flag) {
             /* get receive data length */
             receive_message->rx_dlen = (uint8_t)(GET_RFIFOMP_DLENC(CAN_RFIFOMP(can_periph, fifo_number)));
             /* receive data */
@@ -1087,18 +971,18 @@ void can_message_receive(uint32_t can_periph, uint8_t fifo_number, can_receive_m
             receive_message->rx_data[5] = (uint8_t)(GET_RFIFOMDATA1_DB5(CAN_RFIFOMDATA1(can_periph, fifo_number)));
             receive_message->rx_data[6] = (uint8_t)(GET_RFIFOMDATA1_DB6(CAN_RFIFOMDATA1(can_periph, fifo_number)));
             receive_message->rx_data[7] = (uint8_t)(GET_RFIFOMDATA1_DB7(CAN_RFIFOMDATA1(can_periph, fifo_number)));
-        }else{
+        } else {
             CAN_ERROR_HANDLE("CAN FD function disabled \r\n");
         }
-    }else{
+    } else {
         /* check FD function has been enabled */
         /* get receive data length */
         canfd_recv_cnt = (uint8_t)(GET_RFIFOMP_DLENC(CAN_RFIFOMP(can_periph, fifo_number)));
 
-        if(canfd_recv_cnt <= 8U){
+        if(canfd_recv_cnt <= 8U) {
             /* set the data length */
             receive_message->rx_dlen = canfd_recv_cnt;
-        }else{
+        } else {
             receive_message->rx_dlen = g_can_fdlength_table[canfd_recv_cnt - 9U];
         }
 
@@ -1107,29 +991,29 @@ void can_message_receive(uint32_t can_periph, uint8_t fifo_number, can_receive_m
 
         /* get the data */
         i = receive_message->rx_dlen / 4U;
-        
+
         /* data length is 5-7 need receive 2 word */
-        if((1U==i) && (4U!=receive_message->rx_dlen)){
+        if((1U == i) && (4U != receive_message->rx_dlen)) {
             i++;
         }
         p_temp = (uint32_t)(uint32_t)receive_message->rx_data;
-        if(0U==i){
-            data_temp = CAN_RFIFOMDATA0(can_periph, fifo_number); 
-            *(uint32_t *)p_temp = data_temp;   
-        }else{
+        if(0U == i) {
+            data_temp = CAN_RFIFOMDATA0(can_periph, fifo_number);
+            *(uint32_t *)p_temp = data_temp;
+        } else {
             /* get the data by reading from CAN_RFIFOMDATA0 register*/
-            for(; i>0U; i--){
-                data_temp = CAN_RFIFOMDATA0(can_periph, fifo_number); 
+            for(; i > 0U; i--) {
+                data_temp = CAN_RFIFOMDATA0(can_periph, fifo_number);
                 *(uint32_t *)p_temp = data_temp;
                 p_temp = ((uint32_t)((uint32_t)p_temp + 4U));
-            } 
+            }
         }
     }
 
     /* release FIFO */
-    if(CAN_FIFO0 == fifo_number){
+    if(CAN_FIFO0 == fifo_number) {
         CAN_RFIFO0(can_periph) |= CAN_RFIFO0_RFD0;
-    }else{
+    } else {
         CAN_RFIFO1(can_periph) |= CAN_RFIFO1_RFD1;
     }
 }
@@ -1146,11 +1030,11 @@ void can_message_receive(uint32_t can_periph, uint8_t fifo_number, can_receive_m
 */
 void can_fifo_release(uint32_t can_periph, uint8_t fifo_number)
 {
-    if(CAN_FIFO0 == fifo_number){
+    if(CAN_FIFO0 == fifo_number) {
         CAN_RFIFO0(can_periph) |= CAN_RFIFO0_RFD0;
-    }else if(CAN_FIFO1 == fifo_number){
+    } else if(CAN_FIFO1 == fifo_number) {
         CAN_RFIFO1(can_periph) |= CAN_RFIFO1_RFD1;
-    }else{
+    } else {
         /* illegal parameters */
         CAN_ERROR_HANDLE("CAN FIFO NUM is invalid \r\n");
     }
@@ -1170,13 +1054,13 @@ uint8_t can_receive_message_length_get(uint32_t can_periph, uint8_t fifo_number)
 {
     uint8_t val = 0U;
 
-    if(CAN_FIFO0 == fifo_number){
+    if(CAN_FIFO0 == fifo_number) {
         /* FIFO0 */
         val = (uint8_t)(CAN_RFIFO0(can_periph) & CAN_RFIF_RFL_MASK);
-    }else if(CAN_FIFO1 == fifo_number){
+    } else if(CAN_FIFO1 == fifo_number) {
         /* FIFO1 */
         val = (uint8_t)(CAN_RFIFO1(can_periph) & CAN_RFIF_RFL_MASK);
-    }else{
+    } else {
         /* illegal parameters */
     }
     return val;
@@ -1200,47 +1084,47 @@ ErrStatus can_working_mode_set(uint32_t can_periph, uint8_t working_mode)
     /* timeout for IWS or also for SLPWS bits */
     uint32_t timeout = CAN_TIMEOUT;
 
-    if(CAN_MODE_INITIALIZE == working_mode){
+    if(CAN_MODE_INITIALIZE == working_mode) {
         /* disable sleep mode */
         CAN_CTL(can_periph) &= (~(uint32_t)CAN_CTL_SLPWMOD);
         /* set initialize mode */
         CAN_CTL(can_periph) |= (uint8_t)CAN_CTL_IWMOD;
         /* wait the acknowledge */
-        while((CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)) && (0U != timeout)){
+        while((CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)) && (0U != timeout)) {
             timeout--;
         }
-        if(CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)){
+        if(CAN_STAT_IWS != (CAN_STAT(can_periph) & CAN_STAT_IWS)) {
             flag = ERROR;
-        }else{
+        } else {
             flag = SUCCESS;
         }
-    }else if(CAN_MODE_NORMAL == working_mode){
+    } else if(CAN_MODE_NORMAL == working_mode) {
         /* enter normal mode */
         CAN_CTL(can_periph) &= ~(uint32_t)(CAN_CTL_SLPWMOD | CAN_CTL_IWMOD);
         /* wait the acknowledge */
-        while((0U != (CAN_STAT(can_periph) & (CAN_STAT_IWS | CAN_STAT_SLPWS))) && (0U != timeout)){
+        while((0U != (CAN_STAT(can_periph) & (CAN_STAT_IWS | CAN_STAT_SLPWS))) && (0U != timeout)) {
             timeout--;
         }
-        if(0U != (CAN_STAT(can_periph) & (CAN_STAT_IWS | CAN_STAT_SLPWS))){
+        if(0U != (CAN_STAT(can_periph) & (CAN_STAT_IWS | CAN_STAT_SLPWS))) {
             flag = ERROR;
-        }else{
+        } else {
             flag = SUCCESS;
         }
-    }else if(CAN_MODE_SLEEP == working_mode){
+    } else if(CAN_MODE_SLEEP == working_mode) {
         /* disable initialize mode */
         CAN_CTL(can_periph) &= (~(uint32_t)CAN_CTL_IWMOD);
         /* set sleep mode */
         CAN_CTL(can_periph) |= (uint8_t)CAN_CTL_SLPWMOD;
         /* wait the acknowledge */
-        while((CAN_STAT_SLPWS != (CAN_STAT(can_periph) & CAN_STAT_SLPWS)) && (0U != timeout)){
+        while((CAN_STAT_SLPWS != (CAN_STAT(can_periph) & CAN_STAT_SLPWS)) && (0U != timeout)) {
             timeout--;
         }
-        if(CAN_STAT_SLPWS != (CAN_STAT(can_periph) & CAN_STAT_SLPWS)){
+        if(CAN_STAT_SLPWS != (CAN_STAT(can_periph) & CAN_STAT_SLPWS)) {
             flag = ERROR;
-        }else{
+        } else {
             flag = SUCCESS;
         }
-    }else{
+    } else {
         flag = ERROR;
     }
     return flag;
@@ -1261,13 +1145,13 @@ ErrStatus can_wakeup(uint32_t can_periph)
     /* wakeup */
     CAN_CTL(can_periph) &= ~CAN_CTL_SLPWMOD;
 
-    while((0U != (CAN_STAT(can_periph) & CAN_STAT_SLPWS)) && (0x00U != timeout)){
+    while((0U != (CAN_STAT(can_periph) & CAN_STAT_SLPWS)) && (0x00U != timeout)) {
         timeout--;
     }
     /* check state */
-    if(0U != (CAN_STAT(can_periph) & CAN_STAT_SLPWS)){
+    if(0U != (CAN_STAT(can_periph) & CAN_STAT_SLPWS)) {
         flag = ERROR;
-    }else{
+    } else {
         flag = SUCCESS;
     }
     return flag;
@@ -1431,9 +1315,9 @@ void can_interrupt_disable(uint32_t can_periph, uint32_t interrupt)
 FlagStatus can_flag_get(uint32_t can_periph, can_flag_enum flag)
 {
     /* get flag and interrupt enable state */
-    if(RESET != (CAN_REG_VAL(can_periph, flag) & BIT(CAN_BIT_POS(flag)))){
+    if(RESET != (CAN_REG_VAL(can_periph, flag) & BIT(CAN_BIT_POS(flag)))) {
         return SET;
-    }else{
+    } else {
         return RESET;
     }
 }
@@ -1502,20 +1386,20 @@ FlagStatus can_interrupt_flag_get(uint32_t can_periph, can_interrupt_flag_enum f
     uint32_t ret2 = RESET;
 
     /* get the status of interrupt flag */
-    if(flag == CAN_INT_FLAG_RFL0){
+    if(flag == CAN_INT_FLAG_RFL0) {
         ret1 = can_receive_message_length_get(can_periph, CAN_FIFO0);
-    } else if(flag == CAN_INT_FLAG_RFL1){
+    } else if(flag == CAN_INT_FLAG_RFL1) {
         ret1 = can_receive_message_length_get(can_periph, CAN_FIFO1);
-    } else if(flag == CAN_INT_FLAG_ERRN){
+    } else if(flag == CAN_INT_FLAG_ERRN) {
         ret1 = can_error_get(can_periph);
-    } else{
+    } else {
         ret1 = CAN_REG_VALS(can_periph, flag) & BIT(CAN_BIT_POS0(flag));
     }
     /* get the status of interrupt enable bit */
     ret2 = CAN_INTEN(can_periph) & BIT(CAN_BIT_POS1(flag));
-    if(ret1 && ret2){
+    if(ret1 && ret2) {
         return SET;
-    }else{
+    } else {
         return RESET;
     }
 }
@@ -1544,144 +1428,3 @@ void can_interrupt_flag_clear(uint32_t can_periph, can_interrupt_flag_enum flag)
     CAN_REG_VALS(can_periph, flag) |= BIT(CAN_BIT_POS0(flag));
 }
 
-/*!
-    \brief      auto config can baud rate by frequency
-    \param[in]  freq: the frequency of the baud rate
-    \param[out] none
-    \retval     CAN_BT register set value
-*/
-static unsigned int dev_can_baudrate_set(uint32_t freq)
-{
-    uint32_t reval;
-    uint32_t baud_psc_min;
-    uint32_t baud_psc;
-    uint32_t temp;
-    uint32_t bt_reg_config;
-    uint32_t bits = 0;
-    uint32_t bs_div_value = 0;
-
-    struct brate_data_str{
-        uint32_t bits;
-        uint32_t baud_psc;
-        uint32_t min_num;
-    };
-    
-    struct brate_data_str brate_data = {0, 0, 0xFFFFFFFF};
-
-    /* computes the value that the CAN_BT register needs to be configured */
-    /* (BAUDPSC[9:0] + 1) * ((BS1[6:0] + 1) + (BS2[4:0] + 1) + SJW(always 1)) */
-    bt_reg_config = (rcu_clock_freq_get(CK_APB1) / freq);
-    /* BAUDPSC[9:0] minimum value */
-    baud_psc_min = bt_reg_config / DEV_CAN_BT_SEG_MAX;
-    /* BAUDPSC[9:0] maximum value */
-    baud_psc = bt_reg_config / DEV_CAN_BT_SEG_MIN;
-
-    /* preference for larger baud_psc */
-    while((baud_psc >= baud_psc_min) && (baud_psc < 0xFFFFU)){
-        for(bits=0u; bits<=DEV_CAN_BT_SEG_MAX; bits++){
-            temp = (bits + 3U) * (baud_psc + 1U);
-
-            /* get the combination of smallest difference */
-            /* calculation the difference */
-            if(temp>bt_reg_config){
-                temp = temp - bt_reg_config;
-            }else{
-                temp = bt_reg_config - temp;
-            }
-            /* set the combination with small difference */
-            if(temp<brate_data.min_num){
-                    brate_data.baud_psc = baud_psc;
-                    brate_data.bits = bits;
-                    brate_data.min_num = temp;
-                }
-        }
-        baud_psc--;
-    }
-
-    /* BS1 is 5 times of BS2 */
-    bs_div_value = brate_data.bits / 5;
-    reval = (BT_BS1(brate_data.bits-bs_div_value))
-          | (BT_BS2(bs_div_value))
-          | ((0U                  << 24) & DEV_CAN_SJW_MASK)
-          | ((brate_data.baud_psc)       & DEV_CAN_BAUDPSC_MASK);
-
-    return reval;
-}
-
-/*!
-    \brief      auto config can fd baud rate by frequency
-    \param[in]  freq: the frequency of the baud rate
-    \param[out] none
-    \retval     CAN_BT register set value
-*/
-static unsigned int dev_can_fd_baudrate_set(uint32_t freq)
-{
-    uint32_t reval;
-    uint32_t baud_psc;
-    uint32_t baud_psc_max;
-    uint32_t temp;
-    uint32_t bt_reg_config;
-    uint8_t flag;
-    uint32_t bits = 0;
-
-    struct brate_data_str{
-        uint32_t bits;
-        uint32_t baud_psc;
-        uint32_t min_num;
-    };
-
-    struct brate_data_str brate_data = {0, 0, 0xFFFFFFFF};
-
-    flag = 0U;
-    /* computes the value that the CAN_BT register needs to be configured */
-    /* (BAUDPSC[9:0] + 1) * ((BS1[3:0] + 1) + (BS2[2:0] + 1) + SJW(always 1)) */
-    bt_reg_config = (rcu_clock_freq_get(CK_APB1) / freq);
-    /* BAUDPSC[9:0] minimum value */
-    baud_psc = bt_reg_config / DEV_CAN_FD_BT_SEG_MAX;
-    /* BAUDPSC[9:0] maximum value */
-    baud_psc_max = bt_reg_config / DEV_CAN_FD_BT_SEG_MIN;
-
-    while((!flag) && (baud_psc < baud_psc_max)){
-        for(bits=0u; bits<=DEV_CAN_FD_BT_SEG_MAX; bits++){
-            temp = (bits + 3U) * (baud_psc + 1U);
-
-            /* get the combination of smallest difference */
-            if(temp == bt_reg_config){
-                flag = 1U;
-                break;
-            }else{
-                /* calculation the difference */
-                if(temp>bt_reg_config){
-                    temp = temp - bt_reg_config;
-                }else{
-                    temp = bt_reg_config - temp;
-                }
-                /* set the combination with small difference */
-                if(temp<brate_data.min_num){
-                        brate_data.baud_psc = baud_psc;
-                        brate_data.bits = bits;
-                        brate_data.min_num = temp;
-                    }
-            }
-        }
-        if(flag){
-            break;
-        }
-        baud_psc++;
-    }
-
-    /* set the combination value */
-    if(flag){
-        reval = ((timing_pts[bits][1] << 20) & DEV_CAN_FD_BS2_MASK)
-              | ((timing_pts[bits][0] << 16) & DEV_CAN_FD_BS1_MASK)
-              | ((0U                  << 24) & DEV_CAN_FD_SJW_MASK)
-              | ((baud_psc)                  & DEV_CAN_BAUDPSC_MASK);
-    }else{
-        reval = ((timing_pts[brate_data.bits][1] << 20) & DEV_CAN_FD_BS2_MASK)
-              | ((timing_pts[brate_data.bits][0] << 16) & DEV_CAN_FD_BS1_MASK)
-              | ((0U                             << 24) & DEV_CAN_FD_SJW_MASK)
-              | ((brate_data.baud_psc)                  & DEV_CAN_BAUDPSC_MASK);
-    }
-
-    return reval;
-}

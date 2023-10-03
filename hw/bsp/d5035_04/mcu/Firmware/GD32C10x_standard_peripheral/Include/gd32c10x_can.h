@@ -2,11 +2,11 @@
     \file    gd32c10x_can.h
     \brief   definitions for the CAN
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -830,10 +830,6 @@ ErrStatus can_fd_init(uint32_t can_periph, can_fdframe_struct* can_fdframe_init)
 void can_filter_init(can_filter_parameter_struct* can_filter_parameter_init);
 /* CAN filter mask mode initialization */
 void can_filter_mask_mode_init(uint32_t id, uint32_t mask, can_format_fifo_enum format_fifo, uint16_t filter_number);
-/* CAN frequency configuration */
-ErrStatus can_frequency_set(uint32_t can_periph, uint32_t hz);
-/* CAN FD frequency configuration */
-ErrStatus can_fd_frequency_set(uint32_t can_periph, uint32_t hz);
 /* CAN communication mode configure */
 ErrStatus can_monitor_mode_set(uint32_t can_periph, uint8_t mode);
 /* CAN FD frame function enable */

@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of keyboard polling mode example
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -33,10 +33,10 @@ OF SUCH DAMAGE.
 */
 
   This example is based on the GD32C103V-EVAL board, it provides a description 
-of how to use Tamper key to control the LED2. The example uses polling mode. 
-  Press the key, LED2 will be on. Press the Key again, LED2 will be off.
+of how to use Tamper key to control the LED1. The example uses polling mode. 
+  Press the key, LED1 will be on. Press the Key again, LED1 will be off.
 
-  On the GD32C103V-EVAL board,the Tamper key connected to PC13 and the LED2 connected 
+  On the GD32C103V-EVAL board,the Tamper key connected to PC13 and the LED1 connected 
 to PC0.
 
 

@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of using the I2C bus to write and read EEPROM
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -32,15 +32,15 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 OF SUCH DAMAGE.
 */
 
-  This demo is based on the GD32C103V-EVAL-V1.0 board, it provides a description 
-of how to use the I2C bus to write and read EEPROM. The access result will be 
-printed by COM0 on GD32C103V-EVAL board.
+  This demo is based on the GD32C103V-EVAL-V1.0 board, it describes a communication 
+method between I2C bus and EEPROM with timeout and bus release function. The access 
+result will be printed by COM0.
 
   Procedures sequentially writes 256 bytes of data to the EEPROM from the 0x00 
 address, and then the program sequentially reads 256 bytes of data from the 
 EEPROM from the 0x00 address. Compare the written data and read data, if the 
 same,"I2C-AT24C02 test passed!" will be printed, while the board of the four
-LED lights start flashing, otherwise "Err:data read and write aren't matching."
+LEDs light start flashing, otherwise "Err:data read and write aren't matching."
 will be printed, while the four LEDs light will on.
 
   P4 must be fitted to the I2C port. JP5, JP6 must be fitted to the USART0 port.

@@ -70,6 +70,12 @@ OF SUCH DAMAGE.
                                         RCU_CFG0 |= RCU_AHB_CKSYS_DIV4; \
                                         for(i=0; i<__delay; i++){       \
                                         }                               \
+                                        RCU_CFG0 |= RCU_AHB_CKSYS_DIV8; \
+                                        for(i=0; i<__delay; i++){       \
+                                        }                               \
+                                        RCU_CFG0 |= RCU_AHB_CKSYS_DIV16;\
+                                        for(i=0; i<__delay; i++){       \
+                                        }                               \
                                     }                                   \
                                 }while(0)
 
@@ -111,7 +117,7 @@ static void system_clock_120m_hxtal(void);
 static void system_clock_config(void);
 
 /*!
-    \brief      setup the microcontroller system, initialize the system
+    \brief      setup the micro controller system, initialize the system
     \param[in]  none
     \param[out] none
     \retval     none
@@ -125,9 +131,10 @@ void SystemInit (void)
     /* reset the RCU clock configuration to the default reset state */
     /* Set IRC8MEN bit */
     RCU_CTL |= RCU_CTL_IRC8MEN;
-	
-	RCU_MODIFY(0x50);
-	
+    while(0U == (RCU_CTL & RCU_CTL_IRC8MSTB)) {
+    }
+    RCU_MODIFY(0x50);
+
     RCU_CFG0 &= ~RCU_CFG0_SCS;
 
     /* Reset HXTALEN, CKMEN, PLLEN, PLL1EN and PLL2EN bits */
@@ -150,7 +157,6 @@ void SystemInit (void)
 #else
   nvic_vector_table_set(NVIC_VECTTAB_FLASH,VECT_TAB_OFFSET);
 #endif
-
 }
 
 /*!
@@ -543,13 +549,9 @@ static void system_clock_48m_hxtal(void)
     RCU_CFG0 |= (RCU_PLLSRC_HXTAL_IRC48M | RCU_PLL_MUL12);
 
     RCU_CFG1 &= ~(RCU_CFG1_PLLPRESEL | RCU_CFG1_PREDV0SEL | RCU_CFG1_PLL1MF | RCU_CFG1_PREDV1 | RCU_CFG1_PREDV0);
-#ifdef HXTAL_VALUE_8M
+
     /* CK_PREDIV0 = (CK_HXTAL)/2 *10 /10 = 4 MHz */ 
     RCU_CFG1 |= (RCU_PLLPRESRC_HXTAL | RCU_PREDV0SRC_CKPLL1 | RCU_PLL1_MUL10 | RCU_PREDV1_DIV2 | RCU_PREDV0_DIV10);
-#elif defined (HXTAL_VALUE_25M)
-    /* CK_PREDIV0 = (CK_HXTAL)/5 *8 /10 = 4 MHz */ 
-    RCU_CFG1 |= (RCU_PLLPRESRC_HXTAL | RCU_PREDV0SRC_CKPLL1 | RCU_PLL1_MUL8 | RCU_PREDV1_DIV5 | RCU_PREDV0_DIV10);     
-#endif
 
     /* enable PLL1 */
     RCU_CTL |= RCU_CTL_PLL1EN;
@@ -614,13 +616,9 @@ static void system_clock_72m_hxtal(void)
     RCU_CFG0 |= (RCU_PLLSRC_HXTAL_IRC48M | RCU_PLL_MUL18);
 
     RCU_CFG1 &= ~(RCU_CFG1_PLLPRESEL | RCU_CFG1_PREDV0SEL | RCU_CFG1_PLL1MF | RCU_CFG1_PREDV1 | RCU_CFG1_PREDV0);
-#ifdef HXTAL_VALUE_8M
+
     /* CK_PREDIV0 = (CK_HXTAL)/2 *10 /10 = 4 MHz */ 
     RCU_CFG1 |= (RCU_PLLPRESRC_HXTAL | RCU_PREDV0SRC_CKPLL1 | RCU_PLL1_MUL10 | RCU_PREDV1_DIV2 | RCU_PREDV0_DIV10);
-#elif defined (HXTAL_VALUE_25M)
-    /* CK_PREDIV0 = (CK_HXTAL)/5 *8 /10 = 4 MHz */ 
-    RCU_CFG1 |= (RCU_PLLPRESRC_HXTAL | RCU_PREDV0SRC_CKPLL1 | RCU_PLL1_MUL8 | RCU_PREDV1_DIV5 | RCU_PREDV0_DIV10);      
-#endif
 
     /* enable PLL1 */
     RCU_CTL |= RCU_CTL_PLL1EN;
@@ -686,13 +684,10 @@ static void system_clock_108m_hxtal(void)
     RCU_CFG0 |= (RCU_PLLSRC_HXTAL_IRC48M | RCU_PLL_MUL27);
 
     RCU_CFG1 &= ~(RCU_CFG1_PLLPRESEL | RCU_CFG1_PREDV0SEL | RCU_CFG1_PLL1MF | RCU_CFG1_PREDV1 | RCU_CFG1_PREDV0);
-#ifdef HXTAL_VALUE_8M
+
     /* CK_PREDIV0 = (CK_HXTAL)/2 *10 /10 = 4 MHz */ 
     RCU_CFG1 |= (RCU_PLLPRESRC_HXTAL | RCU_PREDV0SRC_CKPLL1 | RCU_PLL1_MUL10 | RCU_PREDV1_DIV2 | RCU_PREDV0_DIV10);
-#elif defined (HXTAL_VALUE_25M)
-    /* CK_PREDIV0 = (CK_HXTAL)/5 *8 /10 = 4 MHz */ 
-    RCU_CFG1 |= (RCU_PLLPRESRC_HXTAL | RCU_PREDV0SRC_CKPLL1 | RCU_PLL1_MUL8 | RCU_PREDV1_DIV5 | RCU_PREDV0_DIV10);  
-#endif
+
     /* enable PLL1 */
     RCU_CTL |= RCU_CTL_PLL1EN;
     /* wait till PLL1 is ready */
@@ -757,14 +752,10 @@ static void system_clock_120m_hxtal(void)
     RCU_CFG0 |= (RCU_PLLSRC_HXTAL_IRC48M | RCU_PLL_MUL30);
 
     RCU_CFG1 &= ~(RCU_CFG1_PLLPRESEL | RCU_CFG1_PREDV0SEL | RCU_CFG1_PLL1MF | RCU_CFG1_PREDV1 | RCU_CFG1_PREDV0);
-#ifdef HXTAL_VALUE_8M
+
     /* CK_PREDIV0 = (CK_HXTAL)/2 *10 /10 = 4 MHz */ 
     RCU_CFG1 |= (RCU_PLLPRESRC_HXTAL | RCU_PREDV0SRC_CKPLL1 | RCU_PLL1_MUL10 | RCU_PREDV1_DIV2 | RCU_PREDV0_DIV10);
-#elif defined (HXTAL_VALUE_25M)
-    /* CK_PREDIV0 = (CK_HXTAL)/5 *8/10 = 4 MHz */ 
-    RCU_CFG1 |= (RCU_PLLPRESRC_HXTAL | RCU_PREDV0SRC_CKPLL1 | RCU_PLL1_MUL8 | RCU_PREDV1_DIV5 | RCU_PREDV0_DIV10);    
-#endif
-    
+
     /* enable PLL1 */
     RCU_CTL |= RCU_CTL_PLL1EN;
     /* wait till PLL1 is ready */

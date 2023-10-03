@@ -671,7 +671,7 @@ static void edpt_schedule_packets(uint8_t rhport, uint8_t const epnum, uint8_t c
 
 
 
-    LOG("IN ep=%02x p=%u b=%u\n", epnum, num_packets, total_bytes);
+    // LOG("IN ep=%02x p=%u b=%u\n", epnum, num_packets, total_bytes);
     // in_ep[epnum].DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;
     // A full IN transfer (multiple packets, possibly) triggers XFRC.
     in_ep[epnum].DIEPTSIZ = (num_packets << USB_OTG_DIEPTSIZ_PKTCNT_Pos) |
@@ -716,7 +716,7 @@ static void edpt_schedule_packets(uint8_t rhport, uint8_t const epnum, uint8_t c
     // }
     in_ep[epnum].DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;
     write_fifo_packet(rhport, epnum, xfer->buffer, xfer->total_len);
-    dump_fifos(false);
+    // dump_fifos(false);
 
   // }
 
@@ -1012,7 +1012,7 @@ bool dcd_edpt_open (uint8_t rhport, tusb_desc_endpoint_t const * desc_edpt)
 
     dev->DAINTMSK |= (1 << (USB_OTG_DAINTMSK_IEPM_Pos + epnum));
 
-    dump_fifos(false);
+    // dump_fifos(false);
   }
 
   return true;
@@ -1058,7 +1058,7 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
   xfer->ff          = NULL;
   xfer->total_len   = total_bytes;
 
-  // LOG("dcd_edpt_xfer ep=%02x bytes=%u\n", ep_addr, total_bytes);
+  LOG("X ep=%02x bytes=%u\n", ep_addr, total_bytes);
 
 
   // EP0 can only handle one packet
@@ -1344,7 +1344,7 @@ static bool handle_rxflvl_ints(uint8_t rhport, USB_OTG_OUTEndpointTypeDef * out_
 
   // Pop control word off FIFO
   uint32_t ctl_word = usb_otg->GRXSTSP;
-  LOG("ctrl word %08x\n", ctl_word);
+  // LOG("ctrl word %08x\n", ctl_word);
   uint8_t pktsts = (ctl_word & USB_OTG_GRXSTSP_PKTSTS_Msk) >> USB_OTG_GRXSTSP_PKTSTS_Pos;
   uint8_t epnum = (ctl_word &  USB_OTG_GRXSTSP_EPNUM_Msk) >>  USB_OTG_GRXSTSP_EPNUM_Pos;
   uint16_t bcnt = (ctl_word & USB_OTG_GRXSTSP_BCNT_Msk) >> USB_OTG_GRXSTSP_BCNT_Pos;
@@ -1355,7 +1355,7 @@ static bool handle_rxflvl_ints(uint8_t rhport, USB_OTG_OUTEndpointTypeDef * out_
 
   switch(pktsts) {
     case 0x00: // possibly empty fifo? Happens after dir creation with msc_dual_lun demo
-      LOG("ctrl word %08x bcnt=%04x\n", ctl_word, bcnt);
+      // LOG("ctrl word %08x bcnt=%04x\n", ctl_word, bcnt);
       return false;
       break;
     case 0x01: // Global OUT NAK (Interrupt)
@@ -1454,7 +1454,7 @@ static void handle_epin_ints(uint8_t rhport, USB_OTG_DeviceTypeDef * dev, USB_OT
 
     if ( dev->DAINT & (1 << (USB_OTG_DAINT_IEPINT_Pos + n)) )
     {
-      LOG("DIEPINT %u %08x\n", n, in_ep[n].DIEPINT);
+      // LOG("DIEPINT %u %08x\n", n, in_ep[n].DIEPINT);
       // IN XFER complete (entire xfer).
       if ( in_ep[n].DIEPINT & USB_OTG_DIEPINT_XFRC )
       {
@@ -1562,10 +1562,11 @@ void dcd_int_handler(uint8_t rhport)
   //   LOG("ec=%u\n", ec);
   // }
 
-  LOG("/ %08x\n", int_status);
+  // LOG("/ %08x\n", int_status);
 
   if(int_status & USB_OTG_GINTSTS_USBRST)
   {
+    LOG("bus reset\n");
     // USBRST is start of reset.
     usb_otg->GINTSTS = USB_OTG_GINTSTS_USBRST;
     bus_reset(rhport);

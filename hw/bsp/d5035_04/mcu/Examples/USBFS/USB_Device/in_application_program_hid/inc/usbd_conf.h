@@ -2,11 +2,11 @@
     \file    usbd_conf.h
     \brief   the header file of USB device configuration
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc. 
+    Copyright (c) 2023, GigaDevice Semiconductor Inc. 
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -69,7 +69,7 @@ OF SUCH DAMAGE.
 
 /* memory address from where user application will be loaded, which represents 
    the DFU code protected against write and erase operations.*/
-#define APP_LOADED_ADDR                        0x08004000U
+#define APP_LOADED_ADDR                        0x08008000U
 
 /* make sure the corresponding memory where the DFU code should not be loaded
    cannot be erased or overwritten by DFU application. */

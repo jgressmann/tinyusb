@@ -2,11 +2,11 @@
     \file    usbh_usr.c
     \brief   some user routines
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc. 
+    Copyright (c) 2023, GigaDevice Semiconductor Inc. 
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -34,8 +34,7 @@ OF SUCH DAMAGE.
 
 #include "lcd_log.h"
 #include "usbh_usr.h"
-#include "usbh_hid_mouse.h"
-#include "usbh_hid_keybd.h"
+#include "usbh_standard_hid.h"
 #include "usb_lcd_conf.h"
 #include "drv_usb_hw.h"
 #include <string.h>
@@ -49,7 +48,7 @@ uint16_t keyboard_char_ypos = 0;
 extern usbh_host usb_host;
 extern usb_core_driver usb_hid_core;
 
-/* Points to the DEVICE_PROP structure of current device */
+/* Points to the usbh_user_cb structure */
 usbh_user_cb usr_cb =
 {
     usbh_user_init,
@@ -291,7 +290,7 @@ void usbh_user_device_not_supported(void)
 */
 usbh_user_status usbh_user_userinput(void)
 {
-    usbh_user_status usbh_usr_status = USBH_USER_NO_RESP;
+    usbh_user_status usbh_usr_status = USR_IN_NO_RESP;
 
 #if USB_LOW_POWER
 
@@ -313,7 +312,7 @@ usbh_user_status usbh_user_userinput(void)
 
     /*Key B3 is in polling mode to detect user action */
     if(RESET == gd_eval_key_state_get(KEY_USER)){
-        usbh_usr_status = USBH_USER_RESP_OK;
+        usbh_usr_status = USR_IN_RESP_OK;
     }
 
     return usbh_usr_status;
@@ -336,7 +335,7 @@ void usbh_user_over_current_detected (void)
     \param[out] none
     \retval     none
 */
-void USR_MOUSE_Init (void)
+void usr_mouse_init (void)
 {
     LCD_UsrLog("> HID Demo Device : Mouse.\n");
 
@@ -374,7 +373,7 @@ void USR_MOUSE_Init (void)
     \param[out] none
     \retval     none
 */
-void USR_MOUSE_ProcessData (hid_mouse_info *data)
+void usr_mouse_process_data (hid_mouse_info *data)
 {
     if ((0U != data->x) && (0U != data->y)) {
         HID_MOUSE_UpdatePosition(data->x, data->y);
@@ -395,7 +394,7 @@ void USR_MOUSE_ProcessData (hid_mouse_info *data)
     \param[out] none
     \retval     none
 */
-void  USR_KEYBRD_Init (void)
+void  usr_keyboard_init (void)
 {
     LCD_UsrLog("> HID Demo Device : Keyboard.\n");
     LCD_UsrLog("> Use Keyboard to tape characters: \n");
@@ -420,7 +419,7 @@ void  USR_KEYBRD_Init (void)
     \param[out] none
     \retval     none
 */
-void USR_KEYBRD_ProcessData (uint8_t data)
+void usr_keybrd_process_data (uint8_t data)
 {
     if('\n' == data){
         keyboard_char_ypos = KYBRD_FIRST_COLUMN;
@@ -443,7 +442,7 @@ void USR_KEYBRD_ProcessData (uint8_t data)
 
         lcd_text_color_set(LCD_COLOR_BLACK);
         lcd_background_color_set(LCD_COLOR_WHITE);
-        lcd_vertical_char_display(CHAR_CURSOR(keyboard_char_xpos, keyboard_char_ypos), ' ');
+        lcd_vertical_char_display(CHAR_CURSOR(keyboard_char_xpos, keyboard_char_ypos), '\0');
     }else{
         lcd_text_color_set(LCD_COLOR_BLACK);
         lcd_background_color_set(LCD_COLOR_WHITE);

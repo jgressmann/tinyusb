@@ -2,12 +2,11 @@
     \file    drv_usb_dev.c
     \brief   USB device mode low level driver
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
-    \version 2021-05-31, V1.0.1, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2021, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -182,6 +181,9 @@ usb_status usb_devint_enable (usb_core_driver *udev)
 usb_status usb_transc0_active (usb_core_driver *udev, usb_transc *transc)
 {
     __IO uint32_t *reg_addr = NULL;
+    uint32_t reg_dstat;
+    
+    reg_dstat = udev->regs.dr->DSTAT;
 
     /* get the endpoint number */
     uint8_t ep_num = transc->ep_addr.num;
@@ -202,7 +204,7 @@ usb_status usb_transc0_active (usb_core_driver *udev, usb_transc *transc)
     *reg_addr &= ~(DEPCTL_MPL | DEPCTL_EPTYPE | DIEPCTL_TXFNUM);
 
     /* set endpoint 0 maximum packet length */
-    *reg_addr |= EP0_MAXLEN[udev->regs.dr->DSTAT & DSTAT_ES];
+    *reg_addr |= EP0_MAXLEN[reg_dstat & DSTAT_ES];
 
     /* activate endpoint */
     *reg_addr |= ((uint32_t)transc->ep_type << 18U) | ((uint32_t)ep_num << 22U) | DEPCTL_SD0PID | DEPCTL_EPACT;
@@ -221,6 +223,11 @@ usb_status usb_transc_active (usb_core_driver *udev, usb_transc *transc)
 {
     __IO uint32_t *reg_addr = NULL;
     __IO uint32_t epinten = 0U;
+    
+    uint32_t reg_dstat;
+    uint32_t reg_daepinten;
+    
+    reg_dstat = udev->regs.dr->DSTAT;
 
     /* get the endpoint number */
     uint8_t ep_num = transc->ep_addr.num;
@@ -242,7 +249,7 @@ usb_status usb_transc_active (usb_core_driver *udev, usb_transc *transc)
 
         /* set endpoint maximum packet length */
         if (0U == ep_num) {
-            *reg_addr |= EP0_MAXLEN[udev->regs.dr->DSTAT & DSTAT_ES];
+            *reg_addr |= EP0_MAXLEN[reg_dstat & DSTAT_ES];
         } else {
             *reg_addr |= transc->max_len;
         }
@@ -251,9 +258,9 @@ usb_status usb_transc_active (usb_core_driver *udev, usb_transc *transc)
         *reg_addr |= ((uint32_t)transc->ep_type << 18U) | ((uint32_t)ep_num << 22U) | DEPCTL_SD0PID | DEPCTL_EPACT;
     }
 
-    
+    reg_daepinten = epinten;
     /* enable the interrupts for this endpoint */
-    udev->regs.dr->DAEPINTEN |= epinten;
+    udev->regs.dr->DAEPINTEN |= reg_daepinten;;
     
     return USB_OK;
 }
@@ -339,16 +346,14 @@ usb_status usb_transc_inxfer (usb_core_driver *udev, usb_transc *transc)
         }
     }
 
-    if ((uint8_t)USB_USE_DMA == udev->bp.transfer_mode) {
-        udev->regs.er_in[ep_num]->DIEPDMAADDR = transc->dma_addr;
-    }
-
     /* enable the endpoint and clear the NAK */
     epctl |= DEPCTL_CNAK | DEPCTL_EPEN;
 
     udev->regs.er_in[ep_num]->DIEPCTL = epctl;
 
     if ((uint8_t)USB_USE_FIFO == udev->bp.transfer_mode) {
+        udev->regs.er_in[ep_num]->DIEPCTL = epctl;
+
         if (transc->ep_type != (uint8_t)USB_EPTYPE_ISOC) {
             /* enable the TX FIFO empty interrupt for this endpoint */
             if (transc->xfer_len > 0U) {
@@ -399,10 +404,6 @@ usb_status usb_transc_outxfer (usb_core_driver *udev, usb_transc *transc)
     }
 
     udev->regs.er_out[ep_num]->DOEPLEN = eplen;
-
-    if ((uint8_t)USB_USE_DMA == udev->bp.transfer_mode) {
-        udev->regs.er_out[ep_num]->DOEPDMAADDR = transc->dma_addr;
-    }
 
     if (transc->ep_type == (uint8_t)USB_EPTYPE_ISOC) {
         if (transc->frame_num) {
@@ -513,13 +514,6 @@ void usb_ctlep_startout (usb_core_driver *udev)
 {
     /* set OUT endpoint 0 receive length to 24 bytes, 1 packet and 3 setup packets */
     udev->regs.er_out[0]->DOEPLEN = DOEP0_TLEN(8U * 3U) | DOEP0_PCNT(1U) | DOEP0_STPCNT(3U);
-
-    if ((uint8_t)USB_USE_DMA == udev->bp.transfer_mode) {
-        udev->regs.er_out[0]->DOEPDMAADDR = (uint32_t)&udev->dev.control.req;
-
-        /* endpoint enable */
-        udev->regs.er_out[0]->DOEPCTL |= DEPCTL_EPACT | DEPCTL_EPEN;
-    }
 }
 
 /*!

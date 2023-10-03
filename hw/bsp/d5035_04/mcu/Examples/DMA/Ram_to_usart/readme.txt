@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of DMA ram to usart
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -39,4 +39,4 @@ a transfer complete interrupt is generated since it is enabled. If the data stor
 array welcome[] is transferred correctly by DMA, the string will be displayed on a 
 serial port tool by USART and LED2 lights up. 
 
-  JP5 must be fitted to the USART port.
+  JP5, JP6 must be fitted to the USART port.

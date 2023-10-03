@@ -2,11 +2,11 @@
     \file    drv_usb_core.c
     \brief   USB core driver which can operate in host and device mode
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -159,11 +159,6 @@ usb_status usb_core_init (usb_core_basic usb_basic, usb_core_regs *usb_regs)
         }
 
         usb_mdelay(20U);
-    }
-
-    if ((uint8_t)USB_USE_DMA == usb_basic.transfer_mode) {
-        usb_regs->gr->GAHBCS &= ~GAHBCS_BURST;
-        usb_regs->gr->GAHBCS |= DMA_INCR8 | GAHBCS_DMAEN;
     }
 
 #ifdef USE_OTG_MODE

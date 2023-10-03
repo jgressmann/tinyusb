@@ -1,12 +1,12 @@
 /*!
     \file    main.c
     \brief   master receiver one byte
-    
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -32,7 +32,9 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 OF SUCH DAMAGE.
 */
 
+#include <stdio.h>
 #include "gd32c10x.h"
+#include "gd32c10x_eval.h"
 
 #define I2C0_SLAVE_ADDRESS7    0x72
 #define I2C1_SLAVE_ADDRESS7    0x82
@@ -52,15 +54,19 @@ void i2c_config(void);
 int main(void)
 {
     int i;
-    
-    /* RCU configure */
+
+    /* configure USART */
+    gd_eval_com_init(EVAL_COM0);
+    printf("\r\n I2C Start\r\n");
+
+    /* configure RCU */
     rcu_config();
-    /* GPIO configure */
+    /* configure GPIO */
     gpio_config();
-    /* I2C configure */
+    /* configure I2C */
     i2c_config();
 
-    i=0;
+    i = 0;
     /* wait until I2C bus is idle */
     while(i2c_flag_get(I2C0, I2C_FLAG_I2CBSY));
     /* send a start condition to I2C bus */
@@ -82,13 +88,14 @@ int main(void)
     while(!i2c_flag_get(I2C0, I2C_FLAG_RBNE));
     /* read a data from I2C_DATA */
     i2c_receiver[i++] = i2c_data_receive(I2C0);
-
     /* wait until stop condition generate */
-    while(I2C_CTL0(I2C0)&0x0200);
-    /* Enable Acknowledge */
+    while(I2C_CTL0(I2C0) & I2C_CTL0_STOP);
+    /* enable acknowledge */
     i2c_ack_config(I2C0, I2C_ACK_ENABLE);
 
-    while(1){
+    printf("\r\n Receive data: 0x%02X ", i2c_receiver[0]);
+
+    while(1) {
     }
 }
 
@@ -120,19 +127,27 @@ void gpio_config(void)
 }
 
 /*!
-    \brief      configure the I2C0 interfaces
+    \brief      configure the I2C0 interface
     \param[in]  none
     \param[out] none
     \retval     none
 */
 void i2c_config(void)
 {
-    /* I2C clock configure */
+    /* configure I2C clock */
     i2c_clock_config(I2C0, 100000, I2C_DTCY_2);
-    /* I2C address configure */
+    /* configure I2C address */
     i2c_mode_addr_config(I2C0, I2C_I2CMODE_ENABLE, I2C_ADDFORMAT_7BITS, I2C0_SLAVE_ADDRESS7);
     /* enable I2C0 */
     i2c_enable(I2C0);
     /* enable acknowledge */
     i2c_ack_config(I2C0, I2C_ACK_ENABLE);
+}
+
+/* retarget the C library printf function to the usart */
+int fputc(int ch, FILE *f)
+{
+    usart_data_transmit(EVAL_COM0, (uint8_t)ch);
+    while (RESET == usart_flag_get(EVAL_COM0, USART_FLAG_TBE));
+    return ch;
 }

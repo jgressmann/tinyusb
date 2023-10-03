@@ -2,11 +2,11 @@
     \file    usbh_usr.c
     \brief   user application layer for USBFS host-mode MSC class operation
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc. 
+    Copyright (c) 2023, GigaDevice Semiconductor Inc. 
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -49,7 +49,7 @@ FIL file;
 uint8_t line_idx;
 uint8_t usbh_usr_application_state = USBH_USR_FS_INIT;
 
-/*  points to the DEVICE_PROP structure of current device */
+/*  points to the usbh_user_cb structure */
 usbh_user_cb usr_cb =
 {
     usbh_user_init,
@@ -289,12 +289,12 @@ void usbh_user_device_not_supported(void)
 */
 usbh_user_status usbh_user_userinput(void)
 {
-    usbh_user_status usbh_usr_status = USBH_USER_NO_RESP;
+    usbh_user_status usbh_usr_status = USR_IN_NO_RESP;
 
     /*key B3 is in polling mode to detect user action */
 
     if (RESET == gd_eval_key_state_get(KEY_USER)) {
-        usbh_usr_status = USBH_USER_RESP_OK;
+        usbh_usr_status = USR_IN_RESP_OK;
     }
 
     return usbh_usr_status;
@@ -336,7 +336,7 @@ int usbh_usr_msc_application(void)
         LCD_UsrLog("> File System initialized.\r\n");
         if (USBH_OK == usbh_msc_lun_info_get(&usb_host, 0U, &info))
         {
-            LCD_UsrLog("> Disk capacity: %ud Bytes.\r\n", info.capacity.block_nbr * info.capacity.block_size);
+            LCD_UsrLog("> Disk capacity: %llu Bytes.\r\n", (uint64_t)info.capacity.block_nbr * info.capacity.block_size);
         }
 
         usbh_usr_application_state = USBH_USR_FS_READLIST;

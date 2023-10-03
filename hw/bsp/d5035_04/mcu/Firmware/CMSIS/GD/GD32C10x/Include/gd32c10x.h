@@ -2,11 +2,11 @@
     \file    gd32c10x.h
     \brief   general definitions for GD32C10x
 
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -49,15 +49,7 @@ OF SUCH DAMAGE.
 
 /* define value of high speed crystal oscillator (HXTAL) in Hz */
 #if !defined  HXTAL_VALUE
-  #ifdef GD32C103V_EVAL
   #define HXTAL_VALUE    ((uint32_t)8000000) /*!< value of the external oscillator in Hz */
-  #define HXTAL_VALUE_8M  HXTAL_VALUE
-  #elif defined(GD32C103R_START)
-  #define HXTAL_VALUE    ((uint32_t)25000000) /*!< value of the external oscillator in Hz */
-  #define HXTAL_VALUE_25M  HXTAL_VALUE
-  #else
-  #error "Please select the target board type used in your application (in gd32c10x.h file)"
-  #endif
 #endif /* high speed crystal oscillator value */
  
 /* define startup timeout value of high speed crystal oscillator (HXTAL) */
@@ -118,7 +110,7 @@ typedef enum IRQn
     DebugMonitor_IRQn            = -4,     /*!< 12 Cortex-M4 debug monitor interrupt                     */
     PendSV_IRQn                  = -2,     /*!< 14 Cortex-M4 pend SV interrupt                           */
     SysTick_IRQn                 = -1,     /*!< 15 Cortex-M4 system tick interrupt                       */
-    /* interruput numbers */
+    /* interrupt numbers */
     WWDGT_IRQn                   = 0,      /*!< window watchDog timer interrupt                          */
     LVD_IRQn                     = 1,      /*!< LVD through EXTI line detect interrupt                   */
     TAMPER_IRQn                  = 2,      /*!< tamper through EXTI line detect                          */
@@ -245,7 +237,7 @@ typedef enum {ERROR = 0, SUCCESS = !ERROR} ErrStatus;
 #define CRC_BASE              (AHB1_BUS_BASE + 0x0000B000U)  /*!< CRC base address                 */
 #define USBFS_BASE            (AHB1_BUS_BASE + 0x0FFE8000U)  /*!< USBFS base address               */
 
-/* define marco USE_STDPERIPH_DRIVER */
+/* define macro USE_STDPERIPH_DRIVER */
 #if !defined  USE_STDPERIPH_DRIVER
 #define USE_STDPERIPH_DRIVER
 #endif 

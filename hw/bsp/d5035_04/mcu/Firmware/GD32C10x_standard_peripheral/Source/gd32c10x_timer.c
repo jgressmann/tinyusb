@@ -2,11 +2,11 @@
     \file    gd32c10x_timer.c
     \brief   TIMER driver
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -439,7 +439,7 @@ void timer_dma_enable(uint32_t timer_periph, uint16_t dma)
 /*!
     \brief      disable the TIMER DMA
     \param[in]  timer_periph: TIMERxTIMERx(x=0..7)
-    \param[in]  dma: specify which DMA to disbale
+    \param[in]  dma: specify which DMA to disable
                 one or more parameters can be selected which are shown as below:
       \arg        TIMER_DMA_UPD:  update DMA enable, TIMERx(x=0..7)
       \arg        TIMER_DMA_CH0D: channel 0 DMA enable, TIMERx(x=0..4,7)
@@ -700,7 +700,7 @@ void timer_channel_output_struct_para_init(timer_oc_parameter_struct* ocpara)
       \arg        TIMER_CH_1: TIMER channel 1(TIMERx(x=0..4,7,8,11))
       \arg        TIMER_CH_2: TIMER channel 2(TIMERx(x=0..4,7))
       \arg        TIMER_CH_3: TIMER channel 3(TIMERx(x=0..4,7))
-    \param[in]  ocpara: TIMER channeln output parameter struct
+    \param[in]  ocpara: TIMER channel output parameter struct
                   outputstate: TIMER_CCX_ENABLE, TIMER_CCX_DISABLE
                   outputnstate: TIMER_CCXN_ENABLE, TIMER_CCXN_DISABLE
                   ocpolarity: TIMER_OC_POLARITY_HIGH, TIMER_OC_POLARITY_LOW
@@ -1215,7 +1215,7 @@ void timer_channel_complementary_output_state_config(uint32_t timer_periph, uint
 
 /*!
     \brief      initialize TIMER channel input parameter struct with a default value
-    \param[in]  icpara: TIMER channel intput parameter struct
+    \param[in]  icpara: TIMER channel input parameter struct
     \param[out] none
     \retval     none
 */
@@ -1237,7 +1237,7 @@ void timer_channel_input_struct_para_init(timer_ic_parameter_struct* icpara)
       \arg        TIMER_CH_1: TIMER channel 1(TIMERx(x=0..4,7,8,11))
       \arg        TIMER_CH_2: TIMER channel 2(TIMERx(x=0..4,7))
       \arg        TIMER_CH_3: TIMER channel 3(TIMERx(x=0..4,7))
-    \param[in]  icpara: TIMER channel intput parameter struct
+    \param[in]  icpara: TIMER channel input parameter struct
                   icpolarity: TIMER_IC_POLARITY_RISING, TIMER_IC_POLARITY_FALLING,
                               TIMER_IC_POLARITY_BOTH_EDGE(only for TIMER8~TIMER13)
                   icselection: TIMER_IC_SELECTION_DIRECTTI, TIMER_IC_SELECTION_INDIRECTTI,
@@ -1427,7 +1427,7 @@ uint32_t timer_channel_capture_value_register_read(uint32_t timer_periph, uint16
                 only one parameter can be selected which is shown as below: 
       \arg        TIMER_CH_0: TIMER channel 0
       \arg        TIMER_CH_1: TIMER channel 1
-     \param[in] icpwm: TIMER channel intput pwm parameter struct
+     \param[in] icpwm: TIMER channel input pwm parameter struct
                   icpolarity: TIMER_IC_POLARITY_RISING, TIMER_IC_POLARITY_FALLING
                   icselection: TIMER_IC_SELECTION_DIRECTTI, TIMER_IC_SELECTION_INDIRECTTI
                   icprescaler: TIMER_IC_PSC_DIV1, TIMER_IC_PSC_DIV2, TIMER_IC_PSC_DIV4, 
@@ -1604,9 +1604,9 @@ void timer_master_output_trigger_source_select(uint32_t timer_periph, uint32_t o
     \param[in]  slavemode:
                 only one parameter can be selected which is shown as below: 
       \arg        TIMER_SLAVE_MODE_DISABLE: slave mode disable
-      \arg        TIMER_ENCODER_MODE0: encoder mode 0
-      \arg        TIMER_ENCODER_MODE1: encoder mode 1
-      \arg        TIMER_ENCODER_MODE2: encoder mode 2
+      \arg        TIMER_QUAD_DECODER_MODE0: quadrature decoder mode 0
+      \arg        TIMER_QUAD_DECODER_MODE1: quadrature decoder mode 1
+      \arg        TIMER_QUAD_DECODER_MODE2: quadrature decoder mode 2
       \arg        TIMER_SLAVE_MODE_RESTART: restart mode
       \arg        TIMER_SLAVE_MODE_PAUSE: pause mode
       \arg        TIMER_SLAVE_MODE_EVENT: event mode
@@ -1671,9 +1671,9 @@ void timer_external_trigger_config(uint32_t timer_periph, uint32_t extprescaler,
     \param[in]  timer_periph: TIMERx(x=0..4,7)
     \param[in]  decomode:
                 only one parameter can be selected which is shown as below: 
-      \arg        TIMER_ENCODER_MODE0: counter counts on CI0FE0 edge depending on CI1FE1 level
-      \arg        TIMER_ENCODER_MODE1: counter counts on CI1FE1 edge depending on CI0FE0 level
-      \arg        TIMER_ENCODER_MODE2: counter counts on both CI0FE0 and CI1FE1 edges depending on the level of the other input
+      \arg        TIMER_QUAD_DECODER_MODE0: counter counts on CI0FE0 edge depending on CI1FE1 level
+      \arg        TIMER_QUAD_DECODER_MODE1: counter counts on CI1FE1 edge depending on CI0FE0 level
+      \arg        TIMER_QUAD_DECODER_MODE2: counter counts on both CI0FE0 and CI1FE1 edges depending on the level of the other input
     \param[in]  ic0polarity:
                 only one parameter can be selected which is shown as below: 
       \arg        TIMER_IC_POLARITY_RISING: capture rising edge
@@ -1918,7 +1918,7 @@ void timer_interrupt_enable(uint32_t timer_periph, uint32_t interrupt)
 /*!
     \brief      disable the TIMER interrupt
     \param[in]  timer_periph: TIMERx(x=0..13)
-    \param[in]  interrupt: specify which interrupt to disbale
+    \param[in]  interrupt: specify which interrupt to disable
                 one or more parameters can be selected which are shown as below:
       \arg        TIMER_INT_UP: update interrupt enable, TIMERx(x=0..13)
       \arg        TIMER_INT_CH0: channel 0 interrupt enable, TIMERx(x=0..4,7..13)

@@ -2,11 +2,11 @@
     \file    main.c
     \brief   transfer data from RAM to RAM
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -69,10 +69,10 @@ int main(void)
     /* initialize LED */
     led_config();
     /* all LED off */
+    gd_eval_led_off(LED1);
     gd_eval_led_off(LED2);
-    gd_eval_led_off(LED4);
     gd_eval_led_off(LED3);
-    gd_eval_led_off(LED5);
+    gd_eval_led_off(LED4);
     
     destbuf_init();
     /* configure DMA channels */
@@ -86,21 +86,21 @@ int main(void)
     transferflag3 = uc_data_compare(source_address, destination_address3, DATANUM);
     transferflag4 = uc_data_compare(source_address, destination_address4, DATANUM);
 
-    /* if DMA channel 1 transfer success,light LED2 */
+    /* if DMA channel 1 transfer success,light LED1 */
     if(SUCCESS == transferflag1){
+        gd_eval_led_on(LED1);
+    }
+    /* if DMA channel 2 transfer success,light LED2 */
+    if(SUCCESS == transferflag2){
         gd_eval_led_on(LED2);
     }
-    /* if DMA channel 2 transfer success,light LED3 */
-    if(SUCCESS == transferflag2){
+    /* if DMA channel 3 transfer success,light LED3 */
+    if(SUCCESS == transferflag3){
         gd_eval_led_on(LED3);
     }
-    /* if DMA channel 3 transfer success,light LED4 */
-    if(SUCCESS == transferflag3){
-        gd_eval_led_on(LED4);
-    }
-    /* if DMA channel 4 transfer success,light LED5 */
+    /* if DMA channel 4 transfer success,light LED4 */
     if(SUCCESS == transferflag4){
-        gd_eval_led_on(LED5);
+        gd_eval_led_on(LED4);
     }
     
     while(1){
@@ -129,10 +129,10 @@ void destbuf_init(void)
 */
 void led_config(void)
 {
+    gd_eval_led_init(LED1);
     gd_eval_led_init(LED2);
     gd_eval_led_init(LED3);
     gd_eval_led_init(LED4);
-    gd_eval_led_init(LED5);
 }
 
 /*!

@@ -2,11 +2,11 @@
     \file    readme.txt
     \brief   description of tamper demo
     
-    \version 2020-12-31, V1.0.0, firmware for GD32C10x
+    \version 2023-06-16, V1.2.0, firmware for GD32C10x
 */
 
 /*
-    Copyright (c) 2020, GigaDevice Semiconductor Inc.
+    Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
     Redistribution and use in source and binary forms, with or without modification, 
 are permitted provided that the following conditions are met:
@@ -37,7 +37,7 @@ to/from backup data registers and demonstrates the tamper detection function. In
 this demo, the TAMPER pin is configured active on low level.
 
   After system start-up, it writes the data to all backup data registers, then check
-whether the data were correctly written. If yes, LED2 is on, otherwise LED3 is on.
+whether the data were correctly written. If yes, LED1 is on, otherwise LED2 is on.
 When the tamper key(TAMPER pin) is pressed, the backup data registers are reset and 
 the tamper interrupt is generated. In the corresponding ISR, it checks whether the 
-backup data registers are cleared or not. If yes, LED4 is on, otherwise LED5 is on.
+backup data registers are cleared or not. If yes, LED3 is on, otherwise LED4 is on.

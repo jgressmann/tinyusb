@@ -162,6 +162,9 @@ extern void sc_board_init_begin(void)
 	board_init();
 
 	memset(cans, 0, sizeof(cans));
+
+	// make stores precise
+	*(uint32_t*)0xE000E008=(*(uint32_t*)0xE000E008 | 1<<1);
 }
 
 extern void sc_board_init_end(void)
