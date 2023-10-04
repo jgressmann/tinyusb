@@ -8,33 +8,36 @@
 /*
     Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
-    Redistribution and use in source and binary forms, with or without modification, 
+    Redistribution and use in source and binary forms, with or without modification,
 are permitted provided that the following conditions are met:
 
-    1. Redistributions of source code must retain the above copyright notice, this 
+    1. Redistributions of source code must retain the above copyright notice, this
        list of conditions and the following disclaimer.
-    2. Redistributions in binary form must reproduce the above copyright notice, 
-       this list of conditions and the following disclaimer in the documentation 
+    2. Redistributions in binary form must reproduce the above copyright notice,
+       this list of conditions and the following disclaimer in the documentation
        and/or other materials provided with the distribution.
-    3. Neither the name of the copyright holder nor the names of its contributors 
-       may be used to endorse or promote products derived from this software without 
+    3. Neither the name of the copyright holder nor the names of its contributors
+       may be used to endorse or promote products derived from this software without
        specific prior written permission.
 
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" 
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
-IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, 
-INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT 
-NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR 
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
-WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
-ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY 
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
 OF SUCH DAMAGE.
 */
 
 #include "usbd_conf.h"
 #include "drv_usbd_int.h"
 #include "usbd_transc.h"
+#include "device/dcd.h"
+
+#define RHPORT 0
 
 static uint32_t usbd_int_epout                 (usb_core_driver *udev);
 static uint32_t usbd_int_epin                  (usb_core_driver *udev);
@@ -62,7 +65,7 @@ void usbd_isr (usb_core_driver *udev)
 {
     if (HOST_MODE != (udev->regs.gr->GINTF & GINTF_COPM)) {
         uint32_t intr = udev->regs.gr->GINTF;
-        
+
         intr &= udev->regs.gr->GINTEN;
 
         /* there are no interrupts, avoid spurious interrupt */
@@ -93,17 +96,17 @@ void usbd_isr (usb_core_driver *udev)
             /* clear interrupt */
             udev->regs.gr->GINTF = GINTF_WKUPIF;
         }
-
+#if USB_SOF_OUTPUT
         /* start of frame interrupt */
         if (intr & GINTF_SOF) {
             if (udev->dev.class_core->SOF) {
-                (void)udev->dev.class_core->SOF(udev); 
+                (void)udev->dev.class_core->SOF(udev);
             }
 
             /* clear interrupt */
             udev->regs.gr->GINTF = GINTF_SOF;
         }
-
+#endif
         /* receive FIFO not empty interrupt */
         if (intr & GINTF_RXFNEIF) {
             (void)usbd_int_rxfifo (udev);
@@ -118,7 +121,7 @@ void usbd_isr (usb_core_driver *udev)
         if (intr & GINTF_ENUMFIF) {
             (void)usbd_int_enumfinish (udev);
         }
-
+#if 1
         /* incomplete synchronization IN transfer interrupt*/
         if (intr & GINTF_ISOINCIF) {
             if (NULL != udev->dev.class_core->incomplete_isoc_in) {
@@ -138,7 +141,7 @@ void usbd_isr (usb_core_driver *udev)
             /* clear interrupt */
             udev->regs.gr->GINTF = GINTF_ISOONCIF;
         }
-
+#endif
 #ifdef VBUS_SENSING_ENABLED
 
         /* session request interrupt */
@@ -272,16 +275,22 @@ static uint32_t usbd_int_rxfifo (usb_core_driver *udev)
 
     case RSTAT_XFER_COMP:
         /* trigger the OUT endpoint interrupt */
+        LOG("RSTAT_XFER_COMP\n");
+        dcd_event_xfer_complete(RHPORT, ep_num, transc->xfer_count, XFER_RESULT_SUCCESS, true);
         break;
 
     case RSTAT_SETUP_COMP:
         /* trigger the OUT endpoint interrupt */
+        LOG("RSTAT_SETUP_COMP\n");
+        dcd_event_setup_received(RHPORT, &udev->dev.control.req, true);
         break;
 
     case RSTAT_SETUP_UPDT:
         if ((0U == transc->ep_addr.num) && (8U == bcount) && (DPID_DATA0 == data_PID)) {
             /* copy the setup packet received in FIFO into the setup buffer in RAM */
             (void)usb_rxfifo_read (&udev->regs, (uint8_t *)&udev->dev.control.req, (uint16_t)bcount);
+            LOG("RSTAT_SETUP_UPDT\n");
+            // dcd_event_setup_received(RHPORT, &udev->dev.control.req, true);
 
             transc->xfer_count += bcount;
         }
@@ -360,6 +369,8 @@ static uint32_t usbd_int_reset (usb_core_driver *udev)
     /* upon reset call user call back */
     udev->dev.cur_status = (uint8_t)USBD_DEFAULT;
 
+    // dcd_event_bus_reset(RHPORT, TUSB_SPEED_FULL, true);
+
     return 1U;
 }
 
@@ -371,6 +382,7 @@ static uint32_t usbd_int_reset (usb_core_driver *udev)
 */
 static uint32_t usbd_int_enumfinish (usb_core_driver *udev)
 {
+    // LOG("usbd_int_enumfinish\n");
     uint8_t enum_speed = (uint8_t)((udev->regs.dr->DSTAT & DSTAT_ES) >> 1U);
 
     udev->regs.dr->DCTL &= ~DCTL_CGINAK;
@@ -391,6 +403,8 @@ static uint32_t usbd_int_enumfinish (usb_core_driver *udev)
 
     /* clear interrupt */
     udev->regs.gr->GINTF = GINTF_ENUMFIF;
+
+    dcd_event_bus_reset(RHPORT, TUSB_SPEED_FULL, true);
 
     return 1U;
 }

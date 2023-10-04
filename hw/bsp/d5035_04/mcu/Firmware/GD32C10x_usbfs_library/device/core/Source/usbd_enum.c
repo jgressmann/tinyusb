@@ -8,32 +8,41 @@
 /*
     Copyright (c) 2023, GigaDevice Semiconductor Inc.
 
-    Redistribution and use in source and binary forms, with or without modification, 
+    Redistribution and use in source and binary forms, with or without modification,
 are permitted provided that the following conditions are met:
 
-    1. Redistributions of source code must retain the above copyright notice, this 
+    1. Redistributions of source code must retain the above copyright notice, this
        list of conditions and the following disclaimer.
-    2. Redistributions in binary form must reproduce the above copyright notice, 
-       this list of conditions and the following disclaimer in the documentation 
+    2. Redistributions in binary form must reproduce the above copyright notice,
+       this list of conditions and the following disclaimer in the documentation
        and/or other materials provided with the distribution.
-    3. Neither the name of the copyright holder nor the names of its contributors 
-       may be used to endorse or promote products derived from this software without 
+    3. Neither the name of the copyright holder nor the names of its contributors
+       may be used to endorse or promote products derived from this software without
        specific prior written permission.
 
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" 
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
-IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, 
-INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT 
-NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR 
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
-WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
-ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY 
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
 OF SUCH DAMAGE.
 */
 
 #include "usbd_enum.h"
 #include "usb_ch9_std.h"
+
+#include <supercan_debug.h>
+#include <device/dcd.h>
+
+#define RHPORT 0
+extern uint8_t const * tud_descriptor_device_cb(void);
+extern uint8_t const * tud_descriptor_configuration_cb(uint8_t index);
+extern uint8_t const * tud_descriptor_bos_cb(void);
+extern uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid);
 
 #ifdef WINUSB_EXEMPT_DRIVER
 
@@ -92,6 +101,15 @@ static uint8_t* (*std_desc_get[])(usb_core_driver *udev, uint8_t index, uint16_t
 */
 usb_reqsta usbd_standard_request (usb_core_driver *udev, usb_req *req)
 {
+    LOG("usbd_standard_request %x\n", req->bRequest);
+    // dcd_event_t ev;
+
+    // ev.rhport = RHPORT;
+    // ev.event_id = DCD_EVENT_SETUP_RECEIVED;
+    // ev.setup_received = *(tusb_control_request_t*)req;
+
+
+    // dcd_event_handler(&ev, true);
     return (*_std_dev_req[req->bRequest])(udev, req);
 }
 
@@ -167,7 +185,7 @@ void int_to_unicode (uint32_t value, uint8_t *pbuf, uint8_t len)
         if ((value >> 28U) < 0x0AU) {
             pbuf[2U * index] = (uint8_t)((value >> 28U) + '0');
         } else {
-            pbuf[2U * index] = (uint8_t)((value >> 28U) + 'A' - 10U); 
+            pbuf[2U * index] = (uint8_t)((value >> 28U) + 'A' - 10U);
         }
 
         value = value << 4U;
@@ -236,9 +254,12 @@ static uint8_t* _usb_dev_desc_get (usb_core_driver *udev, uint8_t index, uint16_
 {
     (void)index;
 
-    *len = udev->dev.desc->dev_desc[0];
+    uint8_t* ptr = (uint8_t*)tud_descriptor_device_cb();
 
-    return udev->dev.desc->dev_desc;
+    *len = ptr[0];
+
+    return ptr;
+
 }
 
 /*!
@@ -252,9 +273,11 @@ static uint8_t* _usb_config_desc_get (usb_core_driver *udev, uint8_t index, uint
 {
     (void)index;
 
-    *len = udev->dev.desc->config_desc[2] | (udev->dev.desc->config_desc[3]<< 8);
+    uint8_t* ptr = (uint8_t*)tud_descriptor_configuration_cb(index);
 
-    return udev->dev.desc->config_desc;
+    *len = ptr[2] | (ptr[3]<< 8);
+
+    return ptr;
 }
 
 /*!
@@ -268,9 +291,12 @@ static uint8_t* _usb_bos_desc_get (usb_core_driver *udev, uint8_t index, uint16_
 {
     (void)index;
 
-    *len = udev->dev.desc->bos_desc[2];
+    uint8_t* ptr = (uint8_t*)tud_descriptor_bos_cb();
 
-    return udev->dev.desc->bos_desc;
+    *len = ptr[2];
+
+    return ptr;
+
 }
 
 /*!
@@ -282,11 +308,11 @@ static uint8_t* _usb_bos_desc_get (usb_core_driver *udev, uint8_t index, uint16_
 */
 static uint8_t* _usb_str_desc_get (usb_core_driver *udev, uint8_t index, uint16_t *len)
 {
-    uint8_t *desc = udev->dev.desc->strings[index];
+    uint8_t* ptr = (uint8_t*)tud_descriptor_string_cb(index, 0);
 
-    *len = desc[0];
+    *len = ptr[0];
 
-    return desc;
+    return ptr;
 }
 
 /*!
@@ -493,7 +519,7 @@ static usb_reqsta _usb_std_getdescriptor (usb_core_driver *udev, usb_req *req)
 {
     uint8_t desc_type = 0U;
     uint8_t desc_index = 0U;
-    
+
     usb_reqsta status = REQ_NOTSUPP;
 
     usb_transc *transc = &udev->dev.transc_in[0];
@@ -635,9 +661,12 @@ static usb_reqsta _usb_std_setconfiguration (usb_core_driver *udev, usb_req *req
 
     config = (uint8_t)(req->wValue);
 
+    LOG("set config %u\n", config);
+
     if (config <= USBD_CFG_MAX_NUM) {
         switch (udev->dev.cur_status) {
         case USBD_ADDRESSED:
+            // LOG("addressed\n");
             if (config){
                 (void)udev->dev.class_core->init(udev, config);
 
@@ -649,6 +678,7 @@ static usb_reqsta _usb_std_setconfiguration (usb_core_driver *udev, usb_req *req
             break;
 
         case USBD_CONFIGURED:
+            // LOG("configured\n");
             if (USB_DEFAULT_CONFIG == config) {
                 (void)udev->dev.class_core->deinit(udev, config);
 
