@@ -14,9 +14,10 @@ CFLAGS += \
 	-mfpu=fpv4-sp-d16 \
 	-nostdlib -nostartfiles \
 	-DCFG_TUSB_MCU=OPT_MCU_GD32C10X \
-	-DDOWNLOAD_MODE=DOWNLOAD_MODE_FLASHXIP \
-	-DGD32C10X -DGD32C103R_START \
-	-DRAMFUNC_SECTION_NAME="\".ramfunc\""
+	-DGD32C10X \
+	-DRAMFUNC_SECTION_NAME="\".ramfunc\"" \
+	-DHXTAL_VALUE=25000000 \
+
 
 #-flto \
 
@@ -29,11 +30,20 @@ HWREV ?= 1
 CFLAGS += -DHWREV=$(HWREV)
 
 
+# build automagically adds startup_gd32c10x.c to SRC_C
 SRC_C += \
-	src/portable/st/synopsys/dcd_synopsys.c \
-	$(CMSIS_GD32C10X_PATH)/Source/system_gd32c10x.c
+	$(USB_GD32C10X_PATH)/driver/Source/drv_usb_core.c \
+	$(USB_GD32C10X_PATH)/driver/Source/drv_usb_dev.c \
+	$(USB_GD32C10X_PATH)/driver/Source/drv_usbd_int.c \
+	$(USB_GD32C10X_PATH)/device/core/Source/usbd_core.c \
+	$(USB_GD32C10X_PATH)/device/core/Source/usbd_enum.c \
+	$(USB_GD32C10X_PATH)/device/core/Source/usbd_transc.c \
+	$(PER_GD32C10X_PATH)/Source/gd32c10x_pmu.c \
+	$(PER_GD32C10X_PATH)/Source/gd32c10x_timer.c \
+	$(PER_GD32C10X_PATH)/Source/gd32c10x_rcu.c
 
-#hw/bsp/d5035_04/startup_gd32c10x.c \
+# $(CMSIS_GD32C10X_PATH)/Source/system_gd32c10x.c
+
 
 INC += \
 	$(TOP)/$(BOARD_PATH) \
@@ -41,11 +51,14 @@ INC += \
 	$(CMSIS_GD32C10X_PATH)/Include \
 	$(PER_GD32C10X_PATH)/Include \
 	$(TOP)/$(BOARD_PATH)/mcu/Template \
-	$(TOP)/src/portable/st/synopsys
+	$(USB_GD32C10X_PATH)/driver/Include \
+	$(USB_GD32C10X_PATH)/ustd/common \
+	$(USB_GD32C10X_PATH)/device/core/Include \
 
-	#$(USB_GD32C10X_PATH)/driver/Include \
-	\
-	# $(USB_GD32C10X_PATH)/ustd/common \
+
+	# # $(TOP)/src/portable/st/synopsys
+
+
 
 
 

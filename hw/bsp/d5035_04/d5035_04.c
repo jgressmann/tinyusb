@@ -226,6 +226,8 @@ void board_init(void)
 
 #if CFG_TUSB_OS == OPT_OS_FREERTOS
 	// If freeRTOS is used, IRQ priority is limit by max syscall ( smaller is higher )
+#define NVIC_PRIORITYGROUP_4 3
+	NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 	NVIC_SetPriority(USBFS_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 #endif
 
@@ -344,8 +346,20 @@ void dcd_init(uint8_t rhport)
 
     usb_globalint_disable(&udev->regs);
 
+	NVIC_SetPriority(USBFS_IRQn, SC_ISR_PRIORITY);
+
+	LOG("1\n");
+
+	LOG("prio tim2 %u\n", NVIC_GetPriority(TIMER2_IRQn));
+
+	// __disable_irq();
+
     /* initializes the USB core*/
     (void)usb_core_init (udev->bp, &udev->regs);
+
+	// __disable_irq();
+
+	LOG("2\n");
 
     /* set device disconnect */
     usbd_disconnect (udev);
@@ -357,16 +371,21 @@ void dcd_init(uint8_t rhport)
     /* initializes device mode */
     (void)usb_devcore_init (udev);
 
+	LOG("3\n");
+
     usb_globalint_enable(&udev->regs);
+
+
 
 	/* set device connect */
     usbd_connect (udev);
 
     udev->dev.cur_status = (uint8_t)USBD_DEFAULT;
 
+	LOG("prio usb %u\n", NVIC_GetPriority(USBFS_IRQn));
+
 	LOG("dcd_init exit\n");
 }
-
 
 __attribute__((section(".ramfunc"))) void dcd_int_handler(uint8_t rhport)
 {
@@ -374,14 +393,12 @@ __attribute__((section(".ramfunc"))) void dcd_int_handler(uint8_t rhport)
 
 }
 
-
 __attribute__((section(".ramfunc"))) void dcd_int_enable(uint8_t rhport)
 {
 	LOG("dcd_int_enable\n");
 	(void)rhport;
 	NVIC_EnableIRQ(USBFS_IRQn);
 }
-
 
 __attribute__((section(".ramfunc"))) void dcd_int_disable(uint8_t rhport)
 {
@@ -399,10 +416,6 @@ void dcd_set_address(uint8_t rhport, uint8_t dev_addr)
 }
 
 
-
-
-
-
 void dcd_connect(uint8_t rhport)
 {
 	LOG("dcd_connect\n");
@@ -412,7 +425,6 @@ void dcd_connect(uint8_t rhport)
 	/* set device connect */
     usbd_connect (udev);
 }
-
 
 void dcd_disconnect(uint8_t rhport)
 {
@@ -577,9 +589,6 @@ static uint8_t sc_core_ctlx_out(usb_dev *udev, uint8_t ep_num)
 }
 
 
-uint8_t  (*ctlx_in)               (usb_dev *udev);                          /*!< device contrl in callback */
-    uint8_t  (*ctlx_out)              (usb_dev *udev);                          /*!< device contrl out callback */
-
 
 #define TIM_MSEC_DELAY                          0x01U
 #define TIM_USEC_DELAY                          0x02U
@@ -636,7 +645,11 @@ void usb_timer_init (void)
 
     /* enable the TIM2 global interrupt */
     // nvic_irq_enable((uint8_t)TIMER2_IRQn, 1U, 0U);
-	NVIC_SetPriority(USBFS_IRQn, SC_ISR_PRIORITY);
+
+
+	// DO NOT SET interrupt prio, as the RTOS hasn't
+	// set up proper handling yet
+	// NVIC_SetPriority(TIMER2_IRQn, SC_ISR_PRIORITY);
 	NVIC_EnableIRQ(TIMER2_IRQn);
 
     rcu_periph_clock_enable(RCU_TIMER2);

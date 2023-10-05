@@ -17,6 +17,7 @@
 
 #define USB_SOF_OUTPUT              0
 #define USB_LOW_POWER               0
+#define USB_ISO                     0
 
 //#define VBUS_SENSING_ENABLED
 

@@ -38,6 +38,9 @@ OF SUCH DAMAGE.
 #include "device/dcd.h"
 
 #define RHPORT 0
+#ifndef USB_ISO
+    #define USB_ISO 1
+#endif
 
 static uint32_t usbd_int_epout                 (usb_core_driver *udev);
 static uint32_t usbd_int_epin                  (usb_core_driver *udev);
@@ -121,7 +124,7 @@ void usbd_isr (usb_core_driver *udev)
         if (intr & GINTF_ENUMFIF) {
             (void)usbd_int_enumfinish (udev);
         }
-#if 1
+#if USB_ISO
         /* incomplete synchronization IN transfer interrupt*/
         if (intr & GINTF_ISOINCIF) {
             if (NULL != udev->dev.class_core->incomplete_isoc_in) {
@@ -276,7 +279,9 @@ static uint32_t usbd_int_rxfifo (usb_core_driver *udev)
     case RSTAT_XFER_COMP:
         /* trigger the OUT endpoint interrupt */
         LOG("RSTAT_XFER_COMP\n");
-        dcd_event_xfer_complete(RHPORT, ep_num, transc->xfer_count, XFER_RESULT_SUCCESS, true);
+        if ((uint8_t)USBD_CONFIGURED == udev->dev.cur_status) {
+            dcd_event_xfer_complete(RHPORT, ep_num, transc->xfer_count, XFER_RESULT_SUCCESS, true);
+        }
         break;
 
     case RSTAT_SETUP_COMP:
