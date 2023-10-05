@@ -82,6 +82,8 @@ else
   CFLAGS += -DSUPERCAN_DEBUG=0
 endif
 
+CFLAGS += -DCFG_TUSB_DEBUG_PRINTF=sc_log
+
 ifdef APP
 ifneq ($(APP),0)
   CFLAGS += -DSUPERDFU_APP=1
