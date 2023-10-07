@@ -348,20 +348,12 @@ void dcd_init(uint8_t rhport)
 
 	NVIC_SetPriority(USBFS_IRQn, SC_ISR_PRIORITY);
 
-	LOG("1\n");
-
 	LOG("prio tim2 %u\n", NVIC_GetPriority(TIMER2_IRQn));
 
-	// __disable_irq();
-
-    /* initializes the USB core*/
+	/* initializes the USB core*/
     (void)usb_core_init (udev->bp, &udev->regs);
 
-	// __disable_irq();
-
-	LOG("2\n");
-
-    /* set device disconnect */
+	/* set device disconnect */
     usbd_disconnect (udev);
 
 #ifndef USE_OTG_MODE
@@ -374,8 +366,6 @@ void dcd_init(uint8_t rhport)
 	LOG("3\n");
 
     usb_globalint_enable(&udev->regs);
-
-
 
 	/* set device connect */
     usbd_connect (udev);
@@ -439,10 +429,12 @@ void dcd_disconnect(uint8_t rhport)
 // Configure endpoint's registers according to descriptor
 bool dcd_edpt_open(uint8_t rhport, tusb_desc_endpoint_t const * desc_ep)
 {
-	LOG("dcd_edpt_open\n");
+	// LOG("dcd_edpt_open\n");
 
 	(void)rhport;
-	(void)desc_ep;
+	// (void)desc_ep;
+
+	usbd_ep_setup(&driver, desc_ep);
 
 	return true;
 }
@@ -472,15 +464,22 @@ bool dcd_edpt_xfer(uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t t
 	usb_core_driver* udev = &driver;
 	(void)rhport;
 
-	LOG("dcd_edpt_xfer %02x\n", ep_addr);
+	uint8_t pipe = ep_addr & ~0x80;
 
-	// if (ep_addr & 0x80) {
-	// 	// always returns 0
-	// 	(void)usbd_ep_send(udev, ep_addr, buffer, total_bytes);
-	// } else {
-	// 	// always returns 0
-	// 	(void)usbd_ep_recev(udev, ep_addr, buffer, total_bytes);
-	// }
+	if (pipe) {
+		// LOG("dcd_edpt_xfer %02x\n", ep_addr);
+		if (ep_addr & 0x80) {
+			// always returns 0
+			// LOG("usbd_ep_send %02x\n", ep_addr);
+			(void)usbd_ep_send(udev, ep_addr, buffer, total_bytes);
+		} else {
+			// always returns 0
+			// LOG("usbd_ep_recev %02x\n", ep_addr);
+			(void)usbd_ep_recev(udev, ep_addr, buffer, total_bytes);
+		}
+	} else {
+		// EP0 is handled by GD USB stack
+	}
 
 	return true;
 }
@@ -564,29 +563,31 @@ static uint8_t sc_core_req(usb_dev *udev, usb_req *req)
 }
 static uint8_t sc_core_in(usb_dev *udev, uint8_t ep_num)
 {
-	LOG("sc_core_in %02x\n", ep_num);
-	dcd_event_xfer_complete(0, ep_num, udev->dev.transc_in[ep_num & ~0x80].xfer_len, XFER_RESULT_SUCCESS, true);
+	// LOG("sc_core_in %02x\n", 0x80 | ep_num);
+	// LOG("> %02x l=%u\n", 0x80 | ep_num, udev->dev.transc_in[ep_num].xfer_len);
+	dcd_event_xfer_complete(0, 0x80 | ep_num, udev->dev.transc_in[ep_num].xfer_len, XFER_RESULT_SUCCESS, true);
 	return USBD_OK;
 }
 static uint8_t sc_core_out(usb_dev *udev, uint8_t ep_num)
 {
-	LOG("sc_core_out %02x\n", ep_num);
+	// LOG("sc_core_out %02x\n", ep_num);
+	// LOG("< %02x l=%u\n", ep_num, udev->dev.transc_out[ep_num].xfer_len);
 	dcd_event_xfer_complete(0, ep_num, udev->dev.transc_out[ep_num].xfer_len, XFER_RESULT_SUCCESS, true);
 	return USBD_OK;
 }
 
-static uint8_t sc_core_ctlx_in(usb_dev *udev, uint8_t ep_num)
-{
-	LOG("sc_core_ctlx_in\n", ep_num);
-	// dcd_event_xfer_complete(0, ep_num, udev->dev.transc_in[ep_num & ~0x80].xfer_len, XFER_RESULT_SUCCESS, true);
-	return USBD_OK;
-}
-static uint8_t sc_core_ctlx_out(usb_dev *udev, uint8_t ep_num)
-{
-	LOG("sc_core_out %02x\n", ep_num);
-	// dcd_event_xfer_complete(0, ep_num, udev->dev.transc_out[ep_num].xfer_len, XFER_RESULT_SUCCESS, true);
-	return USBD_OK;
-}
+// static uint8_t sc_core_ctlx_in(usb_dev *udev, uint8_t ep_num)
+// {
+// 	LOG("sc_core_ctlx_in\n", ep_num);
+// 	// dcd_event_xfer_complete(0, ep_num, udev->dev.transc_in[ep_num & ~0x80].xfer_len, XFER_RESULT_SUCCESS, true);
+// 	return USBD_OK;
+// }
+// static uint8_t sc_core_ctlx_out(usb_dev *udev, uint8_t ep_num)
+// {
+// 	LOG("sc_core_out %02x\n", ep_num);
+// 	// dcd_event_xfer_complete(0, ep_num, udev->dev.transc_out[ep_num].xfer_len, XFER_RESULT_SUCCESS, true);
+// 	return USBD_OK;
+// }
 
 
 
@@ -640,14 +641,7 @@ void usb_rcu_config(void)
 */
 void usb_timer_init (void)
 {
-    /* configure the priority group to 2 bits */
-    // nvic_priority_group_set(NVIC_PRIGROUP_PRE2_SUB2);
-
-    /* enable the TIM2 global interrupt */
-    // nvic_irq_enable((uint8_t)TIMER2_IRQn, 1U, 0U);
-
-
-	// DO NOT SET interrupt prio, as the RTOS hasn't
+    // DO NOT SET interrupt prio, as the RTOS hasn't
 	// set up proper handling yet
 	// NVIC_SetPriority(TIMER2_IRQn, SC_ISR_PRIORITY);
 	NVIC_EnableIRQ(TIMER2_IRQn);

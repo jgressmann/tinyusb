@@ -101,15 +101,8 @@ static uint8_t* (*std_desc_get[])(usb_core_driver *udev, uint8_t index, uint16_t
 */
 usb_reqsta usbd_standard_request (usb_core_driver *udev, usb_req *req)
 {
-    LOG("usbd_standard_request %x\n", req->bRequest);
-    // dcd_event_t ev;
+    // LOG("usbd_standard_request %x\n", req->bRequest);
 
-    // ev.rhport = RHPORT;
-    // ev.event_id = DCD_EVENT_SETUP_RECEIVED;
-    // ev.setup_received = *(tusb_control_request_t*)req;
-
-
-    // dcd_event_handler(&ev, true);
     return (*_std_dev_req[req->bRequest])(udev, req);
 }
 

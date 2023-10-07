@@ -7,11 +7,11 @@
 #define USB_FS_CORE 1
 
 
-
-#define RX_FIFO_FS_SIZE                         256
-#define TX0_FIFO_FS_SIZE                        64
-#define TX1_FIFO_FS_SIZE                        64
-#define TX2_FIFO_FS_SIZE                        256
+// in 4 byte terms
+#define RX_FIFO_FS_SIZE                         128
+#define TX0_FIFO_FS_SIZE                        16
+#define TX1_FIFO_FS_SIZE                        16
+#define TX2_FIFO_FS_SIZE                        128
 #define TX3_FIFO_FS_SIZE                        0
 
 

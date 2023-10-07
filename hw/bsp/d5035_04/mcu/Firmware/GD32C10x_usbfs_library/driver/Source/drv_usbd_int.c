@@ -278,15 +278,15 @@ static uint32_t usbd_int_rxfifo (usb_core_driver *udev)
 
     case RSTAT_XFER_COMP:
         /* trigger the OUT endpoint interrupt */
-        LOG("RSTAT_XFER_COMP\n");
-        if ((uint8_t)USBD_CONFIGURED == udev->dev.cur_status) {
-            dcd_event_xfer_complete(RHPORT, ep_num, transc->xfer_count, XFER_RESULT_SUCCESS, true);
-        }
+        // LOG("RSTAT_XFER_COMP %02x\n", ep_num);
+        // if ((uint8_t)USBD_CONFIGURED == udev->dev.cur_status) {
+            // dcd_event_xfer_complete(RHPORT, ep_num, transc->xfer_count, XFER_RESULT_SUCCESS, true);
+        // }
         break;
 
     case RSTAT_SETUP_COMP:
         /* trigger the OUT endpoint interrupt */
-        LOG("RSTAT_SETUP_COMP\n");
+        // LOG("RSTAT_SETUP_COMP\n");
         dcd_event_setup_received(RHPORT, &udev->dev.control.req, true);
         break;
 
@@ -294,8 +294,7 @@ static uint32_t usbd_int_rxfifo (usb_core_driver *udev)
         if ((0U == transc->ep_addr.num) && (8U == bcount) && (DPID_DATA0 == data_PID)) {
             /* copy the setup packet received in FIFO into the setup buffer in RAM */
             (void)usb_rxfifo_read (&udev->regs, (uint8_t *)&udev->dev.control.req, (uint16_t)bcount);
-            LOG("RSTAT_SETUP_UPDT\n");
-            // dcd_event_setup_received(RHPORT, &udev->dev.control.req, true);
+            // LOG("RSTAT_SETUP_UPDT\n");
 
             transc->xfer_count += bcount;
         }
@@ -463,6 +462,8 @@ static uint32_t usbd_emptytxfifo_write (usb_core_driver *udev, uint32_t ep_num)
     if (len > transc->max_len) {
         len = transc->max_len;
     }
+
+    // LOG("tx%u %u\n", ep_num, len);
 
     word_count = (len + 3U) / 4U;
 

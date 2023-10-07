@@ -132,7 +132,7 @@ uint8_t usbd_setup_transc (usb_core_driver *udev)
     switch (req.bmRequestType & USB_REQTYPE_MASK) {
     /* standard device request */
     case USB_REQTYPE_STRD:
-        LOG("setup\n");
+        // LOG("setup\n");
         reqstat = usbd_standard_request (udev, &req);
         break;
 
