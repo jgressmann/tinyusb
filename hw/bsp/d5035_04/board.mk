@@ -7,6 +7,7 @@ PER_GD32C10X_PATH = $(TOP)/$(BOARD_PATH)/mcu/Firmware/GD32C10x_standard_peripher
 USB_GD32C10X_PATH = $(TOP)/$(BOARD_PATH)/mcu/Firmware/GD32C10x_usbfs_library
 
 CFLAGS += \
+	-flto \
 	-mthumb \
 	-mabi=aapcs \
 	-mcpu=cortex-m4 \
@@ -19,7 +20,7 @@ CFLAGS += \
 	-DHXTAL_VALUE=25000000
 
 
-#-flto \
+
 
 CFLAGS += -Wno-error=undef -Wno-error=type-limits -Wno-error=unused-parameter
 
