@@ -1044,7 +1044,7 @@ bool dcd_edpt_xfer (uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t 
   xfer->ff          = NULL;
   xfer->total_len   = total_bytes;
 
-  LOG("X ep=%02x bytes=%u\n", ep_addr, total_bytes);
+  // LOG("X ep=%02x bytes=%u\n", ep_addr, total_bytes);
 
 
   // EP0 can only handle one packet
