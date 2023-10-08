@@ -16,7 +16,7 @@ CFLAGS += \
 	-DCFG_TUSB_MCU=OPT_MCU_GD32C10X \
 	-DGD32C10X \
 	-DRAMFUNC_SECTION_NAME="\".ramfunc\"" \
-	-DHXTAL_VALUE=25000000 \
+	-DHXTAL_VALUE=25000000
 
 
 #-flto \
@@ -42,9 +42,6 @@ SRC_C += \
 	$(PER_GD32C10X_PATH)/Source/gd32c10x_timer.c \
 	$(PER_GD32C10X_PATH)/Source/gd32c10x_rcu.c
 
-# $(CMSIS_GD32C10X_PATH)/Source/system_gd32c10x.c
-
-
 INC += \
 	$(TOP)/$(BOARD_PATH) \
 	$(CMSIS_PATH) \
@@ -53,11 +50,7 @@ INC += \
 	$(TOP)/$(BOARD_PATH)/mcu/Template \
 	$(USB_GD32C10X_PATH)/driver/Include \
 	$(USB_GD32C10X_PATH)/ustd/common \
-	$(USB_GD32C10X_PATH)/device/core/Include \
-
-
-	# # $(TOP)/src/portable/st/synopsys
-
+	$(USB_GD32C10X_PATH)/device/core/Include
 
 
 

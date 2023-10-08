@@ -40,7 +40,7 @@ uint32_t SystemCoreClock;
 
 static uint8_t sc_core_init(usb_dev *udev, uint8_t config_index);
 static uint8_t sc_core_deinit(usb_dev *udev, uint8_t config_index);
-static uint8_t sc_core_req(usb_dev *udev, usb_req *req);
+// static uint8_t sc_core_req(usb_dev *udev, usb_req *req);
 static uint8_t sc_core_in(usb_dev *udev, uint8_t ep_num);
 static uint8_t sc_core_out(usb_dev *udev, uint8_t ep_num);
 
@@ -51,7 +51,7 @@ usb_class_core cls = {
 	.init     = sc_core_init,
     .deinit   = sc_core_deinit,
 
-    .req_proc = sc_core_req,
+    // .req_proc = sc_core_req,
 
     .data_in  = sc_core_in,
     .data_out = sc_core_out
@@ -488,24 +488,23 @@ bool dcd_edpt_xfer(uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t t
 // Stall endpoint, any queuing transfer should be removed from endpoint
 void dcd_edpt_stall(uint8_t rhport, uint8_t ep_addr)
 {
-	usb_core_driver* udev = &driver;
+	// usb_core_driver* udev = &driver;
 	(void)rhport;
+	(void)ep_addr;
 
-	LOG("dcd_edpt_stall %02x\n", ep_addr);
-
-	// (void)usbd_ep_stall(udev, ep_addr);
+	// LOG("dcd_edpt_stall %02x\n", ep_addr);
 }
 
 // clear stall, data toggle is also reset to DATA0
 // This API never calls with control endpoints, since it is auto cleared when receiving setup packet
 void dcd_edpt_clear_stall(uint8_t rhport, uint8_t ep_addr)
 {
-	usb_core_driver* udev = &driver;
+	// usb_core_driver* udev = &driver;
 	(void)rhport;
+	(void)ep_addr;
 
-	LOG("usbd_ep_stall_clear %02x\n", ep_addr);
+	// LOG("usbd_ep_stall_clear %02x\n", ep_addr);
 
-	// (void)usbd_ep_stall_clear(udev, ep_addr);
 }
 
 extern void usb_timer_irq(void);
@@ -526,42 +525,23 @@ __attribute__((section(".ramfunc"))) void USBFS_IRQHandler(void)
 
 static uint8_t sc_core_init(usb_dev *udev, uint8_t config_index)
 {
-	LOG("sc_core_init\n");
-	// const uint8_t eps = 4;
-	// const uint16_t len_required = 9+eps*7;
-
-	// uint8_t const *ptr = tud_descriptor_configuration_cb(config_index);
-
-	// ptr += TUD_CONFIG_DESC_LEN;
-
-
-	// for (uint8_t i = 0; i < eps; ++i) {
-	// 	tusb_desc_endpoint_t const *ep_desc = (tusb_desc_endpoint_t const *)(ptr + i * 7);
-	// 	LOG("! ep %02x open\n", ep_desc->bEndpointAddress);
-	// 	bool success = usbd_edpt_open(RHPORT, ep_desc);
-	// 	SC_ASSERT(success);
-	// }
-
-	// // bool success_cmd = XFER(rhport, usb_cmd->pipe, usb_cmd->rx_buffers[usb_cmd->rx_bank], CMD_BUFFER_SIZE);
-	// // bool success_can = XFER(rhport, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE);
-	// // SC_ASSERT(success_cmd);
-	// // SC_ASSERT(success_can);
-
-	// usbd_edpt_xfer(RHPORT, usb_cmd->pipe, usb_cmd->rx_buffers[usb_cmd->rx_bank], CMD_BUFFER_SIZE);
-	// usbd_edpt_xfer(RHPORT, usb_can->pipe, usb_can->rx_buffers[usb_can->rx_bank], MSG_BUFFER_SIZE);
+	(void)udev;
+	(void)config_index;
 
 	return USBD_OK;
 }
 static uint8_t sc_core_deinit(usb_dev *udev, uint8_t config_index)
 {
-	LOG("sc_core_deinit\n");
+	(void)udev;
+	(void)config_index;
+
 	return USBD_OK;
 }
-static uint8_t sc_core_req(usb_dev *udev, usb_req *req)
-{
-	LOG("sc_core_req\n");
-	return USBD_OK;
-}
+// static uint8_t sc_core_req(usb_dev *udev, usb_req *req)
+// {
+// 	LOG("sc_core_req\n");
+// 	return USBD_OK;
+// }
 static uint8_t sc_core_in(usb_dev *udev, uint8_t ep_num)
 {
 	// LOG("sc_core_in %02x\n", 0x80 | ep_num);
