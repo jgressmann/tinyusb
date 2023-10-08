@@ -458,6 +458,7 @@ void dcd_edpt_close(uint8_t rhport, uint8_t ep_addr)
 	LOG("dcd_edpt_close\n");
 }
 
+
 // Submit a transfer, When complete dcd_event_xfer_complete() is invoked to notify the stack
 bool dcd_edpt_xfer(uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t total_bytes)
 {
@@ -564,31 +565,17 @@ static uint8_t sc_core_req(usb_dev *udev, usb_req *req)
 static uint8_t sc_core_in(usb_dev *udev, uint8_t ep_num)
 {
 	// LOG("sc_core_in %02x\n", 0x80 | ep_num);
-	// LOG("> %02x l=%u\n", 0x80 | ep_num, udev->dev.transc_in[ep_num].xfer_len);
-	dcd_event_xfer_complete(0, 0x80 | ep_num, udev->dev.transc_in[ep_num].xfer_len, XFER_RESULT_SUCCESS, true);
+	// LOG("> %02x l=%u\n", 0x80 | ep_num, udev->dev.transc_in[ep_num].xfer_count);
+	dcd_event_xfer_complete(0, 0x80 | ep_num, udev->dev.transc_in[ep_num].xfer_count, XFER_RESULT_SUCCESS, true);
 	return USBD_OK;
 }
 static uint8_t sc_core_out(usb_dev *udev, uint8_t ep_num)
 {
 	// LOG("sc_core_out %02x\n", ep_num);
-	// LOG("< %02x l=%u\n", ep_num, udev->dev.transc_out[ep_num].xfer_len);
-	dcd_event_xfer_complete(0, ep_num, udev->dev.transc_out[ep_num].xfer_len, XFER_RESULT_SUCCESS, true);
+	// LOG("< %02x l=%u\n", ep_num, udev->dev.transc_out[ep_num].xfer_count);
+	dcd_event_xfer_complete(0, ep_num, udev->dev.transc_out[ep_num].xfer_count, XFER_RESULT_SUCCESS, true);
 	return USBD_OK;
 }
-
-// static uint8_t sc_core_ctlx_in(usb_dev *udev, uint8_t ep_num)
-// {
-// 	LOG("sc_core_ctlx_in\n", ep_num);
-// 	// dcd_event_xfer_complete(0, ep_num, udev->dev.transc_in[ep_num & ~0x80].xfer_len, XFER_RESULT_SUCCESS, true);
-// 	return USBD_OK;
-// }
-// static uint8_t sc_core_ctlx_out(usb_dev *udev, uint8_t ep_num)
-// {
-// 	LOG("sc_core_out %02x\n", ep_num);
-// 	// dcd_event_xfer_complete(0, ep_num, udev->dev.transc_out[ep_num].xfer_len, XFER_RESULT_SUCCESS, true);
-// 	return USBD_OK;
-// }
-
 
 
 #define TIM_MSEC_DELAY                          0x01U
