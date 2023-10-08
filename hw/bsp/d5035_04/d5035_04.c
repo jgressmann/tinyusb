@@ -488,7 +488,6 @@ bool dcd_edpt_xfer(uint8_t rhport, uint8_t ep_addr, uint8_t * buffer, uint16_t t
 // Stall endpoint, any queuing transfer should be removed from endpoint
 void dcd_edpt_stall(uint8_t rhport, uint8_t ep_addr)
 {
-	// usb_core_driver* udev = &driver;
 	(void)rhport;
 	(void)ep_addr;
 
@@ -499,7 +498,6 @@ void dcd_edpt_stall(uint8_t rhport, uint8_t ep_addr)
 // This API never calls with control endpoints, since it is auto cleared when receiving setup packet
 void dcd_edpt_clear_stall(uint8_t rhport, uint8_t ep_addr)
 {
-	// usb_core_driver* udev = &driver;
 	(void)rhport;
 	(void)ep_addr;
 
@@ -537,11 +535,6 @@ static uint8_t sc_core_deinit(usb_dev *udev, uint8_t config_index)
 
 	return USBD_OK;
 }
-// static uint8_t sc_core_req(usb_dev *udev, usb_req *req)
-// {
-// 	LOG("sc_core_req\n");
-// 	return USBD_OK;
-// }
 static uint8_t sc_core_in(usb_dev *udev, uint8_t ep_num)
 {
 	// LOG("sc_core_in %02x\n", 0x80 | ep_num);

@@ -57,7 +57,7 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, s
 #define configENABLE_MPU                        0
 #define configENABLE_FPU                        0
 #define configENABLE_TRUSTZONE                  0
-#define configMINIMAL_SECURE_STACK_SIZE         ( 1024 )
+#define configMINIMAL_SECURE_STACK_SIZE         ( 512 )
 
 #define configUSE_PREEMPTION                    1
  /* NOTE: disable this to debug FreeRTOS crashes */
