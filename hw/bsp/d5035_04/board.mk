@@ -15,8 +15,7 @@ CFLAGS += \
 	-nostdlib -nostartfiles \
 	-DCFG_TUSB_MCU=OPT_MCU_GD32C10X \
 	-DGD32C10X \
-	-DRAMFUNC_SECTION_NAME="\".ramfunc\"" \
-	-DHXTAL_VALUE=25000000 \
+	-DRAMFUNC_SECTION_NAME="\".ramfunc\""
 
 
 #-flto \
@@ -32,18 +31,7 @@ CFLAGS += -DHWREV=$(HWREV)
 
 # build automagically adds startup_gd32c10x.c to SRC_C
 SRC_C += \
-	$(USB_GD32C10X_PATH)/driver/Source/drv_usb_core.c \
-	$(USB_GD32C10X_PATH)/driver/Source/drv_usb_dev.c \
-	$(USB_GD32C10X_PATH)/driver/Source/drv_usbd_int.c \
-	$(USB_GD32C10X_PATH)/device/core/Source/usbd_core.c \
-	$(USB_GD32C10X_PATH)/device/core/Source/usbd_enum.c \
-	$(USB_GD32C10X_PATH)/device/core/Source/usbd_transc.c \
-	$(PER_GD32C10X_PATH)/Source/gd32c10x_pmu.c \
-	$(PER_GD32C10X_PATH)/Source/gd32c10x_timer.c \
-	$(PER_GD32C10X_PATH)/Source/gd32c10x_rcu.c
-
-# $(CMSIS_GD32C10X_PATH)/Source/system_gd32c10x.c
-
+	src/portable/st/synopsys/dcd_synopsys.c
 
 INC += \
 	$(TOP)/$(BOARD_PATH) \
@@ -51,13 +39,7 @@ INC += \
 	$(CMSIS_GD32C10X_PATH)/Include \
 	$(PER_GD32C10X_PATH)/Include \
 	$(TOP)/$(BOARD_PATH)/mcu/Template \
-	$(USB_GD32C10X_PATH)/driver/Include \
-	$(USB_GD32C10X_PATH)/ustd/common \
-	$(USB_GD32C10X_PATH)/device/core/Include \
-
-
-	# # $(TOP)/src/portable/st/synopsys
-
+	$(TOP)/src/portable/st/synopsys
 
 
 

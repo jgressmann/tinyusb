@@ -34,20 +34,6 @@
 // #define LOG(...)
 // #define sc_dump_mem(...)
 
-#define DCD_ST_SYN_RX_FIFO_SIZE_WORDS   128  // shared
-#define DCD_ST_SYN_TX0_FIFO_SIZE_WORDS  16   // EP0
-#define DCD_ST_SYN_TX1_FIFO_SIZE_WORDS  16   // EP1
-#define DCD_ST_SYN_TX2_FIFO_SIZE_WORDS  32   // EP2
-#define DCD_ST_SYN_TX3_FIFO_SIZE_WORDS  0   // EP3
-#define DCD_ST_SYN_CUSTOM_FIFO_SIZES 0
-
-// #if TU_BIG_ENDIAN == TU_BYTE_ORDER
-// # define be32toh(x) x
-// #else
-// # define be32toh(x) __builtin_bswap32(x)
-// #endif
-
-
 
 
 // Since TinyUSB doesn't use SOF for now, and this interrupt too often (1ms interval)

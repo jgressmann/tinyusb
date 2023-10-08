@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2022 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2022-2023 Jean Gressmann <jean@0x42.de>
  *
  */
 
@@ -27,17 +27,18 @@
 
 #define SC_BOARD_CAN_TX_FIFO_SIZE 32
 #define SC_BOARD_CAN_RX_FIFO_SIZE 32
-/* This board is special, greater sizes lead to the USB ports begin disabled during
- * transfer. The Linux kernel prints this helpful (?) diagnostic message:
- * usb usb4-port4: disabled by hub (EMI?), re-enabling..
+
+/* in 4 byte terms
+ *
+ * perfect fit 1280
  */
+#define RX_FIFO_FS_SIZE                         96
+#define TX0_FIFO_FS_SIZE                        16
+#define TX1_FIFO_FS_SIZE                        16
+#define TX2_FIFO_FS_SIZE                        96
+#define TX3_FIFO_FS_SIZE                        0
 
-// works *sometimes*
-// #define MSG_BUFFER_SIZE 256
-// seems to *mostly* work
-// #define MSG_BUFFER_SIZE 128
-
-#define MSG_BUFFER_SIZE 128
+#define MSG_BUFFER_SIZE (TX2_FIFO_FS_SIZE*4)
 
 enum {
 	SC_BOARD_DEBUG_DEFAULT,

@@ -58,7 +58,7 @@ extern void sc_can_log_bit_timing(sc_can_bit_timing const *c, char const* name)
 
 
 // FIX ME: move to struct usb
-static StackType_t usb_device_stack[(3*configMINIMAL_SECURE_STACK_SIZE)/2];
+static StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
 static StaticTask_t usb_device_task_mem;
 
 static void tusb_device_task(void* param);
@@ -267,6 +267,7 @@ SC_RAMFUNC static inline void sc_can_bulk_in_submit(uint8_t index, char const *f
 		struct sc_msg_header *hdr = (struct sc_msg_header *)ptr;
 
 		if (!hdr->id || !hdr->len) {
+			break;
 			LOG("ch%u %s msg offset %u zero id/len msg\n", index, func, ptr - sptr);
 			// sc_dump_mem(sptr, eptr - sptr);
 			SC_DEBUG_ASSERT(false);
@@ -1179,9 +1180,7 @@ static uint16_t sc_usb_open(uint8_t rhport, tusb_desc_interface_t const * desc_i
 
 	LOG("vendor port %u open\n", rhport);
 
-	if (unlikely(rhport != usb.port)) {
-		return 0;
-	}
+	(void)rhport;
 
 	if (unlikely(max_len < len_required)) {
 		return 0;
@@ -1229,11 +1228,8 @@ static uint16_t sc_usb_open(uint8_t rhport, tusb_desc_interface_t const * desc_i
 
 SC_RAMFUNC static bool sc_usb_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
 {
+	(void)rhport;
 	(void)result; // always success
-
-	if (unlikely(rhport != usb.port)) {
-		return false;
-	}
 
 	sc_board_led_usb_burst();
 
