@@ -377,20 +377,14 @@ void dcd_init(uint8_t rhport)
 	LOG("dcd_init exit\n");
 }
 
-__attribute__((section(".ramfunc"))) void dcd_int_handler(uint8_t rhport)
-{
-	(void)rhport;
-
-}
-
-__attribute__((section(".ramfunc"))) void dcd_int_enable(uint8_t rhport)
+void dcd_int_enable(uint8_t rhport)
 {
 	LOG("dcd_int_enable\n");
 	(void)rhport;
 	NVIC_EnableIRQ(USBFS_IRQn);
 }
 
-__attribute__((section(".ramfunc"))) void dcd_int_disable(uint8_t rhport)
+void dcd_int_disable(uint8_t rhport)
 {
 	LOG("dcd_int_disable\n");
 	(void)rhport;
@@ -434,7 +428,7 @@ bool dcd_edpt_open(uint8_t rhport, tusb_desc_endpoint_t const * desc_ep)
 	(void)rhport;
 	// (void)desc_ep;
 
-	usbd_ep_setup(&driver, desc_ep);
+	usbd_ep_setup(&driver, (const usb_desc_ep *)desc_ep);
 
 	return true;
 }
