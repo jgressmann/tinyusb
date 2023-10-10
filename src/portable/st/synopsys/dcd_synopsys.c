@@ -513,9 +513,12 @@ static void set_turnaround(USB_OTG_GlobalTypeDef * usb_otg, tusb_speed_t speed)
   }
   else
   {
+
     // Turnaround timeout depends on the MCU clock
     uint32_t turnaround;
-
+#if CFG_TUSB_MCU == OPT_MCU_GD32C10X
+    turnaround = 5;
+#else
     if ( SystemCoreClock >= 32000000U )
       turnaround = 0x6U;
     else if ( SystemCoreClock >= 27500000U )
@@ -536,7 +539,7 @@ static void set_turnaround(USB_OTG_GlobalTypeDef * usb_otg, tusb_speed_t speed)
       turnaround = 0xEU;
     else
       turnaround = 0xFU;
-
+#endif
     // Fullspeed depends on MCU clocks, but we will use 0x06 for 32+ Mhz
     usb_otg->GUSBCFG |= (turnaround << USB_OTG_GUSBCFG_TRDT_Pos);
   }
