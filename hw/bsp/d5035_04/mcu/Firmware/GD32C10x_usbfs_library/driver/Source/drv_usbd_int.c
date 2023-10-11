@@ -287,7 +287,7 @@ static uint32_t usbd_int_rxfifo (usb_core_driver *udev)
     case RSTAT_SETUP_COMP:
         /* trigger the OUT endpoint interrupt */
         // LOG("RSTAT_SETUP_COMP\n");
-        dcd_event_setup_received(RHPORT, &udev->dev.control.req, true);
+        dcd_event_setup_received(RHPORT, (uint8_t *)&udev->dev.control.req, true);
         break;
 
     case RSTAT_SETUP_UPDT:
