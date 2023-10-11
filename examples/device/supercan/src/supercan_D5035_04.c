@@ -879,6 +879,85 @@ SC_RAMFUNC extern uint32_t sc_board_can_ts_fetch_isr(void)
 	return  (((uint32_t)top) << 16) | bottom;
 }
 
+SC_RAMFUNC static void update_status(uint8_t index, uint32_t ts, uint32_t* events)
+{
+	sc_can_status status;
+	struct can *can = &cans[index];
+	uint32_t const can_stat = CAN_STAT(can->regs);
+	uint32_t can_err = CAN_ERR(can->regs);
+	status.timestamp_us = ts;
+	uint8_t rec = (can_err >> 24) & 0xff;
+	uint8_t tec = (can_err >> 16) & 0xff;
+	uint8_t current_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
+	uint8_t const bus_error = sc_can_bus_error_map[(can_err >> 4) & 0x7];
+
+
+	// LOG("ch%u STAT=%08x ERR=%08x\n", index, CAN_STAT(can->regs), CAN_ERR(can->regs));
+
+	if (likely(rec != can->int_prev_rx_errors || tec != can->int_prev_tx_errors)) {
+		can->int_prev_tx_errors = tec;
+		can->int_prev_rx_errors = rec;
+
+		LOG("CAN%u REC=%u TEC=%u\n", index, can->int_prev_rx_errors, can->int_prev_tx_errors);
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS;
+		status.counts.rx = rec;
+		status.counts.tx = tec;
+
+		sc_can_status_queue(index, &status);
+		++*events;
+	}
+
+
+	if (can_err & CAN_ERR_BOERR) {
+		current_bus_state = SC_CAN_STATUS_BUS_OFF;
+	} else if (can_err & CAN_ERR_PERR) {
+		current_bus_state = SC_CAN_STATUS_ERROR_PASSIVE;
+	} else if (can_err & CAN_ERR_WERR) {
+		current_bus_state = SC_CAN_STATUS_ERROR_WARNING;
+	}
+
+	if (unlikely(can->int_prev_bus_state != current_bus_state)) {
+		can->int_prev_bus_state = current_bus_state;
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS;
+		status.bus_state = current_bus_state;
+
+		sc_can_status_queue(index, &status);
+		++*events;
+
+		switch (current_bus_state) {
+		case SC_CAN_STATUS_BUS_OFF:
+			LOG("CAN%u bus off\n", index);
+			break;
+		case SC_CAN_STATUS_ERROR_PASSIVE:
+			LOG("CAN%u error passive\n", index);
+			break;
+		case SC_CAN_STATUS_ERROR_WARNING:
+			LOG("CAN%u error warning\n", index);
+			break;
+		case SC_CAN_STATUS_ERROR_ACTIVE:
+			LOG("CAN%u error active\n", index);
+			break;
+		default:
+			LOG("CAN%u unhandled bus state\n", index);
+			break;
+		}
+	}
+
+	if (unlikely(SC_CAN_ERROR_NONE != bus_error)) {
+		bool is_tx_error = (can_stat & CAN_STAT_TS) == CAN_STAT_TS;
+
+		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
+		status.bus_error.tx = is_tx_error;
+		status.bus_error.code = bus_error,
+		status.bus_error.data_part = 0;
+
+		sc_can_status_queue(index, &status);
+		++*events;
+	}
+}
+
 SC_RAMFUNC static void can_tx_irq(uint8_t index)
 {
 	struct can *can = &cans[index];
@@ -990,6 +1069,8 @@ SC_RAMFUNC static void can_tx_irq(uint8_t index)
 		__atomic_store_n(&can->tx_get_index, gi, __ATOMIC_RELEASE);
 	}
 
+	update_status(index, tsc, &events);
+
 	if (likely(events)) {
 		sc_can_notify_task_isr(index, events);
 	}
@@ -1071,6 +1152,8 @@ SC_RAMFUNC static void can_rx_irq(uint8_t index)
 		++events;
 	}
 
+	update_status(index, tsc, &events);
+
 	if (likely(events)) {
 		sc_can_notify_task_isr(index, events);
 	}
@@ -1078,83 +1161,11 @@ SC_RAMFUNC static void can_rx_irq(uint8_t index)
 
 static SC_RAMFUNC void can_ewmc_irq(uint8_t index)
 {
-	sc_can_status status;
 	struct can *can = &cans[index];
-	uint32_t const can_stat = CAN_STAT(can->regs);
-	uint32_t const can_err = CAN_ERR(can->regs);
-	status.timestamp_us = sc_board_can_ts_fetch_isr();
-	unsigned events = 0;
-	uint8_t rec = (can_err >> 24) & 0xff;
-	uint8_t tec = (can_err >> 16) & 0xff;
-	uint8_t current_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
-	uint8_t const bus_error = sc_can_bus_error_map[(can_err >> 4) & 0x7];
+	uint32_t tsc = sc_board_can_ts_fetch_isr();
+	uint32_t events = 0;
 
-
-	// LOG("ch%u STAT=%08x ERR=%08x\n", index, CAN_STAT(can->regs), CAN_ERR(can->regs));
-
-	if (likely(rec != can->int_prev_rx_errors || tec != can->int_prev_tx_errors)) {
-		can->int_prev_tx_errors = tec;
-		can->int_prev_rx_errors = rec;
-
-		LOG("CAN%u REC=%u TEC=%u\n", index, can->int_prev_rx_errors, can->int_prev_tx_errors);
-
-		status.type = SC_CAN_STATUS_FIFO_TYPE_RXTX_ERRORS;
-		status.counts.rx = rec;
-		status.counts.tx = tec;
-
-		sc_can_status_queue(index, &status);
-		++events;
-	}
-
-
-	if (can_err & CAN_ERR_BOERR) {
-		current_bus_state = SC_CAN_STATUS_BUS_OFF;
-	} else if (can_err & CAN_ERR_PERR) {
-		current_bus_state = SC_CAN_STATUS_ERROR_PASSIVE;
-	} else if (can_err & CAN_ERR_WERR) {
-		current_bus_state = SC_CAN_STATUS_ERROR_WARNING;
-	}
-
-	if (unlikely(can->int_prev_bus_state != current_bus_state)) {
-		can->int_prev_bus_state = current_bus_state;
-
-		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS;
-		status.bus_state = current_bus_state;
-
-		sc_can_status_queue(index, &status);
-		++events;
-
-		switch (current_bus_state) {
-		case SC_CAN_STATUS_BUS_OFF:
-			LOG("CAN%u bus off\n", index);
-			break;
-		case SC_CAN_STATUS_ERROR_PASSIVE:
-			LOG("CAN%u error passive\n", index);
-			break;
-		case SC_CAN_STATUS_ERROR_WARNING:
-			LOG("CAN%u error warning\n", index);
-			break;
-		case SC_CAN_STATUS_ERROR_ACTIVE:
-			LOG("CAN%u error active\n", index);
-			break;
-		default:
-			LOG("CAN%u unhandled bus state\n", index);
-			break;
-		}
-	}
-
-	if (unlikely(SC_CAN_ERROR_NONE != bus_error)) {
-		bool is_tx_error = (can_stat & CAN_STAT_TS) == CAN_STAT_TS;
-
-		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_ERROR;
-		status.bus_error.tx = is_tx_error;
-		status.bus_error.code = bus_error,
-		status.bus_error.data_part = 0;
-
-		sc_can_status_queue(index, &status);
-		++events;
-	}
-
+	update_status(index, tsc, &events);
 
 	CAN_STAT(can->regs) |= CAN_STAT_ERRIF;
 
