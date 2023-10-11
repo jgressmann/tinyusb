@@ -100,15 +100,12 @@ struct can {
 	uint8_t const tx_irq;
 	uint8_t track_id_boxes[MBCOUNT];
 	uint8_t flags_boxes[MBCOUNT];
-	// uint8_t mailbox_queue[MBCOUNT];
 	uint8_t const led_status_green;
 	uint8_t const led_status_red;
 	uint8_t rx_get_index; // NOT an index, uses full range of type
 	uint8_t rx_put_index; // NOT an index, uses full range of type
 	uint8_t tx_get_index; // NOT an index, uses full range of type
 	uint8_t tx_put_index; // NOT an index, uses full range of type
-	// uint8_t tx_mailbox_queue_get_index; // NOT an index, uses full range of type
-	// uint8_t tx_mailbox_queue_put_index; // NOT an index, uses full range of type
 	uint8_t txr_get_index; // NOT an index, uses full range of type
 	uint8_t txr_put_index; // NOT an index, uses full range of type
 	uint8_t notify; // keep notifying main loop for busy light
@@ -569,8 +566,6 @@ static inline void can_clear_queues(uint8_t index)
 	can->rx_put_index = 0;
 	can->tx_get_index = 0;
 	can->tx_put_index = 0;
-	// can->tx_mailbox_queue_get_index = 0;
-	// can->tx_mailbox_queue_put_index = 0;
 	can->txr_get_index = 0;
 	can->txr_put_index = 0;
 
@@ -833,28 +828,6 @@ SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t * c
 				__atomic_store_n(&can->rx_get_index, can->rx_get_index + 1, __ATOMIC_RELEASE);
 			}
 		}
-
-
-		// // generate bogus but easy to validate data
-		// size_t left = tx_end - tx_ptr;
-
-		// if (left >= 4) {
-		// 	static uint8_t count = 0;
-		// 	struct sc_msg_header *hdr = tx_ptr;
-
-		// 	left -= sizeof(*hdr);
-
-		// 	hdr->id = 0x42;
-		// 	hdr->len = 4;
-
-		// 	tx_ptr += 2;
-		// 	result += hdr->len;
-
-		// 	*tx_ptr++ = count++;
-		// 	*tx_ptr++ = count++;
-
-		// 	done = false;
-		// }
 	}
 
 	if (result > 0) {
