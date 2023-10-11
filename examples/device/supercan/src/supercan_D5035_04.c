@@ -589,6 +589,10 @@ static inline void can_off(uint8_t index)
 
 	/* abort scheduled transmissions */
 	CAN_TSTAT(can->regs) |= CAN_TSTAT_MST0 | CAN_TSTAT_MST1 | CAN_TSTAT_MST2;
+
+	/* clear mailbox status flags (don´t omit else there may be a txr after going on bus) */
+	CAN_TSTAT(can->regs) |= 0x0F0F0F;
+
 	/* initial working mode */
 	CAN_CTL(can->regs) |= CAN_CTL_IWMOD;
 
