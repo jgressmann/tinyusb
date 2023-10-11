@@ -14,7 +14,7 @@
 
 //#include <usb_descriptors.h> // DFU_USB_RESET_TIMEOUT_MS
 
-
+#define MBCOUNT 3U
 #define PORT_STEP 0x00000400U
 
 enum {
@@ -98,17 +98,17 @@ struct can {
 #endif
 	uint16_t features;
 	uint8_t const tx_irq;
-	uint8_t track_id_boxes[3];
-	uint8_t flags_boxes[3];
-	uint8_t mailbox_queue[3];
+	uint8_t track_id_boxes[MBCOUNT];
+	uint8_t flags_boxes[MBCOUNT];
+	// uint8_t mailbox_queue[MBCOUNT];
 	uint8_t const led_status_green;
 	uint8_t const led_status_red;
 	uint8_t rx_get_index; // NOT an index, uses full range of type
 	uint8_t rx_put_index; // NOT an index, uses full range of type
 	uint8_t tx_get_index; // NOT an index, uses full range of type
 	uint8_t tx_put_index; // NOT an index, uses full range of type
-	uint8_t tx_mailbox_queue_get_index; // NOT an index, uses full range of type
-	uint8_t tx_mailbox_queue_put_index; // NOT an index, uses full range of type
+	// uint8_t tx_mailbox_queue_get_index; // NOT an index, uses full range of type
+	// uint8_t tx_mailbox_queue_put_index; // NOT an index, uses full range of type
 	uint8_t txr_get_index; // NOT an index, uses full range of type
 	uint8_t txr_put_index; // NOT an index, uses full range of type
 	uint8_t notify; // keep notifying main loop for busy light
@@ -569,8 +569,8 @@ static inline void can_clear_queues(uint8_t index)
 	can->rx_put_index = 0;
 	can->tx_get_index = 0;
 	can->tx_put_index = 0;
-	can->tx_mailbox_queue_get_index = 0;
-	can->tx_mailbox_queue_put_index = 0;
+	// can->tx_mailbox_queue_get_index = 0;
+	// can->tx_mailbox_queue_put_index = 0;
 	can->txr_get_index = 0;
 	can->txr_put_index = 0;
 
@@ -686,12 +686,12 @@ SC_RAMFUNC bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const 
 	SC_DEBUG_ASSERT(tx->words <= 16);
 
 	if (likely(tx->words)) {
-		memcpy(tx->data, tx+1, tx->words * 4);
+		memcpy(tx->data, msg->data, tx->words * 4);
 	}
 
 	__atomic_store_n(&can->tx_put_index, pi + 1, __ATOMIC_RELEASE);
 
-	// LOG("ch%u txq i=%u\n", index, put_index);
+	// LOG("ch%u txq i=%02x\n", index, put_index);
 
 	/* trigger interrupt handler */
 	NVIC_SetPendingIRQ(can->tx_irq);
@@ -908,28 +908,29 @@ SC_RAMFUNC static void can_tx_irq(uint8_t index)
 	uint32_t tsc = sc_board_can_ts_fetch_isr();
 	unsigned count = 0;
 	uint32_t events = 0;
-	uint16_t ts[3];
-	uint8_t indices[3];
+	uint16_t ts[MBCOUNT];
+	uint8_t indices[MBCOUNT];
 	const uint32_t mailbox_clear_mask = 0xf;
 
 
-
 	// LOG("ch%u TSTAT=%08x\n", index, CAN_TSTAT(can->regs));
+	uint32_t can_tstat = CAN_TSTAT(can->regs);
+	uint8_t empty = __builtin_popcount(can_tstat & (UINT32_C(7) << 26));
+	uint8_t next = (can_tstat & CAN_TSTAT_NUM) >> 24;
 
-	/* forward scan for finished mailboxes */
-	while (can->tx_mailbox_queue_get_index != can->tx_mailbox_queue_put_index) {
-		uint8_t const mailbox_queue_index = can->tx_mailbox_queue_get_index % TU_ARRAY_SIZE(can->mailbox_queue);
-		uint8_t const mailbox_index = can->mailbox_queue[mailbox_queue_index];
-		uint32_t const mailbox_finished_bit = UINT32_C(1) << (8 * mailbox_index);
+	// LOG("empty=%u next=%u\n", empty, next);
 
-		if (CAN_TSTAT(can->regs) & mailbox_finished_bit) {
+	for (uint8_t i = 0; i < empty; ++i) {
+		uint8_t const mailbox_index = ((uint8_t)(next - empty + i)) % MBCOUNT;
+		uint32_t const mailbox_tx_fin_flag = UINT32_C(1) << (8 * mailbox_index);
+
+		if (likely(can_tstat & mailbox_tx_fin_flag)) {
+			// LOG("ch%u tx fin %u\n", index, mailbox_index);
 			ts[count] = (CAN_TMP(can->regs, mailbox_index) >> 16);
 			indices[count] = mailbox_index;
 			++count;
-			++can->tx_mailbox_queue_get_index;
+
 			CAN_TSTAT(can->regs) |= mailbox_clear_mask << (8 * mailbox_index);
-		} else {
-			break;
 		}
 	}
 
@@ -973,47 +974,44 @@ SC_RAMFUNC static void can_tx_irq(uint8_t index)
 		}
 	}
 
-	/* move frames from queue into mailboxes */
-	uint8_t pi = __atomic_load_n(&can->tx_put_index, __ATOMIC_ACQUIRE);
-	uint8_t gi = can->tx_get_index;
-	uint8_t mailboxes_used = can->tx_mailbox_queue_put_index - can->tx_mailbox_queue_get_index;
+	if (likely(empty)) {
+		/* move frames from queue into mailboxes */
+		uint8_t const pi = __atomic_load_n(&can->tx_put_index, __ATOMIC_ACQUIRE);
+		uint8_t gi = can->tx_get_index;
 
-	SC_DEBUG_ASSERT(mailboxes_used <= TU_ARRAY_SIZE(can->mailbox_queue));
+		while (gi != pi && empty) {
+			uint8_t const tx_index = gi % TU_ARRAY_SIZE(can->tx_queue);
+			uint8_t const mailbox_index = next;
 
-	while (gi != pi && mailboxes_used < TU_ARRAY_SIZE(can->mailbox_queue)) {
-		uint8_t const tx_index = gi % TU_ARRAY_SIZE(can->tx_queue);
-		uint8_t const mailbox_index = (CAN_TSTAT(can->regs) >> 24) & 3;
-		struct tx_frame *tx = &can->tx_queue[tx_index];
+			next = (next + 1) % MBCOUNT;
 
-		// LOG("ch%u tx i=%02u -> mb=%u\n", index, tx_index, mailbox_index);
+			struct tx_frame *tx = &can->tx_queue[tx_index];
 
-#if SUPERCAN_DEBUG
-		/* verifiy mailbox not in use */
-		for (uint8_t mbqgi = can->tx_mailbox_queue_get_index; mbqgi != can->tx_mailbox_queue_put_index; ++mbqgi) {
-			uint8_t mbq_index = mbqgi % TU_ARRAY_SIZE(can->mailbox_queue);
-			SC_ASSERT(can->mailbox_queue[mbq_index] != mailbox_index);
+			// LOG("ch%u tx i=%02u -> mb=%u\n", index, tx_index, mailbox_index);
+
+
+			can->track_id_boxes[mailbox_index] = tx->track_id;
+			can->flags_boxes[mailbox_index] = tx->flags;
+
+			/* write properties so that the mailbox knows about FD */
+			CAN_TMP(can->regs, mailbox_index) = tx->mp;
+
+			/* look stupid, but without the write to TMDATA1 the CAN sends jibberish */
+			CAN_TMDATA0(can->regs, mailbox_index) = tx->data[0];
+			CAN_TMDATA1(can->regs, mailbox_index) = tx->data[1];
+
+			for (unsigned j = 2; j < tx->words; ++j) {
+				CAN_TMDATA0(can->regs, mailbox_index) = tx->data[j];
+			}
+
+			CAN_TMI(can->regs, mailbox_index) = tx->mi;
+
+			--empty;
+			++gi;
 		}
-#endif
 
-		can->track_id_boxes[mailbox_index] = tx->track_id;
-		can->flags_boxes[mailbox_index] = tx->flags;
-
-		/* write properties so that the mailbox knows about FD */
-		CAN_TMP(can->regs, mailbox_index) = tx->mp;
-
-		for (unsigned j = 0; j < tx->words; ++j) {
-			REG32((can->regs) + 0x188U + 0x10 * mailbox_index) = tx->data[j];
-		}
-
-		CAN_TMI(can->regs, mailbox_index) = tx->mi;
-
-		can->mailbox_queue[can->tx_mailbox_queue_put_index++ % TU_ARRAY_SIZE(can->mailbox_queue)] = mailbox_index;
-
-		mailboxes_used = can->tx_mailbox_queue_put_index - can->tx_mailbox_queue_get_index;
-		++gi;
+		__atomic_store_n(&can->tx_get_index, gi, __ATOMIC_RELEASE);
 	}
-
-	__atomic_store_n(&can->tx_get_index, gi, __ATOMIC_RELEASE);
 
 	if (likely(events)) {
 		sc_can_notify_task_isr(index, events);
