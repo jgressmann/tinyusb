@@ -56,13 +56,6 @@ extern void sc_can_log_bit_timing(sc_can_bit_timing const *c, char const* name)
 
 
 
-
-// FIX ME: move to struct usb
-// 1.5 * secure is what GD32 can get by on
-//static StackType_t usb_device_stack[(3*configMINIMAL_SECURE_STACK_SIZE)/2];
-static StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
-static StaticTask_t usb_device_task_mem;
-
 static void tusb_device_task(void* param);
 
 
@@ -89,6 +82,8 @@ struct usb_cmd {
 
 
 static struct usb {
+	StackType_t usb_device_stack[configMINIMAL_SECURE_STACK_SIZE];
+	StaticTask_t usb_device_task_mem;
 	struct usb_cmd cmd[SC_BOARD_CAN_COUNT];
 	struct usb_can can[SC_BOARD_CAN_COUNT];
 	uint8_t port;
@@ -97,7 +92,7 @@ static struct usb {
 
 static struct can {
 	sc_can_status status_fifo[CAN_STATUS_FIFO_SIZE];
-	StackType_t usb_task_stack_mem[3*configMINIMAL_SECURE_STACK_SIZE];
+	StackType_t usb_task_stack_mem[configMINIMAL_SECURE_STACK_SIZE];
 	StaticTask_t usb_task_mem;
 	TaskHandle_t usb_task_handle;
 
@@ -946,7 +941,7 @@ int main(void)
 	LOG("tusb_init\n");
 	tusb_init();
 
-	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb_device_stack), NULL, SC_TASK_PRIORITY, usb_device_stack, &usb_device_task_mem);
+	(void) xTaskCreateStatic(&tusb_device_task, "tusb", TU_ARRAY_SIZE(usb.usb_device_stack), NULL, SC_TASK_PRIORITY, usb.usb_device_stack, &usb.usb_device_task_mem);
 	(void) xTaskCreateStatic(&led_task, "led", TU_ARRAY_SIZE(led_task_stack), NULL, SC_TASK_PRIORITY, led_task_stack, &led_task_mem);
 
 	usb.cmd[0].pipe = SC_M1_EP_CMD0_BULK_OUT;
