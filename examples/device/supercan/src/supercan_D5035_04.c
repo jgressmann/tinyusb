@@ -688,9 +688,13 @@ static inline void can_off(uint8_t index)
 	/* clear mailbox status flags (don´t omit else there may be a txr after going on bus) */
 	CAN_TSTAT(can->regs) |= 0x0F0F0F;
 
+	// reset CAN (clears RX/TX error counters)
+	CAN_CTL(can->regs) |= CAN_CTL_SWRST;
+	while (CAN_CTL(can->regs) & CAN_CTL_SWRST);
+	CAN_CTL(can->regs) &= ~CAN_CTL_SLPWMOD;
+
 	/* initial working mode */
 	CAN_CTL(can->regs) |= CAN_CTL_IWMOD;
-
 
 	__atomic_store_n(&can->notify, 0, __ATOMIC_RELEASE);
 
@@ -817,7 +821,6 @@ SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t * c
 	struct can *can = &cans[index];
 	int result = 0;
 	bool have_data_to_place = false;
-	// uint8_t * const tx_start = tx_ptr;
 
 	for (bool done = false; !done; ) {
 		done = true;
@@ -835,7 +838,7 @@ SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t * c
 				uint8_t const txr_index = can->txr_get_index % TU_ARRAY_SIZE(can->txr_queue);
 				struct txr const *txre = &can->txr_queue[txr_index];
 
-				// LOG("TXR %02x offset=%u\n", txre->track_id, tx_ptr - tx_start);
+				// LOG("TXR %02x\n", txre->track_id);
 
 				done = false;
 				msg = (struct sc_msg_can_txr *)tx_ptr;
@@ -847,8 +850,6 @@ SC_RAMFUNC int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint8_t * c
 				msg->track_id = txre->track_id;
 				msg->timestamp_us = txre->ts;
 				msg->flags = txre->flags;
-
-				// sc_dump_mem(msg, 8);
 
 				__atomic_store_n(&can->txr_get_index, can->txr_get_index + 1, __ATOMIC_RELEASE);
 
@@ -1066,7 +1067,7 @@ SC_RAMFUNC static void can_tx_irq(uint8_t index)
 	uint32_t events = 0;
 	uint16_t ts[MBCOUNT];
 	uint8_t indices[MBCOUNT];
-	const uint32_t mailbox_clear_mask = 0xf;
+	const uint32_t MB_CLEAR_ANY = 0xf;
 
 
 	// LOG("ch%u TSTAT=%08x\n", index, CAN_TSTAT(can->regs));
@@ -1081,12 +1082,12 @@ SC_RAMFUNC static void can_tx_irq(uint8_t index)
 		uint32_t const mailbox_tx_fin_flag = UINT32_C(1) << (8 * mailbox_index);
 
 		if (likely(can_tstat & mailbox_tx_fin_flag)) {
-			// LOG("ch%u tx fin %u\n", index, mailbox_index);
+			LOG("ch%u mb=%u tx fin\n", index, mailbox_index);
 			ts[count] = (CAN_TMP(can->regs, mailbox_index) >> 16);
 			indices[count] = mailbox_index;
 			++count;
 
-			CAN_TSTAT(can->regs) |= mailbox_clear_mask << (8 * mailbox_index);
+			CAN_TSTAT(can->regs) |= MB_CLEAR_ANY << (8 * mailbox_index);
 		}
 	}
 
