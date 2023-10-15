@@ -515,6 +515,7 @@ usbd_status usbd_OEM_req(usb_dev *udev, usb_req *req)
 				dir_str(request->bmRequestType_bit.direction),
 				request->bRequest, request->wValue, request->wIndex,
 				request->wLength);
+	(void)request;
 
 	switch (req->bRequest) {
 	case VENDOR_REQUEST_MICROSOFT: {
