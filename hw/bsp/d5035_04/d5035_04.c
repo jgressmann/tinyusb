@@ -146,7 +146,6 @@ void uart_send_str(const char* text)
 
 void board_init(void)
 {
-
 	/* enable
 	 * - PB pin group for debug LED
 	 */
@@ -155,7 +154,6 @@ void board_init(void)
 
 	/* debug LED on PB14, set push-pull output */
 	GPIO_CTL1(GPIOB) = (GPIO_CTL1(GPIOB) & ~GPIO_MODE_MASK(6)) | GPIO_MODE_SET(6, GPIO_MODE_OUT_PP | GPIO_OSPEED_2MHZ);
-	// board_led_off();
 
 	board_init_xtal();
 
@@ -175,35 +173,6 @@ void board_init(void)
 	NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 	NVIC_SetPriority(USBFS_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 #endif
-
-	/* select PLL for USB clock */
-	RCU_ADDCTL =
-		(RCU_ADDCTL & ~(RCU_ADDCTL_CK48MSEL)) |
-		(RCU_CK48MSRC_CKPLL);
-
-	/* enable USB clock */
-	RCU_AHBEN |= RCU_AHBEN_USBFSEN;
-
-	// /* reset USB */
-	RCU_AHBRST |= RCU_AHBRST_USBFSRST;
-	RCU_AHBRST &= ~RCU_AHBRST_USBFSRST;
-
-// 	/* Retrieve USB OTG core registers */
-// 	USB_OTG_GlobalTypeDef* otg_core_regs = (USB_OTG_GlobalTypeDef*)(USB_OTG_FS_PERIPH_BASE + USB_OTG_GLOBAL_BASE);
-// // 	otg_core_regs->GOTGCTL =
-// // 		(otg_core_regs->GOTGCTL & ~(USB_OTG_GOTGCTL_DHNPEN | USB_OTG_GOTGCTL_HSHNPEN | USB_OTG_GOTGCTL_HNPRQ)) |
-// // 		(USB_OTG_GOTGCTL_DHNPEN);
-
-// 	otg_core_regs->GUSBCFG =
-// 		(otg_core_regs->GUSBCFG & ~(USB_OTG_GUSBCFG_FHMOD | USB_OTG_GUSBCFG_FDMOD | USB_OTG_GUSBCFG_SRPCAP | USB_OTG_GUSBCFG_HNPCAP)) |
-// 		(USB_OTG_GUSBCFG_FDMOD);
-
-// #define USB_OTG_GCCFG_VBUSIG (UINT32_C(1) << 21)
-// 	otg_core_regs->GCCFG |= USB_OTG_GCCFG_VBUSIG | USB_OTG_GCCFG_PWRDWN | USB_OTG_GCCFG_VBUSBSEN;
-
-// NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
-
-	// NVIC_SetPriority(USBFS_IRQn, SC_ISR_PRIORITY);
 
 	usb_rcu_config();
 
