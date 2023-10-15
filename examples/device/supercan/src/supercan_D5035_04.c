@@ -100,7 +100,7 @@ void MemManage_Handler(void)
 }
 
 #if CFG_TUD_DFU_RUNTIME
-__attribute__((optimize("O0"))) void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
+void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
 {
 	(void)ms;
 
@@ -110,7 +110,7 @@ __attribute__((optimize("O0"))) void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t m
 
 	gpio_out_set(BOOT0_CHARGE_PINMUX, 1);
 
-	for (int i = 0; i < 15000; ++i) { // 13K works as well, safety margin
+	for (int i = 0; i < 40000; ++i) { // magic number :)
 		__asm__ __volatile__("nop\n\t");
 	}
 
