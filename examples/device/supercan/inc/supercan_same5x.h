@@ -6,6 +6,7 @@
 
 #pragma once
 
+#define MSG_BUFFER_SIZE 512
 #define SUPERCAN_MCAN 1
 #define MCAN_MESSAGE_RAM_CONFIGURABLE 1
 #define MCAN_HW_RX_FIFO_SIZE 64

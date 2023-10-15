@@ -66,6 +66,8 @@ enum {
 #define sc_board_can_ts_request(index) do { } while (0)
 #define sc_board_can_ts_wait(index) (GPT2->CNT)
 
+#define MSG_BUFFER_SIZE 512
+
 
 #if D5035_03
 #define SC_BOARD_NAME "D5035-03"

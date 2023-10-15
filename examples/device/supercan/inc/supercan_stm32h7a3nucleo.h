@@ -30,6 +30,7 @@ SC_RAMFUNC extern void sc_board_led_can_status_set(uint8_t index, int status);
 
 #include <stm32h7a3xx.h>
 
+#define MSG_BUFFER_SIZE 512
 #define SUPERCAN_MCAN 1
 #define MCAN_MESSAGE_RAM_CONFIGURABLE 0
 #define MCAN_HW_RX_FIFO_SIZE 64
