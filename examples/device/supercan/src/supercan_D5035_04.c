@@ -99,22 +99,6 @@ void MemManage_Handler(void)
 	HARDFAULT_HANDLING_ASM();
 }
 
-
-
-extern uint32_t _sfixed;
-
-#define RCU_MODIFY(__delay)     do{                                     \
-                                    volatile uint32_t i;                \
-                                    if(0 != __delay){                   \
-                                        RCU_CFG0 |= RCU_AHB_CKSYS_DIV2; \
-                                        for(i=0; i<__delay; i++){       \
-                                        }                               \
-                                        RCU_CFG0 |= RCU_AHB_CKSYS_DIV4; \
-                                        for(i=0; i<__delay; i++){       \
-                                        }                               \
-                                    }                                   \
-                                }while(0)
-
 #if CFG_TUD_DFU_RUNTIME
 __attribute__((optimize("O0"))) void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
 {
@@ -131,100 +115,6 @@ __attribute__((optimize("O0"))) void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t m
 	}
 
 	NVIC_SystemReset();
-
-	const uint32_t BOOTLOADER_ADDRESS = 0x1FFFB000;
-	void (*SysMemBootJump)(void);
-
-	// make stores precise
-	// *(uint32_t*)0xE000E008=(*(uint32_t*)0xE000E008 | 1<<1);
-
-
-	// do {SYSCFG->CFGR1 &= ~(SYSCFG_CFGR1_MEM_MODE); \
-    //                                          SYSCFG->CFGR1 |= SYSCFG_CFGR1_MEM_MODE_0;  \
-    //                                         }while(0)
-
-	/* reset peripherals */
-	RCU_AHBRST = 0xffffffff;
-	RCU_APB1RST = 0xffffffff;
-	RCU_APB2RST = 0xffffffff;
-
-	/* default enable */
-	RCU_AHBEN = 0x00000014;
-	RCU_APB1EN = 0x00000000;
-	RCU_APB2EN = 0x00000000;
-
-	/* Disable Systick timer */
-	SysTick->CTRL = 0;
-
-
-
-
-	/* Set the clock to the default state */
-	// HAL_RCC_DeInit();
-	/* switch to ICRC8M */
-	/* reset the RCU clock configuration to the default reset state */
-    /* Set IRC8MEN bit */
-    RCU_CTL |= RCU_CTL_IRC8MEN;
-
-	RCU_MODIFY(0x50);
-
-    RCU_CFG0 &= ~RCU_CFG0_SCS;
-
-	/* switch back wait states */
-	FMC_WS = (FMC_WS & ~(FMC_WS_WSCNT)) | (WS_WSCNT(1));
-
-    /* Reset HXTALEN, CKMEN, PLLEN, PLL1EN and PLL2EN bits */
-    RCU_CTL &= ~(RCU_CTL_PLLEN |RCU_CTL_PLL1EN | RCU_CTL_PLL2EN | RCU_CTL_CKMEN | RCU_CTL_HXTALEN);
-    /* disable all interrupts */
-    RCU_INT = 0x00ff0000U;
-
-    /* Reset CFG0 and CFG1 registers */
-    RCU_CFG0 = 0x00000000U;
-    RCU_CFG1 = 0x00000000U;
-
-    /* reset HXTALBPS bit */
-    RCU_CTL &= ~(RCU_CTL_HXTALBPS);
-
-
-	/* Set the vector table base address */
-	uint32_t* ptr = (uint32_t *)&_sfixed;
-	SCB->VTOR = ((uint32_t)ptr & SCB_VTOR_TBLOFF_Msk);
-	__DSB();
-
-
-	/* Clear Interrupt Enable Register & Interrupt Pending Register */
-	for (size_t i = 0; i < TU_ARRAY_SIZE(NVIC->ICER); ++i) {
-		NVIC->ICER[i]=0xFFFFFFFF;
-		NVIC->ICPR[i]=0xFFFFFFFF;
-	}
-
-
-
-	/* Re-enable all interrupts */
-	__enable_irq();
-
-	/* Set up the jump to boot loader address + 4 */
-	SysMemBootJump = (void (*)(void)) (*((uint32_t *) ((BOOTLOADER_ADDRESS + 4))));
-	// volatile uint32_t const *app_vector =
-    //   (volatile uint32_t const *)BOOTLOADER_ADDRESS + 4;
-
-	/* Set the main stack pointer to the boot loader stack */
-	__set_MSP(*(uint32_t *)BOOTLOADER_ADDRESS);
-	__set_PSP(*(uint32_t *)BOOTLOADER_ADDRESS);
-
-	/* Call the function to jump to boot loader location */
-	SysMemBootJump();
-
-
-	/* The timer seems to be necessary, else dfu-util
-	 * will fail spurriously with EX_IOERR (74).
-	 */
-
-	for (;;);
-
-
-	// dfu_request_dfu(1);
-	// NVIC_SystemReset();
 }
 #endif // #if CFG_TUD_DFU_RUNTIME
 
