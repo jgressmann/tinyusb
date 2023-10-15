@@ -200,8 +200,11 @@ usb_status usb_txfifo_write (usb_core_regs *usb_regs,
     // SC_DEBUG_ASSERT((((uintptr_t)src_buf) & 3) == 0);
 
     while (word_count-- > 0U) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-align"
+#pragma GCC diagnostic ignored "-Wattributes"
         *fifo = *((__packed uint32_t *)src_buf);
-
+#pragma GCC diagnostic pop
         src_buf += 4U;
     }
 
@@ -223,8 +226,11 @@ void *usb_rxfifo_read (usb_core_regs *usb_regs, uint8_t *dest_buf, uint16_t byte
     __IO uint32_t *fifo = usb_regs->DFIFO[0];
 
     while (word_count-- > 0U) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-align"
+#pragma GCC diagnostic ignored "-Wattributes"
         *(__packed uint32_t *)dest_buf = *fifo;
-
+#pragma GCC diagnostic pop
         dest_buf += 4U;
     }
 

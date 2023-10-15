@@ -245,6 +245,7 @@ static usb_reqsta _usb_std_reserved (usb_core_driver *udev, usb_req *req)
 */
 static uint8_t* _usb_dev_desc_get (usb_core_driver *udev, uint8_t index, uint16_t *len)
 {
+    (void)udev;
     (void)index;
 
     uint8_t* ptr = (uint8_t*)tud_descriptor_device_cb();
@@ -264,6 +265,7 @@ static uint8_t* _usb_dev_desc_get (usb_core_driver *udev, uint8_t index, uint16_
 */
 static uint8_t* _usb_config_desc_get (usb_core_driver *udev, uint8_t index, uint16_t *len)
 {
+    (void)udev;
     (void)index;
 
     uint8_t* ptr = (uint8_t*)tud_descriptor_configuration_cb(index);
@@ -282,6 +284,7 @@ static uint8_t* _usb_config_desc_get (usb_core_driver *udev, uint8_t index, uint
 */
 static uint8_t* _usb_bos_desc_get (usb_core_driver *udev, uint8_t index, uint16_t *len)
 {
+    (void)udev;
     (void)index;
 
     uint8_t* ptr = (uint8_t*)tud_descriptor_bos_cb();
