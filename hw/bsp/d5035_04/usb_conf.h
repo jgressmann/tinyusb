@@ -10,18 +10,18 @@
 // in 4 byte terms
 
 // 1152 bytes
-// #define RX_FIFO_FS_SIZE                         128
-// #define TX0_FIFO_FS_SIZE                        16
-// #define TX1_FIFO_FS_SIZE                        16
-// #define TX2_FIFO_FS_SIZE                        128
-// #define TX3_FIFO_FS_SIZE                        0
-
-// fits in RAM
-#define RX_FIFO_FS_SIZE                         96
+#define RX_FIFO_FS_SIZE                         128
 #define TX0_FIFO_FS_SIZE                        16
 #define TX1_FIFO_FS_SIZE                        16
-#define TX2_FIFO_FS_SIZE                        96
+#define TX2_FIFO_FS_SIZE                        128
 #define TX3_FIFO_FS_SIZE                        0
+
+// fits in RAM
+// #define RX_FIFO_FS_SIZE                         96
+// #define TX0_FIFO_FS_SIZE                        16
+// #define TX1_FIFO_FS_SIZE                        16
+// #define TX2_FIFO_FS_SIZE                        96
+// #define TX3_FIFO_FS_SIZE                        0
 
 
 #define USB_SOF_OUTPUT              0

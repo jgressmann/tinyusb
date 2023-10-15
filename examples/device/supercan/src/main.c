@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2020-2022 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2023 Jean Gressmann <jean@0x42.de>
  *
  */
 
@@ -25,7 +25,7 @@
 
 
 enum {
-	CAN_STATUS_FIFO_SIZE = 256,
+	CAN_STATUS_FIFO_SIZE = 128,
 };
 
 #define SPAM 0
