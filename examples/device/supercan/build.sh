@@ -213,34 +213,37 @@ EOF
 done
 unset hw_revs
 
-
-############
-# D5035-05 #
-############
 hw_revs=1
-export BOARD=d5035_05
+boards=("d5035_04" "d5035_05")
+jlink_devices=("GD32E103CB" "STM32G0B1CE")
+site_hints=("[GD32 All-In-One Programmer](https://www.gd32mcu.com/en/download/7?kw=GD32C1)" "[STM32CubeProgrammer](https://www.st.com/en/development-tools/stm32cubeprog.html)")
 
-# make output dirs for hw revs
-for i in $hw_revs; do
-	mkdir -p $target_dir/supercan/$BOARD/0$i
-done
+for j in ${!boards[@]}; do
+	export BOARD=${boards[$j]}
+	jlink_device=${jlink_devices[$j]}
+	site_hint=${site_hints[$j]}
+
+	# make output dirs for hw revs
+	for i in $hw_revs; do
+		mkdir -p $target_dir/supercan/$BOARD/0$i
+	done
 
 
-# SuperCAN
-project=supercan
-project_dir=$projects_dir/$project
-cd $project_dir
+	# SuperCAN
+	project=supercan
+	project_dir=$projects_dir/$project
+	cd $project_dir
 
 
-for i in $hw_revs; do
-	rm -rf _build
-	make $MAKE_ARGS HWREV=$i APP=1 _build/$BOARD/${project}.hex
-	make $MAKE_ARGS HWREV=$i APP=1 _build/$BOARD/${project}.bin
-	cp _build/$BOARD/${project}.hex $target_dir/supercan/$BOARD/0$i/supercan-app.hex
-	cp _build/$BOARD/${project}.bin $target_dir/supercan/$BOARD/0$i/supercan-app.bin
+	for i in $hw_revs; do
+		rm -rf _build
+		make $MAKE_ARGS HWREV=$i APP=1 _build/$BOARD/${project}.hex
+		make $MAKE_ARGS HWREV=$i APP=1 _build/$BOARD/${project}.bin
+		cp _build/$BOARD/${project}.hex $target_dir/supercan/$BOARD/0$i/supercan-app.hex
+		cp _build/$BOARD/${project}.bin $target_dir/supercan/$BOARD/0$i/supercan-app.bin
 
-	# generate J-Link flash script
-	cat >$target_dir/supercan/$BOARD/0$i/supercan-app.jlink <<EOF
+		# generate J-Link flash script
+		cat <<EOF >$target_dir/supercan/$BOARD/0$i/supercan-app.jlink
 r
 loadfile supercan-app.hex
 r
@@ -249,7 +252,7 @@ exit
 EOF
 
 
-	cat <<EOF >>$target_dir/supercan/$BOARD/0$i/$readme_file
+		cat <<EOF >>$target_dir/supercan/$BOARD/0$i/$readme_file
 # SuperCAN Device Firmware
 
 ## Content
@@ -263,12 +266,12 @@ EOF
 ### Flash with J-Link
 
 \`\`\`bash
-JLinkExe -device STM32G0B1CE -if swd -JTAGConf -1,-1 -speed auto -CommandFile supercan-app.jlink
+JLinkExe -device $jlink_device -if swd -JTAGConf -1,-1 -speed auto -CommandFile supercan-app.jlink
 \`\`\`
 
 ### Update with dfu-util
 
-NOTE: On Windows you may need to install the device USB driver, e.g. by installing [STM32CubeProgrammer](https://www.st.com/en/development-tools/stm32cubeprog.html).
+NOTE: On Windows you may need to install the device USB driver, e.g. by installing $site_hint.
 
 \`\`\`bash
 sudo dfu-util -e -R -a 0 --dfuse-address 0x08000000 -D supercan-app.bin
@@ -280,7 +283,9 @@ You may need to re-plug the device after flashing to get back to the CAN applica
 
 EOF
 
+	done
 done
+
 unset hw_revs
 
 
