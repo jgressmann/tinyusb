@@ -14,9 +14,11 @@
 #include "drv_usbd_int.h"
 #include "usbd_core.h"
 #include "usbd_enum.h"
+#include "usbd_transc.h"
 
 #include <tusb.h>
 #include <device/usbd_pvt.h>
+#include <usb_descriptors.h>
 
 
 #if !defined(HWREV)
@@ -433,12 +435,9 @@ static uint8_t sc_core_deinit(usb_dev *udev, uint8_t config_index)
 static uint8_t sc_core_req(usb_dev *udev, usb_req *req)
 {
 	(void)udev;
+	(void)req;
 
 	tud_dfu_runtime_reboot_to_dfu_cb(0);
-
-	// uint8_t ep_num = 0;
-	// dcd_event_setup_received(RHPORT, (uint8_t*)req, true);
-	// dcd_event_xfer_complete(RHPORT, 0, udev->dev.transc_out[ep_num].xfer_count, XFER_RESULT_SUCCESS, true);
 
 	return USBD_OK;
 }
@@ -447,17 +446,92 @@ static uint8_t sc_core_in(usb_dev *udev, uint8_t ep_num)
 
 	// LOG("sc_core_in %02x\n", 0x80 | ep_num);
 	// LOG("> %02x l=%u\n", 0x80 | ep_num, udev->dev.transc_in[ep_num].xfer_count);
-	dcd_event_xfer_complete(0, 0x80 | ep_num, udev->dev.transc_in[ep_num].xfer_count, XFER_RESULT_SUCCESS, true);
+	dcd_event_xfer_complete(RHPORT, 0x80 | ep_num, udev->dev.transc_in[ep_num].xfer_count, XFER_RESULT_SUCCESS, true);
 	return USBD_OK;
 }
 static uint8_t sc_core_out(usb_dev *udev, uint8_t ep_num)
 {
 	// LOG("sc_core_out %02x\n", ep_num);
 	// LOG("< %02x l=%u\n", ep_num, udev->dev.transc_out[ep_num].xfer_count);
-	dcd_event_xfer_complete(0, ep_num, udev->dev.transc_out[ep_num].xfer_count, XFER_RESULT_SUCCESS, true);
+	dcd_event_xfer_complete(RHPORT, ep_num, udev->dev.transc_out[ep_num].xfer_count, XFER_RESULT_SUCCESS, true);
 	return USBD_OK;
 }
 
+void usbd_control_set_request(tusb_control_request_t const *request);
+
+static inline const char* recipient_str(tusb_request_recipient_t r)
+{
+	switch (r) {
+	case TUSB_REQ_RCPT_DEVICE:
+		return "device (0)";
+	case TUSB_REQ_RCPT_INTERFACE:
+		return "interface (1)";
+	case TUSB_REQ_RCPT_ENDPOINT:
+		return "endpoint (2)";
+	case TUSB_REQ_RCPT_OTHER:
+		return "other (3)";
+	default:
+		return "???";
+	}
+}
+
+static inline const char* type_str(tusb_request_type_t value)
+{
+	switch (value) {
+	case TUSB_REQ_TYPE_STANDARD:
+		return "standard (0)";
+	case TUSB_REQ_TYPE_CLASS:
+		return "class (1)";
+	case TUSB_REQ_TYPE_VENDOR:
+		return "vendor (2)";
+	case TUSB_REQ_TYPE_INVALID:
+		return "invalid (3)";
+	default:
+		return "???";
+	}
+}
+
+static inline const char* dir_str(tusb_dir_t value)
+{
+	switch (value) {
+	case TUSB_DIR_OUT:
+		return "out (0)";
+	case TUSB_DIR_IN:
+		return "in (1)";
+	default:
+		return "???";
+	}
+}
+
+usbd_status usbd_OEM_req(usb_dev *udev, usb_req *req)
+{
+	tusb_control_request_t const *request = (tusb_control_request_t const *)req;
+
+	LOG("usbd_OEM_req\n");
+	LOG("req type 0x%02x (reci %s type %s dir %s) req 0x%02x, value 0x%04x index 0x%04x reqlen %u\n",
+				request->bmRequestType,
+				recipient_str(request->bmRequestType_bit.recipient),
+				type_str(request->bmRequestType_bit.type),
+				dir_str(request->bmRequestType_bit.direction),
+				request->bRequest, request->wValue, request->wIndex,
+				request->wLength);
+
+	switch (req->bRequest) {
+	case VENDOR_REQUEST_MICROSOFT: {
+		uint16_t total_len;
+		memcpy(&total_len, desc_ms_os_20+8, 2);
+		total_len = tu_le16toh(total_len);
+		usb_transc *transc = &udev->dev.transc_in[0];
+		transc->xfer_buf = (uint8_t*)desc_ms_os_20;
+		transc->remain_len = total_len;
+		return USBD_OK;
+	} break;
+	default:
+		return USBD_FAIL;
+	}
+
+	return USBD_OK;
+}
 
 #define TIM_MSEC_DELAY                          0x01U
 #define TIM_USEC_DELAY                          0x02U

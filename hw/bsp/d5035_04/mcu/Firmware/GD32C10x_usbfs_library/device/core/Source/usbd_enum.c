@@ -139,7 +139,7 @@ usb_reqsta usbd_vendor_request (usb_core_driver *udev, usb_req *req)
 
     /* added by user... */
 #ifdef WINUSB_EXEMPT_DRIVER
-   usbd_OEM_req(udev, req);
+    return usbd_OEM_req(udev, req) == USBD_OK ? REQ_SUPP : REQ_NOTSUPP;
 #endif /* WINUSB_EXEMPT_DRIVER */
 
     return REQ_SUPP;
@@ -287,6 +287,8 @@ static uint8_t* _usb_bos_desc_get (usb_core_driver *udev, uint8_t index, uint16_
     (void)udev;
     (void)index;
 
+    LOG("_usb_bos_desc_get\n");
+
     uint8_t* ptr = (uint8_t*)tud_descriptor_bos_cb();
 
     *len = ptr[2];
@@ -304,6 +306,8 @@ static uint8_t* _usb_bos_desc_get (usb_core_driver *udev, uint8_t index, uint16_
 */
 static uint8_t* _usb_str_desc_get (usb_core_driver *udev, uint8_t index, uint16_t *len)
 {
+    (void)udev;
+
     uint8_t* ptr = (uint8_t*)tud_descriptor_string_cb(index, 0);
 
     *len = ptr[0];
