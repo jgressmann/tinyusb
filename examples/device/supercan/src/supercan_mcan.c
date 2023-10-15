@@ -712,7 +712,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 			const unsigned can_frame_len = dlc_to_len(msg->dlc);
 
 			if (likely(can_frame_len)) {
-				if (likely(msg->flags & SC_CAN_FRAME_FLAG_TX4)) {
+				if (unlikely(msg->flags & SC_CAN_FRAME_FLAG_TX4)) {
 					uint32_t const *src = (void const *)&msg->data[3];
 
 					for (unsigned i = 0, e = (can_frame_len + 3) / 4; i < e; ++i) {
