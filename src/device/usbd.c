@@ -271,8 +271,10 @@ static inline usbd_class_driver_t const * get_driver(uint8_t drvid)
   }
 
   // Built-in drivers
-  if (BUILTIN_DRIVER_COUNT && drvid < BUILTIN_DRIVER_COUNT) return &_usbd_driver[drvid];
-
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtype-limits"
+  if (drvid < BUILTIN_DRIVER_COUNT) return &_usbd_driver[drvid];
+#pragma GCC diagnostic pop
   return NULL;
 }
 
