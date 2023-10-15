@@ -126,6 +126,7 @@
 
 // GigaDevice
 #define OPT_MCU_GD32VF103        1600 ///< GigaDevice GD32VF103
+#define OPT_MCU_GD32C10X         1601 ///< GigaDevice GD32C10X
 
 //--------------------------------------------------------------------+
 // Supported OS

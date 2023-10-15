@@ -35,7 +35,6 @@
 
 
 #define CMD_BUFFER_SIZE 64
-#define MSG_BUFFER_SIZE 512
 
 enum {
 	SC_LED_BURST_DURATION_MS = 8,
@@ -173,6 +172,10 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #	define STM32H7A3NUCLEO 0
 #endif
 
+#ifndef D5035_04
+#	define D5035_04 0
+#endif
+
 #if D5035_01
 #	include "supercan_D5035_01.h"
 #elif SAME54XPLAINEDPRO
@@ -189,6 +192,8 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #	include "supercan_D5035_05.h"
 #elif STM32H7A3NUCLEO
 #	include "supercan_stm32h7a3nucleo.h"
+#elif D5035_04
+#	include "supercan_D5035_04.h"
 #else
 #	pragma GCC warning "unknown board, using dummy CAN implementation"
 #	define SUPERCAN_DUMMY 1
@@ -204,4 +209,3 @@ SC_RAMFUNC static inline uint32_t sc_bitrate(unsigned brp, unsigned tseg1, unsig
 
 	return SC_BOARD_CAN_CLK_HZ / ((uint32_t)brp * (1 + tseg1 + tseg2));
 }
-

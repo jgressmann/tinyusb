@@ -69,7 +69,13 @@ CFLAGS += $(SECTION_CFLAGS) -DSTM32H7A3NUCLEO -DHAVE_ATOMIC_COMPARE_EXCHANGE=1
 # LDFLAGS += -Wl,--no-warn-rwx-segment
 endif
 
-
+ifeq ($(BOARD),d5035_04)
+INC += $(TOP)/examples/device/superdfu/inc
+CFLAGS += -DCFG_TUSB_ENDPOINT_LIMIT=3 \
+	-DHAVE_ATOMIC_COMPARE_EXCHANGE=1 \
+	$(SECTION_CFLAGS) \
+	-DD5035_04=1
+endif
 
 
 ifdef SUPERCAN_DEBUG
@@ -77,6 +83,8 @@ ifdef SUPERCAN_DEBUG
 else
   CFLAGS += -DSUPERCAN_DEBUG=0
 endif
+
+CFLAGS += -DCFG_TUSB_DEBUG_PRINTF=sc_log
 
 ifdef APP
 ifneq ($(APP),0)

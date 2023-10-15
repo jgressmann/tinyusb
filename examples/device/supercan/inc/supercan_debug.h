@@ -14,6 +14,7 @@ extern int board_uart_write(void const * buf, int len);
 #if SUPERCAN_DEBUG
 #	define SUPERCAN_DEBUG_LOG_BUFFER_SIZE 128
 extern char sc_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
+extern int sc_log(char const* fmt, ...);
 
 #	define LOG(...) \
 	do { \

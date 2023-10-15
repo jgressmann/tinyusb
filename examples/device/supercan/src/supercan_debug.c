@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2020-2021 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2020-2023 Jean Gressmann <jean@0x42.de>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -35,6 +35,21 @@
 
 #if SUPERCAN_DEBUG
 char sc_log_buffer[SUPERCAN_DEBUG_LOG_BUFFER_SIZE];
+
+extern int sc_log(char const* fmt, ...)
+{
+	int chars;
+	va_list vl;
+
+	va_start(vl, fmt);
+	chars = uvsnprintf(sc_log_buffer, sizeof(sc_log_buffer), fmt, vl);
+	va_end(vl);
+
+	board_uart_write(sc_log_buffer, chars);
+
+	return chars;
+}
+
 #endif
 
 __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, size_t len)

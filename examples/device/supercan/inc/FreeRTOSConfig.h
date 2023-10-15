@@ -57,12 +57,17 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, s
 #define configENABLE_MPU                        0
 #define configENABLE_FPU                        0
 #define configENABLE_TRUSTZONE                  0
-#define configMINIMAL_SECURE_STACK_SIZE         ( 1024 )
+#define configMINIMAL_SECURE_STACK_SIZE         ( 512 )
 
 #define configUSE_PREEMPTION                    1
  /* NOTE: disable this to debug FreeRTOS crashes */
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION (CFG_TUSB_MCU != OPT_MCU_STM32G0)
 #define configCPU_CLOCK_HZ                      SystemCoreClock
+#if CFG_TUSB_MCU == OPT_MCU_GD32C10X
+  #define configSYSTICK_CLOCK_HZ                (configCPU_CLOCK_HZ / 8)
+#else
+  #define configSYSTICK_CLOCK_HZ                configCPU_CLOCK_HZ
+#endif
 #define configTICK_RATE_HZ                      ( 1000 )
 #define configMAX_PRIORITIES                    ( 5 )
 #define configMINIMAL_STACK_SIZE                ( 128 )

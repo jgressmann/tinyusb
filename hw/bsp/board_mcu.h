@@ -137,6 +137,9 @@
 #elif CFG_TUSB_MCU == OPT_MCU_GD32VF103
   #include "gd32vf103.h"
 
+#elif CFG_TUSB_MCU == OPT_MCU_GD32C10X
+  #include "gd32c10x.h"
+
 #else
   #error "Missing MCU header"
 #endif
