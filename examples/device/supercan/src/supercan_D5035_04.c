@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2022 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2022-2023 Jean Gressmann <jean@0x42.de>
  *
  */
 
@@ -14,8 +14,223 @@
 
 //#include <usb_descriptors.h> // DFU_USB_RESET_TIMEOUT_MS
 
-#define MBCOUNT 3U
+const uint8_t BOOT0_CHARGE_PINMUX = (1 << 4) | 6;
+
 #define PORT_STEP 0x00000400U
+
+static inline void gpio_cfg_out(unsigned port_pin_mux)
+{
+	unsigned port = port_pin_mux >> 4;
+	unsigned pin = port_pin_mux & 0xf;
+	uint32_t regs = GPIO_BASE + port * PORT_STEP + 4 * (pin >= 8);
+
+	GPIO_CTL0(regs) = (GPIO_CTL0(regs) & ~GPIO_MODE_MASK(pin & 0x7)) | GPIO_MODE_SET(pin & 0x7, GPIO_MODE_OUT_PP | GPIO_OSPEED_2MHZ);
+}
+
+static inline void gpio_out_set(unsigned port_pin_mux, bool on)
+{
+	unsigned port = port_pin_mux >> 4;
+	unsigned pin = port_pin_mux & 0xf;
+	uint32_t regs = GPIO_BASE + port * PORT_STEP;
+
+	GPIO_BOP(regs) = UINT32_C(1) << (pin + (!on) * 16);
+}
+
+// NOTE: If you are using CMSIS, the registers can also be
+// accessed through CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk
+#define HALT_IF_DEBUGGING()                              \
+  do {                                                   \
+    if ((*(volatile uint32_t *)0xE000EDF0) & (1 << 0)) { \
+      __asm("bkpt 1");                                   \
+    }                                                    \
+} while (0)
+
+typedef struct __attribute__((packed)) ContextStateFrame {
+  uint32_t r0;
+  uint32_t r1;
+  uint32_t r2;
+  uint32_t r3;
+  uint32_t r12;
+  uint32_t lr;
+  uint32_t return_address;
+  uint32_t xpsr;
+} sContextStateFrame;
+
+#define HARDFAULT_HANDLING_ASM(_x)               \
+  __asm volatile(                                \
+      "tst lr, #4 \n"                            \
+      "ite eq \n"                                \
+      "mrseq r0, msp \n"                         \
+      "mrsne r0, psp \n"                         \
+      "b my_fault_handler_c \n"                  \
+                                                 )
+
+// Disable optimizations for this function so "frame" argument
+// does not get optimized away
+__attribute__((optimize("O0")))
+void my_fault_handler_c(sContextStateFrame *frame)
+{
+	(void)frame;
+  // If and only if a debugger is attached, execute a breakpoint
+  // instruction so we can take a look at what triggered the fault
+  HALT_IF_DEBUGGING();
+
+  // Logic for dealing with the exception. Typically:
+  //  - log the fault which occurred for postmortem analysis
+  //  - If the fault is recoverable,
+  //    - clear errors and return back to Thread Mode
+  //  - else
+  //    - reboot system
+  while (1);
+}
+
+void HardFault_Handler(void)
+{
+  HARDFAULT_HANDLING_ASM();
+}
+
+void BusFault_Handler(void)
+{
+	HARDFAULT_HANDLING_ASM();
+}
+
+void MemManage_Handler(void)
+{
+	HARDFAULT_HANDLING_ASM();
+}
+
+
+
+extern uint32_t _sfixed;
+
+#define RCU_MODIFY(__delay)     do{                                     \
+                                    volatile uint32_t i;                \
+                                    if(0 != __delay){                   \
+                                        RCU_CFG0 |= RCU_AHB_CKSYS_DIV2; \
+                                        for(i=0; i<__delay; i++){       \
+                                        }                               \
+                                        RCU_CFG0 |= RCU_AHB_CKSYS_DIV4; \
+                                        for(i=0; i<__delay; i++){       \
+                                        }                               \
+                                    }                                   \
+                                }while(0)
+
+#if CFG_TUD_DFU_RUNTIME
+__attribute__((optimize("O0"))) void tud_dfu_runtime_reboot_to_dfu_cb(uint16_t ms)
+{
+	(void)ms;
+
+	LOG("tud_dfu_runtime_reboot_to_dfu_cb\n");
+
+	__disable_irq();
+
+	gpio_out_set(BOOT0_CHARGE_PINMUX, 1);
+
+	for (int i = 0; i < 15000; ++i) { // 13K works as well, safety margin
+		__asm__ __volatile__("nop\n\t");
+	}
+
+	NVIC_SystemReset();
+
+	const uint32_t BOOTLOADER_ADDRESS = 0x1FFFB000;
+	void (*SysMemBootJump)(void);
+
+	// make stores precise
+	// *(uint32_t*)0xE000E008=(*(uint32_t*)0xE000E008 | 1<<1);
+
+
+	// do {SYSCFG->CFGR1 &= ~(SYSCFG_CFGR1_MEM_MODE); \
+    //                                          SYSCFG->CFGR1 |= SYSCFG_CFGR1_MEM_MODE_0;  \
+    //                                         }while(0)
+
+	/* reset peripherals */
+	RCU_AHBRST = 0xffffffff;
+	RCU_APB1RST = 0xffffffff;
+	RCU_APB2RST = 0xffffffff;
+
+	/* default enable */
+	RCU_AHBEN = 0x00000014;
+	RCU_APB1EN = 0x00000000;
+	RCU_APB2EN = 0x00000000;
+
+	/* Disable Systick timer */
+	SysTick->CTRL = 0;
+
+
+
+
+	/* Set the clock to the default state */
+	// HAL_RCC_DeInit();
+	/* switch to ICRC8M */
+	/* reset the RCU clock configuration to the default reset state */
+    /* Set IRC8MEN bit */
+    RCU_CTL |= RCU_CTL_IRC8MEN;
+
+	RCU_MODIFY(0x50);
+
+    RCU_CFG0 &= ~RCU_CFG0_SCS;
+
+	/* switch back wait states */
+	FMC_WS = (FMC_WS & ~(FMC_WS_WSCNT)) | (WS_WSCNT(1));
+
+    /* Reset HXTALEN, CKMEN, PLLEN, PLL1EN and PLL2EN bits */
+    RCU_CTL &= ~(RCU_CTL_PLLEN |RCU_CTL_PLL1EN | RCU_CTL_PLL2EN | RCU_CTL_CKMEN | RCU_CTL_HXTALEN);
+    /* disable all interrupts */
+    RCU_INT = 0x00ff0000U;
+
+    /* Reset CFG0 and CFG1 registers */
+    RCU_CFG0 = 0x00000000U;
+    RCU_CFG1 = 0x00000000U;
+
+    /* reset HXTALBPS bit */
+    RCU_CTL &= ~(RCU_CTL_HXTALBPS);
+
+
+	/* Set the vector table base address */
+	uint32_t* ptr = (uint32_t *)&_sfixed;
+	SCB->VTOR = ((uint32_t)ptr & SCB_VTOR_TBLOFF_Msk);
+	__DSB();
+
+
+	/* Clear Interrupt Enable Register & Interrupt Pending Register */
+	for (size_t i = 0; i < TU_ARRAY_SIZE(NVIC->ICER); ++i) {
+		NVIC->ICER[i]=0xFFFFFFFF;
+		NVIC->ICPR[i]=0xFFFFFFFF;
+	}
+
+
+
+	/* Re-enable all interrupts */
+	__enable_irq();
+
+	/* Set up the jump to boot loader address + 4 */
+	SysMemBootJump = (void (*)(void)) (*((uint32_t *) ((BOOTLOADER_ADDRESS + 4))));
+	// volatile uint32_t const *app_vector =
+    //   (volatile uint32_t const *)BOOTLOADER_ADDRESS + 4;
+
+	/* Set the main stack pointer to the boot loader stack */
+	__set_MSP(*(uint32_t *)BOOTLOADER_ADDRESS);
+	__set_PSP(*(uint32_t *)BOOTLOADER_ADDRESS);
+
+	/* Call the function to jump to boot loader location */
+	SysMemBootJump();
+
+
+	/* The timer seems to be necessary, else dfu-util
+	 * will fail spurriously with EX_IOERR (74).
+	 */
+
+	for (;;);
+
+
+	// dfu_request_dfu(1);
+	// NVIC_SystemReset();
+}
+#endif // #if CFG_TUD_DFU_RUNTIME
+
+
+#define MBCOUNT 3U
+
 
 enum {
 	CAN_FEAT_PERM = SC_FEATURE_FLAG_TXR,
@@ -165,6 +380,8 @@ static const struct led leds[] = {
 	LED_STATIC_INITIALIZER("can1_red", (1 << 4) | 7),    // PB07
 };
 
+
+
 static inline void leds_init(void)
 {
 	/* configure clocks  */
@@ -174,11 +391,7 @@ static inline void leds_init(void)
 		RCU_APB2EN_PCEN;
 
 	for (size_t i = 0 ; i < TU_ARRAY_SIZE(leds); ++i) {
-		unsigned port = leds[i].port_pin_mux >> 4;
-		unsigned pin = leds[i].port_pin_mux & 0xf;
-		uint32_t regs = GPIO_BASE + port * PORT_STEP + 4 * (pin >= 8);
-
-		GPIO_CTL0(regs) = (GPIO_CTL0(regs) & ~GPIO_MODE_MASK(pin & 0x7)) | GPIO_MODE_SET(pin & 0x7, GPIO_MODE_OUT_PP | GPIO_OSPEED_2MHZ);
+		gpio_cfg_out(leds[i].port_pin_mux);
 	}
 }
 
@@ -190,11 +403,7 @@ extern void sc_board_led_set(uint8_t index, bool on)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(leds));
 
-	unsigned port = leds[index].port_pin_mux >> 4;
-	unsigned pin = leds[index].port_pin_mux & 0xf;
-	uint32_t regs = GPIO_BASE + port * PORT_STEP;
-
-	GPIO_BOP(regs) = UINT32_C(1) << (pin + (!on) * 16);
+	gpio_out_set(leds[index].port_pin_mux, on);
 }
 
 extern void sc_board_leds_on_unsafe(void)
@@ -394,6 +603,7 @@ extern void sc_board_init_begin(void)
 	leds_init();
 	gd32_can_init();
 	timer_1mhz_init();
+	gpio_cfg_out(BOOT0_CHARGE_PINMUX);
 
 	LOG("sc_board_init_begin exit\n");
 }

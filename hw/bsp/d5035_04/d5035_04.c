@@ -40,7 +40,7 @@ uint32_t SystemCoreClock;
 
 static uint8_t sc_core_init(usb_dev *udev, uint8_t config_index);
 static uint8_t sc_core_deinit(usb_dev *udev, uint8_t config_index);
-// static uint8_t sc_core_req(usb_dev *udev, usb_req *req);
+static uint8_t sc_core_req(usb_dev *udev, usb_req *req);
 static uint8_t sc_core_in(usb_dev *udev, uint8_t ep_num);
 static uint8_t sc_core_out(usb_dev *udev, uint8_t ep_num);
 
@@ -50,9 +50,7 @@ usb_core_driver driver;
 usb_class_core cls = {
 	.init     = sc_core_init,
     .deinit   = sc_core_deinit,
-
-    // .req_proc = sc_core_req,
-
+	.req_proc = sc_core_req,
     .data_in  = sc_core_in,
     .data_out = sc_core_out
 };
@@ -146,59 +144,6 @@ void uart_send_str(const char* text)
 	}
 }
 
-
-/* USB language ID descriptor */
-__ALIGN_BEGIN const usb_desc_LANGID usbd_language_id_desc __ALIGN_END =
-{
-    .header =
-     {
-         .bLength            = sizeof(usb_desc_LANGID),
-         .bDescriptorType    = USB_DESCTYPE_STR
-     },
-    .wLANGID                 = 0x0409U
-};
-
-/* USB manufacture string */
-static __ALIGN_BEGIN const usb_desc_str manufacturer_string __ALIGN_END =
-{
-    .header =
-     {
-         .bLength         = USB_STRING_LEN(10U),
-         .bDescriptorType = USB_DESCTYPE_STR,
-     },
-    .unicode_string = {'G', 'i', 'g', 'a', 'D', 'e', 'v', 'i', 'c', 'e'}
-};
-
-/* USB product string */
-static __ALIGN_BEGIN const usb_desc_str product_string __ALIGN_END =
-{
-    .header =
-     {
-         .bLength         = USB_STRING_LEN(12U),
-         .bDescriptorType = USB_DESCTYPE_STR,
-     },
-    .unicode_string = {'G', 'D', '3', '2', '-', 'U', 'S', 'B', '_', 'M', 'S', 'C'}
-};
-
-/* USBD serial string */
-static __ALIGN_BEGIN usb_desc_str serial_string __ALIGN_END =
-{
-    .header =
-     {
-         .bLength         = USB_STRING_LEN(12U),
-         .bDescriptorType = USB_DESCTYPE_STR,
-     }
-};
-
-/* USB string descriptor */
-void *const usbd_msc_strings[] =
-{
-    [STR_IDX_LANGID]  = (uint8_t *)&usbd_language_id_desc,
-    [STR_IDX_MFC]     = (uint8_t *)&manufacturer_string,
-    [STR_IDX_PRODUCT] = (uint8_t *)&product_string,
-    [STR_IDX_SERIAL]  = (uint8_t *)&serial_string
-};
-
 void board_init(void)
 {
 
@@ -263,14 +208,6 @@ void board_init(void)
 	usb_rcu_config();
 
 	usb_timer_init();
-
-
-
-	// desc.dev_desc = (uint8_t*)tud_descriptor_device_cb();
-	// desc.config_desc = (uint8_t*)tud_descriptor_configuration_cb(0);
-	// desc.bos_desc = (uint8_t*)tud_descriptor_bos_cb();
-	// desc.strings = usbd_msc_strings;
-
 }
 
 
@@ -363,9 +300,7 @@ void dcd_init(uint8_t rhport)
     /* initializes device mode */
     (void)usb_devcore_init (udev);
 
-	LOG("3\n");
-
-    usb_globalint_enable(&udev->regs);
+	usb_globalint_enable(&udev->regs);
 
 	/* set device connect */
     usbd_connect (udev);
@@ -423,10 +358,7 @@ void dcd_disconnect(uint8_t rhport)
 // Configure endpoint's registers according to descriptor
 bool dcd_edpt_open(uint8_t rhport, tusb_desc_endpoint_t const * desc_ep)
 {
-	// LOG("dcd_edpt_open\n");
-
 	(void)rhport;
-	// (void)desc_ep;
 
 	usbd_ep_setup(&driver, (const usb_desc_ep *)desc_ep);
 
@@ -529,8 +461,21 @@ static uint8_t sc_core_deinit(usb_dev *udev, uint8_t config_index)
 
 	return USBD_OK;
 }
+static uint8_t sc_core_req(usb_dev *udev, usb_req *req)
+{
+	(void)udev;
+
+	tud_dfu_runtime_reboot_to_dfu_cb(0);
+
+	// uint8_t ep_num = 0;
+	// dcd_event_setup_received(RHPORT, (uint8_t*)req, true);
+	// dcd_event_xfer_complete(RHPORT, 0, udev->dev.transc_out[ep_num].xfer_count, XFER_RESULT_SUCCESS, true);
+
+	return USBD_OK;
+}
 static uint8_t sc_core_in(usb_dev *udev, uint8_t ep_num)
 {
+
 	// LOG("sc_core_in %02x\n", 0x80 | ep_num);
 	// LOG("> %02x l=%u\n", 0x80 | ep_num, udev->dev.transc_in[ep_num].xfer_count);
 	dcd_event_xfer_complete(0, 0x80 | ep_num, udev->dev.transc_in[ep_num].xfer_count, XFER_RESULT_SUCCESS, true);

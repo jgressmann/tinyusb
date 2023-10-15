@@ -18,6 +18,8 @@
 #include <sections.h>
 #include <FreeRTOS.h>
 #include <task.h>
+#include <usb_conf.h>
+
 
 #define SC_BOARD_USB_BCD_DEVICE (HWREV << 8)
 #define SC_BOARD_USB_MANUFACTURER_STRING "2guys"
@@ -36,11 +38,11 @@
  *
  * perfect fit 1280
  */
-#define RX_FIFO_FS_SIZE                         96
-#define TX0_FIFO_FS_SIZE                        16
-#define TX1_FIFO_FS_SIZE                        16
-#define TX2_FIFO_FS_SIZE                        96
-#define TX3_FIFO_FS_SIZE                        0
+// #define RX_FIFO_FS_SIZE                         96
+// #define TX0_FIFO_FS_SIZE                        16
+// #define TX1_FIFO_FS_SIZE                        16
+// #define TX2_FIFO_FS_SIZE                        96
+// #define TX3_FIFO_FS_SIZE                        0
 
 #define MSG_BUFFER_SIZE (TX2_FIFO_FS_SIZE*4)
 
@@ -94,3 +96,5 @@ static inline uint32_t sc_board_can_ts_wait(uint8_t index)
 	return ts;
 }
 
+/* wild guess */
+#define MCU_NVM_PAGE_SIZE 2048
