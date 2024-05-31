@@ -503,6 +503,10 @@ static inline void can_reset_task_state_unsafe(uint8_t index)
 	can->int_txe = 0;
 #endif
 
+#if SUPERCAN_DEBUG && MCAN_DEBUG_TX_SEQ
+	can->tx_last_value = -1;
+#endif
+
 	__atomic_thread_fence(__ATOMIC_RELEASE); // int_*
 }
 
@@ -660,11 +664,11 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	SC_DEBUG_ASSERT(msg->track_id < SC_BOARD_CAN_TX_FIFO_SIZE);
 
 #if MCAN_HW_TX_FIFO_SIZE < _SC_BOARD_CAN_TX_FIFO_SIZE
-	if (likely(available)) {
-		txe = &can->hw_tx_fifo_ram[tx_pi_mod];
-	} else {
-		uint8_t used = can->tx_put_index - can->tx_get_index;
+	uint8_t const used = can->tx_put_index - can->tx_get_index;
+	// Don´t sneak past frames waiting in RAM based fifo
+	bool const queue = !available || used;
 
+	if (queue) {
 		available = used < SC_BOARD_CAN_TX_FIFO_SIZE;
 
 		SC_DEBUG_ASSERT(available && "TX request accounting bug");
@@ -674,6 +678,8 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 			txe = (struct mcan_tx_fifo_element*)&can->tx_fifo[tx_pi_mod];
 			notify_hardware = false;
 		}
+	} else {
+		txe = &can->hw_tx_fifo_ram[tx_pi_mod];
 	}
 #else
 	SC_DEBUG_ASSERT(available && "TX request accounting bug");
@@ -761,6 +767,21 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 		}
 #endif
 
+#if SUPERCAN_DEBUG && MCAN_DEBUG_TX_SEQ
+		uint8_t curr_value = txe->data[0] & 0xff;
+
+		if (can->tx_last_value >= 0) {
+			uint8_t last = can->tx_last_value;
+			uint8_t next = last + 1;
+
+			if (unlikely(curr_value != next)) {
+				LOG("ch%u tx seq last=%02x curr=%02x\n", index, last, curr_value);
+				SC_DEBUG_ASSERT(curr_value == next);
+			}
+		}
+
+		can->tx_last_value = curr_value;
+#endif
 		if (notify_hardware) {
 			// mark transmission for hardware
 			can->m_can->TXBAR.reg = UINT32_C(1) << tx_pi_mod;

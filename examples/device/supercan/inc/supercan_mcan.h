@@ -37,6 +37,7 @@ enum {
 
 #define MCAN_DEBUG_TXR 1
 #define MCAN_DEBUG_GUARD 0
+#define MCAN_DEBUG_TX_SEQ 0
 
 #define TS_LO_MASK ((UINT32_C(1) << M_CAN_TS_COUNTER_BITS) - 1)
 #define TS_HI(ts) ((((uint32_t)(ts)) >> (32 - M_CAN_TS_COUNTER_BITS)) & TS_LO_MASK)
@@ -145,6 +146,9 @@ struct mcan_can {
 #if SUPERCAN_DEBUG && MCAN_DEBUG_TXR
 	uint32_t txr; 				// requests from USB, set when in, clear when out
 	volatile uint32_t int_txe;	// expected TXEs, set in USB, cleared in IRQ handler
+#endif
+#if SUPERCAN_DEBUG && MCAN_DEBUG_TX_SEQ
+	int tx_last_value;
 #endif
 #if SUPERCAN_DEBUG && MCAN_DEBUG_GUARD
 	uint32_t guard_ftr[16];
