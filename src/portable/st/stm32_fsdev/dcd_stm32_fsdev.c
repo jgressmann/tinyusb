@@ -105,6 +105,26 @@
 
 #include "tusb_option.h"
 
+#ifndef likely
+#define likely(x) __builtin_expect(!!(x),1)
+#endif
+
+#ifndef unlikely
+#define unlikely(x) __builtin_expect(!!(x),0)
+#endif
+
+#if CFG_TUSB_MCU == OPT_MCU_STM32G0
+  /* G0 runs at 64MHz max => delay for 400 cycles */
+  #define errata_2_15_1_workaround() \
+    do { \
+      for (unsigned i = 0; i < 100; ++i) { \
+        __asm__ __volatile__("nop"); \
+      } \
+    } while (0)
+#else
+  #define errata_2_15_1_workaround()
+#endif
+
 #if defined(STM32F102x6) || defined(STM32F102xB) || \
     defined(STM32F103x6) || defined(STM32F103xB) || \
     defined(STM32F103xE) || defined(STM32F103xG)
@@ -470,6 +490,23 @@ static void dcd_ep_ctr_tx_handler(uint32_t wIstr)
 // Upon call, (wIstr & USB_ISTR_DIR) == 0U
 static void dcd_ep_ctr_rx_handler(uint32_t wIstr)
 {
+  /* https://www.st.com/resource/en/errata_sheet/es0561-stm32h503cbebkbrb-device-errata-stmicroelectronics.pdf
+   * From STM32H503 errata 2.15.1: Buffer description table update completes after CTR interrupt triggers
+   * Description:
+   * - During OUT transfers, the correct transfer interrupt (CTR) is triggered a little before the last USB SRAM accesses
+   * have completed. If the software responds quickly to the interrupt, the full buffer contents may not be correct.
+   * Workaround:
+   * - Software should ensure that a small delay is included before accessing the SRAM contents. This delay
+   * should be 800 ns in Full Speed mode and 6.4 μs in Low Speed mode
+   * - Since H5 can run up to 250Mhz -> 1 cycle = 4ns. Per errata, we need to wait 200 cycles. Though executing code
+   * also takes time, so we'll wait 60 cycles (count = 20).
+   * - Since Low Speed mode is not supported/popular, we will ignore it for now.
+   *
+   * Note: this errata also seems to apply to G0, U5, H5 etc.
+   */
+  errata_2_15_1_workaround();
+
+
   uint32_t EPindex = wIstr & USB_ISTR_EP_ID;
   uint32_t wEPRegVal = pcd_get_endpoint(USB, EPindex);
   uint32_t count = pcd_get_ep_rx_cnt(USB,EPindex);
@@ -478,12 +515,12 @@ static void dcd_ep_ctr_rx_handler(uint32_t wIstr)
 
   // Verify the CTR_RX bit is set. This was in the ST Micro code,
   // but I'm not sure it's actually necessary?
-  if((wEPRegVal & USB_EP_CTR_RX) == 0U)
+  if (unlikely((wEPRegVal & USB_EP_CTR_RX) == 0U))
   {
     return;
   }
 
-  if((EPindex == 0U) && ((wEPRegVal & USB_EP_SETUP) != 0U)) /* Setup packet */
+  if (unlikely((EPindex == 0U) && ((wEPRegVal & USB_EP_SETUP) != 0U))) /* Setup packet */
   {
     // The setup_received function uses memcpy, so this must first copy the setup data into
     // user memory, to allow for the 32-bit access that memcpy performs.
@@ -507,7 +544,7 @@ static void dcd_ep_ctr_rx_handler(uint32_t wIstr)
       pcd_clear_rx_ep_ctr(USB, EPindex);
     }
 
-    if (count != 0U)
+    if (likely(count != 0U))
     {
 #if 0 // TODO support dcd_edpt_xfer_fifo API
       if (xfer->ff)
