@@ -5,7 +5,7 @@
 
 ## What is this?
 
-This is project slLIN. A LIN protocol inspired by Lawicel' serial line CAN protocol.
+This is project slLIN. A LIN protocol inspired by Lawicel's serial line CAN protocol.
 
 ## How do I use it?
 
@@ -56,7 +56,7 @@ The protocol for CAN is decribed [here](http://www.can232.com/docs/canusb_manual
 
 ## Serial Line LIN (slLIN) Protocol
 
-slLIN mostly follows Lawice's protocol with a few modifications for LIN:
+slLIN mostly follows Lawicel's protocol with a few modifications for LIN:
 
 | Command&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;                                | Direction&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; |  Description                                   |
 |----------------------------------------|----------------|------------------------------------------------|
