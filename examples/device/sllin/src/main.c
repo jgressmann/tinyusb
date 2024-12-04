@@ -370,7 +370,7 @@ SLLIN_RAMFUNC static void sllin_process_command(uint8_t index)
 				uint8_t lin_id = 0;
 
 				// setup proper response
-				lin->tx_sl_buffer[0] = 'z';
+				lin->tx_sl_buffer[0] = 'Z';
 				lin->tx_sl_buffer[1] = SLLIN_OK_TERMINATOR;
 				lin->tx_sl_offset = 2;
 
