@@ -459,6 +459,8 @@ send_dev_info:
 			if (out_end - out_ptr >= bytes) {
 				struct sc_msg_dev_info *rep = (struct sc_msg_dev_info *)out_ptr;
 				const uint32_t device_identifier = sc_board_identifier();
+				char const* board_name_ptr = sc_board_name();
+				size_t board_name_len = strlen(board_name_ptr);
 
 				usb_cmd->tx_offsets[usb_cmd->tx_bank] += bytes;
 
@@ -469,18 +471,14 @@ send_dev_info:
 				rep->fw_ver_major = SUPERCAN_VERSION_MAJOR;
 				rep->fw_ver_minor = SUPERCAN_VERSION_MINOR;
 				rep->fw_ver_patch = SUPERCAN_VERSION_PATCH;
-				static const char dev_name[] = SC_BOARD_NAME " " SC_NAME " chX";
-				rep->name_len = tu_min8(sizeof(dev_name)-1, sizeof(rep->name_bytes));
-				memcpy(rep->name_bytes, dev_name, rep->name_len);
-				if (rep->name_len <= TU_ARRAY_SIZE(rep->name_bytes)) {
-					rep->name_bytes[rep->name_len-1] = '0' + index;
-				}
-
+				rep->name_len = tu_min8(board_name_len, sizeof(rep->name_bytes));
+				memcpy(rep->name_bytes, board_name_ptr, rep->name_len);
 				rep->sn_bytes[0] = (device_identifier >> 24) & 0xff;
 				rep->sn_bytes[1] = (device_identifier >> 16) & 0xff;
 				rep->sn_bytes[2] = (device_identifier >> 8) & 0xff;
 				rep->sn_bytes[3] = (device_identifier >> 0) & 0xff;
 				rep->sn_len = 4;
+				rep->ch_index = index;
 			} else {
 				if (sc_cmd_bulk_in_ep_ready(index)) {
 					sc_cmd_bulk_in_submit(index);

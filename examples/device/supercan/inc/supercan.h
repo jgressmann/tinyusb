@@ -210,7 +210,7 @@ struct sc_msg_dev_info {
     uint8_t len;
     uint16_t feat_perm;    ///< Features permanently enabled (cannot be be cleared with SC_MSG_FEATURES)
     uint16_t feat_conf;    ///< Features enabled through configuration (SC_MSG_FEATURES)
-    uint8_t unused;
+    uint8_t ch_index;
     uint8_t sn_len;
     uint8_t sn_bytes[16];
     uint8_t fw_ver_major;
