@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  *
- * Copyright (c) 2021-2023 Jean Gressmann <jean@0x42.de>
+ * Copyright (c) 2021 Jean Gressmann <jean@0x42.de>
  *
  */
 
@@ -112,7 +112,7 @@ extern sc_can_bit_timing_range const* sc_board_can_dt_bit_timing_range(uint8_t i
 extern void sc_board_can_nm_bit_timing_set(uint8_t index, sc_can_bit_timing const *bt);
 extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing const *bt);
 extern void sc_board_can_go_bus(uint8_t index, bool on);
-SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg);
+SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg, uint32_t const* data);
 
 
 extern void sc_board_can_reset(uint8_t index);

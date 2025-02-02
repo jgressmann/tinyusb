@@ -93,6 +93,7 @@ extern "C" {
 #define SC_MSG_CAN_TX           0x22    ///< Host -> Device. Send CAN frame.
 #define SC_MSG_CAN_TXR          0x23    ///< Device -> Host. CAN frame transmission receipt.
 #define SC_MSG_CAN_ERROR        0x24    ///< Device -> Host. CAN frame error.
+#define SC_MSG_CAN_TX4          0x25    ///< Host -> Host. Send 4 byte aligned CAN frame (since fw 0.6.0).
 
 
 #define SC_MSG_USER_OFFSET      0x80    ///< Custom device messages
@@ -315,6 +316,17 @@ struct sc_msg_can_tx {
     uint8_t data[0];
 } SC_PACKED;
 
+struct sc_msg_can_tx4 {
+    uint8_t id;
+    uint8_t len;            ///< must be a multiple of 4
+    uint8_t dlc;
+    uint8_t flags;
+    uint32_t can_id;
+    uint8_t track_id;
+    uint8_t reserved[3];
+    uint8_t data[0];
+} SC_PACKED;
+
 struct sc_msg_can_txr {
     uint8_t id;
     uint8_t len;
@@ -336,6 +348,7 @@ enum {
     sc_static_assert_sc_msg_can_txr_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_txr) & 0x3) == 0 ? 1 : -1]),
     sc_static_assert_sc_msg_can_status_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_status) & 0x3) == 0 ? 1 : -1]),
     sc_static_assert_sc_msg_can_error_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_error) & 0x3) == 0 ? 1 : -1]),
+    sc_static_assert_sc_msg_can_tx4_is_a_multiple_of_4 = sizeof(int[(sizeof(struct sc_msg_can_tx4) & 0x3) == 0 ? 1 : -1]),
 };
 
 #ifdef __cplusplus

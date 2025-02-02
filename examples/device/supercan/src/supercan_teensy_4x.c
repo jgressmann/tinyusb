@@ -806,7 +806,7 @@ SC_RAMFUNC static inline void copy_swap_data_words(volatile uint32_t* dst, volat
 	}
 }
 
-SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
+SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg, uint32_t const* data)
 {
 	struct can *can = &cans[index];
 	struct tx_fifo_element *e = NULL;
@@ -838,7 +838,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	e->track_id = msg->track_id;
 
 	if (can->fd_enabled && (msg->flags & SC_CAN_FRAME_FLAG_FDF)) {
-		copy_swap_data_words(e->box.WORD, (uint32_t*)msg->data, words);
+		copy_swap_data_words(e->box.WORD, (uint32_t*)data, words);
 		e->len = len;
 		cs |= CAN_CS_CODE(MB_TX_DATA) | CAN_CS_EDL_MASK;
 		if (msg->flags & SC_CAN_FRAME_FLAG_BRS) {
@@ -851,7 +851,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 		e->len = 0;
 		cs |= CAN_CS_CODE(MB_TX_REMOTE) | CAN_CS_RTR_MASK;
 	} else {
-		copy_swap_data_words(e->box.WORD, (uint32_t*)msg->data, words);
+		copy_swap_data_words(e->box.WORD, (uint32_t*)data, words);
 		e->len = len;
 		cs |= CAN_CS_CODE(MB_TX_DATA);
 	}

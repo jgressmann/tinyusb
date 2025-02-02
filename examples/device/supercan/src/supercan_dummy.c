@@ -191,13 +191,15 @@ extern uint16_t sc_board_can_feat_conf(uint8_t index)
 	return CAN_FEAT_CONF;
 }
 
-SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
+SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg, uint32_t const* data)
 {
 	struct can *can = &cans[index];
 	uint8_t pi = can->txr_put_index;
 	uint8_t gi = __atomic_load_n(&can->txr_get_index, __ATOMIC_ACQUIRE);
 	uint8_t used = pi - gi;
 	bool available = used < TU_ARRAY_SIZE(can->txr_buffer);
+
+	(void)data;
 
 	if (available) {
 		uint8_t txr_put_index = pi % TU_ARRAY_SIZE(can->txr_buffer);

@@ -649,7 +649,7 @@ extern uint16_t sc_board_can_feat_conf(uint8_t index)
 	return CAN_FEAT_CONF;
 }
 
-SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
+SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg, uint32_t const* data)
 {
 	// NOTE: there can't be situation (other than a bug) in
 	// which the host sends more TX requests that we have fifo space.
@@ -718,27 +718,8 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 			const unsigned can_frame_len = dlc_to_len(msg->dlc);
 
 			if (likely(can_frame_len)) {
-				if (unlikely(msg->flags & SC_CAN_FRAME_FLAG_TX4)) {
-					uint32_t const *src = (void const *)&msg->data[3];
-
-					for (unsigned i = 0, e = (can_frame_len + 3) / 4; i < e; ++i) {
-						txe->data[i] = src[i];
-					}
-				} else {
-#if MCAN_MESSAGE_RAM_CONFIGURABLE
-					memcpy((void*)txe->data, msg->data, can_frame_len);
-#else
-					// too bad, we have to align :/
-					uint32_t aligned[16];
-					__IO uint32_t* dst = txe->data;
-					uint32_t const* src = aligned;
-
-					memcpy(aligned, msg->data, can_frame_len);
-
-					for (unsigned i = 0, e = (can_frame_len + 3) / 4; i < e; ++i) {
-						*dst++ = *src++;
-					}
-#endif
+				for (unsigned i = 0, e = (can_frame_len + 3) / 4; i < e; ++i) {
+					txe->data[i] = data[i];
 				}
 			}
 		}

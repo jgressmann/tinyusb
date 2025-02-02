@@ -346,7 +346,7 @@ extern uint16_t sc_board_can_feat_conf(uint8_t index)
 	return CAN_FEAT_CONF;
 }
 
-SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
+SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg, uint32_t const* data)
 {
 	struct can *can = &stm32_cans[index];
 	uint8_t const tx_gi = __atomic_load_n(&can->tx_get_index, __ATOMIC_ACQUIRE);
@@ -383,9 +383,8 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 		if (msg->flags & SC_CAN_FRAME_FLAG_RTR) {
 			txf->TIR |= CAN_TI0R_RTR;
 		} else {
-			uint8_t *d = (uint8_t *)&txf->TDLR;
-
-			memcpy(d, msg->data, msg->dlc);
+			txf->TDLR = data[0];
+			txf->TDHR = data[1];
 		}
 
 		txf->track_id = msg->track_id;

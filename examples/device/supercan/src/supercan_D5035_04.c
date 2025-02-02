@@ -730,7 +730,7 @@ void sc_board_can_go_bus(uint8_t index, bool on)
 	}
 }
 
-SC_RAMFUNC bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg)
+SC_RAMFUNC bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const * msg, uint32_t const* data)
 {
 	struct can *can = &cans[index];
 	uint8_t pi = can->tx_put_index;
@@ -789,7 +789,9 @@ SC_RAMFUNC bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx const 
 	SC_DEBUG_ASSERT(tx->words <= 16);
 
 	if (likely(tx->words)) {
-		memcpy(tx->data, msg->data, tx->words * 4);
+		for (unsigned i = 0; i < tx->words; ++i) {
+			tx->data[i] = data[i];
+		}
 	}
 
 	__atomic_store_n(&can->tx_put_index, pi + 1, __ATOMIC_RELEASE);

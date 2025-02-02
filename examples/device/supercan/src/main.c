@@ -692,14 +692,53 @@ send_can_info:
 	}
 }
 
-SC_RAMFUNC static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header const *msg)
+SC_RAMFUNC static void sc_queue_txr(uint8_t index, uint8_t track_id)
 {
 	SC_DEBUG_ASSERT(index < TU_ARRAY_SIZE(usb.can));
+
+	struct usb_can *usb_can = &usb.can[index];
+	struct can *can = &cans[index];
+	uint8_t *tx_beg = NULL;
+	uint8_t *tx_end = NULL;
+	uint8_t *tx_ptr = NULL;
+	struct sc_msg_can_txr* rep = NULL;
+
+	sc_board_can_ts_request(index);
+	++can->tx_dropped;
+
+send_txr:
+	tx_beg = usb_can->tx_buffers[usb_can->tx_bank];
+	tx_end = tx_beg + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
+	tx_ptr = tx_beg + usb_can->tx_offsets[usb_can->tx_bank];
+
+	if ((size_t)(tx_end - tx_ptr) >= sizeof(*rep)) {
+		usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*rep);
+
+		rep = (struct sc_msg_can_txr*)tx_ptr;
+		rep->id = SC_MSG_CAN_TXR;
+		rep->len = sizeof(*rep);
+		rep->track_id = track_id;
+		rep->flags = SC_CAN_FRAME_FLAG_DRP;
+		uint32_t ts = sc_board_can_ts_wait(index);
+		rep->timestamp_us = ts;
+	} else {
+		if (sc_can_bulk_in_ep_ready(index)) {
+			sc_can_bulk_in_submit(index, __func__);
+			goto send_txr;
+		} else {
+			LOG("ch%u: desync\n", index);
+			can->desync = true;
+		}
+	}
+}
+
+SC_RAMFUNC static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header const *msg)
+{
 	SC_DEBUG_ASSERT(msg);
 	SC_DEBUG_ASSERT(SC_MSG_CAN_TX == msg->id);
 
-	struct can *can = &cans[index];
-	struct usb_can *usb_can = &usb.can[index];
+	uint32_t aligned[16];
+	uint32_t* data_ptr = aligned;
 
 	// LOG("SC_MSG_CAN_TX %lx\n", __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE));
 	struct sc_msg_can_tx const *tmsg = (struct sc_msg_can_tx const *)msg;
@@ -721,39 +760,61 @@ SC_RAMFUNC static void sc_process_msg_can_tx(uint8_t index, struct sc_msg_header
 		return;
 	}
 
-	if (unlikely(!sc_board_can_tx_queue(index, tmsg))) {
-		uint8_t *tx_beg = NULL;
-		uint8_t *tx_end = NULL;
-		uint8_t *tx_ptr = NULL;
-		struct sc_msg_can_txr* rep = NULL;
-
-		sc_board_can_ts_request(index);
-		++can->tx_dropped;
-
-send_txr:
-		tx_beg = usb_can->tx_buffers[usb_can->tx_bank];
-		tx_end = tx_beg + TU_ARRAY_SIZE(usb_can->tx_buffers[usb_can->tx_bank]);
-		tx_ptr = tx_beg + usb_can->tx_offsets[usb_can->tx_bank];
-
-		if ((size_t)(tx_end - tx_ptr) >= sizeof(*rep)) {
-			usb_can->tx_offsets[usb_can->tx_bank] += sizeof(*rep);
-
-			rep = (struct sc_msg_can_txr*)tx_ptr;
-			rep->id = SC_MSG_CAN_TXR;
-			rep->len = sizeof(*rep);
-			rep->track_id = tmsg->track_id;
-			rep->flags = SC_CAN_FRAME_FLAG_DRP;
-			uint32_t ts = sc_board_can_ts_wait(index);
-			rep->timestamp_us = ts;
-		} else {
-			if (sc_can_bulk_in_ep_ready(index)) {
-				sc_can_bulk_in_submit(index, __func__);
-				goto send_txr;
-			} else {
-				LOG("ch%u: desync\n", index);
-				can->desync = true;
+	if (likely(!(tmsg->flags & SC_CAN_FRAME_FLAG_RTR))) {
+		if (tmsg->flags & SC_CAN_FRAME_FLAG_TX4) {
+			if (unlikely(msg->len < sizeof(*tmsg) + can_frame_len + 3)) {
+				LOG("ch%u ERROR: SC_MSG_CAN_TX msg too short\n", index);
+				return;
 			}
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-align"
+			data_ptr = (uint32_t*)&tmsg->data[3];
+#pragma GCC diagnostic pop
+		} else {
+			memcpy(aligned, tmsg->data, can_frame_len);
 		}
+	}
+
+	if (unlikely(!sc_board_can_tx_queue(index, tmsg, data_ptr))) {
+		sc_queue_txr(index, tmsg->track_id);
+	}
+}
+
+SC_RAMFUNC static void sc_process_msg_can_tx4(uint8_t index, struct sc_msg_header const *msg)
+{
+	SC_DEBUG_ASSERT(msg);
+	SC_DEBUG_ASSERT(SC_MSG_CAN_TX4 == msg->id);
+
+	uint32_t *data_ptr = NULL;
+
+	// LOG("SC_MSG_CAN_TX4 %lx\n", __atomic_load_n(&can->sync_tscv, __ATOMIC_ACQUIRE));
+	struct sc_msg_can_tx4 const *tmsg = (struct sc_msg_can_tx4 const *)msg;
+	if (unlikely(msg->len < sizeof(*tmsg))) {
+		LOG("ch%u ERROR: SC_MSG_CAN_TX4 msg too short\n", index);
+		return;
+	}
+
+	const uint8_t can_frame_len = dlc_to_len(tmsg->dlc);
+	if (!(tmsg->flags & SC_CAN_FRAME_FLAG_RTR)) {
+		if (unlikely(msg->len < sizeof(*tmsg) + can_frame_len)) {
+			LOG("ch%u ERROR: SC_MSG_CAN_TX4 msg too short\n", index);
+			return;
+		}
+	}
+
+	if (unlikely(tmsg->track_id >= SC_BOARD_CAN_TX_FIFO_SIZE)) {
+		LOG("ch%u ERROR: SC_MSG_CAN_TX4 track ID %u out of bounds [0-%u)\n", index, tmsg->track_id, SC_BOARD_CAN_TX_FIFO_SIZE);
+		return;
+	}
+
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-align"
+	data_ptr = (uint32_t*)tmsg->data;
+#pragma GCC diagnostic pop
+
+	if (unlikely(!sc_board_can_tx_queue(index, (struct sc_msg_can_tx*)tmsg, data_ptr))) {
+		sc_queue_txr(index, tmsg->track_id);
 	}
 }
 
@@ -811,6 +872,9 @@ SC_RAMFUNC static void sc_can_bulk_out(uint8_t index, uint32_t xferred_bytes)
 			switch (msg->id) {
 			case SC_MSG_CAN_TX:
 				sc_process_msg_can_tx(index, msg);
+				break;
+			case SC_MSG_CAN_TX4:
+				sc_process_msg_can_tx4(index, msg);
 				break;
 
 			default:
