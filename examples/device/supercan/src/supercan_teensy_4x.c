@@ -35,6 +35,8 @@
 #include <leds.h>
 #include <fsl_clock.h>
 #include <fsl_iomuxc.h>
+#include <MIMXRT1062.h> // for documentation
+
 
 // disable warning for message box pointer alignment
 #pragma GCC diagnostic ignored "-Wcast-align"
@@ -279,13 +281,23 @@ static void init_mailboxes(uint8_t index)
 
 	if (can->fd_enabled) {
 		for (uint8_t i = 0; i < TX_MAILBOX_COUNT; ++i) {
-			can->flex_can->MB_64B[i].ID = 0; // see i.MX RT1060 Processor Reference Manual, Rev. 2, 12/2019, p. 2607
-			can->flex_can->MB_64B[i].CS = CAN_CS_CODE(MB_TX_INACTIVE);
+			if (i < TU_ARRAY_SIZE(can->flex_can->MB_64B.MB_64B_L)) {
+				can->flex_can->MB_64B.MB_64B_L[i].ID = 0; // see i.MX RT1060 Processor Reference Manual, Rev. 2, 12/2019, p. 2607
+				can->flex_can->MB_64B.MB_64B_L[i].CS = CAN_CS_CODE(MB_TX_INACTIVE);
+			} else {
+				can->flex_can->MB_64B.MB_64B_H[i-TU_ARRAY_SIZE(can->flex_can->MB_64B.MB_64B_L)].ID = 0; // see i.MX RT1060 Processor Reference Manual, Rev. 2, 12/2019, p. 2607
+				can->flex_can->MB_64B.MB_64B_H[i-TU_ARRAY_SIZE(can->flex_can->MB_64B.MB_64B_L)].CS = CAN_CS_CODE(MB_TX_INACTIVE);
+			}
 		}
 
 		for (uint8_t i = TX_MAILBOX_COUNT; i < TX_MAILBOX_COUNT + RX_MAILBOX_COUNT; ++i) {
-			can->flex_can->MB_64B[i].ID = 0;
-			can->flex_can->MB_64B[i].CS = MB_RX_CS_EMPTY_MUX;
+			if (i < TU_ARRAY_SIZE(can->flex_can->MB_64B.MB_64B_L)) {
+				can->flex_can->MB_64B.MB_64B_L[i].ID = 0;
+				can->flex_can->MB_64B.MB_64B_L[i].CS = MB_RX_CS_EMPTY_MUX;
+			} else {
+				can->flex_can->MB_64B.MB_64B_H[i-TU_ARRAY_SIZE(can->flex_can->MB_64B.MB_64B_L)].ID = 0;
+				can->flex_can->MB_64B.MB_64B_H[i-TU_ARRAY_SIZE(can->flex_can->MB_64B.MB_64B_L)].CS = MB_RX_CS_EMPTY_MUX;
+			}
 		}
 	} else {
 		for (uint8_t i = 0; i < TX_MAILBOX_COUNT; ++i) {
@@ -369,7 +381,7 @@ extern void sc_board_can_reset(uint8_t index)
 			| CAN_CTRL1_ERRMSK(1) // Error interrupt enabled
 			| CAN_CTRL1_TWRNMSK(1) // tx warning interrupt enabled
 			| CAN_CTRL1_RWRNMSK(1) // rx warning interrupt enabled
-						;
+			;
 
 	can->flex_can->CTRL2 = CAN_CTRL2_BOFFDONEMSK(1) // Bus Off Done Interrupt Mask
 							| CAN_CTRL2_RRS(1) // store remote request frames
