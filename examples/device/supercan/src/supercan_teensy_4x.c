@@ -369,8 +369,7 @@ extern void sc_board_can_reset(uint8_t index)
 			| CAN_CTRL1_ERRMSK(1) // Error interrupt enabled
 			| CAN_CTRL1_TWRNMSK(1) // tx warning interrupt enabled
 			| CAN_CTRL1_RWRNMSK(1) // rx warning interrupt enabled
-			| (can->fd_capable ? CAN_CTRL1_CLKSRC(1) : 0) // use peripheral clock not oscillator
-			;
+						;
 
 	can->flex_can->CTRL2 = CAN_CTRL2_BOFFDONEMSK(1) // Bus Off Done Interrupt Mask
 							| CAN_CTRL2_RRS(1) // store remote request frames
