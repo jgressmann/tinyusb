@@ -66,7 +66,8 @@ __attribute__((noreturn)) extern void sc_assert_failed(char const * const msg, s
 #if CFG_TUSB_MCU == OPT_MCU_GD32C10X
   #define configSYSTICK_CLOCK_HZ                (configCPU_CLOCK_HZ / 8)
 #else
-  #define configSYSTICK_CLOCK_HZ                configCPU_CLOCK_HZ
+  /* NOTE: DO NOT define this, it won't work for CM7, defaults should work. */
+  //#define configSYSTICK_CLOCK_HZ                configCPU_CLOCK_HZ
 #endif
 #define configTICK_RATE_HZ                      ( 1000 )
 #define configMAX_PRIORITIES                    ( 5 )
