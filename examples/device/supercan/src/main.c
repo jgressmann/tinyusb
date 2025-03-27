@@ -121,9 +121,9 @@ SC_RAMFUNC extern void sc_can_status_queue(uint8_t index, sc_can_status const *s
 #if defined(HAVE_ATOMIC_COMPARE_EXCHANGE) && HAVE_ATOMIC_COMPARE_EXCHANGE
 		__sync_or_and_fetch(&can->int_comm_flags, SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL);
 #else
-		taskENTER_CRITICAL();
+		UBaseType_t ctx = taskENTER_CRITICAL_FROM_ISR();
 		can->int_comm_flags |= SC_CAN_STATUS_FLAG_IRQ_QUEUE_FULL;
-		taskEXIT_CRITICAL();
+		taskEXIT_CRITICAL_FROM_ISR(ctx);
 #endif
 	}
 }
