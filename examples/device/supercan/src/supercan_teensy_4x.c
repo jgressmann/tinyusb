@@ -383,7 +383,6 @@ static inline void can_reset_state(uint8_t index)
 	can->txr_gi = 0;
 	can->txr_pi = 0;
 	can->fd_enabled = false;
-	can->enabled = false;
 	can->int_tx_box_busy = false;
 	can->int_tx_track_id = 0;
 	can->int_prev_bus_state = SC_CAN_STATUS_ERROR_ACTIVE;
@@ -793,10 +792,6 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 extern void sc_board_can_go_bus(uint8_t index, bool on)
 {
 	struct can *can = &cans[index];
-
-	can->enabled = on;
-
-	// LOG("CNT=%lx\n", GPT2->CNT);
 
 	if (on) {
 		init_mailboxes(index);
