@@ -64,10 +64,6 @@ enum {
 	MB_RX_CS_EMPTY_MUX = CAN_CS_CODE(MB_RX_EMPTY),
 };
 
-static const uint8_t flexcan_mb_step_size[2] = {
-	MB_STEP_CAN,
-	MB_STEP_CANFD,
-};
 
 struct led {
 	GPIO_Type* const gpio;
@@ -151,6 +147,7 @@ struct can {
 	StaticTimer_t timer_mem;
 	TimerHandle_t timer_handle;
 	CAN_Type* const flex_can;
+	size_t mailbox_size;
 	const IRQn_Type flex_can_irq;
 	const IRQn_Type tx_queue_irq;
 	uint32_t ts_to_us;
@@ -160,7 +157,6 @@ struct can {
 	uint8_t int_tx_track_id;
 	const bool fd_capable;
 	bool fd_enabled;
-	bool enabled;
 	bool int_tx_box_busy;
 
 
@@ -280,6 +276,8 @@ static void init_mailboxes(uint8_t index)
 	struct can *can = &cans[index];
 
 	if (can->fd_enabled) {
+		can->mailbox_size = MB_STEP_CANFD;
+
 		for (uint8_t i = 0; i < TX_MAILBOX_COUNT; ++i) {
 			if (i < TU_ARRAY_SIZE(can->flex_can->MB_64B.MB_64B_L)) {
 				can->flex_can->MB_64B.MB_64B_L[i].ID = 0; // see i.MX RT1060 Processor Reference Manual, Rev. 2, 12/2019, p. 2607
@@ -300,6 +298,8 @@ static void init_mailboxes(uint8_t index)
 			}
 		}
 	} else {
+		can->mailbox_size = MB_STEP_CAN;
+
 		for (uint8_t i = 0; i < TX_MAILBOX_COUNT; ++i) {
 			can->flex_can->MB_8B[i].ID = 0;
 			can->flex_can->MB_8B[i].CS = CAN_CS_CODE(MB_TX_INACTIVE);
@@ -389,6 +389,7 @@ static inline void can_reset_state(uint8_t index)
 	can->int_prev_rx_errors = 0;
 	can->int_prev_tx_errors = 0;
 	can->ts_to_us = 0;
+	can->mailbox_size = MB_STEP_CAN;
 }
 
 extern void sc_board_can_reset(uint8_t index)
@@ -545,6 +546,9 @@ static inline void can_init_once(void)
 							(void*)(uintptr_t)i,
 							&bus_activity_timer_expired,
 							&can->timer_mem);
+
+		//can->flex_can->GFWR = 64;
+		//can->flex_can->GFWR = 255;
 	}
 
 	// // 24MHz
@@ -564,6 +568,9 @@ static inline void can_init_once(void)
 	// CCM->CSCMR2 |= CCM_CSCMR2_CAN_CLK_SEL(2);
 
 	LOG("CAN root clock f=%lu [Hz]\n", CLOCK_GetClockRootFreq(kCLOCK_CanClkRoot));
+	LOG("per clock f=%lu [Hz]\n", CLOCK_GetPerClkFreq());
+	LOG("cpu clock f=%lu [Hz]\n", CLOCK_GetCpuClkFreq());
+
 
 
 	// Grün TX = GPIO_EMC_36 (CAN3) = Board PIN 31
@@ -777,13 +784,18 @@ extern void sc_board_can_dt_bit_timing_set(uint8_t index, sc_can_bit_timing cons
 	LOG("ch%u FDCBT brp=%u sjw=%u propseg=%u tseg1=%u tseg2=%u FDCBT=%lx\n",
 		index, bt->brp, bt->sjw, prop_seg, tseg1, bt->tseg2, can->flex_can->FDCBT);
 
-	dump_can_regs(index);
-
 	// transmitter delay compensation
-	const unsigned tdco = bt->tseg1 + 2;
+	const uint8_t TDCO_MAX = 31;
+	const uint8_t tdco = tu_min8((1 + bt->tseg1), TDCO_MAX);
 	// const unsigned tdco = (1 + bt->tseg1 + bt->tseg2) / 2;
 	can->flex_can->FDCTRL &= ~CAN_FDCTRL_TDCOFF_MASK;
 	can->flex_can->FDCTRL |= CAN_FDCTRL_TDCOFF(tdco);
+
+	if (sc_bitrate(bt->brp, bt->tseg1, bt->tseg2) >= 1000000u) {
+		can->flex_can->FDCTRL |= CAN_FDCTRL_TDCEN_MASK;
+	} else {
+		can->flex_can->FDCTRL &= ~CAN_FDCTRL_TDCEN_MASK;
+	}
 
 	dump_can_regs(index);
 }
@@ -795,38 +807,21 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 	if (on) {
 		init_mailboxes(index);
 
-		NVIC_EnableIRQ(can->flex_can_irq);
+		thaw(index);
 
 		dump_can_regs(index);
 
-		thaw(index);
-
 		(void)xTimerStart(can->timer_handle, pdMS_TO_TICKS(0));
 
+		NVIC_EnableIRQ(can->flex_can_irq);
 
-
-		// if (can->fd_enabled) {
-		// 	can->flex_can->MB_64B[0].WORD[0] = 0xdeadbeef;
-		// 	can->flex_can->MB_64B[0].ID = CAN_ID_STD(0x123 << 11);
-		// 	can->flex_can->MB_64B[0].CS =
-		// 		// CAN_CS_SRR(1) |
-		// 		CAN_CS_DLC(4) | CAN_CS_CODE(MB_TX_DATA);
-		// } else {
-		// 	can->flex_can->MB_8B[0].WORD[0] = 0xdeadbeef;
-		// 	can->flex_can->MB_8B[0].ID = CAN_ID_STD(0x123 << 11);
-		// 	can->flex_can->MB_8B[0].CS =
-		// 		// CAN_CS_SRR(1) |
-		// 		CAN_CS_DLC(4) | CAN_CS_CODE(MB_TX_DATA);
-		// }
-
-
-
-
+		// for (uint32_t now = board_millis(); now + 10 < board_millis(); );
 	} else {
+		NVIC_DisableIRQ(can->flex_can_irq);
+
 		freeze(index);
 
 		LOG("go off bus MCR=%lx\n", can->flex_can->MCR);
-		NVIC_DisableIRQ(can->flex_can_irq);
 
 		// clear interrupts
 		can->flex_can->IFLAG1 = can->flex_can->IFLAG1;
@@ -911,6 +906,7 @@ SC_RAMFUNC extern bool sc_board_can_tx_queue(uint8_t index, struct sc_msg_can_tx
 	e->box.CS = cs;
 
 	__atomic_store_n(&can->tx_pi, pi + 1, __ATOMIC_RELEASE);
+	// LOG("ch%u q %02x\n", index, msg->track_id);
 
 	// trigger interrupt
 	NVIC->STIR = can->tx_queue_irq;
@@ -1062,7 +1058,7 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 	const uint8_t tx_fifo_gi = can->tx_gi;
 	const uint8_t tx_fifo_pi = __atomic_load_n(&can->tx_pi, __ATOMIC_ACQUIRE);
 
-	// LOG("> srv tx mb\n");
+	// LOG("ch%u code=%1x\n", index, code);
 
 	if (MB_RX_EMPTY == code) {
 		// remove rx empty for RTR frames
@@ -1093,6 +1089,7 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 			struct txr_fifo_element *e = &can->txr_fifo[txr_index];
 			uint8_t flags = 0;
 
+			// LOG("ch%u echo %02x\n", index, can->int_tx_track_id);
 			e->track_id = can->int_tx_track_id;
 			e->timestamp_us = tsc;
 
@@ -1140,7 +1137,7 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 		switch (code) {
 		case MB_TX_INACTIVE: {
 			can->int_tx_track_id = e->track_id;
-			box->ID = e->box.ID; // write ID first according to manual
+			// LOG("ch%u place %02x\n", index, can->int_tx_track_id);
 
 			for (unsigned i = 0, o = 0; o < e->len; ++i, o += 4) {
 				box->WORD[i] = e->box.WORD[i];
@@ -1243,6 +1240,7 @@ SC_RAMFUNC static void can_int_update_status(
 		}
 
 		LOG("\n");
+		LOG("ch%u ESR1=%lx ECR=%lx\n", index, current_esr1, ecr);
 
 		status.type = SC_CAN_STATUS_FIFO_TYPE_BUS_STATUS;
 		status.bus_state = current_bus_state;
@@ -1306,8 +1304,7 @@ SC_RAMFUNC static void can_int_rx(
 {
 	const uint16_t TS_WRAP_THRESHOLD = 0x8000;
 	struct can *can = &cans[index];
-	uint8_t* box_mem = ((uint8_t*)can->flex_can) + 0x80;
-	const size_t step = flexcan_mb_step_size[can->fd_enabled];
+	uint8_t* box_mem = (uint8_t*)&can->flex_can->MB[0];
 	uint8_t rx_lost = 0;
 	uint8_t rx_pi = can->rx_pi;
 
@@ -1317,7 +1314,7 @@ SC_RAMFUNC static void can_int_rx(
 
 	for (uint32_t i = 0, mask = ((uint32_t)1) << TX_MAILBOX_COUNT, k = TX_MAILBOX_COUNT; i < RX_MAILBOX_COUNT; ++i, ++k, mask <<= 1) {
 		// if (iflag1 & mask) {
-			struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * k);
+			struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + can->mailbox_size * k);
 			unsigned cs = box->CS;
 			unsigned code = (cs & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
 
@@ -1332,7 +1329,7 @@ SC_RAMFUNC static void can_int_rx(
 			}
 		// }
 
-		// struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * k);
+		// struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + can->mailbox_size * k);
 		// unsigned code = (box->CS & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
 		// if (code == MB_RX_FULL || code == MB_RX_OVERRUN) {
 		// 	LOG("rx in mailbox index %u\n", k);
@@ -1342,6 +1339,8 @@ SC_RAMFUNC static void can_int_rx(
 	// LOG("rx count=%u\n", rx_count);
 	unsigned rx_start = 0;
 	unsigned rx_end = 0;
+
+	// LOG("ch%u rx %u\n", index, rx_count);
 
 	if (unlikely(rx_count > 1)) {
 
@@ -1398,7 +1397,7 @@ SC_RAMFUNC static void can_int_rx(
 		for (unsigned i = 0; i < rx_count; ++i) {
 			const unsigned rx_index = (i + rx_start) % rx_count;
 			const unsigned mailbox_index = rx_indices[rx_index];
-			struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + step * mailbox_index);
+			struct flexcan_mailbox *box = (struct flexcan_mailbox *)(box_mem + can->mailbox_size * mailbox_index);
 			SC_ISR_ASSERT(mailbox_index < TX_MAILBOX_COUNT + RX_MAILBOX_COUNT);
 
 
@@ -1549,14 +1548,14 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 			LOG("ch%u CAN-FD enabled\n", index);
 			can->fd_enabled = true;
 			can->flex_can->MCR |= CAN_MCR_FDEN_MASK;
-			can->flex_can->CTRL2 &= ~CAN_CTRL2_TASD_MASK;
-			can->flex_can->CTRL2 |= CAN_CTRL2_TASD(31); // see i.MX RT1060 Processor Reference Manual, Rev. 2, 12/2019, p. 2639
+			// can->flex_can->CTRL2 &= ~CAN_CTRL2_TASD_MASK;
+			// can->flex_can->CTRL2 |= CAN_CTRL2_TASD(31); // see i.MX RT1060 Processor Reference Manual, Rev. 2, 12/2019, p. 2639
 		} else {
 			LOG("ch%u CAN-FD disabled\n", index);
 			can->fd_enabled = false;
 			can->flex_can->MCR &= ~CAN_MCR_FDEN_MASK;
-			can->flex_can->CTRL2 &= ~CAN_CTRL2_TASD_MASK;
-			can->flex_can->CTRL2 |= CAN_CTRL2_TASD(25);
+			// can->flex_can->CTRL2 &= ~CAN_CTRL2_TASD_MASK;
+			// can->flex_can->CTRL2 |= CAN_CTRL2_TASD(25);
 		}
 
 		if (features & SC_FEATURE_FLAG_EHD) {
@@ -1577,8 +1576,8 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 		// uint8_t tasd = 25 - nom / div;
 
 
-		can->flex_can->CTRL2 &= ~CAN_CTRL2_TASD_MASK;
-		can->flex_can->CTRL2 |= CAN_CTRL2_TASD(25);
+		// can->flex_can->CTRL2 &= ~CAN_CTRL2_TASD_MASK;
+		// can->flex_can->CTRL2 |= CAN_CTRL2_TASD(25);
 
 	}
 
