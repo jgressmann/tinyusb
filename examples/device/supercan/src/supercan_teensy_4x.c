@@ -1048,7 +1048,7 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 }
 
 
-SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, uint32_t tsc)
+SC_RAMFUNC static inline bool service_tx_box(uint8_t index, uint32_t *events, uint32_t tsc)
 {
 	struct can *can = &cans[index];
 	uint8_t* box_mem = ((uint8_t*)can->flex_can) + 0x80;
@@ -1057,6 +1057,7 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 	unsigned code = (cs & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
 	const uint8_t tx_fifo_gi = can->tx_gi;
 	const uint8_t tx_fifo_pi = __atomic_load_n(&can->tx_pi, __ATOMIC_ACQUIRE);
+	bool result = false;
 
 	// LOG("ch%u code=%1x\n", index, code);
 
@@ -1124,6 +1125,7 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 		}
 
 		can->int_tx_box_busy = false;
+		result = true;
 	}
 
 
@@ -1151,6 +1153,7 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 
 			__atomic_store_n(&can->tx_gi, tx_fifo_gi + 1, __ATOMIC_RELEASE);
 
+			result = true;
 		} break;
 		default:
 			// LOG("ch%u no mailbox found\n", index);
@@ -1159,6 +1162,7 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 	}
 
 	// LOG("< srv tx mb\n");
+	return result;
 }
 
 
@@ -1299,7 +1303,7 @@ SC_RAMFUNC static void can_int_update_status(
 	}
 }
 
-SC_RAMFUNC static void can_int_rx(
+SC_RAMFUNC static bool can_int_rx(
 	uint8_t index, uint32_t* const events, uint32_t tsc)
 {
 	const uint16_t TS_WRAP_THRESHOLD = 0x8000;
@@ -1311,6 +1315,7 @@ SC_RAMFUNC static void can_int_rx(
 	uint16_t rx_timestamps[RX_MAILBOX_COUNT];
 	uint8_t rx_indices[RX_MAILBOX_COUNT];
 	uint8_t rx_count = 0;
+	bool result = false;
 
 	for (uint32_t i = 0, mask = ((uint32_t)1) << TX_MAILBOX_COUNT, k = TX_MAILBOX_COUNT; i < RX_MAILBOX_COUNT; ++i, ++k, mask <<= 1) {
 		// if (iflag1 & mask) {
@@ -1339,6 +1344,7 @@ SC_RAMFUNC static void can_int_rx(
 	// LOG("rx count=%u\n", rx_count);
 	unsigned rx_start = 0;
 	unsigned rx_end = 0;
+	result = rx_count > 0;
 
 	// LOG("ch%u rx %u\n", index, rx_count);
 
@@ -1450,6 +1456,8 @@ SC_RAMFUNC static void can_int_rx(
 		sc_can_status_queue(index, &status);
 		++*events;
 	}
+
+	return result;
 }
 
 SC_RAMFUNC static void can_int(uint8_t index)
@@ -1465,13 +1473,10 @@ SC_RAMFUNC static void can_int(uint8_t index)
 	// clear interrupts
 	can->flex_can->IFLAG1 = iflag1;
 	// can->flex_can->IFLAG2 = iflag2;
-
-		service_tx_box(index, &events, tsc);
-
-	// if (iflag1 || iflag2) { // rx frames
-	if (iflag1) { // rx frames
-
-		can_int_rx(index, &events, tsc);
+	for (bool change = true; change; ) {
+		change = false;
+		change |= service_tx_box(index, &events, tsc);
+			change |= can_int_rx(index, &events, tsc);
 	}
 
 	can_int_update_status(index, &events, tsc);
