@@ -1842,7 +1842,7 @@ static const clock_sys_pll_config_t sc_sysPllConfig_BOARD_BootClockRUN =
     CLOCK_DisableClock(kCLOCK_Gpt2S);
     CLOCK_DisableClock(kCLOCK_Pit);
     /* Set PERCLK_PODF. */
-    CLOCK_SetDiv(kCLOCK_PerclkDiv, 1);
+    CLOCK_SetDiv(kCLOCK_PerclkDiv, 1); // 1 => 75 MHz, 0 => 150 MHz
     /* Disable USDHC1 clock gate. */
     CLOCK_DisableClock(kCLOCK_Usdhc1);
     /* Set USDHC1_PODF. */
