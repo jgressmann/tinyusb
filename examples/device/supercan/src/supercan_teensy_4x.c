@@ -318,9 +318,47 @@ static inline void freeze(uint8_t index)
 
 	SC_DEBUG_ASSERT(!(can->flex_can->MCR & CAN_MCR_MDIS_MASK));
 
-	// enter freeze mode
-	can->flex_can->MCR |= CAN_MCR_FRZ(1) | CAN_MCR_HALT(1);
+	/* ERR009595
+	1. Set the Freeze Enable bit (FRZ) in the Module Control Register (MCR).
+2. Check if the Module Disable bit (MDIS) in MCR register is set. If yes, clear the MDIS bit.
+3. Poll the MCR register until the Low-Power Mode Acknowledge (LPMACK) bit in MCR is
+cleared (timeout for software implementation is 2 CAN Bits length).
+4. Read the Fault Confinement State (FLTCONF) field in the Error and Status 1 Register
+(ESR1) to check if FlexCAN is in bus off state. If yes, go to step 5A. Otherwise, go to step 5B.
+5A. Set the Soft Reset bit (SOFTRST) in MCR.
+6A. Poll the MCR register until the Soft Reset (SOFTRST) bit is cleared (timeout for software
+implementation is 2 CAN Bits length).
+7A. Poll the MCR register until the Freeze Acknowledge (FRZACK) bit is set (timeout for
+software implementation is 2 CAN Bits length).
+8A. Reconfigure the Module Control Register (MCR).
+9A. Reconfigure all the Interrupt Mask Registers (IMASKn).
+5B. Set the Halt FlexCAN (HALT) bit in MCR.
+6B. Poll the MCR register until the Freeze Acknowledge (FRZACK) bit is set (timeout for
+software implementation is 178 CAN Bits length).
+NOTE: The time between step 4 and step 5B must be less than 1353 CAN bit periods.
+	*/
+
+	// 1.
+	can->flex_can->MCR |= CAN_MCR_FRZ(1);
+	// 2. nop, see assert
+	// 3.
+	while (can->flex_can->MCR & CAN_MCR_LPMACK_MASK);
+	// 4.
+	bool in_bus_off_state = (((can->flex_can->ESR1 & CAN_ESR1_FLTCONF_MASK) >> CAN_ESR1_FLTCONF_SHIFT) & 0x2) == 0x2;
+
+	if (in_bus_off_state) {
+		// 5A.
+		can->flex_can->MCR |= CAN_MCR_SOFTRST_MASK;
+		// 6A.
+		while (can->flex_can->MCR & CAN_MCR_SOFTRST_MASK);
+		// 7A.
+		while (!(can->flex_can->MCR & CAN_MCR_FRZACK_MASK));
+	} else {
+		// 5B.
+		can->flex_can->MCR |= CAN_MCR_HALT(1);
+		// 6B.
 	while (!(can->flex_can->MCR & CAN_MCR_FRZACK_MASK));
+	}
 }
 
 static inline void thaw(uint8_t index)
@@ -329,7 +367,7 @@ static inline void thaw(uint8_t index)
 
 	SC_DEBUG_ASSERT(!(can->flex_can->MCR & CAN_MCR_MDIS_MASK));
 
-	// enter freeze mode
+	// exit freeze mode
 	can->flex_can->MCR &= ~CAN_MCR_HALT(1);
 	while ((can->flex_can->MCR & CAN_MCR_FRZACK_MASK));
 }
@@ -361,8 +399,6 @@ extern void sc_board_can_reset(uint8_t index)
 	freeze(index);
 
 	// LOG("CAN ch%u soft reset\n", (unsigned)i);
-	can->flex_can->MCR |= CAN_MCR_SOFTRST_MASK;
-	while (can->flex_can->MCR & CAN_MCR_SOFTRST_MASK);
 
 	can->flex_can->MCR = 0
 			| CAN_MCR_SUPV(1) // This bit configures the FlexCAN to be either in Supervisor or User mode
