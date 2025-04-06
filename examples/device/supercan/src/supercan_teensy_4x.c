@@ -1556,6 +1556,8 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 {
 	struct can *can = &cans[index];
 
+	// NOTE: no need for TASD, we only use a single TX box
+
 	if (can->fd_capable) {
 		if (features & SC_FEATURE_FLAG_FDF) {
 			LOG("ch%u CAN-FD enabled\n", index);
