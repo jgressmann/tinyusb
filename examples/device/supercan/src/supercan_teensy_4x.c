@@ -1133,9 +1133,10 @@ SC_RAMFUNC static inline void service_tx_box(uint8_t index, uint32_t *events, ui
 
 
 SC_RAMFUNC static void can_int_update_status(
-	uint8_t index, uint32_t* events, uint32_t tsc)
+	uint8_t index, uint32_t* events, uint32_t tsc, bool* try_tx)
 {
 	SC_DEBUG_ASSERT(events);
+	SC_DEBUG_ASSERT(try_tx);
 
 	struct can *can = &cans[index];
 	uint8_t current_bus_state = 0;
@@ -1146,6 +1147,8 @@ SC_RAMFUNC static void can_int_update_status(
 	// uint32_t prev_esr1 = can->int_prev_esr1;
 	sc_can_status status;
 	const uint8_t confinement = (current_esr1 & CAN_ESR1_FLTCONF_MASK) >> CAN_ESR1_FLTCONF_SHIFT;
+
+	*try_tx = false;
 
 	// clear error flags
 	can->flex_can->ESR1 = ~0;
@@ -1194,6 +1197,7 @@ SC_RAMFUNC static void can_int_update_status(
 		switch (current_bus_state) {
 		case SC_CAN_STATUS_ERROR_ACTIVE:
 			LOG("active");
+			*try_tx = true;
 			break;
 		case SC_CAN_STATUS_ERROR_WARNING:
 			LOG("warning");
@@ -1429,14 +1433,16 @@ SC_RAMFUNC static void can_int(uint8_t index)
 	// uint32_t iflag2 = can->flex_can->IFLAG2;
 	uint32_t events = 0;
 	uint32_t tsc = GPT2->CNT;
-
+	bool try_tx = false;
 
 	// clear interrupts
 	can->flex_can->IFLAG1 = iflag1;
 	// can->flex_can->IFLAG2 = iflag2;
 
+	can_int_update_status(index, &events, tsc, &try_tx);
 
-	if (iflag1 & 1) {
+
+	if ((iflag1 & 1) || try_tx) {
 		// TX mailbox
 		iflag1 &= ~(uint32_t)1;
 
@@ -1448,9 +1454,6 @@ SC_RAMFUNC static void can_int(uint8_t index)
 
 		can_int_rx(index, &events, tsc);
 	}
-
-	can_int_update_status(index, &events, tsc);
-
 
 	if (likely(events)) {
 		// LOG("/");
