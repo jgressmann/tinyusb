@@ -208,11 +208,11 @@ static inline void dump_can_regs(uint8_t index)
 	struct can *can = &cans[index];
 	(void)can;
 
-	LOG("ch%u MCR=%lx CTRL1=%lx CTRL2=%lx ",
-		index, can->flex_can->MCR, can->flex_can->CTRL1, can->flex_can->CTRL2);
+	LOG("ch%u MCR=%lx CTRL1=%lx CTRL2=%lx ECR=%lx ESR1=%lx",
+		index, can->flex_can->MCR, can->flex_can->CTRL1, can->flex_can->CTRL2, can->flex_can->ECR, can->flex_can->ESR1);
 
 	if (can->fd_capable) {
-		LOG("CBT=%lx FDCTRL=%lx FDCBT=%lx",
+		LOG(" CBT=%lx FDCTRL=%lx FDCBT=%lx",
 		can->flex_can->CBT, can->flex_can->FDCTRL, can->flex_can->FDCBT
 		);
 	}
