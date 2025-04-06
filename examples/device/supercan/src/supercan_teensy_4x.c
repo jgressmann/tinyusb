@@ -42,7 +42,7 @@
 #pragma GCC diagnostic ignored "-Wcast-align"
 
 enum {
-	TX_MAILBOX_COUNT = 1,
+	TX_MAILBOX_COUNT = 2,
 	// 14 requires 2 ram regions
 	RX_MAILBOX_COUNT = 14-TX_MAILBOX_COUNT,
 	// RX_MAILBOX_COUNT = 7-TX_MAILBOX_COUNT,
@@ -1051,9 +1051,11 @@ SC_RAMFUNC extern int sc_board_can_retrieve(uint8_t index, uint8_t *tx_ptr, uint
 SC_RAMFUNC static inline bool service_tx_box(uint8_t index, uint32_t *events, uint32_t tsc)
 {
 	struct can *can = &cans[index];
-	uint8_t* box_mem = ((uint8_t*)can->flex_can) + 0x80;
-	struct flexcan_mailbox *box = (struct flexcan_mailbox *)box_mem;
-	uint32_t cs = box->CS;
+	uint8_t* box0_mem = (uint8_t*)&can->flex_can->MB[0];
+	uint8_t* box1_mem = box0_mem + can->mailbox_size;
+	struct flexcan_mailbox *box0 = (struct flexcan_mailbox *)box0_mem;
+	struct flexcan_mailbox *box1 = (struct flexcan_mailbox *)box1_mem;
+	uint32_t cs = box1->CS;
 	unsigned code = (cs & CAN_CS_CODE_MASK) >> CAN_CS_CODE_SHIFT;
 	const uint8_t tx_fifo_gi = can->tx_gi;
 	const uint8_t tx_fifo_pi = __atomic_load_n(&can->tx_pi, __ATOMIC_ACQUIRE);
@@ -1067,7 +1069,7 @@ SC_RAMFUNC static inline bool service_tx_box(uint8_t index, uint32_t *events, ui
 		code = MB_TX_INACTIVE;
 		cs &= ~CAN_CS_CODE_MASK;
 		cs |= CAN_CS_CODE(code);
-		box->CS = cs;
+		box1->CS = cs;
 	}
 
 	if (can->int_tx_box_busy && MB_TX_INACTIVE == code) {
@@ -1140,12 +1142,18 @@ SC_RAMFUNC static inline bool service_tx_box(uint8_t index, uint32_t *events, ui
 		case MB_TX_INACTIVE: {
 			can->int_tx_track_id = e->track_id;
 			// LOG("ch%u place %02x\n", index, can->int_tx_track_id);
+			box1->ID = e->box.ID; // write ID first according to manual
 
 			for (unsigned i = 0, o = 0; o < e->len; ++i, o += 4) {
-				box->WORD[i] = e->box.WORD[i];
+				box1->WORD[i] = e->box.WORD[i];
 			}
 
-			box->CS = e->box.CS;
+			box1->CS = e->box.CS;
+
+			// errata ERR005829
+			box0->CS = MB_TX_INACTIVE << 24;
+			box0->CS = MB_TX_INACTIVE << 24;
+			// errata ERR005829
 
 			// LOG("ch%u dlc=%u len=%u cs=%lx\n", index, (box->CS & CAN_CS_DLC_MASK) >> CAN_CS_DLC_SHIFT, e->len, box->CS);
 
@@ -1476,7 +1484,7 @@ SC_RAMFUNC static void can_int(uint8_t index)
 	for (bool change = true; change; ) {
 		change = false;
 		change |= service_tx_box(index, &events, tsc);
-			change |= can_int_rx(index, &events, tsc);
+		change |= can_int_rx(index, &events, tsc);
 	}
 
 	can_int_update_status(index, &events, tsc);
