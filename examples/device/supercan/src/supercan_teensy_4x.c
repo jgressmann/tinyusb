@@ -575,9 +575,11 @@ static inline void can_init_once(void)
 	IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0);
 	IOMUXC_SetPinMux(IOMUXC_GPIO_EMC_37_FLEXCAN3_RX, 0);
 	// 0xC8 fastest, lowest drive strength
-	// 5–3 DSE 0 == off, 001 = low , 010 = better, ...111 best
 	// 7–6 SPEED 00 = low .. 11 fastest
+	// 5–3 DSE 0 == off, 001 = low , 010 = better, ...111 best
 	// 0 slew mode 0 = slow, 1 = fast
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0b11111001);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_37_FLEXCAN3_RX, 0b11000000);
 	// IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0b0000000011001001);
 	// IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_37_FLEXCAN3_RX, 0b1110000011000001);
 	// IOMUXC_SetPinConfig(IOMUXC_GPIO_EMC_36_FLEXCAN3_TX, 0x10B0);
@@ -586,8 +588,8 @@ static inline void can_init_once(void)
 
 	IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_08_FLEXCAN1_TX, 0);
 	IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_09_FLEXCAN1_RX, 0);
-	// IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_08_FLEXCAN1_TX, 0b11001000);
-	// IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_09_FLEXCAN1_RX, 0b11000000);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_08_FLEXCAN1_TX, 0b11111001);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_09_FLEXCAN1_RX, 0b11000000);
 	// IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_08_FLEXCAN1_TX, 0x10B0u);
   	// IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_09_FLEXCAN1_RX, 0x10B0u);
 
@@ -596,9 +598,6 @@ static inline void can_init_once(void)
 	CLOCK_EnableClock(kCLOCK_Can3S);
 	CLOCK_EnableClock(kCLOCK_Can1);
 	CLOCK_EnableClock(kCLOCK_Can1S);
-
-
-
 }
 
 
