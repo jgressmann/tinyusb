@@ -1564,7 +1564,21 @@ extern void sc_board_can_feat_set(uint8_t index, uint16_t features)
 		} else {
 			can->flex_can->CTRL2 |= CAN_CTRL2_PREXCEN_MASK;
 		}
+	} else {
 
+		/* configure TASD
+		 * TASD = 25 - nom / div
+		 *
+		 * nom = fCANCLK x [MAXMB + 3 - (RFEN x 8) - (RFEN x RFFN x 2)] x 2
+		 * div = fsys x [1 + (PSEG1 + 1) + (PSEG2 + 1) + (PROPSEG + 1)] x (PRESDIV + 1)
+		 */
+		// uint32_t nom = (16 + 3) * 2 * CLOCK_GetClockRootFreq(kCLOCK_CanClkRoot);
+		// uint32_t div = (1 + bt->tseg1 + bt->tseg2) * bt->brp * CLOCK_GetCpuClkFreq();
+		// uint8_t tasd = 25 - nom / div;
+
+
+		can->flex_can->CTRL2 &= ~CAN_CTRL2_TASD_MASK;
+		can->flex_can->CTRL2 |= CAN_CTRL2_TASD(25);
 
 	}
 
