@@ -834,6 +834,8 @@ extern void sc_board_can_go_bus(uint8_t index, bool on)
 
 		// clear error flags
 		can->flex_can->ESR1 = ~0;
+		// clear error counters
+		can->flex_can->ECR = 0;
 
 		can_reset_state(index);
 
