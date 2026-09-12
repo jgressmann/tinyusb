@@ -53,7 +53,7 @@ SLLIN_RAMFUNC static inline void sam_timer_cleanup_end(struct sam_lin * const li
 #define sam_timer_start_or_restart_end(lin) \
 	do { \
 		sam_timer_cleanup_end(lin); \
-		(lin)->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val; \
+		(lin)->timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_CMD_RETRIGGER; \
 	} while (0)
 
 #define sam_timer_start_or_restart(lin) \
@@ -70,7 +70,7 @@ SLLIN_RAMFUNC static inline void sam_timer_cleanup_end(struct sam_lin * const li
 		sam_timer_cleanup_end(lin); \
 		lin->timer_type = TIMER_TYPE_SOF; \
 		lin->timer->COUNT16.CC[0].reg = lin->sof_timeout_us; \
-		(lin)->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val; \
+		(lin)->timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_CMD_RETRIGGER; \
 	} while (0)
 
 
@@ -81,7 +81,7 @@ SLLIN_RAMFUNC static inline void sam_timer_cleanup_end(struct sam_lin * const li
 		sam_timer_cleanup_end(lin); \
 		lin->timer_type = TIMER_TYPE_BREAK; \
 		lin->timer->COUNT16.CC[0].reg = lin->master.break_timeout_us; \
-		(lin)->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val; \
+		(lin)->timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_CMD_RETRIGGER; \
 	} while (0)
 
 
@@ -91,7 +91,7 @@ SLLIN_RAMFUNC static inline void sam_timer_cleanup_end(struct sam_lin * const li
 		(lin)->slave.sleep_elapsed_us = 0; \
 		(lin)->timer_type = TIMER_TYPE_SLEEP; \
 		(lin)->timer->COUNT16.CC[0].reg = 0xffff; \
-		(lin)->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val; \
+		(lin)->timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_CMD_RETRIGGER; \
 	} while (0)
 
 SLLIN_RAMFUNC static inline void lin_cleanup_master_tx(struct sam_lin *lin, uint8_t slave_proto_step)
@@ -739,7 +739,7 @@ SLLIN_RAMFUNC void sam_lin_usart_int(uint8_t index)
 				lin->timer->COUNT16.CC[0].reg = sl->data_timeout_us;
 
 				// here we know the timer is stopped
-				lin->timer->COUNT16.CTRLBSET.bit.CMD = TC_CTRLBSET_CMD_RETRIGGER_Val;
+				lin->timer->COUNT16.CTRLBSET.reg = TC_CTRLBSET_CMD_RETRIGGER;
 
 				if (respond) {
 					SLLIN_DEBUG_ISR_ASSERT(fd->len[id] >= 0 && fd->len[id] <= 8);
