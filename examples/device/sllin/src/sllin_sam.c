@@ -134,6 +134,7 @@ void sam_lin_init_once(void)
 
 		// master / slave  select pin
 		PORT->Group[ms_pin_group].DIRSET.reg = UINT32_C(1) << ms_pin;
+		// set slave mode
 		PORT->Group[ms_pin_group].OUTCLR.reg = UINT32_C(1) << ms_pin;
 	}
 
@@ -188,6 +189,17 @@ __attribute__((noreturn)) extern void sllin_board_reset(void)
 	__unreachable();
 }
 
+static inline void set_master_mode(uint8_t index, bool master)
+{
+	struct sam_lin *lin = &sam_lins[index];
+
+	if (master) {
+		PORT->Group[lin->master_slave_port_pin_mux >> 5].OUTSET.reg = UINT32_C(1) << (lin->master_slave_port_pin_mux & 0x1f);
+	} else {
+		PORT->Group[lin->master_slave_port_pin_mux >> 5].OUTCLR.reg = UINT32_C(1) << (lin->master_slave_port_pin_mux & 0x1f);
+	}
+}
+
 extern void sllin_board_lin_uninit(uint8_t index)
 {
 	struct sam_lin *lin = &sam_lins[index];
@@ -195,6 +207,9 @@ extern void sllin_board_lin_uninit(uint8_t index)
 
 	// disable SERCOM
 	sercom->USART.CTRLA.bit.SWRST = 1;
+
+	// turn off master mode (disable 12V pullup)
+	set_master_mode(index, false);
 }
 
 extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
@@ -248,11 +263,7 @@ extern void sllin_board_lin_init(uint8_t index, sllin_conf *conf)
 	sercom->USART.INTENSET.reg = SERCOM_USART_INTENSET_RXBRK | SERCOM_USART_INTENSET_ERROR | SERCOM_USART_INTENSET_RXC;
 
 
-	if (conf->master) {
-		PORT->Group[lin->master_slave_port_pin_mux >> 5].OUTSET.reg = UINT32_C(1) << (lin->master_slave_port_pin_mux & 0x1f);
-	} else {
-		PORT->Group[lin->master_slave_port_pin_mux >> 5].OUTCLR.reg = UINT32_C(1) << (lin->master_slave_port_pin_mux & 0x1f);
-	}
+	set_master_mode(index, conf->master);
 
 	lin_cleanup_full(lin, SLAVE_PROTO_STEP_RX_BREAK);
 	lin->master.busy = 0;
