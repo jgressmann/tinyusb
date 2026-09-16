@@ -66,7 +66,7 @@ static void leds_init(void)
 	Sercom * const s = SERCOM1;
 
 	// the one true LED
-	PORT->Group[0].DIRSET.reg = 10;
+	PORT->Group[0].DIRSET.reg = UINT32_C(1) << 10;
 
 	// Drive APA-102-2022 with SPI on SERCOM1
 
